@@ -3,18 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <title>Файловый менеджер</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         :root {
             --bg-color: #1e1e1e; --text-color: #d4d4d4; --border-color: #333;
             --pane-bg: #252526; --header-bg: #3c3c3c; --selected-bg: #094771;
             --button-bg: #0e639c; --button-hover-bg: #1177bb;
             --progress-bar-bg: #5a5a5a; --progress-bar-fill: #0e639c;
+            --danger-color: #f85149;
         }
         body, html { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-color); color: var(--text-color); font-size: 14px; }
-        .container { display: flex; flex-direction: column; height: 100vh; }
+        .container { display: flex; flex-direction: column; height: 100vh; border: 1px solid var(--border-color); }
+        
+        /* VVV ИЗМЕНЕНИЕ: Стили для кастомного заголовка VVV */
+        .header {
+            height: 32px; background-color: var(--header-bg); display: flex;
+            align-items: center; padding-left: 12px; flex-shrink: 0;
+            -webkit-app-region: drag;
+        }
+        .header .title { flex-grow: 1; font-weight: 500; }
+        .window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+        .window-control-btn {
+            background: none; border: none; color: var(--text-color);
+            padding: 0 15px; cursor: pointer; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s;
+        }
+        .window-control-btn i { font-size: 18px; }
+        .window-control-btn:hover { background-color: rgba(255,255,255,0.1); }
+        .window-control-btn.close-btn:hover { background-color: var(--danger-color); color: white; }
+        /* ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ */
+
         .panes-container { display: flex; flex-grow: 1; overflow: hidden; }
-        .pane { width: 50%; display: flex; flex-direction: column; background-color: var(--pane-bg); border: 1px solid var(--border-color); }
-        .pane:first-child { border-right: none; }
+        .pane { width: 50%; display: flex; flex-direction: column; background-color: var(--pane-bg); border-top: 1px solid var(--border-color); }
+        .pane:first-child { border-right: 1px solid var(--border-color); }
         .pane-header { background-color: var(--header-bg); padding: 5px; display: flex; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
         .pane-header h3 { margin: 0; font-size: 1em; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pane-header .path-input { flex-grow: 1; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-color); padding: 4px; font-size: 13px; margin-left: 10px; }
@@ -30,16 +52,24 @@
         .controls button:disabled { background-color: #555; cursor: not-allowed; }
         .status-bar { padding: 5px 10px; background-color: var(--header-bg); font-size: 12px; height: 22px; line-height: 22px; flex-shrink: 0; display: flex; align-items: center; }
         .progress-bar-container { width: 200px; height: 16px; background-color: var(--progress-bar-bg); border-radius: 3px; overflow: hidden; display: none; margin-left: auto;}
-        .progress-bar-fill { width: 100%; height: 100%; background-color: var(--progress-bar-fill); animation: pulse 2s infinite; }
-        @keyframes pulse {
-            0% { opacity: 0.7; }
-            50% { opacity: 1; }
-            100% { opacity: 0.7; }
-        }
+        .progress-bar-fill { width: 0%; height: 100%; background-color: var(--progress-bar-fill); }
+        .progress-bar-fill.pulse { width: 100%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- VVV ИЗМЕНЕНИЕ: Добавлен кастомный заголовок VVV -->
+        <div class="header">
+            <div class="title" id="window-title">Файловый менеджер</div>
+            <div class="window-controls">
+                <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
+                <button id="maximize-btn" class="window-control-btn"><i class="material-icons">crop_square</i></button>
+                <button id="close-btn" class="window-control-btn close-btn"><i class="material-icons">close</i></button>
+            </div>
+        </div>
+        <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
+
         <div class="panes-container">
             <div class="pane" id="local-pane">
                 <div class="pane-header">
@@ -70,6 +100,27 @@
             </div>
         </div>
     </div>
+    
+    <!-- VVV ИЗМЕНЕНИЕ: Добавлен скрипт для кнопок управления VVV -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const cameraName = JSON.parse(new URLSearchParams(window.location.search).get('camera')).name;
+            document.getElementById('window-title').textContent = `Файловый менеджер: ${cameraName}`;
+            
+            document.getElementById('minimize-btn').addEventListener('click', () => window.scpApi.minimize());
+            document.getElementById('maximize-btn').addEventListener('click', () => window.scpApi.maximize());
+            document.getElementById('close-btn').addEventListener('click', () => window.scpApi.close());
+
+            window.scpApi.onWindowMaximized(() => {
+                document.getElementById('maximize-btn').innerHTML = '<i class="material-icons">filter_none</i>';
+            });
+            window.scpApi.onWindowUnmaximized(() => {
+                document.getElementById('maximize-btn').innerHTML = '<i class="material-icons">crop_square</i>';
+            });
+        });
+    </script>
+    <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
+
     <script src="./file-manager.js"></script>
 </body>
 </html>

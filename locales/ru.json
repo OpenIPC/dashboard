@@ -56,7 +56,6 @@
   "kill_all_confirm": "Это принудительно завершит все процессы ffmpeg. Используйте, если потоки зависли. Продолжить?",
   "kill_all_result": "Все 'зависшие' потоки были успешно сброшены.",
   "no_free_ports": "Не удалось найти свободный порт.",
-
   "settings_tab_general": "Общие",
   "settings_tab_users": "Пользователи",
   "settings_tab_system": "System",
@@ -70,6 +69,7 @@
   "settings_tab_rtsp": "RTSP",
   "settings_tab_night": "Night",
   "settings_tab_motion": "Motion",
+  "settings_tab_analytics": "Аналитика",
   "settings_tab_record": "Record",
   "settings_tab_outgoing": "Outgoing",
   "settings_tab_watchdog": "Watchdog",
@@ -87,7 +87,6 @@
   "settings_hw_accel_none": "Отключено (только ЦП)",
   "settings_restart_majestic": "Перезапустить Majestic",
   "settings_kill_all": "Аварийный сброс",
-
   "archive_title": "Записи",
   "archive_refresh_tooltip": "Обновить список",
   "archive_placeholder": "Выберите запись для просмотра",
@@ -100,7 +99,6 @@
   "archive_export_single_file_error": "Выделение должно находиться в пределах одного файла записи.",
   "archive_export_success": "Клип успешно экспортирован.",
   "archive_export_error": "Ошибка экспорта клипа",
-  
   "update_checking": "Проверка...",
   "update_check_prompt": "Нажмите кнопку для проверки...",
   "update_available": "Доступна новая версия: {{version}}",
@@ -111,25 +109,21 @@
   "update_available_short": "Доступно обновление!",
   "update_downloaded_short": "Обновление загружено.",
   "update_error_short": "Ошибка обновления",
-  
   "update_header": "Обновление приложения",
   "update_status_label": "Текущий статус",
   "update_action_label": "Действие",
   "update_check_button": "Проверить обновления",
-  
   "discover_cameras_tooltip": "Найти камеры в сети (ONVIF)",
   "discover_modal_title": "Найденные камеры",
   "add_selected_camera": "Добавить выбранную",
   "search_again": "Искать снова",
   "searching_for_cameras": "Поиск камер в вашей сети...",
   "no_cameras_found": "Совместимых камер не найдено. Убедитесь, что они находятся в той же сети и поддерживают ONVIF.",
-  
   "login_prompt": "Пожалуйста, войдите для продолжения",
   "login_btn": "Войти",
   "invalid_credentials": "Неверное имя пользователя или пароль.",
   "logout": "Выйти",
   "logout_tooltip": "Выйти из текущей сессии",
-  
   "user_management_tooltip": "Управление пользователями",
   "user_management_title": "Управление пользователями",
   "add_user": "Добавить пользователя",
@@ -142,7 +136,8 @@
   "password_changed_success": "Пароль успешно изменен.",
   "confirm_delete_user": "Вы уверены, что хотите удалить пользователя '{{username}}'?",
   "username_and_password_required": "Имя пользователя и пароль обязательны.",
-
+  "change_password_for_user": "Сменить пароль для '{{username}}'",
+  "new_password": "Новый пароль",
   "permissions_btn": "Права",
   "permissions_for_user": "Права для пользователя '{{username}}'",
   "permissions_saved_success": "Права успешно сохранены.",
@@ -153,5 +148,22 @@
   "edit_cameras": "Управление камерами",
   "delete_cameras": "Удаление камер",
   "access_settings": "Доступ к настройкам",
-  "manage_layout": "Управление сеткой"
+  "manage_layout": "Управление сеткой",
+  "save_layout_tooltip": "Сохранить текущий вид как новую раскладку",
+  "rename_layout_tooltip": "Переименовать текущую раскладку",
+  "delete_layout_tooltip": "Удалить текущую раскладку",
+  "enter_layout_name": "Введите название для новой раскладки:",
+  "enter_new_layout_name": "Введите новое название для раскладки:",
+  "confirm_delete_layout": "Вы уверены, что хотите удалить эту раскладку?",
+  "cannot_delete_last_layout": "Нельзя удалить последнюю раскладку.",
+  "add_layout_tooltip": "Создать новую раскладку",
+  "enter_layout_name_prompt": "Введите название для раскладки:",
+  "new_layout_default_name": "Вид {{count}}",
+  "remember_me": "Запомнить меня",
+    "toggle_analytics_tooltip": "Включить/выключить видеоаналитику",
+    "settings_tab_streaming": "Трансляция",
+  "streaming_settings_header": "Настройки трансляции в реальном времени",
+  "streaming_settings_desc": "Эти параметры влияют на производительность и качество живого видео в сетке. Они не влияют на качество записи.",
+  "streaming_qscale_label": "Качество видео (q:v)",
+  "streaming_fps_label": "Частота кадров (fps)"
 }

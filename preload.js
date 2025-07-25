@@ -1,61 +1,87 @@
-// preload.js (полная исправленная версия с системой пользователей)
+// preload.js (Полная версия с добавлением API для видеоаналитики и NETIP)
 
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  // Функции для управления окном
-  minimizeWindow: () => ipcRenderer.send('minimize-window'),
-  maximizeWindow: () => ipcRenderer.send('maximize-window'),
-  closeWindow: () => ipcRenderer.send('close-window'),
-  onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', callback),
-  onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', callback),
+    // Window controls
+    minimizeWindow: () => ipcRenderer.send('minimize-window'),
+    maximizeWindow: () => ipcRenderer.send('maximize-window'),
+    closeWindow: () => ipcRenderer.send('close-window'),
+    onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', callback),
+    onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', callback),
 
-  // Функция для аутентификации
-  login: (credentials) => ipcRenderer.invoke('login', credentials),
-  
-  // VVV НОВЫЕ ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ VVV
-  getUsers: () => ipcRenderer.invoke('get-users'),
-  addUser: (userData) => ipcRenderer.invoke('add-user', userData),
-  updateUserPassword: (userData) => ipcRenderer.invoke('update-user-password', userData),
-  deleteUser: (userData) => ipcRenderer.invoke('delete-user', { username: userData.username }),
-  updateUserRole: (userData) => ipcRenderer.invoke('update-user-role', userData),
-  updateUserPermissions: (userData) => ipcRenderer.invoke('update-user-permissions', userData),
-  // ^^^ КОНЕЦ НОВЫХ ФУНКЦИЙ ^^^
+    // Clipboard
+    clipboardRead: () => ipcRenderer.invoke('clipboardRead'),
+    clipboardWrite: (text) => ipcRenderer.invoke('clipboardWrite', text),
 
-  // Существующие функции
-  startVideoStream: (credentials) => ipcRenderer.invoke('start-video-stream', credentials),
-  stopVideoStream: (uniqueStreamId) => ipcRenderer.invoke('stop-video-stream', uniqueStreamId),
-  killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
-  saveConfiguration: (config) => ipcRenderer.invoke('save-configuration', config),
-  loadConfiguration: () => ipcRenderer.invoke('load-configuration'),
-  getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
-  getCameraSettings: (credentials) => ipcRenderer.invoke('get-camera-settings', credentials),
-  setCameraSettings: (data) => ipcRenderer.invoke('set-camera-settings', data),
-  restartMajestic: (credentials) => ipcRenderer.invoke('restart-majestic', credentials),
-  getCameraPulse: (credentials) => ipcRenderer.invoke('get-camera-pulse', credentials),
-  openSshTerminal: (camera) => ipcRenderer.invoke('open-ssh-terminal', camera),
-  showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
-  onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, args) => callback(args)),
-  onStreamDied: (callback) => ipcRenderer.on('stream-died', (event, uniqueStreamId) => callback(uniqueStreamId)),
-  getCameraInfo: (credentials) => ipcRenderer.invoke('get-camera-info', credentials),
-  getCameraTime: (credentials) => ipcRenderer.invoke('get-camera-time', credentials),
-  openFileManager: (camera) => ipcRenderer.invoke('open-file-manager', camera),
-  onStreamStats: (callback) => ipcRenderer.on('stream-stats', (event, stats) => callback(stats)),
-  openInBrowser: (ip) => ipcRenderer.invoke('open-in-browser', ip),
-  startRecording: (camera) => ipcRenderer.invoke('start-recording', camera),
-  stopRecording: (cameraId) => ipcRenderer.invoke('stop-recording', cameraId),
-  openRecordingsFolder: () => ipcRenderer.invoke('open-recordings-folder'),
-  onRecordingStateChange: (callback) => ipcRenderer.on('recording-state-change', (event, data) => callback(data)),
-  saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
-  loadAppSettings: () => ipcRenderer.invoke('load-app-settings'),
-  selectDirectory: () => ipcRenderer.invoke('select-directory'),
-  getRecordingsForDate: (data) => ipcRenderer.invoke('get-recordings-for-date', data),
-  exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
-  deleteRecording: (filename) => ipcRenderer.invoke('delete-recording', filename),
-  showRecordingInFolder: (filename) => ipcRenderer.invoke('show-recording-in-folder', filename),
-  onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-  discoverOnvifDevices: () => ipcRenderer.invoke('discover-onvif-devices'),
-  onOnvifDeviceFound: (callback) => ipcRenderer.on('onvif-device-found', (event, device) => callback(device)),
-  getTranslationFile: (lang) => ipcRenderer.invoke('get-translation-file', lang),
+    // Authentication & Users
+    login: (credentials) => ipcRenderer.invoke('login', credentials),
+    getUsers: () => ipcRenderer.invoke('get-users'),
+    addUser: (userData) => ipcRenderer.invoke('add-user', userData),
+    updateUserPassword: (userData) => ipcRenderer.invoke('update-user-password', userData),
+    updateUserRole: (userData) => ipcRenderer.invoke('update-user-role', userData),
+    updateUserPermissions: (userData) => ipcRenderer.invoke('update-user-permissions', userData),
+    deleteUser: (userData) => ipcRenderer.invoke('delete-user', userData),
+    onAutoLoginSuccess: (callback) => ipcRenderer.on('auto-login-success', (event, user) => callback(user)),
+    logoutClearCredentials: () => ipcRenderer.send('logout-clear-credentials'),
+    rendererReady: () => ipcRenderer.send('renderer-ready-for-autologin'),
+
+    // App Settings & Config
+    loadAppSettings: () => ipcRenderer.invoke('load-app-settings'),
+    saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
+    loadConfiguration: () => ipcRenderer.invoke('load-configuration'),
+    saveConfiguration: (config) => ipcRenderer.invoke('save-configuration', config),
+    selectDirectory: () => ipcRenderer.invoke('select-directory'),
+    getTranslationFile: (lang) => ipcRenderer.invoke('get-translation-file', lang),
+
+    // Camera Actions & Info
+    getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
+    getCameraTime: (camera) => ipcRenderer.invoke('get-camera-time', camera),
+    getCameraSettings: (camera) => ipcRenderer.invoke('get-camera-settings', camera),
+    setCameraSettings: (data) => ipcRenderer.invoke('set-camera-settings', data),
+    restartMajestic: (camera) => ipcRenderer.invoke('restart-majestic', camera),
+    startVideoStream: (streamData) => ipcRenderer.invoke('start-video-stream', streamData),
+    stopVideoStream: (streamId) => ipcRenderer.invoke('stop-video-stream', streamId),
+    openInBrowser: (ip) => ipcRenderer.invoke('open-in-browser', ip),
+    openFileManager: (camera) => ipcRenderer.invoke('open-file-manager', camera),
+    openSshTerminal: (camera) => ipcRenderer.invoke('open-ssh-terminal', camera),
+
+    // Video Analytics
+    toggleAnalytics: (cameraId) => ipcRenderer.invoke('toggle-analytics', cameraId),
+    onAnalyticsUpdate: (callback) => ipcRenderer.on('analytics-update', (event, data) => callback(data)),
+    onAnalyticsStatusChange: (callback) => ipcRenderer.on('analytics-status-change', (event, data) => callback(data)),
+
+    // Recording & Archive
+    startRecording: (camera) => ipcRenderer.invoke('start-recording', camera),
+    stopRecording: (cameraId) => ipcRenderer.invoke('stop-recording', cameraId),
+    onRecordingStateChange: (callback) => ipcRenderer.on('recording-state-change', (event, data) => callback(data)),
+    openRecordingsFolder: () => ipcRenderer.invoke('open-recordings-folder'),
+    getRecordingsForDate: (data) => ipcRenderer.invoke('get-recordings-for-date', data),
+    exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
+    
+    // VVV НОВЫЙ МЕТОД ДЛЯ ПОЛУЧЕНИЯ СОБЫТИЙ VVV
+    getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
+    // ^^^ КОНЕЦ НОВОГО МЕТОДА ^^^
+
+    // System & Events
+    getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
+    onStreamDied: (callback) => ipcRenderer.on('stream-died', (event, streamId) => callback(streamId)),
+    onStreamStats: (callback) => ipcRenderer.on('stream-stats', (event, data) => callback(data)),
+    showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
+    onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, data) => callback(data)),
+    killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
+    
+    // Updates
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
+
+    // ONVIF Discovery
+    discoverOnvifDevices: () => ipcRenderer.invoke('discover-onvif-devices'),
+    onOnvifDeviceFound: (callback) => ipcRenderer.on('onvif-device-found', (event, data) => callback(data)),
+    
+    // NETIP
+    discoverNetipDevices: () => ipcRenderer.invoke('discover-netip-devices'),
+    onNetipDeviceFound: (callback) => ipcRenderer.on('netip-device-found', (event, data) => callback(data)),
+    getNetipSettings: (camera) => ipcRenderer.invoke('get-netip-settings', camera),
+    setNetipSettings: (data) => ipcRenderer.invoke('set-netip-settings', data),
 });

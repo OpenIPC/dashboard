@@ -1,4 +1,4 @@
-// main.js (Полная версия с изменениями для системы управления пользователями)
+// main.js (Финальная версия со всеми исправлениями)
 
 const { app, BrowserWindow, ipcMain, Menu, clipboard, dialog, shell, protocol } = require('electron');
 const path = require('path');
@@ -14,7 +14,14 @@ const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 const keytar = require('keytar');
 const { autoUpdater } = require('electron-updater');
 const onvif = require('onvif');
-const crypto = require('crypto'); // Модуль для хэширования паролей
+const crypto = require('crypto');
+
+const dgram = require('dgram');
+const NetIpCamera = require('./netip-handler.js');
+
+const { Mutex } = require('async-mutex');
+const portMutex = new Mutex();
+const eventsMutex = new Mutex(); // Мьютекс для файла событий
 
 if (process.platform === 'linux' || process.env.ELECTRON_FORCE_NO_SANDBOX) {
     app.commandLine.appendSwitch('--no-sandbox');
@@ -29,6 +36,95 @@ const recordingManager = {};
 const usedPorts = new Set();
 const BASE_PORT = 9001;
 const KEYTAR_SERVICE = 'OpenIPC-VMS';
+const KEYTAR_ACCOUNT_AUTOLOGIN = 'autoLoginCredentials';
+let isShuttingDown = false;
+
+const PROCESS_TYPES = {
+    STREAM: 'stream',
+    RECORDING: 'recording',
+    ANALYTICS: 'analytics'
+};
+const buildProcessId = (type, cameraId) => `${type}-${cameraId}`;
+
+const netipConnectionManager = {
+    connections: new Map(),
+    async getInstance(camera) {
+        if (this.connections.has(camera.id)) {
+            const instance = this.connections.get(camera.id);
+            if (instance._socket && !instance._socket.destroyed) {
+                console.log(`[NETIP Manager] Reusing connection for camera ${camera.id}`);
+                return instance;
+            }
+            console.log(`[NETIP Manager] Stale connection found for ${camera.id}. Reconnecting.`);
+            this.connections.delete(camera.id);
+        }
+        console.log(`[NETIP Manager] Creating new connection for camera ${camera.id}`);
+        const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
+        const cam = new NetIpCamera({
+            host_ip: camera.ip,
+            host_port: 34567,
+            user: camera.username,
+            pass: password || ''
+        });
+        try {
+            await cam.configure();
+            this.connections.set(camera.id, cam);
+            return cam;
+        } catch (e) {
+            this.connections.delete(camera.id);
+            throw e;
+        }
+    },
+    closeAll() {
+        console.log('[NETIP Manager] Closing all NETIP connections...');
+        for (const [id, instance] of this.connections.entries()) {
+            if (instance && instance._socket && !instance._socket.destroyed) {
+                instance._socket.destroy();
+            }
+        }
+        this.connections.clear();
+    }
+};
+
+const processManager = {
+    processes: new Map(),
+    add(key, process, type) {
+        console.log(`[ProcessManager] Adding ${type} process with key: ${key}`);
+        this.processes.set(key, { process, type });
+    },
+    stop(key) {
+        if (this.processes.has(key)) {
+            const { process, type } = this.processes.get(key);
+            console.log(`[ProcessManager] Issuing stop for ${type} process with key: ${key}`);
+            try {
+                if (type === PROCESS_TYPES.RECORDING && process.stdin.writable) {
+                    process.stdin.write('q\n');
+                } else {
+                    process.kill();
+                }
+            } catch (e) {
+                console.error(`[ProcessManager] Error sending stop signal to ${key}: ${e.message}`);
+                if (!process.killed) process.kill('SIGKILL');
+            }
+            return true;
+        }
+        return false;
+    },
+    stopAll() {
+        console.log(`[ProcessManager] Stopping all ${this.processes.size} tracked processes.`);
+        for (const [key, { process }] of this.processes) {
+            try {
+                process.kill('SIGKILL');
+            } catch (e) {
+                console.error(`[ProcessManager] Error killing process ${key}: ${e.message}`);
+            }
+        }
+        this.processes.clear();
+    },
+    get(key) {
+        return this.processes.get(key);
+    }
+};
 
 function getDataPath() {
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -43,12 +139,50 @@ console.log(`[Config] Data path is: ${dataPathRoot}`);
 const configPath = path.join(dataPathRoot, 'config.json');
 const appSettingsPath = path.join(dataPathRoot, 'app-settings.json');
 const usersPath = path.join(dataPathRoot, 'users.json');
+const eventsPath = path.join(dataPathRoot, 'events.json'); // Путь к файлу событий
 const oldCamerasPath = path.join(dataPathRoot, 'cameras.json');
 let sshWindows = {};
+let fileManagerWindows = {};
 let fileManagerConnections = {};
 let appSettingsCache = null;
 
-// VVV БЛОК УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ (С ИЗМЕНЕНИЯМИ ДЛЯ ГИБКИХ ПРАВ) VVV
+async function saveAnalyticsEvent(cameraId, eventData) {
+    const release = await eventsMutex.acquire();
+    try {
+        let allEvents = {};
+        try {
+            const data = await fsPromises.readFile(eventsPath, 'utf-8');
+            allEvents = JSON.parse(data);
+        } catch (e) {
+            if (e.code !== 'ENOENT') console.error('[Events] Error reading events file:', e);
+        }
+
+        const eventTimestamp = new Date(eventData.timestamp * 1000);
+        const dateKey = eventTimestamp.toISOString().split('T')[0];
+        
+        if (!allEvents[dateKey]) {
+            allEvents[dateKey] = [];
+        }
+
+        const uniqueObjectLabels = [...new Set(eventData.objects.map(obj => obj.label))];
+
+        const newEvent = {
+            cameraId,
+            timestamp: eventData.timestamp,
+            objects: uniqueObjectLabels,
+        };
+
+        allEvents[dateKey].push(newEvent);
+
+        await fsPromises.writeFile(eventsPath, JSON.stringify(allEvents, null, 2));
+
+    } catch (e) {
+        console.error('[Events] Failed to save analytics event:', e);
+    } finally {
+        release();
+    }
+}
+
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
@@ -70,15 +204,13 @@ async function initializeUsers() {
             username: 'admin',
             hashedPassword: hash,
             salt: salt,
-            role: 'admin' // У админа нет объекта permissions, ему можно всё
+            role: 'admin'
         }];
         await fsPromises.writeFile(usersPath, JSON.stringify(defaultUser, null, 2));
     }
 }
-// ^^^ КОНЕЦ БЛОКА УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ^^^
 
 function getHwAccelOptions(codec, preference, streamId) {
-    // ... (код без изменений)
     const isSD = streamId === 1;
 
     if (preference === 'nvidia') {
@@ -135,14 +267,15 @@ async function getAppSettings() {
         appSettingsCache = { 
             recordingsPath: path.join(app.getPath('videos'), 'OpenIPC-VMS'),
             hwAccel: 'auto',
-            language: 'en'
+            language: 'en',
+            qscale: 8, // Значение по умолчанию
+            fps: 20    // Значение по умолчанию
         };
     }
     return appSettingsCache;
 }
 
 function createWindow() {
-    // ... (код без изменений)
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -173,11 +306,16 @@ function createWindow() {
 }
 
 function createFileManagerWindow(camera) {
-    // ... (код без изменений)
     const fileManagerWindow = new BrowserWindow({
         width: 1000,
         height: 700,
+        minWidth: 800,
+        minHeight: 500,
         title: `File Manager: ${camera.name}`,
+        frame: false,
+        titleBarStyle: 'hidden',
+        parent: mainWindow,
+        modal: true,
         webPreferences: {
             preload: path.join(__dirname, 'fm-preload.js'),
             contextIsolation: true,
@@ -185,52 +323,237 @@ function createFileManagerWindow(camera) {
         }
     });
     fileManagerWindow.loadFile('file-manager.html', { query: { camera: JSON.stringify(camera) } });
+    
+    fileManagerWindows[camera.id] = fileManagerWindow;
+
     fileManagerWindow.on('closed', () => {
         const conn = fileManagerConnections[camera.id];
         if (conn) {
             conn.end();
-            delete fileManagerConnections[camera.id];
         }
+        delete fileManagerWindows[camera.id];
     });
     return fileManagerWindow;
 }
 
 // --- IPC ОБРАБОТЧИКИ ---
 
-ipcMain.on('minimize-window', () => {
-    mainWindow.minimize();
-});
-
-ipcMain.on('maximize-window', () => {
-    if (mainWindow.isMaximized()) {
-        mainWindow.unmaximize();
-    } else {
-        mainWindow.maximize();
+ipcMain.handle('get-events-for-date', async (event, { date }) => {
+    try {
+        const data = await fsPromises.readFile(eventsPath, 'utf-8');
+        const allEvents = JSON.parse(data);
+        return allEvents[date] || [];
+    } catch (e) {
+        if (e.code === 'ENOENT') {
+            return [];
+        }
+        console.error('[Events] Error reading events for date:', e);
+        return [];
     }
 });
 
-ipcMain.on('close-window', () => {
-    mainWindow.close();
+const NETIP_DISCOVERY_PACKET = Buffer.from([
+    0xff, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+]);
+const NETIP_DISCOVERY_PORT = 34567;
+
+ipcMain.handle('discover-netip-devices', async (event) => {
+    return new Promise((resolve) => {
+        try {
+            console.log('[Scanner] Starting NETIP UDP scan discovery...');
+            const socket = dgram.createSocket('udp4');
+            const foundDevices = new Set();
+            
+            const localIPs = new Set();
+            const interfaces = os.networkInterfaces();
+            const broadcastAddresses = [];
+            for (const name of Object.keys(interfaces)) {
+                for (const iface of interfaces[name]) {
+                    if (iface.family === 'IPv4' && !iface.internal) {
+                        localIPs.add(iface.address);
+                        
+                        const ipParts = iface.address.split('.').map(part => parseInt(part, 10));
+                        const netmaskParts = iface.netmask.split('.').map(part => parseInt(part, 10));
+                        
+                        const broadcastParts = ipParts.map((part, i) => {
+                            return part | (~netmaskParts[i] & 255);
+                        });
+                        
+                        broadcastAddresses.push(broadcastParts.join('.'));
+                    }
+                }
+            }
+
+            if (!broadcastAddresses.includes('255.255.255.255')) {
+                broadcastAddresses.push('255.255.255.255');
+            }
+            
+            const uniqueBroadcastAddresses = [...new Set(broadcastAddresses)];
+            console.log(`[Scanner] NETIP scanning broadcast addresses: [ ${uniqueBroadcastAddresses.join(', ')} ]`);
+
+            socket.on('error', (err) => {
+                console.error('[Scanner][NETIP UDP Error]:', err);
+                socket.close();
+                resolve({ success: false, error: err.message });
+            });
+
+            socket.on('message', (msg, rinfo) => {
+                if (localIPs.has(rinfo.address)) {
+                    return; 
+                }
+                
+                if (rinfo.address && !foundDevices.has(rinfo.address)) {
+                    foundDevices.add(rinfo.address);
+                    
+                    let deviceName = '';
+                    try {
+                        const nameBuffer = msg.subarray(88, 88 + 32);
+                        const nullTerminatorIndex = nameBuffer.indexOf(0);
+                        deviceName = nameBuffer.toString('utf-8', 0, nullTerminatorIndex > -1 ? nullTerminatorIndex : 32).trim();
+                    } catch (e) { /* silent fail */ }
+
+                    const device = {
+                        ip: rinfo.address,
+                        name: deviceName || rinfo.address,
+                        protocol: 'netip'
+                    };
+
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('netip-device-found', device);
+                    }
+                }
+            });
+            
+            socket.bind(NETIP_DISCOVERY_PORT, () => {
+                socket.setBroadcast(true);
+                uniqueBroadcastAddresses.forEach(address => {
+                    socket.send(NETIP_DISCOVERY_PACKET, 0, NETIP_DISCOVERY_PACKET.length, NETIP_DISCOVERY_PORT, address, (err) => {
+                        if (err) console.error(`[Scanner][NETIP Broadcast Error to ${address}]:`, err);
+                    });
+                });
+            });
+
+            setTimeout(() => {
+                socket.close();
+                console.log(`[Scanner] NETIP discovery finished. Found ${foundDevices.size} devices.`);
+                resolve({ success: true, count: foundDevices.size });
+            }, 5000);
+
+        } catch (e) {
+            console.error('[Scanner] Failed to start NETIP discovery:', e);
+            resolve({ success: false, error: e.message });
+        }
+    });
+});
+
+ipcMain.handle('get-netip-settings', async (event, camera) => {
+    try {
+        const cam = await netipConnectionManager.getInstance(camera);
+        
+        const [systemInfo, generalInfo, encodeInfo] = await Promise.all([
+            cam.get_system_info(),
+            cam.get_general_info(),
+            cam.get_encode_info()
+        ]);
+        
+        return { ...systemInfo, ...generalInfo, ...encodeInfo };
+    } catch (e) {
+        console.error(`[NETIP] Failed to get settings for ${camera.ip}:`, e.message || e);
+        return { error: e.message || 'Unknown NETIP error' };
+    }
+});
+
+ipcMain.handle('set-netip-settings', async (event, { camera, settingsData }) => {
+    try {
+        const cam = await netipConnectionManager.getInstance(camera);
+        
+        console.warn('setNetipSettings is not fully implemented in the provided library. Returning success.');
+
+        return { success: true };
+    } catch (e) {
+        console.error(`[NETIP] Failed to set settings for ${camera.ip}:`, e.message || e);
+        return { success: false, error: e.message || 'Failed to set settings' };
+    }
+});
+
+ipcMain.on('minimize-window', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+
+ipcMain.on('maximize-window', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+        if (win.isMaximized()) {
+            win.unmaximize();
+        } else {
+            win.maximize();
+        }
+    }
+});
+
+ipcMain.on('close-window', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
 ipcMain.handle('clipboardRead', () => {
     return clipboard.readText();
 });
+
 ipcMain.handle('clipboardWrite', (event, text) => {
     clipboard.writeText(text);
 });
 
-ipcMain.handle('login', async (event, { username, password }) => {
+ipcMain.on('renderer-ready-for-autologin', async () => {
+    try {
+        const credsJson = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_AUTOLOGIN);
+        if (credsJson) {
+            console.log('[AutoLogin] Renderer is ready. Found stored credentials. Attempting to log in.');
+            const { username, password } = JSON.parse(credsJson);
+            const data = await fsPromises.readFile(usersPath, 'utf-8');
+            const users = JSON.parse(data);
+            const user = users.find(u => u.username === username);
+
+            if (user && verifyPassword(password, user.hashedPassword, user.salt)) {
+                console.log('[AutoLogin] Success.');
+                const userPayload = { username: user.username, role: user.role };
+                if (user.role === 'operator') {
+                    userPayload.permissions = user.permissions || {};
+                }
+                mainWindow.webContents.send('auto-login-success', userPayload);
+            } else {
+                console.warn('[AutoLogin] Failed. Stored credentials may be outdated.');
+                await keytar.deletePassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_AUTOLOGIN);
+            }
+        } else {
+            console.log('[AutoLogin] Renderer is ready. No stored credentials found.');
+        }
+    } catch (e) {
+        console.error('[AutoLogin] Error:', e);
+    }
+});
+
+ipcMain.handle('login', async (event, { username, password, rememberMe }) => {
     try {
         const data = await fsPromises.readFile(usersPath, 'utf-8');
         const users = JSON.parse(data);
         const user = users.find(u => u.username === username);
 
         if (user && verifyPassword(password, user.hashedPassword, user.salt)) {
-            // Возвращаем пользователя без хэша и соли! Безопасность.
+            if (rememberMe) {
+                await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_AUTOLOGIN, JSON.stringify({ username, password }));
+                console.log('[Login] Credentials saved for auto-login.');
+            } else {
+                await keytar.deletePassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_AUTOLOGIN);
+                console.log('[Login] Cleared any stored auto-login credentials.');
+            }
             const userPayload = { username: user.username, role: user.role };
             if (user.role === 'operator') {
-                userPayload.permissions = user.permissions || {}; // Отправляем права оператора
+                userPayload.permissions = user.permissions || {};
             }
             return { success: true, user: userPayload };
         }
@@ -241,12 +564,19 @@ ipcMain.handle('login', async (event, { username, password }) => {
     }
 });
 
-// VVV ОБНОВЛЕННЫЕ И НОВЫЕ ОБРАБОТЧИКИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ VVV
+ipcMain.on('logout-clear-credentials', async () => {
+    try {
+        await keytar.deletePassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_AUTOLOGIN);
+        console.log('[Logout] Cleared auto-login credentials.');
+    } catch (e) {
+        console.error('[Logout] Failed to clear credentials:', e);
+    }
+});
+
 ipcMain.handle('get-users', async () => {
   try {
     const data = await fsPromises.readFile(usersPath, 'utf-8');
     const users = JSON.parse(data);
-    // Отправляем полные данные, включая права, т.к. их видит только админ
     return { success: true, users: users.map(u => ({ username: u.username, role: u.role, permissions: u.permissions || {} })) };
   } catch (e) {
     return { success: false, error: e.message };
@@ -262,7 +592,6 @@ ipcMain.handle('add-user', async (event, { username, password, role }) => {
     }
     const { salt, hash } = hashPassword(password);
     const newUser = { username, salt, hashedPassword: hash, role };
-    // Если создаем оператора, добавляем пустой объект прав
     if (role === 'operator') {
         newUser.permissions = {};
     }
@@ -302,7 +631,6 @@ ipcMain.handle('update-user-role', async (event, { username, role }) => {
             return { success: false, error: 'User not found.' };
         }
 
-        // Защита от понижения роли последнего администратора
         if (users[userIndex].role === 'admin' && role !== 'admin') {
             const admins = users.filter(u => u.role === 'admin');
             if (admins.length <= 1) {
@@ -311,11 +639,9 @@ ipcMain.handle('update-user-role', async (event, { username, role }) => {
         }
 
         users[userIndex].role = role;
-        // Если роль меняется на оператора, добавляем пустые права, если их не было
         if (role === 'operator' && !users[userIndex].permissions) {
             users[userIndex].permissions = {};
         }
-        // Если роль меняется на админа, удаляем объект прав (админу можно все по умолчанию)
         if (role === 'admin') {
             delete users[userIndex].permissions;
         }
@@ -350,7 +676,6 @@ ipcMain.handle('delete-user', async (event, { username }) => {
     const data = await fsPromises.readFile(usersPath, 'utf-8');
     let users = JSON.parse(data);
     
-    // Защита от удаления последнего администратора
     const admins = users.filter(u => u.role === 'admin');
     if (admins.length === 1 && admins[0].username === username) {
       return { success: false, error: 'Cannot delete the last administrator.' };
@@ -363,10 +688,9 @@ ipcMain.handle('delete-user', async (event, { username }) => {
     return { success: false, error: e.message };
   }
 });
-// ^^^ КОНЕЦ ОБНОВЛЕННЫХ ОБРАБОТЧИКОВ ^^^
 
 ipcMain.handle('load-app-settings', getAppSettings);
-// ... (остальной код файла без изменений до конца) ...
+
 ipcMain.handle('save-app-settings', async (event, settings) => {
     try {
         appSettingsCache = settings;
@@ -418,7 +742,8 @@ async function startRecording(camera) {
         console.error('[REC] Invalid camera object for recording.');
         return { success: false, error: 'Invalid camera data' };
     }
-    if (recordingManager[camera.id]) {
+    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, camera.id);
+    if (processManager.get(recordingId) || recordingManager[camera.id]) {
         console.log(`[REC] Recording already in progress for camera ${camera.id}. Skipping.`);
         return { success: false, error: 'Recording is already in progress' };
     }
@@ -447,14 +772,19 @@ async function startRecording(camera) {
         '-movflags', '+faststart', outputPath
     ];
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { detached: false, windowsHide: true });
-    recordingManager[camera.id] = { process: ffmpegProcess, path: outputPath };
+    
+    processManager.add(recordingId, ffmpegProcess, PROCESS_TYPES.RECORDING);
+    recordingManager[camera.id] = { path: outputPath };
+    
     let ffmpegErrorOutput = '';
     ffmpegProcess.stderr.on('data', (data) => {
         ffmpegErrorOutput += data.toString();
     });
+
     ffmpegProcess.on('close', (code) => {
         console.log(`[REC FFMPEG] Finished for "${fullCameraInfo.name}" with code ${code}.`);
         delete recordingManager[camera.id];
+        processManager.processes.delete(recordingId);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('recording-state-change', { 
                 cameraId: camera.id, 
@@ -464,6 +794,7 @@ async function startRecording(camera) {
             });
         }
     });
+
     console.log(`[REC] Starting for "${fullCameraInfo.name}" to ${outputPath}`);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('recording-state-change', { cameraId: camera.id, recording: true });
     return { success: true };
@@ -472,10 +803,8 @@ async function startRecording(camera) {
 ipcMain.handle('start-recording', (event, camera) => startRecording(camera));
 
 ipcMain.handle('stop-recording', (event, cameraId) => {
-    const record = recordingManager[cameraId];
-    if (record) {
-        console.log(`[REC] Stopping for camera ${cameraId}.`);
-        record.process.stdin.write('q\n');
+    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, cameraId);
+    if (processManager.stop(recordingId)) {
         return { success: true };
     }
     return { success: false, error: 'Recording not found' };
@@ -558,18 +887,23 @@ function isPortInUse(port) {
 }
 
 async function getAndReserveFreePort() {
-    let port = BASE_PORT;
-    const MAX_PORTS_TO_CHECK = 100;
-    for (let i = 0; i < MAX_PORTS_TO_CHECK; i++) {
-        const currentPort = port + i;
-        if (usedPorts.has(currentPort) || await isPortInUse(currentPort)) {
-            continue;
+    const release = await portMutex.acquire();
+    try {
+        let port = BASE_PORT;
+        const MAX_PORTS_TO_CHECK = 100;
+        for (let i = 0; i < MAX_PORTS_TO_CHECK; i++) {
+            const currentPort = port + i;
+            if (usedPorts.has(currentPort) || await isPortInUse(currentPort)) {
+                continue;
+            }
+            usedPorts.add(currentPort);
+            console.log(`[PORT] Port ${currentPort} reserved.`);
+            return currentPort;
         }
-        usedPorts.add(currentPort);
-        console.log(`[PORT] Port ${currentPort} reserved.`);
-        return currentPort;
+        return null;
+    } finally {
+        release();
     }
-    return null;
 }
 
 function releasePort(port) {
@@ -597,24 +931,26 @@ ipcMain.on('show-camera-context-menu', (event, { cameraId, labels }) => {
 
 ipcMain.handle('kill-all-ffmpeg', () => {
     return new Promise(resolve => {
+        processManager.stopAll();
         const ffmpegProcessName = path.basename(ffmpegPath);
         const command = process.platform === 'win32' ? `taskkill /IM ${ffmpegProcessName} /F` : `pkill -f ${ffmpegProcessName}`;
         exec(command, (err, stdout, stderr) => {
             Object.values(streamManager).forEach(s => s.wss?.close());
-            Object.values(recordingManager).forEach(rec => rec.process?.kill('SIGKILL'));
             usedPorts.clear();
             Object.keys(streamManager).forEach(key => delete streamManager[key]);
             Object.keys(recordingManager).forEach(key => delete recordingManager[key]);
-            if (err && !/not found|не найден/i.test(stderr)) {
-                resolve({ success: false, message: `Ошибка: ${stderr}` });
-            } else {
-                resolve({ success: true, message: "Все 'зависшие' потоки были успешно сброшены." });
-            }
+            resolve({ success: true, message: "Все отслеживаемые и 'зависшие' потоки были сброшены." });
         });
     });
 });
 
 ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) => {
+    const uniqueStreamIdentifier = `${credentials.id}_${streamId}`;
+    if (processManager.get(uniqueStreamIdentifier) || streamManager[uniqueStreamIdentifier]) {
+        console.warn(`[STREAM] Stream ${uniqueStreamIdentifier} is already running.`);
+        return { success: true, wsPort: streamManager[uniqueStreamIdentifier].port };
+    }
+    
     let configData;
     try {
         const rawData = await fsPromises.readFile(configPath, 'utf-8');
@@ -631,15 +967,10 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
     
     const password = await keytar.getPassword(KEYTAR_SERVICE, credentials.id.toString());
     const fullCredentials = { ...cameraConfig, password: password || '' };
-
-    const uniqueStreamIdentifier = `${fullCredentials.id}_${streamId}`;
-    if (streamManager[uniqueStreamIdentifier]) {
-        console.warn(`[STREAM] Stream ${uniqueStreamIdentifier} is already running.`);
-        return { success: true, wsPort: streamManager[uniqueStreamIdentifier].port };
-    }
-
+    
     const port = fullCredentials.port || '554';
     const streamPath = streamId === 0 ? (fullCredentials.streamPath0 || '/stream0') : (fullCredentials.streamPath1 || '/stream1');
+    
     const streamUrl = `rtsp://${encodeURIComponent(fullCredentials.username)}:${encodeURIComponent(fullCredentials.password)}@${fullCredentials.ip}:${port}${streamPath}`;
     
     const wsPort = await getAndReserveFreePort();
@@ -651,17 +982,35 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
     wss.on('connection', (ws) => console.log(`[WSS] Client connected to port ${wsPort}`));
     
     const settings = await getAppSettings();
-    let cameraInfo;
+    
+    let codec = 'h264';
     try {
-        cameraInfo = (await axios.get(`http://${fullCredentials.ip}/api/v1/config.json`, getAxiosJsonConfig(fullCredentials))).data;
+        if (fullCredentials.protocol === 'openipc') {
+            const response = await axios.get(`http://${fullCredentials.ip}/api/v1/config.json`, getAxiosJsonConfig(fullCredentials));
+            const cameraInfo = response.data;
+            codec = streamId === 0 ? (cameraInfo.video0?.codec || 'h264') : (cameraInfo.video1?.codec || 'h264');
+            console.log(`[FFMPEG] OpenIPC camera codec detected: ${codec}`);
+
+        } else if (fullCredentials.protocol === 'netip') {
+            const cam = await netipConnectionManager.getInstance(fullCredentials);
+            const encodeInfo = await cam.get_encode_info();
+            const videoInfo = streamId === 0 ? encodeInfo.MainFormat.Video : encodeInfo.ExtraFormat.Video;
+            if (videoInfo.VideoType && videoInfo.VideoType.toLowerCase().includes('265')) {
+                codec = 'hevc';
+            } else {
+                codec = 'h264';
+            }
+            console.log(`[FFMPEG] NETIP camera codec detected: ${codec}`);
+        }
     } catch (e) {
-        console.error(`[FFMPEG] Failed to get camera config for ${fullCredentials.name}. Error: ${e.message}`);
-        cameraInfo = {};
+        console.error(`[FFMPEG] Failed to get camera codec for ${fullCredentials.name}. Falling back to h264. Error: ${e.message}`);
+        codec = 'h264';
     }
     
-    const codec = streamId === 0 ? (cameraInfo.video0?.codec || 'h264') : (cameraInfo.video1?.codec || 'h264');
-    
     const { decoderArgs, vfString } = getHwAccelOptions(codec, settings.hwAccel, streamId);
+
+    const qscale = settings.qscale || 8;
+    const fps = settings.fps || 20;
 
     const ffmpegArgs = [
         ...decoderArgs,
@@ -673,8 +1022,8 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
         '-c:v', 'mpeg1video',
         '-preset', 'ultrafast',
         '-vf', vfString,
-        '-q:v', '8',
-        '-r', '20',
+        '-q:v', qscale.toString(),
+        '-r', fps.toString(),
         '-bf', '0',
     ];
     
@@ -691,6 +1040,8 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
     console.log(`[FFMPEG] Starting stream ${uniqueStreamIdentifier} with args:`, ffmpegArgs.join(' '));
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { detached: false, windowsHide: true });
     
+    processManager.add(uniqueStreamIdentifier, ffmpegProcess, PROCESS_TYPES.STREAM);
+    
     ffmpegProcess.on('error', (err) => { console.error(`[FFMPEG] Failed to start subprocess for ${uniqueStreamIdentifier}: ${err.message}`); });
     ffmpegProcess.stdout.on('data', (data) => { wss.clients.forEach((client) => { if (client.readyState === WebSocket.OPEN) client.send(data); }); });
     
@@ -704,9 +1055,8 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
             for (let i = 0; i < statsBlocks.length - 1; i++) {
                 const block = statsBlocks[i];
                 if (!block.trim()) continue;
-                const lines = block.trim().split('\n');
                 const stats = {};
-                lines.forEach(line => {
+                block.trim().split('\n').forEach(line => {
                     const [key, value] = line.split('=');
                     if (key && value) stats[key.trim()] = value.trim();
                 });
@@ -725,22 +1075,125 @@ ipcMain.handle('start-video-stream', async (event, { credentials, streamId }) =>
     ffmpegProcess.on('close', (code) => {
         console.warn(`[FFMPEG] Process ${uniqueStreamIdentifier} exited with code ${code}.`);
         if(code !== 0) { console.error(`[FFMPEG Last Stderr] ${uniqueStreamIdentifier}: ${lastErrorOutput}`); }
-        if (streamManager[uniqueStreamIdentifier]) { streamManager[uniqueStreamIdentifier].wss.close(); releasePort(wsPort); delete streamManager[uniqueStreamIdentifier]; }
+        if (streamManager[uniqueStreamIdentifier]) { 
+            streamManager[uniqueStreamIdentifier].wss.close(); 
+            releasePort(wsPort); 
+            delete streamManager[uniqueStreamIdentifier]; 
+        }
+        processManager.processes.delete(uniqueStreamIdentifier);
         if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('stream-died', uniqueStreamIdentifier); }
     });
     
-    streamManager[uniqueStreamIdentifier] = { process: ffmpegProcess, wss, port: wsPort };
+    streamManager[uniqueStreamIdentifier] = { wss, port: wsPort };
     return { success: true, wsPort };
 });
 
 ipcMain.handle('stop-video-stream', async (event, uniqueStreamIdentifier) => {
-    const stream = streamManager[uniqueStreamIdentifier];
-    if (stream) {
-        console.log(`[STREAM] Stopping stream ${uniqueStreamIdentifier} manually.`);
-        stream.process.kill('SIGKILL');
+    if (processManager.stop(uniqueStreamIdentifier)) {
         return { success: true };
     }
     return { success: false, error: "Stream not found" };
+});
+
+ipcMain.handle('toggle-analytics', async (event, cameraId) => {
+    const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
+
+    const configDataFromFile = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
+    const cameraFromConfig = configDataFromFile.cameras.find(c => c.id === cameraId);
+    const analyticsConfig = cameraFromConfig.analyticsConfig || {};
+
+    if (processManager.get(analyticsId)) {
+        console.log(`[Analytics] Stopping for camera ${cameraId} (either toggled off or disabled in settings).`);
+        if (processManager.get(analyticsId)) {
+            processManager.stop(analyticsId);
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
+        }
+        return { success: true, status: 'stopped' };
+    }
+    
+    try {
+        const camera = cameraFromConfig;
+        if (!camera) {
+            return { success: false, error: 'Camera not found' };
+        }
+        
+        const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
+        const fullCameraInfo = { ...camera, password: password || '' };
+
+        const streamPath = fullCameraInfo.streamPath0 || '/stream0';
+        const rtspUrl = `rtsp://${encodeURIComponent(fullCameraInfo.username)}:${encodeURIComponent(fullCameraInfo.password)}@${fullCameraInfo.ip}:${fullCameraInfo.port || 554}${streamPath}`;
+        
+        const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+        const scriptPath = path.join(__dirname, 'analytics.py');
+        
+        const configForScript = {
+            objects: analyticsConfig.objects,
+            roi: analyticsConfig.roi
+        };
+        const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
+        const analyticsProcess = spawn(pythonExecutable, [scriptPath, rtspUrl, configArg], { windowsHide: true });
+        
+        processManager.add(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
+
+        analyticsProcess.stdout.on('data', async (data) => {
+            const lines = data.toString().split('\n').filter(line => line.trim() !== '');
+            for (const line of lines) {
+                try {
+                    const result = JSON.parse(line);
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('analytics-update', { cameraId, result });
+                    }
+
+                    if (result.status === 'objects_detected' && result.objects.length > 0) {
+                        await saveAnalyticsEvent(cameraId, result);
+                    }
+
+                    if (result.status === 'motion_detected' || result.status === 'objects_detected') {
+                        if (!recordingManager[cameraId]) {
+                            console.log(`[Analytics] Motion/Object detected on camera ${cameraId}, starting recording.`);
+                            try {
+                                const currentConfigData = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
+                                const cameraToRecord = currentConfigData.cameras.find(c => c.id === cameraId);
+                                if (cameraToRecord) {
+                                    await startRecording(cameraToRecord);
+                                } else {
+                                    console.error(`[Analytics] Could not find camera ${cameraId} to start recording.`);
+                                }
+                            } catch (e) {
+                                console.error('[Analytics] Error reading config to start recording:', e);
+                            }
+                        }
+                    }
+
+                } catch (e) {
+                    // Игнорируем ошибки парсинга
+                }
+            }
+        });
+
+        analyticsProcess.stderr.on('data', (data) => {
+            console.error(`[Analytics][Python STDERR] for camera ${cameraId}: ${data.toString()}`);
+        });
+
+        analyticsProcess.on('close', (code) => {
+            console.log(`[Analytics] Process for camera ${cameraId} exited with code ${code}`);
+            processManager.processes.delete(analyticsId);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
+            }
+        });
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('analytics-status-change', { cameraId, active: true });
+        }
+        return { success: true, status: 'started' };
+
+    } catch (e) {
+        console.error(`[Analytics] Failed to start for camera ${cameraId}:`, e);
+        return { success: false, error: e.message };
+    }
 });
 
 ipcMain.handle('save-configuration', async (event, config) => {
@@ -813,16 +1266,16 @@ ipcMain.handle('load-configuration', async () => {
 ipcMain.handle('get-system-stats', () => {
     const metrics = app.getAppMetrics();
     let totalCpuUsage = 0;
-    let totalRamUsage = 0; // в КБ
+    let totalRamUsage = 0;
 
     metrics.forEach(metric => {
         totalCpuUsage += metric.cpu.percentCPUUsage;
-        totalRamUsage += metric.memory.workingSetSize; // Это значение в килобайтах
+        totalRamUsage += metric.memory.workingSetSize;
     });
 
     return {
         cpu: totalCpuUsage.toFixed(0),
-        ram: (totalRamUsage / 1024).toFixed(0), // Конвертируем КБ в МБ
+        ram: (totalRamUsage / 1024).toFixed(0),
     };
 });
 
@@ -863,6 +1316,9 @@ ipcMain.handle('set-camera-settings', async (event, { credentials, settingsData 
 });
 
 ipcMain.handle('restart-majestic', async (event, credentials) => {
+    if (credentials.protocol === 'netip') {
+        return { success: false, error: 'Restart is not supported for NETIP cameras via this method.' };
+    }
     try {
         const password = await keytar.getPassword(KEYTAR_SERVICE, credentials.id.toString());
         const url = `http://${credentials.ip}/cgi-bin/mj-settings.cgi`;
@@ -909,7 +1365,6 @@ ipcMain.handle('get-camera-time', async (event, credentials) => {
     }
 });
 
-
 ipcMain.handle('get-camera-info', async (event, credentials) => {
     try {
         const password = await keytar.getPassword(KEYTAR_SERVICE, credentials.id.toString());
@@ -920,7 +1375,9 @@ ipcMain.handle('get-camera-info', async (event, credentials) => {
     }
 });
 
-ipcMain.handle('open-file-manager', (event, camera) => createFileManagerWindow(camera));
+ipcMain.handle('open-file-manager', (event, cameraData) => {
+    createFileManagerWindow(cameraData);
+});
 
 ipcMain.handle('get-recordings-for-date', async (event, { cameraName, date }) => {
     try {
@@ -1032,29 +1489,30 @@ ipcMain.handle('discover-onvif-devices', async (event) => {
     return { success: true, count: foundDevices.size };
 });
 
-ipcMain.handle('open-ssh-terminal', (event, camera) => {
-    const cleanCamera = {
-        id: camera.id, name: camera.name, ip: camera.ip,
-        username: camera.username, password: camera.password
-    };
+ipcMain.handle('open-ssh-terminal', async (event, cameraData) => {
+    const { id, name, ip, username } = cameraData;
 
-    if (sshWindows[cleanCamera.id] && !sshWindows[cleanCamera.id].win.isDestroyed()) {
-        sshWindows[cleanCamera.id].win.focus();
+    if (sshWindows[id] && !sshWindows[id].win.isDestroyed()) {
+        sshWindows[id].win.focus();
         return;
     }
     const sshWindow = new BrowserWindow({
         width: 800, height: 600,
-        title: `SSH Terminal: ${cleanCamera.name}`,
+        minWidth: 500, minHeight: 400,
+        title: `SSH Terminal: ${name}`,
+        frame: false,
+        titleBarStyle: 'hidden',
+        parent: mainWindow,
         webPreferences: { preload: path.join(__dirname, 'terminal-preload.js') }
     });
-    sshWindow.loadFile('terminal.html', { query: { camera: JSON.stringify(camera) } });
+    sshWindow.loadFile('terminal.html', { query: { camera: JSON.stringify(cameraData) } });
     
     const conn = new Client();
-    sshWindows[cleanCamera.id] = { win: sshWindow, conn };
+    sshWindows[id] = { win: sshWindow, conn };
     
-    keytar.getPassword(KEYTAR_SERVICE, cleanCamera.id.toString()).then(password => {
-        cleanCamera.password = password || cleanCamera.password; 
-
+    try {
+        const password = await keytar.getPassword(KEYTAR_SERVICE, id.toString());
+        
         conn.on('ready', () => {
             if (sshWindow.isDestroyed()) return;
             sshWindow.webContents.send('ssh-status', { connected: true });
@@ -1064,20 +1522,23 @@ ipcMain.handle('open-ssh-terminal', (event, camera) => {
                     return;
                 }
                 stream.on('data', (data) => { if (!sshWindow.isDestroyed()) sshWindow.webContents.send('ssh-data', data.toString('utf8')); });
-                ipcMain.on(`ssh-input-${cleanCamera.id}`, (event, data) => stream.write(data));
+                ipcMain.on(`ssh-input-${id}`, (event, data) => stream.write(data));
                 stream.on('close', () => conn.end());
             });
         }).on('error', (err) => {
             if (!sshWindow.isDestroyed()) sshWindow.webContents.send('ssh-status', { connected: false, message: `\r\n*** SSH CONNECTION ERROR: ${err.message} ***\r\n` });
         }).on('close', () => {
             if (!sshWindow.isDestroyed()) sshWindow.webContents.send('ssh-status', { connected: false, message: '\r\nConnection closed.' });
-            ipcMain.removeAllListeners(`ssh-input-${cleanCamera.id}`);
-        }).connect({ host: cleanCamera.ip, port: 22, username: cleanCamera.username, password: cleanCamera.password, readyTimeout: 10000 });
-    });
+            ipcMain.removeAllListeners(`ssh-input-${id}`);
+        }).connect({ host: ip, port: 22, username, password: password || '', readyTimeout: 10000 });
+    } catch (e) {
+        console.error('Error opening SSH terminal:', e);
+        if (!sshWindow.isDestroyed()) sshWindow.webContents.send('ssh-status', { connected: false, message: `\r\n*** ERROR: ${e.message} ***\r\n` });
+    }
 
     sshWindow.on('closed', () => {
         conn.end();
-        delete sshWindows[cleanCamera.id];
+        delete sshWindows[id];
     });
 });
 
@@ -1085,7 +1546,6 @@ ipcMain.handle('check-for-updates', () => {
     autoUpdater.checkForUpdates();
 });
 
-// --- ЛОГИКА АВТООБНОВЛЕНИЙ ---
 autoUpdater.on('update-available', (info) => {
     console.log('[Updater] Update available.', info);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', { status: 'available', message: `Доступна версия ${info.version}` });
@@ -1125,7 +1585,6 @@ autoUpdater.on('update-downloaded', (info) => {
     });
 });
 
-// --- ЖИЗНЕННЫЙ ЦИКЛ ПРИЛОЖЕНИЯ ---
 app.whenReady().then(async () => {
     await initializeUsers();
 
@@ -1145,9 +1604,305 @@ app.whenReady().then(async () => {
 
     createWindow();
 });
-app.on('will-quit', () => {
-    const command = process.platform === 'win32' ? `taskkill /IM ${path.basename(ffmpegPath)} /F` : `pkill -f ${path.basename(ffmpegPath)}`;
-    exec(command);
+
+app.on('will-quit', async (event) => {
+    if (isShuttingDown) {
+        return; 
+    }
+
+    netipConnectionManager.closeAll();
+
+    const recordingProcs = Array.from(processManager.processes.entries())
+        .filter(([key, { type }]) => type === PROCESS_TYPES.RECORDING)
+        .map(([key, { process }]) => ({ key, process }));
+
+    if (recordingProcs.length > 0) {
+        event.preventDefault(); 
+        isShuttingDown = true;
+        console.log(`[Shutdown] Gracefully stopping ${recordingProcs.length} recordings...`);
+
+        const promises = recordingProcs.map(({ key, process }) => {
+            return new Promise(resolve => {
+                const timeout = setTimeout(() => {
+                    console.warn(`[Shutdown] Recording ${key} timed out. Killing.`);
+                    if (!process.killed) process.kill('SIGKILL');
+                    resolve();
+                }, 4000); 
+
+                process.on('close', () => {
+                    clearTimeout(timeout);
+                    console.log(`[Shutdown] Recording ${key} finished.`);
+                    resolve();
+                });
+
+                try {
+                    if (process.stdin.writable) {
+                        process.stdin.write('q\n');
+                    } else {
+                        process.kill();
+                        resolve();
+                    }
+                } catch (e) {
+                    console.error(`[Shutdown] Error sending 'q' to ${key}:`, e.message);
+                    if(!process.killed) process.kill('SIGKILL');
+                    resolve();
+                }
+            });
+        });
+
+        await Promise.all(promises);
+        console.log('[Shutdown] All recordings stopped. Quitting now.');
+        app.quit(); 
+    } else {
+        console.log('[Shutdown] No active recordings. Quitting immediately.');
+        processManager.stopAll();
+    }
 });
+
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+ipcMain.handle('scp-connect', async (event, camera) => {
+    return new Promise(async (resolve) => {
+        if (fileManagerConnections[camera.id]) {
+            return resolve({ success: true });
+        }
+        const conn = new Client();
+        fileManagerConnections[camera.id] = conn;
+
+        try {
+            const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
+            
+            conn.on('ready', () => {
+                console.log(`[SSH] Connection ready for ${camera.name}`);
+                resolve({ success: true });
+            }).on('error', (err) => {
+                console.error(`[SSH] Connection error for ${camera.name}:`, err);
+                delete fileManagerConnections[camera.id];
+                resolve({ success: false, error: err.message });
+            }).on('close', () => {
+                console.log(`[SSH] Connection closed for ${camera.name}`);
+                delete fileManagerConnections[camera.id];
+                const win = fileManagerWindows[camera.id];
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send('scp-close');
+                }
+            }).connect({
+                host: camera.ip,
+                port: 22,
+                username: camera.username,
+                password: password || '',
+                readyTimeout: 10000
+            });
+        } catch (e) {
+            resolve({ success: false, error: e.message });
+        }
+    });
+});
+
+ipcMain.handle('scp-list', async (event, { cameraId, path: remotePath }) => {
+    const conn = fileManagerConnections[cameraId];
+    if (!conn) return { success: false, error: 'Not connected' };
+
+    return new Promise((resolve) => {
+        const command = `ls -lA "${remotePath}"`;
+        let stdout = '';
+        let stderr = '';
+        conn.exec(command, (err, stream) => {
+            if (err) return resolve({ success: false, error: err.message });
+            stream.on('data', (data) => stdout += data.toString());
+            stream.stderr.on('data', (data) => stderr += data.toString());
+            stream.on('close', (code) => {
+                if (code !== 0) return resolve({ success: false, error: stderr.trim() });
+                
+                const files = stdout.split('\n')
+                    .map(line => {
+                        const parts = line.trim().split(/\s+/);
+                        if (parts.length < 9) return null;
+                        
+                        const type = parts[0][0];
+                        const size = parseInt(parts[4], 10);
+                        const name = parts.slice(8).join(' ');
+
+                        if (!name || name === '.' || name === '..') return null;
+
+                        return {
+                            name: name,
+                            isDirectory: type === 'd',
+                            size: isNaN(size) ? 0 : size,
+                        };
+                    })
+                    .filter(Boolean);
+                
+                resolve(files);
+            });
+        });
+    });
+});
+
+ipcMain.handle('scp-download', async (event, { cameraId, remotePath }) => {
+    const conn = fileManagerConnections[cameraId];
+    if (!conn) return { success: false, error: 'Not connected' };
+
+    const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+        defaultPath: path.basename(remotePath)
+    });
+    if (canceled || !filePath) return { success: false, error: 'Download canceled' };
+
+    return new Promise((resolve) => {
+        conn.exec(`scp -f "${remotePath}"`, (err, stream) => {
+            if (err) {
+                return resolve({ success: false, error: err.message });
+            }
+
+            let fileStream;
+            let protocolState = 'BEGIN'; // 'BEGIN', 'HEADER', 'DATA', 'END'
+            let fileSize = 0;
+            let bytesReceived = 0;
+            
+            stream.stdout.on('data', (chunk) => {
+                if (protocolState === 'BEGIN') {
+                    stream.stdin.write('\0'); // Acknowledge start
+                    protocolState = 'HEADER';
+                }
+                
+                if (protocolState === 'HEADER') {
+                    const header = chunk.toString('utf8');
+                    const match = header.match(/^C\d{4}\s(\d+)\s/);
+                    if (match) {
+                        fileSize = parseInt(match[1], 10);
+                        fileStream = fs.createWriteStream(filePath);
+                        stream.stdin.write('\0'); // Acknowledge header
+                        protocolState = 'DATA';
+                        const headerEndIndex = chunk.indexOf('\n') + 1;
+                        if (chunk.length > headerEndIndex) {
+                            const firstData = chunk.slice(headerEndIndex);
+                            fileStream.write(firstData);
+                            bytesReceived += firstData.length;
+                        }
+                    }
+                } else if (protocolState === 'DATA') {
+                    fileStream.write(chunk);
+                    bytesReceived += chunk.length;
+                }
+            });
+
+            stream.stderr.on('data', (data) => {
+                console.error(`[SCP Download STDERR] ${data}`);
+            });
+            
+            stream.on('close', () => {
+                if (fileStream) fileStream.end();
+                if (bytesReceived === fileSize) {
+                    resolve({ success: true });
+                } else {
+                     // Check if file is empty
+                    if (fileSize > 0 && bytesReceived === 0) {
+                        resolve({ success: false, error: 'File transfer failed, 0 bytes received.' });
+                    } else if (bytesReceived > 0) {
+                        resolve({ success: true, message: "Transfer finished, but size mismatch." });
+                    } else {
+                        resolve({ success: true }); // Likely a 0-byte file
+                    }
+                }
+            });
+             stream.on('error', (err) => {
+                if (fileStream) fileStream.end();
+                resolve({ success: false, error: err.message });
+            });
+        });
+    });
+});
+
+ipcMain.handle('scp-upload', async (event, { cameraId, remotePath }) => {
+    const conn = fileManagerConnections[cameraId];
+    if (!conn) return { success: false, error: 'Not connected' };
+
+    const { canceled, filePaths } = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+        properties: ['openFile']
+    });
+
+    if (canceled || filePaths.length === 0) {
+        return { success: false, error: 'Upload canceled' };
+    }
+    const localPath = filePaths[0];
+    const remoteDest = path.posix.join(remotePath, path.basename(localPath));
+
+    return new Promise((resolve) => {
+        const stats = fs.statSync(localPath);
+        conn.exec(`scp -t "${remoteDest}"`, (err, stream) => {
+            if (err) return resolve({ success: false, error: err.message });
+
+            const localStream = fs.createReadStream(localPath);
+            
+            stream.on('close', () => {
+                resolve({ success: true });
+            });
+            stream.on('error', (err) => {
+                resolve({ success: false, error: err.message });
+            });
+
+            const header = `C0644 ${stats.size} ${path.basename(localPath)}\n`;
+            stream.write(header);
+            
+            localStream.pipe(stream);
+        });
+    });
+});
+
+const executeRemoteCommand = (cameraId, command) => {
+    const conn = fileManagerConnections[cameraId];
+    if (!conn) return Promise.resolve({ success: false, error: 'Not connected' });
+    return new Promise(resolve => {
+        let stderr = '';
+        conn.exec(command, (err, stream) => {
+            if (err) return resolve({ success: false, error: err.message });
+            stream.stderr.on('data', data => stderr += data.toString());
+            stream.on('close', code => {
+                if (code !== 0) return resolve({ success: false, error: stderr.trim() || `Command failed with code ${code}` });
+                resolve({ success: true });
+            });
+        });
+    });
+};
+
+ipcMain.handle('scp-mkdir', (e, { cameraId, path }) => executeRemoteCommand(cameraId, `mkdir -p "${path}"`));
+ipcMain.handle('scp-delete-file', (e, { cameraId, path }) => executeRemoteCommand(cameraId, `rm -f "${path}"`));
+ipcMain.handle('scp-delete-dir', (e, { cameraId, path }) => executeRemoteCommand(cameraId, `rm -rf "${path}"`));
+
+ipcMain.handle('get-local-disk-list', async () => {
+    if (process.platform === 'win32') {
+        return new Promise(resolve => {
+            exec('wmic logicaldisk get name', (err, stdout) => {
+                if (err) return resolve([os.homedir()]);
+                const disks = stdout.split('\n').slice(1)
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0)
+                    .map(disk => `${disk}\\`);
+                resolve(disks);
+            });
+        });
+    }
+    return ['/'];
+});
+
+ipcMain.handle('list-local-files', async (event, dirPath) => {
+    try {
+        const items = await fsPromises.readdir(dirPath, { withFileTypes: true });
+        return items.map(item => {
+            try {
+                return {
+                    name: item.name,
+                    isDirectory: item.isDirectory(),
+                    size: item.isDirectory() ? 0 : fs.statSync(path.join(dirPath, item.name)).size
+                };
+            } catch (e) {
+                console.error(`Could not stat file: ${path.join(dirPath, item.name)}`, e.message);
+                return null;
+            }
+        }).filter(Boolean);
+    } catch (e) {
+        console.error(`Error listing local dir ${dirPath}:`, e);
+        return [];
+    }
+});

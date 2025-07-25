@@ -72,12 +72,14 @@ document.addEventListener('DOMContentLoaded', () => {
         progressBarFill.classList.remove('pulse');
     }
     
+    // VVV ИЗМЕНЕНИЕ: Новая функция для неопределенного прогресса VVV
     function showIndeterminateProgress() {
         progressBarContainer.style.display = 'block';
         statusTextEl.style.display = 'none';
         progressBarFill.style.width = '100%';
         progressBarFill.classList.add('pulse');
     }
+    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
     function hideProgress() {
         progressBarContainer.style.display = 'none';
@@ -218,6 +220,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownload.addEventListener('click', async () => {
         if (!selectedRemoteFile || selectedRemoteFile.isDirectory || !await ensureConnection()) return;
         setBusy(true, `Скачивание ${selectedRemoteFile.name}...`);
+        // VVV ИЗМЕНЕНИЕ: Используем неопределенный индикатор VVV
+        showIndeterminateProgress();
+        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         const remoteFilePath = pathModule.posix.join(remotePath, selectedRemoteFile.name);
         try {
@@ -238,6 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnUpload.addEventListener('click', async () => {
         if (!selectedLocalFile || selectedLocalFile.isDirectory || !await ensureConnection()) return;
         setBusy(true, `Загрузка ${selectedLocalFile.name}...`);
+        // VVV ИЗМЕНЕНИЕ: Используем неопределенный индикатор VVV
+        showIndeterminateProgress();
+        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
         try {
             const result = await window.scpApi.upload(camera.id, remotePath);
              if (result.success) {
@@ -323,7 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(e.key === 'Enter') await listLocalFiles(localPathInput.value);
     });
 
-    window.scpApi.onProgress(updateProgress);
+    // SCP не возвращает прогресс, поэтому этот обработчик больше не будет вызываться
+    window.scpApi.onProgress(updateProgress); 
     window.scpApi.onClose(() => {
         setStatus('Соединение с камерой закрыто.', true);
         remoteFileListEl.innerHTML = '';

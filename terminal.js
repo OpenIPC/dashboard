@@ -1,8 +1,8 @@
 const urlParams = new URLSearchParams(window.location.search);
 const camera = JSON.parse(urlParams.get('camera'));
-document.title = `SSH: ${camera.name} (${camera.ip})`;
+// document.title больше не нужен, так как у нас свой заголовок
+// document.title = `SSH: ${camera.name} (${camera.ip})`;
 
-// Обратите внимание: Terminal и FitAddon теперь доступны глобально после подключения скриптов
 const term = new Terminal({
     cursorBlink: true,
     fontFamily: 'Consolas, "Courier New", monospace',
@@ -18,7 +18,9 @@ const term = new Terminal({
 const fitAddon = new FitAddon.FitAddon();
 term.loadAddon(fitAddon);
 
+// VVV ИЗМЕНЕНИЕ: Открываем терминал в правильном контейнере VVV
 term.open(document.getElementById('terminal'));
+// ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 fitAddon.fit();
 
 window.addEventListener('resize', () => fitAddon.fit());

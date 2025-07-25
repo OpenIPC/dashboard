@@ -29,10 +29,27 @@
             return () => subscribers.delete(callback);
         };
         
+        // VVV НОВЫЙ ХЕЛПЕР VVV
+        // Хелпер для поиска и гарантированного получения активной раскладки.
+        // Если раскладок нет, он создает одну по умолчанию.
+        function getActiveLayout(state) {
+            if (!state.layouts || state.layouts.length === 0) {
+                // Создаем раскладку по умолчанию, если ничего нет
+                const defaultLayout = { id: Date.now(), name: 'Default', gridState: Array(64).fill(null), layout: { cols: 2, rows: 2 } };
+                state.layouts = [defaultLayout];
+                state.activeLayoutId = defaultLayout.id;
+            }
+            return state.layouts.find(l => l.id === state.activeLayoutId) || state.layouts[0];
+        }
+        // ^^^ КОНЕЦ НОВОГО ХЕЛПЕРА ^^^
+
         // Привязываем мутации к нашему менеджеру, чтобы они могли изменять состояние
         const boundMutations = {};
+        // VVV ИЗМЕНЕНИЕ: Создаем объект с хелперами для передачи в мутации VVV
+        const helpers = { getActiveLayout };
         for (const key in mutations) {
-            boundMutations[key] = mutations[key].bind(null, state);
+            // Передаем state и helpers как первые аргументы в каждую мутацию
+            boundMutations[key] = mutations[key].bind(null, state, helpers);
         }
 
         return {
@@ -41,5 +58,4 @@
             ...boundMutations
         };
     };
-
 })(window);

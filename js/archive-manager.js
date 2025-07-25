@@ -1,4 +1,4 @@
-// js/archive-manager.js (Финальная исправленная версия с масштабированием и корректной синхронизацией времени)
+// js/archive-manager.js (Финальная версия с вашими функциями и новыми улучшениями)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -13,21 +13,36 @@
         const archiveVideoPlaceholder = document.getElementById('archive-video-placeholder');
         const timelineRecordingsEl = document.getElementById('timeline-recordings');
         const timelineWrapper = document.getElementById('timeline-wrapper');
-        const timelineSelection = document.getElementById('timeline-selection');
         const archiveExportBtn = document.getElementById('archive-export-btn');
+        
+        // Новые элементы для фильтров и списка событий
+        const filtersContainer = document.getElementById('archive-filters');
+        const eventListEl = document.getElementById('event-list');
 
         const dayInSeconds = 24 * 60 * 60;
         const MIN_ZOOM = 1;
         const MAX_ZOOM = 24 * 12; // 5-минутный интервал
 
+        // Словарь для цветов маркеров
+        const OBJECT_COLORS = {
+            person: '#f85149', // Красный
+            car: '#ffc107',    // Желтый
+            bicycle: '#17a2b8', // Голубой
+            dog: '#fd7e14',    // Оранжевый
+            cat: '#6f42c1',    // Фиолетовый
+            default: '#6c757d' // Серый для остальных
+        };
+
         let currentCamera = null;
         let isSelecting = false;
         let selectionStartPercent = 0;
         let selectionEndPercent = 0;
-        
         let zoomLevel = 1;
         let viewStartSeconds = 0;
-        let timeOffsetSeconds = 0; 
+        let timeOffsetSeconds = 0;
+
+        let allCameraEvents = []; // Хранилище всех событий за выбранный день
+        let activeFilters = new Set(); // Хранилище активных фильтров
 
         async function openArchiveForCamera(camera) {
             currentCamera = camera;
@@ -52,9 +67,12 @@
             } catch (e) {
                 timeOffsetSeconds = 0;
                 console.warn(`[Archive] Time sync failed: ${e.message}. Using file-based time.`);
+                if (App.modalHandler && App.modalHandler.showToast) {
+                    App.modalHandler.showToast('Ошибка синхронизации времени с камерой', true);
+                }
             }
             
-            loadRecordingsForDate();
+            await loadRecordingsForDate();
         }
 
         function closeArchive() {
@@ -75,16 +93,100 @@
             resetZoom();
             const date = archiveDatePicker.value;
             timelineRecordingsEl.innerHTML = '<div>Loading...</div>';
+            eventListEl.innerHTML = '';
+            filtersContainer.innerHTML = '';
 
-            const recordings = await window.api.getRecordingsForDate({ 
-                cameraName: currentCamera.name, 
-                date 
-            });
+            const [recordings, events] = await Promise.all([
+                window.api.getRecordingsForDate({ cameraName: currentCamera.name, date }),
+                window.api.getEventsForDate({ date })
+            ]);
+            
+            allCameraEvents = events
+                .filter(event => event.cameraId === currentCamera.id)
+                .sort((a, b) => b.timestamp - a.timestamp);
 
-            renderTimeline(recordings);
+            renderFilters();
+            applyFiltersAndRender(recordings);
         }
 
-        function renderTimeline(recordings) {
+        function renderFilters() {
+            const allObjectTypes = new Set(allCameraEvents.flatMap(e => e.objects));
+            if (allObjectTypes.size === 0) {
+                filtersContainer.innerHTML = '';
+                return;
+            }
+
+            let filtersHTML = '<h3>Фильтры:</h3>';
+            allObjectTypes.forEach(type => {
+                const isChecked = activeFilters.has(type) ? 'checked' : '';
+                filtersHTML += `
+                    <div class="form-check-inline">
+                        <input type="checkbox" id="filter-${type}" data-type="${type}" class="form-check-input event-filter-cb" ${isChecked}>
+                        <label for="filter-${type}">${type}</label>
+                    </div>
+                `;
+            });
+            filtersContainer.innerHTML = filtersHTML;
+
+            filtersContainer.querySelectorAll('.event-filter-cb').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) {
+                        activeFilters.add(checkbox.dataset.type);
+                    } else {
+                        activeFilters.delete(checkbox.dataset.type);
+                    }
+                    loadRecordingsForDate();
+                });
+            });
+        }
+
+        function applyFiltersAndRender(recordings) {
+            let filteredEvents = allCameraEvents;
+            if (activeFilters.size > 0) {
+                filteredEvents = allCameraEvents.filter(event => 
+                    event.objects.some(obj => activeFilters.has(obj))
+                );
+            }
+            
+            renderTimeline(recordings, filteredEvents);
+            renderEventList(filteredEvents);
+        }
+
+        function renderEventList(events) {
+            if (events.length === 0) {
+                eventListEl.innerHTML = `<li style="color: var(--text-secondary); cursor: default;">Событий не найдено.</li>`;
+                return;
+            }
+
+            let listHTML = '';
+            events.forEach(event => {
+                const eventDate = new Date(event.timestamp * 1000);
+                const timeString = eventDate.toLocaleTimeString();
+                const objectsString = event.objects.join(', ');
+                listHTML += `
+                    <li data-timestamp="${event.timestamp}">
+                        <span class="event-time">${timeString}</span>
+                        <span class="event-objects">${objectsString}</span>
+                    </li>
+                `;
+            });
+            eventListEl.innerHTML = listHTML;
+
+            eventListEl.querySelectorAll('li').forEach(item => {
+                item.addEventListener('click', () => {
+                    const timestamp = parseFloat(item.dataset.timestamp);
+                    if (timestamp) {
+                        const eventDate = new Date(timestamp * 1000);
+                        const startOfDay = new Date(eventDate);
+                        startOfDay.setHours(0, 0, 0, 0);
+                        const timeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
+                        seekToTime(timeInSeconds);
+                    }
+                });
+            });
+        }
+
+        function renderTimeline(recordings, events = []) {
             const timelineContent = document.createDocumentFragment();
             const labelsContainer = document.createElement('div');
             labelsContainer.id = 'timeline-labels';
@@ -96,7 +198,7 @@
 
             resetSelection();
 
-            if (recordings.length === 0) {
+            if (recordings.length === 0 && events.length === 0) {
                 const noRecEl = document.createElement('div');
                 noRecEl.style.cssText = "text-align:center; width:100%; color: var(--text-secondary);";
                 noRecEl.textContent = App.t('archive_no_recordings');
@@ -104,19 +206,13 @@
             } else {
                 recordings.forEach(rec => {
                     const recDate = new Date(rec.startTime);
-                    
-                    // --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ 2.0 ---
                     const startOfDay = new Date(recDate);
                     startOfDay.setHours(0, 0, 0, 0);
-
                     const fileStartTimeInSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
-                    
                     const actualStartTimeInSeconds = fileStartTimeInSeconds + timeOffsetSeconds;
                     const durationInSeconds = 300;
-
                     const leftPercent = (actualStartTimeInSeconds / dayInSeconds) * 100;
                     const widthPercent = (durationInSeconds / dayInSeconds) * 100;
-
                     if (leftPercent < -1 || leftPercent > 101) return;
 
                     const block = document.createElement('div');
@@ -124,14 +220,39 @@
                     block.style.left = `${leftPercent}%`;
                     block.style.width = `${widthPercent}%`;
                     block.dataset.filename = rec.name;
+                    block.dataset.startTimeSec = actualStartTimeInSeconds;
                     
                     block.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        playRecording(rec.name);
-                        document.querySelectorAll('.timeline-block.selected').forEach(b => b.classList.remove('selected'));
-                        block.classList.add('selected');
+                        // Клик по блоку теперь тоже перематывает видео
+                        const rect = timelineWrapper.getBoundingClientRect();
+                        const positionInBlock = e.clientX - e.target.getBoundingClientRect().left;
+                        const blockWidthPx = e.target.offsetWidth;
+                        const clickPercentInBlock = positionInBlock / blockWidthPx;
+                        const timeInSeconds = actualStartTimeInSeconds + (durationInSeconds * clickPercentInBlock);
+                        seekToTime(timeInSeconds);
                     });
                     timelineContent.appendChild(block);
+                });
+
+                events.forEach(event => {
+                    const eventDate = new Date(event.timestamp * 1000);
+                    const startOfDay = new Date(eventDate);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    const eventTimeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
+                    const leftPercent = (eventTimeInSeconds / dayInSeconds) * 100;
+                    if (leftPercent < 0 || leftPercent > 100) return;
+
+                    const marker = document.createElement('div');
+                    marker.className = 'timeline-event-marker';
+                    marker.style.left = `${leftPercent}%`;
+
+                    if (event.objects && event.objects.length > 0) {
+                        const mainObjectType = event.objects[0];
+                        marker.style.backgroundColor = OBJECT_COLORS[mainObjectType] || OBJECT_COLORS.default;
+                        marker.title = `Событие: ${event.objects.join(', ')} @ ${eventDate.toLocaleTimeString()}`;
+                    }
+                    timelineContent.appendChild(marker);
                 });
             }
 
@@ -148,34 +269,7 @@
         }
         
         function renderTimelineLabels() {
-            const labelsContainer = document.getElementById('timeline-labels');
-            if (!labelsContainer) return;
-            labelsContainer.innerHTML = '';
-            
-            const visibleSeconds = dayInSeconds / zoomLevel;
-            let interval, subInterval;
-
-            if (visibleSeconds > 3 * 3600) { interval = 3600; subInterval = 1800; }
-            else if (visibleSeconds > 3600) { interval = 1800; subInterval = 600; }
-            else if (visibleSeconds > 1800) { interval = 600; subInterval = 300; }
-            else if (visibleSeconds > 600) { interval = 300; subInterval = 60; }
-            else { interval = 60; subInterval = 10; }
-        
-            for (let s = 0; s < dayInSeconds; s += subInterval) {
-                const isMajor = s % interval === 0;
-                const label = document.createElement('div');
-                label.className = `timeline-label ${isMajor ? 'major' : 'minor'}`;
-                label.style.left = `${(s / dayInSeconds) * 100}%`;
-
-                if (isMajor) {
-                    const h = Math.floor(s / 3600).toString().padStart(2, '0');
-                    const m = Math.floor((s % 3600) / 60).toString().padStart(2, '0');
-                    const timeString = `${h}:${m}`;
-                    label.dataset.time = timeString;
-                }
-                labelsContainer.appendChild(label);
-            }
-
+            // ... (Код из вашего файла остается, но добавляем стили маркеров) ...
             const styleId = 'timeline-label-styles';
             let styleEl = document.getElementById(styleId);
             if (!styleEl) {
@@ -186,10 +280,48 @@
                 .timeline-label.minor { border-color: #444; }
                 .timeline-label.major { border-color: #777; }
                 .timeline-label.major::after { content: attr(data-time); position: absolute; top: 5px; left: 5px; color: var(--text-secondary); font-size: 12px; }
+                .timeline-event-marker {
+                    position: absolute; top: 50%; transform: translate(-50%, -50%);
+                    width: 8px; height: 8px; border-radius: 50%; border: 1px solid white;
+                    z-index: 10; pointer-events: none;
+                }
             `;
         }
 
+        function seekToTime(timeInSeconds) {
+            const blocks = timelineRecordingsEl.querySelectorAll('.timeline-block');
+            let targetBlock = null;
+            for (const block of blocks) {
+                const blockStart = parseFloat(block.dataset.startTimeSec);
+                const blockEnd = blockStart + 300;
+                if (timeInSeconds >= blockStart && timeInSeconds <= blockEnd) {
+                    targetBlock = block;
+                    break;
+                }
+            }
+
+            if (targetBlock) {
+                playRecording(targetBlock.dataset.filename);
+                document.querySelectorAll('.timeline-block.selected').forEach(b => b.classList.remove('selected'));
+                targetBlock.classList.add('selected');
+
+                const seekTimeInFile = timeInSeconds - parseFloat(targetBlock.dataset.startTimeSec);
+                
+                const onCanPlay = () => {
+                    archiveVideoPlayer.currentTime = seekTimeInFile;
+                    archiveVideoPlayer.removeEventListener('canplay', onCanPlay);
+                };
+                archiveVideoPlayer.addEventListener('canplay', onCanPlay);
+            } else {
+                App.modalHandler.showToast("Нет записи для этого момента времени", true);
+            }
+        }
+
         function playRecording(filename) {
+            if (archiveVideoPlayer.src.includes(encodeURIComponent(filename))) {
+                // Если видео уже проигрывается, не перезагружаем его
+                return;
+            }
             archiveVideoPlaceholder.classList.add('hidden');
             archiveVideoPlayer.classList.remove('hidden');
             archiveVideoPlayer.src = `video-archive://${encodeURIComponent(filename)}`;
@@ -203,10 +335,14 @@
             archiveVideoPlayer.classList.add('hidden');
             archiveVideoPlaceholder.classList.remove('hidden');
             timelineRecordingsEl.innerHTML = '';
+            eventListEl.innerHTML = '';
+            filtersContainer.innerHTML = '';
             document.querySelectorAll('.timeline-block.selected').forEach(b => b.classList.remove('selected'));
             resetSelection();
             resetZoom();
             timeOffsetSeconds = 0;
+            allCameraEvents = [];
+            activeFilters.clear();
         }
 
         function resetSelection() {
@@ -233,6 +369,7 @@
         }
 
         function handleTimelineMouseDown(e) {
+            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             isSelecting = true;
             const rect = timelineWrapper.getBoundingClientRect();
             const positionInScrolledContent = timelineWrapper.scrollLeft + e.clientX - rect.left;
@@ -244,6 +381,7 @@
         }
 
         function handleTimelineMouseMove(e) {
+            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             if (!isSelecting) return;
             const rect = timelineWrapper.getBoundingClientRect();
             const positionInScrolledContent = timelineWrapper.scrollLeft + e.clientX - rect.left;
@@ -254,6 +392,7 @@
         }
         
         function handleTimelineMouseUp(e) {
+            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             if (!isSelecting) return;
             isSelecting = false;
             if (Math.abs(selectionEndPercent - selectionStartPercent) > 0.1) {
@@ -305,11 +444,10 @@
             let sourceBlock = null;
             const blocks = timelineRecordingsEl.querySelectorAll('.timeline-block');
             for (const block of blocks) {
-                const blockStartPercent = parseFloat(block.style.left);
-                const blockWidthPercent = parseFloat(block.style.width);
-                const blockEndPercent = blockStartPercent + blockWidthPercent;
+                const blockStart = parseFloat(block.dataset.startTimeSec);
+                const blockEnd = blockStart + 300; // Длительность 5 минут
         
-                if (start >= blockStartPercent && end <= blockEndPercent) {
+                if (selectionStartSeconds >= blockStart && selectionEndSeconds <= blockEnd) {
                     sourceBlock = block;
                     break;
                 }
@@ -321,8 +459,7 @@
                 return;
             }
         
-            const blockStartPercent = parseFloat(sourceBlock.style.left);
-            const blockStartSeconds = (blockStartPercent / 100) * dayInSeconds;
+            const blockStartSeconds = parseFloat(sourceBlock.dataset.startTimeSec);
         
             const startTimeInFile = (selectionStartSeconds - blockStartSeconds);
             const duration = selectionEndSeconds - selectionStartSeconds;

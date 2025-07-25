@@ -4,16 +4,79 @@
     <meta charset="UTF-8">
     <title>SSH Терминал</title>
     <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: #1e1e1e;}
+        :root {
+            --bg-color: #1e1e1e; --text-color: #d4d4d4; --border-color: #333;
+            --header-bg: #3c3c3c; --danger-color: #f85149;
+        }
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-color); }
+        .container { display: flex; flex-direction: column; height: 100vh; border: 1px solid var(--border-color); }
+        
+        /* VVV ИЗМЕНЕНИЕ: Стили для кастомного заголовка VVV */
+        .header {
+            height: 32px; background-color: var(--header-bg); display: flex;
+            align-items: center; padding-left: 12px; flex-shrink: 0;
+            -webkit-app-region: drag;
+        }
+        .header .title { flex-grow: 1; font-weight: 500; color: var(--text-color); font-family: sans-serif; font-size: 14px;}
+        .window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+        .window-control-btn {
+            background: none; border: none; color: var(--text-color);
+            padding: 0 15px; cursor: pointer; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s;
+        }
+        .window-control-btn i { font-size: 18px; }
+        .window-control-btn:hover { background-color: rgba(255,255,255,0.1); }
+        .window-control-btn.close-btn:hover { background-color: var(--danger-color); color: white; }
+        /* ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ */
+        
+        #terminal-container { flex-grow: 1; padding: 5px; }
         #terminal { height: 100%; width: 100%; }
     </style>
 </head>
 <body>
-    <div id="terminal"></div>
+    <div class="container">
+        <!-- VVV ИЗМЕНЕНИЕ: Добавлен кастомный заголовок VVV -->
+        <div class="header">
+            <div class="title" id="window-title">SSH Терминал</div>
+            <div class="window-controls">
+                <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
+                <button id="maximize-btn" class="window-control-btn"><i class="material-icons">crop_square</i></button>
+                <button id="close-btn" class="window-control-btn close-btn"><i class="material-icons">close</i></button>
+            </div>
+        </div>
+        <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
+
+        <div id="terminal-container">
+            <div id="terminal"></div>
+        </div>
+    </div>
     
     <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
     <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    
+    <!-- VVV ИЗМЕНЕНИЕ: Добавлен скрипт для кнопок управления VVV -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const camera = JSON.parse(new URLSearchParams(window.location.search).get('camera'));
+            document.getElementById('window-title').textContent = `SSH: ${camera.name} (${camera.ip})`;
+
+            document.getElementById('minimize-btn').addEventListener('click', () => window.terminalApi.minimize());
+            document.getElementById('maximize-btn').addEventListener('click', () => window.terminalApi.maximize());
+            document.getElementById('close-btn').addEventListener('click', () => window.terminalApi.close());
+            
+            window.terminalApi.onWindowMaximized(() => {
+                document.getElementById('maximize-btn').innerHTML = '<i class="material-icons">filter_none</i>';
+            });
+            window.terminalApi.onWindowUnmaximized(() => {
+                document.getElementById('maximize-btn').innerHTML = '<i class="material-icons">crop_square</i>';
+            });
+        });
+    </script>
+    <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
+
     <script src="./terminal.js"></script>
 </body>
 </html>

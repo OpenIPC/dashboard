@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('scpApi', {
+    // VVV ИЗМЕНЕНИЕ: Добавлены функции управления окном VVV
+    minimize: () => ipcRenderer.send('minimize-window'),
+    maximize: () => ipcRenderer.send('maximize-window'),
+    close: () => ipcRenderer.send('close-window'),
+    onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', callback),
+    onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', callback),
+    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
+
     connect: (camera) => ipcRenderer.invoke('scp-connect', camera),
     list: (cameraId, path) => ipcRenderer.invoke('scp-list', { cameraId, path }),
     download: (cameraId, remotePath) => ipcRenderer.invoke('scp-download', { cameraId, remotePath }),

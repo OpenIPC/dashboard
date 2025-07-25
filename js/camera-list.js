@@ -1,4 +1,4 @@
-// js/camera-list.js (Полная версия с изменениями для системы пользователей)
+// js/camera-list.js (Полная версия с изменениями для системы пользователей и видеоаналитики)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -8,24 +8,37 @@
         const cameraListContainer = document.getElementById('camera-list-container');
         const openRecordingsBtn = document.getElementById('open-recordings-btn');
 
+        // VVV ИЗМЕНЕНИЕ: Параллельный опрос статусов VVV
+        // Эта функция теперь опрашивает все камеры одновременно, а не по очереди.
+        // Это предотвращает задержки в обновлении UI, если одна из камер медленно отвечает.
         async function pollCameraStatuses() {
-            for (const camera of stateManager.state.cameras) {
+            const cameras = stateManager.state.cameras;
+            const statusPromises = cameras.map(async (camera) => {
                 const statusIcon = document.getElementById(`status-icon-${camera.id}`);
                 if (statusIcon) {
                     try {
                         const pulse = await window.api.getCameraPulse(camera);
+                        // Обновляем иконку сразу, как только получаем ответ от конкретной камеры
                         statusIcon.classList.toggle('online', pulse.success);
                     } catch (e) {
                         statusIcon.classList.remove('online');
                     }
                 }
-            }
+            });
+
+            // Ждём, пока все запросы не будут выполнены, чтобы функция завершилась корректно
+            await Promise.all(statusPromises);
         }
+        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         async function deleteCamera(cameraId) {
             if (confirm(App.i18n.t('confirm_delete_camera'))) {
                 if (stateManager.state.recordingStates[cameraId]) {
                     await window.api.stopRecording(cameraId);
+                }
+                const analyticsBtn = document.getElementById(`analytics-btn-${cameraId}`);
+                if (analyticsBtn && analyticsBtn.classList.contains('active')) {
+                    await window.api.toggleAnalytics(cameraId);
                 }
                 stateManager.deleteCamera(cameraId);
             }
@@ -50,15 +63,35 @@
                     const cameraItem = document.createElement('div');
                     cameraItem.className = 'camera-item';
                     cameraItem.dataset.cameraId = camera.id;
-                    // VVV ИЗМЕНЕНИЕ: Перетаскивание доступно только администратору VVV
                     cameraItem.draggable = App.stateManager.state.currentUser?.role === 'admin';
-                    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
-                    cameraItem.innerHTML = `<i class="status-icon" id="status-icon-${camera.id}"></i><span>${camera.name}</span><div class="rec-indicator"></div>`;
+                    
+                    cameraItem.innerHTML = `
+                        <i class="status-icon" id="status-icon-${camera.id}"></i>
+                        <span>${camera.name}</span>
+                        <div class="camera-item-buttons" style="margin-left: auto; display: flex; gap: 5px;">
+                            <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics"><i class="material-icons" style="font-size: 18px;">insights</i></button>
+                        </div>
+                        <div class="rec-indicator"></div>
+                    `;
+
                     if (recordingStates[camera.id]) {
                         cameraItem.classList.add('recording');
                     }
                     cameraItem.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', camera.id.toString()); });
                     groupCamerasList.appendChild(cameraItem);
+
+                    const analyticsBtn = cameraItem.querySelector('.analytics-btn');
+                    if (analyticsBtn) {
+                        analyticsBtn.disabled = false;
+                        analyticsBtn.title = App.i18n.t('toggle_analytics_tooltip');
+
+                        analyticsBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            const btnIcon = analyticsBtn.querySelector('i');
+                            btnIcon.style.color = '#ffc107';
+                            await window.api.toggleAnalytics(camera.id);
+                        });
+                    }
                 });
         
                 groupContainer.appendChild(groupHeader);
@@ -109,18 +142,15 @@
             
             cameraListContainer.addEventListener('contextmenu', (e) => {
                 const currentUser = App.stateManager.state.currentUser;
-                // VVV ИЗМЕНЕНИЕ: Блокируем контекстное меню для операторов без прав VVV
                 if (currentUser?.role !== 'admin' && !(currentUser.permissions?.edit_cameras || currentUser.permissions?.delete_cameras || currentUser.permissions?.access_settings || currentUser.permissions?.view_archive)) {
                     e.preventDefault();
                     return;
                 }
-                // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
                 const cameraItem = e.target.closest('.camera-item');
                 if (cameraItem) {
                     e.preventDefault();
                     const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
-                    // Динамически строим меню на основе прав
                     const menuItems = {};
                     
                     menuItems.open_in_browser = `🌐  ${App.i18n.t('context_open_in_browser')}`;
@@ -154,7 +184,6 @@
                     ip: camera.ip,
                     port: camera.port,
                     username: camera.username,
-                    password: camera.password,
                     streamPath0: camera.streamPath0,
                     streamPath1: camera.streamPath1,
                     groupId: camera.groupId

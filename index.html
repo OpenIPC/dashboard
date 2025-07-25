@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         :root {
-            --bg-darker: #2d333b; --bg-dark: #3c3f41; --bg-medium: #4e5254; --bg-light: #616466;
+            --bg-darker: #2d333b; --bg-dark: #3c3f41; --bg-medium: #4e5254; --bg-light: #6166;
             --text-main: #f0f2f5; --text-secondary: #adb5bd;
             --accent-color: #0d6efd; --border-color: #2b2b2b; --danger-color: #f85149;
             --header-height: 40px; --toolbar-height: 40px; --sidebar-width: 250px;
@@ -54,14 +54,119 @@
         }
 
         .header .logo { font-size: 1.2em; font-weight: bold; color: var(--text-main); }
-        .header .tabs { margin-left: 30px; height: 100%; display: flex; }
-        .header .tab { padding: 0 15px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-secondary); cursor: pointer; height: 100%; display: flex; align-items: center; }
-        .header .tab.active { color: var(--text-main); border-bottom-color: var(--accent-color); }
+        
+        .header .tabs {
+            margin-left: 30px;
+            height: 100%;
+            display: flex;
+            align-items: flex-end; /* Выравниваем вкладки по нижнему краю */
+            gap: 2px; /* Небольшой зазор между вкладками */
+        }
+
+        .header .tab {
+            padding: 0 15px;
+            background-color: var(--bg-medium); /* Фон для неактивных вкладок */
+            border: 1px solid var(--border-color); /* Рамка вокруг */
+            border-bottom: none; /* Убираем нижнюю рамку, чтобы она "сливалась" с шапкой */
+            border-top-left-radius: 6px; /* Скругляем верхние углы */
+            border-top-right-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            height: 35px; /* Задаем фиксированную высоту */
+            display: flex;
+            align-items: center;
+            position: relative;
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        .header .tab:not(.active):hover {
+            background-color: var(--bg-light);
+            color: var(--text-main);
+        }
+
+        .header .tab.active {
+            background-color: var(--bg-darker); /* Фон как у основной части, для эффекта слияния */
+            color: var(--text-main);
+            height: 36px; /* Чуть выше, чтобы перекрыть границу шапки */
+            border-bottom: 1px solid var(--bg-darker); /* Нижняя граница того же цвета, что и фон */
+            position: relative;
+            bottom: -1px; /* Смещаем вниз, чтобы она "залезла" на границу шапки */
+        }
+        
+        .add-tab-btn {
+            -webkit-app-region: no-drag;
+            background: none;
+            border: 2px solid var(--text-secondary);
+            color: var(--text-secondary);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            margin-left: 10px;
+            padding: 0;
+            font-size: 20px;
+            line-height: 1;
+            transition: all 0.2s;
+            align-self: center; /* Центрируем по вертикали */
+        }
+
+        .add-tab-btn:hover {
+            color: var(--text-main);
+            border-color: var(--text-main);
+            transform: scale(1.1);
+        }
+
+        .tab {
+            position: relative; /* Нужно для позиционирования кнопки "х" */
+            padding-right: 30px !important; /* Освобождаем место для кнопки */
+        }
+
+        .close-tab-btn {
+            position: absolute;
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+            font-size: 20px;
+            line-height: 1;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, color 0.2s;
+            opacity: 0.7;
+            -webkit-app-region: no-drag;
+        }
+
+        .tab:hover .close-tab-btn {
+            opacity: 1;
+        }
+
+        .close-tab-btn:hover {
+            background-color: var(--bg-light);
+            color: var(--text-main);
+        }
+
+        .tab.dragging {
+            opacity: 0.5;
+            background-color: var(--bg-light);
+        }
+
+        .tab.drag-over {
+            border-bottom-color: #fff !important; /* Индикатор, куда будет вставлена вкладка */
+        }
+
         .main-container { display: flex; flex-grow: 1; overflow: hidden; }
         .view-container { flex-grow: 1; padding: 10px; position: relative; }
         #grid-container { width: 100%; height: 100%; position: relative; }
         #grid-container.fullscreen-mode .grid-cell:not(.fullscreen) { display: none !important; }
-        .grid-cell { position: absolute; background-color: var(--bg-dark); border-radius: 4px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--text-secondary); border: 1px solid var(--border-color); cursor: pointer; text-align: center; transition: background-color 0.2s, border-color 0.2s, transform 0.1s ease-in-out; padding: 5px; box-sizing: border-box; object-fit: contain; overflow: hidden; z-index: 1; }
+        .grid-cell { position: absolute; background-color: var(--bg-dark); border-radius: 4px; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--text-secondary); border: 1px solid var(--border-color); cursor: pointer; text-align: center; transition: background-color 0.2s, border-color 0.2s, transform 0.1s ease-in-out, box-shadow 0.2s; padding: 5px; box-sizing: border-box; object-fit: contain; overflow: hidden; z-index: 1; }
         .grid-cell:hover { z-index: 99; transform: scale(1.02); }
         .grid-cell.fullscreen { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 1001; border: none; border-radius: 0; padding: 0; background-color: #000; }
         .grid-cell.fullscreen .cell-controls, .grid-cell.fullscreen .cell-name, .grid-cell.fullscreen .cell-stats { opacity: 1; }
@@ -69,6 +174,39 @@
         .grid-cell.drag-over { border: 2px dashed var(--accent-color); background-color: var(--bg-light); }
         .grid-cell canvas { width: 100%; height: 100%; object-fit: contain; border-radius: 4px; pointer-events: none; }
         .grid-cell.active { border: 2px solid var(--accent-color); }
+        
+        .grid-cell.motion-detected {
+            box-shadow: 0 0 10px 3px var(--danger-color);
+        }
+
+        .motion-box {
+            position: absolute;
+            box-sizing: border-box;
+            border: 2px solid red;
+            background-color: rgba(255, 0, 0, 0.2);
+            pointer-events: none;
+            z-index: 15;
+        }
+        .object-box {
+            position: absolute;
+            box-sizing: border-box;
+            border: 2px solid;
+            pointer-events: none;
+            z-index: 15;
+        }
+        .object-box::after {
+            content: attr(data-label);
+            position: absolute;
+            top: -20px;
+            left: -2px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 2px 5px;
+            font-size: 12px;
+            white-space: nowrap;
+            border-radius: 3px;
+        }
+
         .cell-controls { position: absolute; top: 5px; right: 5px; background-color: rgba(0,0,0,0.6); border-radius: 4px; z-index: 10; display: flex; gap: 5px; pointer-events: all; padding: 2px 4px; opacity: 0; transition: opacity 0.2s ease-in-out; }
         .grid-cell:hover .cell-controls, .grid-cell:hover .cell-name, .grid-cell:hover .cell-stats { opacity: 1; }
         .cell-controls button { background: none; border: none; color: white; cursor: pointer; font-size: 16px; padding: 0; display: flex; align-items: center; }
@@ -119,6 +257,10 @@
         .camera-item:hover { background-color: var(--bg-light); }
         .camera-item span { white-space: nowrap; }
         
+        .camera-item .icon-button { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 2px; border-radius: 50%; display: flex; align-items: center; }
+        .camera-item .icon-button:hover { color: var(--text-main); background-color: var(--bg-light); }
+        .camera-item .icon-button.active { color: var(--accent-color); }
+
         .status-icon { width: 10px; height: 10px; border-radius: 50%; background-color: #6c757d; flex-shrink: 0; }
         .status-icon.online { background-color: #28a745; }
         .camera-item .rec-indicator { width: 8px; height: 8px; border-radius: 50%; background-color: var(--danger-color); position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; animation: pulse-rec 1.5s infinite; }
@@ -127,6 +269,7 @@
         .bottom-toolbar { height: var(--toolbar-height); background-color: var(--bg-dark); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 15px; flex-shrink: 0; }
         .toolbar-group { display: flex; align-items: center; gap: 5px; }
         .toolbar-group .layout-btn, .toolbar-group .icon-button { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 5px; border-radius: 4px; cursor: pointer; min-width: 30px; text-align: center; display: flex; align-items: center; justify-content: center; }
+        .toolbar-group select { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 8px; border-radius: 4px; font-size: 14px; -webkit-app-region: no-drag; }
         .toolbar-group .layout-btn:hover, .toolbar-group .layout-btn.active, .toolbar-group .icon-button:hover { background-color: var(--accent-color); color: white; border-color: var(--accent-color); }
         .status-info { font-size: 12px; color: var(--text-secondary); margin-left: 10px; }
         
@@ -157,8 +300,79 @@
         .hidden { display: none !important; }
         .form-check-inline { display: inline-flex; align-items: center; gap: 5px; margin-right: 15px; }
         .form-check-input { width: auto !important; }
-
-        #archive-view { position: fixed; top: var(--header-height); left: 0; width: 100%; height: calc(100vh - var(--header-height)); background-color: var(--bg-darker); z-index: 1000; display: flex; flex-direction: column; }
+        
+        #prompt-modal .form-grid.simple {
+            grid-template-columns: 1fr;
+            gap: 8px;
+            text-align: left;
+        }
+        #prompt-modal .form-grid .form-buttons {
+            grid-column: 1 / -1;
+        }
+        #prompt-modal .form-grid b {
+            margin-bottom: -5px;
+        }
+        
+        #login-view .form-check-inline {
+            justify-self: start;
+            margin-top: 10px;
+            color: #6c757d;
+        }
+        
+        #archive-view { 
+            position: fixed; top: var(--header-height); left: 0; width: 100%; height: calc(100vh - var(--header-height)); 
+            background-color: var(--bg-darker); z-index: 1000; display: flex; flex-direction: row;
+        }
+        .archive-main-content {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        .archive-sidebar {
+            width: 300px;
+            flex-shrink: 0;
+            background-color: var(--bg-dark);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+        .archive-sidebar h3 {
+            color: var(--text-main);
+            margin: 0 0 10px 0;
+            font-size: 1.1em;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+        #archive-filters .form-check-inline {
+            display: flex;
+            margin-bottom: 8px;
+            color: var(--text-main);
+        }
+        #event-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        #event-list li {
+            padding: 8px 5px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+        #event-list li:hover {
+            background-color: var(--bg-light);
+        }
+        .event-time {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .event-objects {
+            color: var(--text-secondary);
+        }
         .archive-header { display: flex; align-items: center; padding: 10px 15px; background-color: var(--bg-dark); border-bottom: 1px solid var(--border-color); flex-shrink: 0; gap: 15px; }
         .archive-header h2 { margin: 0; font-size: 1.2em; flex-grow: 1;}
         .archive-header button { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px 10px; border-radius: 4px; cursor: pointer; }
@@ -168,11 +382,11 @@
         .archive-video-container video { max-width: 100%; max-height: 100%; }
         .archive-video-placeholder { color: var(--text-secondary); }
         .timeline-container { height: 80px; background-color: var(--bg-dark); flex-shrink: 0; border-top: 1px solid var(--border-color); padding: 10px; display: flex; align-items: center; }
-        .timeline-wrapper { width: 100%; height: 100%; background-color: var(--bg-darker); border-radius: 4px; position: relative; border: 1px solid var(--border-color); cursor: crosshair; overflow-x: auto; }
+        .timeline-wrapper { width: 100%; height: 100%; background-color: var(--bg-darker); border-radius: 4px; position: relative; border: 1px solid var(--border-color); cursor: pointer; overflow-x: auto; }
         .timeline-labels { position: absolute; top: 0; left: 0; width: 100%; height: 20px; display: flex; color: var(--text-secondary); font-size: 12px; pointer-events: none; user-select: none; }
         .timeline-labels span { position: absolute; transform: translateX(-50%); }
         #timeline-recordings { position: relative; top: 0; left: 0; width: 100%; height: 100%; }
-        .timeline-block { position: absolute; top: 50%; transform: translateY(-50%); height: 80%; background-color: var(--accent-color); opacity: 0.7; cursor: pointer; border-radius: 2px; transition: opacity 0.2s; }
+        .timeline-block { position: absolute; top: 50%; transform: translateY(-50%); height: 80%; background-color: var(--accent-color); opacity: 0.7; border-radius: 2px; transition: opacity 0.2s; }
         .timeline-block:hover { opacity: 1; }
         .timeline-block.selected { box-shadow: 0 0 0 2px white; opacity: 1; }
         #timeline-selection { position: absolute; top: 0; left: 0; height: 100%; background-color: rgba(255, 255, 0, 0.4); border: 1px dashed yellow; display: none; pointer-events: none; }
@@ -196,27 +410,26 @@
         body.role-admin .admin-only {
             display: flex !important;
         }
+        .cell-controls button.audio-btn.active {
+            color: var(--accent-color);
+        }
         
-        /* VVV СТИЛИ ДЛЯ ГИБКИХ ПРАВ VVV */
-        /* По умолчанию скрываем элементы, требующие прав, для всех операторов */
         body.role-operator .requires-permission {
             display: none !important;
         }
-        /* А для админа всегда показываем */
         body.role-admin .requires-permission {
             display: flex !important;
         }
-        /* Теперь выборочно показываем для операторов с нужными правами */
         body.can-edit-cameras #discover-btn,
         body.can-edit-cameras #add-group-btn,
         body.can-edit-cameras #add-camera-sidebar-btn {
             display: flex !important;
         }
         body.can-manage-layout #layout-controls,
-        body.can-manage-layout #presentation-mode-btn {
+        body.can-manage-layout #presentation-mode-btn,
+        body.can-manage-layout #view-layout-controls {
             display: flex !important;
         }
-        /* ^^^ КОНЕЦ СТИЛЕЙ ДЛЯ ГИБКИХ ПРАВ ^^^ */
         
         body.role-operator .camera-item,
         body.role-operator .grid-cell.active {
@@ -244,7 +457,16 @@
         #user-list .change-pass-btn { color: #007bff; border-color: #007bff; }
         #user-list .change-pass-btn:hover { background-color: #007bff; color: white; }
         #user-list button:disabled { opacity: 0.5; cursor: not-allowed; }
-
+        
+        .modal-content input[type="text"],
+        .modal-content input[type="number"],
+        .modal-content input[type="password"],
+        .modal-content select {
+            pointer-events: auto !important;
+            background-color: #ffffff !important;
+            color: #333333 !important;
+            border: 1px solid #ccc !important;
+        }
     </style>
 </head>
 <body>
@@ -255,6 +477,12 @@
             <div class="form-grid simple" style="grid-template-columns: 100px 1fr; padding-top: 10px;">
                 <b data-i18n-key="login"></b> <input type="text" id="login-username" autofocus>
                 <b data-i18n-key="password"></b> <input type="password" id="login-password">
+                
+                <b></b>
+                <div class="form-check-inline">
+                    <input type="checkbox" id="login-remember-me" class="form-check-input">
+                    <label for="login-remember-me" data-i18n-key="remember_me"></label>
+                </div>
             </div>
             <p id="login-error" style="color: var(--danger-color); height: 20px; margin-top: 10px;"></p>
             <button id="login-btn" style="width: 100%; padding: 10px; margin-top: 5px;" data-i18n-key="login_btn"></button>
@@ -265,8 +493,9 @@
         <div class="header">
             <div class="logo" data-i18n-key="app_title"></div>
             <div class="tabs">
-                <button class="tab active" data-i18n-key="tab_monitor"></button>
+                <!-- Вкладки будут добавлены сюда динамически из renderer.js -->
             </div>
+            <button id="add-layout-btn" class="add-tab-btn" data-i18n-tooltip="add_layout_tooltip">+</button>
             <div class="window-controls">
                 <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
                 <button id="maximize-btn" class="window-control-btn"><i class="material-icons">crop_square</i></button>
@@ -301,6 +530,11 @@
                 <button id="open-recordings-btn" class="icon-button admin-only" data-i18n-tooltip="open_recordings_tooltip"><i class="material-icons" style="font-size: 20px;">folder</i></button>
                 <div class="status-info" id="status-info"></div>
             </div>
+            <div class="toolbar-group requires-permission" id="view-layout-controls">
+                <button id="save-layout-btn" class="icon-button" data-i18n-tooltip="save_layout_tooltip"><i class="material-icons">save</i></button>
+                <button id="rename-layout-btn" class="icon-button" data-i18n-tooltip="rename_layout_tooltip"><i class="material-icons">edit</i></button>
+                <button id="delete-layout-btn" class="icon-button" data-i18n-tooltip="delete_layout_tooltip"><i class="material-icons">delete_outline</i></button>
+            </div>
             <div class="toolbar-group requires-permission" id="layout-controls"></div>
             <div class="toolbar-group">
                 <button id="presentation-mode-btn" class="icon-button requires-permission" data-i18n-tooltip="presentation_mode_tooltip"><i class="material-icons" style="font-size: 20px;">tv</i></button>
@@ -310,23 +544,33 @@
     
     <!-- Модальные окна -->
     <div id="archive-view" class="hidden">
-        <div class="archive-header">
-            <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
-            <h2 id="archive-camera-name"></h2>
-            <button id="archive-export-btn" data-i18n-key="archive_export_clip" disabled></button>
-            <input type="date" id="archive-date-picker">
-        </div>
-        <div class="archive-video-container">
-            <video id="archive-video-player" controls class="hidden"></video>
-            <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
-        </div>
-        <div class="timeline-container">
-            <div class="timeline-wrapper" id="timeline-wrapper">
-                <div id="timeline-recordings">
-                    <div id="timeline-labels"></div>
-                    <div id="timeline-selection"></div>
+        <div class="archive-main-content">
+            <div class="archive-header">
+                <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
+                <h2 id="archive-camera-name"></h2>
+                <button id="archive-export-btn" data-i18n-key="archive_export_clip" disabled></button>
+                <input type="date" id="archive-date-picker">
+            </div>
+            <div class="archive-video-container">
+                <video id="archive-video-player" controls class="hidden"></video>
+                <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
+            </div>
+            <div class="timeline-container">
+                <div class="timeline-wrapper" id="timeline-wrapper">
+                    <div id="timeline-recordings">
+                        <!-- Динамический контент -->
+                    </div>
                 </div>
             </div>
+        </div>
+        <div class="archive-sidebar">
+            <h3>События</h3>
+            <div id="archive-filters">
+                <!-- Чекбоксы фильтров будут добавлены сюда -->
+            </div>
+            <ul id="event-list">
+                <!-- Список событий будет добавлен сюда -->
+            </ul>
         </div>
     </div>
 
@@ -337,6 +581,13 @@
             <div class="form-grid simple">
                 <b data-i18n-key="camera_name"></b> <input type="text" id="new-cam-name" data-i18n-placeholder="camera_name_placeholder">
                 <b data-i18n-key="ip_address"></b>  <input type="text" id="new-cam-ip" placeholder="192.168.1.100">
+                
+                <b>Протокол</b>
+                <select id="new-cam-protocol">
+                    <option value="openipc" selected>OpenIPC (Majestic)</option>
+                    <option value="netip">NETIP (Xiongmai)</option>
+                </select>
+                
                 <b data-i18n-key="rtsp_port"></b> <input type="number" id="new-cam-port" placeholder="554">
                 <b data-i18n-key="login"></b>     <input type="text" id="new-cam-user" value="root">
                 <b data-i18n-key="password"></b>    <input type="password" id="new-cam-pass">
@@ -360,6 +611,9 @@
             <div class="modal-body">
                 <div class="tabs">
                     <button class="tab-button" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
+                    <button class="tab-button" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming">Трансляция</button>
+                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip">NETIP</button>
+                    <button class="tab-button" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics">Analytics</button>
                     <button class="tab-button" data-tab="tab-system" data-i18n-key="settings_tab_system"></button>
                     <button class="tab-button" data-tab="tab-isp" data-i18n-key="settings_tab_isp"></button>
                     <button class="tab-button" data-tab="tab-image" data-i18n-key="settings_tab_image"></button>
@@ -377,7 +631,6 @@
                     <button class="tab-button" data-tab="tab-hls" data-i18n-key="settings_tab_hls"></button>
                     <button class="tab-button" data-tab="tab-onvif" data-i18n-key="settings_tab_onvif"></button>
                     <button class="tab-button" data-tab="tab-ipeye" data-i18n-key="settings_tab_ipeye"></button>
-                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
                 </div>
                 <div id="tab-general" class="tab-content">
                     <h3 data-i18n-key="settings_app_header"></h3>
@@ -408,7 +661,67 @@
                         <button id="check-for-updates-btn" style="width: 200px; justify-self: start;" data-i18n-key="update_check_button"></button>
                     </div>
                 </div>
+
+                <div id="tab-streaming" class="tab-content">
+                    <h3 data-i18n-key="streaming_settings_header">Настройки трансляции в реальном времени</h3>
+                    <p style="color: #666; font-size: 13px;" data-i18n-key="streaming_settings_desc">Эти параметры влияют на производительность и качество живого видео в сетке. Они не влияют на качество записи.</p>
+                    <div class="form-grid simple">
+                        <label for="app-settings-qscale" data-i18n-key="streaming_qscale_label">Качество видео (q:v)</label>
+                        <div class="form-input-wrapper">
+                            <input type="range" id="app-settings-qscale" min="2" max="31" step="1" style="flex-grow: 1;">
+                            <span class="range-value" id="app-settings-qscale-value" style="min-width: 30px; text-align: center;">8</span>
+                        </div>
+                        
+                        <label for="app-settings-fps" data-i18n-key="streaming_fps_label">Частота кадров (fps)</label>
+                        <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
+                    </div>
+                </div>
                 
+                <div id="tab-analytics" class="tab-content">
+                    <h3>Настройки видеоаналитики</h3>
+                    <div class="form-grid simple">
+                        <label for="analytics.enabled">Включить аналитику</label>
+                        <div class="form-check-inline">
+                            <input type="checkbox" id="analytics.enabled" class="form-check-input">
+                        </div>
+                        <label for="analytics.resize_width">Ширина кадра для анализа (0 - оригинал)</label>
+                        <input type="number" id="analytics.resize_width" value="640" min="0" step="16">
+                        <label for="analytics.frame_skip">Анализировать каждый N-й кадр</label>
+                        <input type="number" id="analytics.frame_skip" value="5" min="1">
+                    </div>
+            
+                    <h4>Объекты для детекции</h4>
+                    <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+                        <!-- Чекбоксы будут добавлены динамически -->
+                    </div>
+            
+                    <h4 style="margin-top: 20px;">Зона интереса (ROI)</h4>
+                    <p style="color: #666; font-size: 13px;">Функционал в разработке. Сейчас аналитика применяется ко всему кадру.</p>
+            
+                </div>
+                
+                <div id="tab-netip" class="tab-content">
+                    <h3>Настройки видео</h3>
+                    <p style="color: #666; font-size: 13px;">Сохранение настроек для NETIP-камер находится в разработке.</p>
+                    <div class="form-grid simple">
+                        <label for="netip.video.resolution">Разрешение</label>
+                        <input type="text" id="netip.video.resolution" readonly>
+                        
+                        <label for="netip.video.bitrate">Битрейт (kbps)</label>
+                        <input type="number" id="netip.video.bitrate" readonly>
+                    </div>
+
+                    <h3>Информация о системе</h3>
+                    <div class="form-grid simple">
+                        <label for="netip.system.devicename">Имя устройства</label>
+                        <input type="text" id="netip.system.devicename" readonly>
+                        <label for="netip.system.hardware">Аппаратная вер.</label>
+                        <input type="text" id="netip.system.hardware" readonly>
+                        <label for="netip.system.software">Версия ПО</label>
+                        <input type="text" id="netip.system.software" readonly>
+                    </div>
+                </div>
+
                 <div id="tab-system" class="tab-content">
                     <h3 data-i18n-key="settings_tab_system"></h3>
                     <div class="form-grid simple">
@@ -592,17 +905,7 @@
                         <label for="ipeye.enabled">Enable IPEYE protocol support</label> <div class="form-check-inline"><input type="checkbox" id="ipeye.enabled" class="form-check-input"></div>
                     </div>
                 </div>
-                <div id="tab-netip" class="tab-content">
-                    <h3 data-i18n-key="settings_tab_netip"></h3>
-                    <div class="form-grid simple">
-                        <label for="netip.enabled">Enable NETIP protocol support</label> <div class="form-check-inline"><input type="checkbox" id="netip.enabled" class="form-check-input"></div>
-                        <label for="netip.user">NETIP username</label> <input type="text" id="netip.user">
-                        <label for="netip.password">Hash of password</label> <input type="text" id="netip.password">
-                        <label for="netip.port">NETIP port</label> <input type="number" id="netip.port" min="1" max="65535" step="1">
-                        <label for="netip.snapshots">NETIP snapshots</label> <div class="form-check-inline"><input type="checkbox" id="netip.snapshots" class="form-check-input"></div>
-                        <label for="netip.ignoreSetTime">Ignore set time</label> <div class="form-check-inline"><input type="checkbox" id="netip.ignoreSetTime" class="form-check-input"></div>
-                    </div>
-                </div>
+                
 
             </div>
             <div class="modal-footer">
@@ -698,9 +1001,42 @@
         </div>
     </div>
 
+    <div id="change-password-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 400px;">
+            <span id="change-pass-close-btn" class="modal-close-btn">×</span>
+            <h2 id="change-pass-modal-title"></h2>
+            <div class="form-grid simple" style="grid-template-columns: 120px 1fr; padding-top: 10px;">
+                <b data-i18n-key="new_password">Новый пароль</b> <input type="password" id="change-user-password" autocomplete="new-password">
+                <b></b>
+                <div class="form-buttons">
+                    <button id="save-new-password-btn" data-i18n-key="save"></button>
+                    <button id="cancel-change-password-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="prompt-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 400px;">
+            <span id="prompt-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="prompt-modal-title"></h2>
+            <div class="form-grid simple">
+                <b id="prompt-modal-label"></b> 
+                <input type="text" id="prompt-modal-input">
+                <div class="form-buttons">
+                    <button id="prompt-modal-ok-btn"></button>
+                    <button id="prompt-modal-cancel-btn" style="background-color: #6c757d;"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="jsmpeg.min.js"></script>
     <script src="./js/i18n.js"></script>
     <script src="./js/state-manager.js"></script>
+    <script src="./js/modals/camera-handler.js"></script>
+    <script src="./js/modals/settings-handler.js"></script>
+    <script src="./js/modals/user-handler.js"></script>
     <script src="./js/modal-handler.js"></script>
     <script src="./js/camera-list.js"></script>
     <script src="./js/grid-manager.js"></script>

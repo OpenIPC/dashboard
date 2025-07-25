@@ -56,7 +56,6 @@
   "kill_all_confirm": "This will forcibly terminate all ffmpeg processes. Use this if streams are stuck. Continue?",
   "kill_all_result": "All 'stuck' streams have been successfully reset.",
   "no_free_ports": "Failed to find a free port.",
-  
   "settings_tab_general": "General",
   "settings_tab_users": "Users",
   "settings_tab_system": "System",
@@ -70,6 +69,7 @@
   "settings_tab_rtsp": "RTSP",
   "settings_tab_night": "Night",
   "settings_tab_motion": "Motion",
+  "settings_tab_analytics": "Analytics",
   "settings_tab_record": "Record",
   "settings_tab_outgoing": "Outgoing",
   "settings_tab_watchdog": "Watchdog",
@@ -87,7 +87,6 @@
   "settings_hw_accel_none": "Disabled (CPU only)",
   "settings_restart_majestic": "Restart Majestic",
   "settings_kill_all": "Emergency Reset",
-
   "archive_title": "Recordings",
   "archive_refresh_tooltip": "Refresh list",
   "archive_placeholder": "Select a recording to view",
@@ -100,7 +99,6 @@
   "archive_export_single_file_error": "The selection must be within a single recording file.",
   "archive_export_success": "Clip successfully exported.",
   "archive_export_error": "Error exporting clip",
-  
   "update_checking": "Checking...",
   "update_check_prompt": "Press the button to check for updates...",
   "update_available": "New version available: {{version}}",
@@ -111,25 +109,21 @@
   "update_available_short": "Update available!",
   "update_downloaded_short": "Update downloaded.",
   "update_error_short": "Update error",
-  
   "update_header": "Application Update",
   "update_status_label": "Current Status",
   "update_action_label": "Action",
   "update_check_button": "Check for Updates",
-  
   "discover_cameras_tooltip": "Discover cameras on network (ONVIF)",
   "discover_modal_title": "Discovered Cameras",
   "add_selected_camera": "Add Selected",
   "search_again": "Search Again",
   "searching_for_cameras": "Searching for cameras on your network...",
   "no_cameras_found": "No compatible cameras found. Make sure they are on the same network and support ONVIF.",
-
   "login_prompt": "Please sign in to continue",
   "login_btn": "Sign In",
   "invalid_credentials": "Invalid username or password.",
   "logout": "Logout",
   "logout_tooltip": "Log out from current session",
-
   "user_management_tooltip": "User Management",
   "user_management_title": "User Management",
   "add_user": "Add User",
@@ -142,7 +136,8 @@
   "password_changed_success": "Password changed successfully.",
   "confirm_delete_user": "Are you sure you want to delete user '{{username}}'?",
   "username_and_password_required": "Username and password are required.",
-
+  "change_password_for_user": "Change password for '{{username}}'",
+  "new_password": "New Password",
   "permissions_btn": "Permissions",
   "permissions_for_user": "Permissions for user '{{username}}'",
   "permissions_saved_success": "Permissions saved successfully.",
@@ -153,5 +148,22 @@
   "edit_cameras": "Manage Cameras",
   "delete_cameras": "Delete Cameras",
   "access_settings": "Access Settings",
-  "manage_layout": "Manage Layout"
+  "manage_layout": "Manage Layout",
+  "save_layout_tooltip": "Save current view as a new layout",
+  "rename_layout_tooltip": "Rename current layout",
+  "delete_layout_tooltip": "Delete current layout",
+  "enter_layout_name": "Enter a name for the new layout:",
+  "enter_new_layout_name": "Enter a new name for the layout:",
+  "confirm_delete_layout": "Are you sure you want to delete this layout?",
+  "cannot_delete_last_layout": "Cannot delete the last layout.",
+  "add_layout_tooltip": "Create a new layout",
+  "enter_layout_name_prompt": "Enter a name for the layout:",
+  "new_layout_default_name": "View {{count}}",
+  "remember_me": "Remember Me",
+    "toggle_analytics_tooltip": "Toggle video analytics",
+    "settings_tab_streaming": "Streaming",
+  "streaming_settings_header": "Real-time Streaming Settings",
+  "streaming_settings_desc": "These parameters affect the performance and quality of the live video in the grid. They do not affect the recording quality.",
+  "streaming_qscale_label": "Video Quality (q:v)",
+  "streaming_fps_label": "Frame Rate (fps)"
 }

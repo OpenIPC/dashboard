@@ -1,4 +1,4 @@
-// js/renderer.js (полная исправленная версия с системой пользователей и сворачиваемым сайдбаром)
+// js/renderer.js (Полная версия с добавлением обработки статуса аналитики)
 
 (function(window) {
     'use strict';
@@ -10,69 +10,153 @@
         initialState: {
             cameras: [],
             groups: [],
-            gridState: Array(64).fill(null),
-            layout: { cols: 2, rows: 2 },
+            layouts: [],
+            activeLayoutId: null,
             recordingStates: {},
             appSettings: {},
             isSaving: false,
             currentUser: null,
         },
         mutations: {
-            setInitialConfig(state, config) { 
+            setInitialConfig(state, helpers, config) { 
                 state.cameras = config.cameras || []; 
                 state.groups = config.groups || []; 
-                state.layout = config.layout || { cols: 2, rows: 2 }; 
-                state.gridState = config.gridState ? config.gridState.map(s => s ? { ...s } : null) : Array(64).fill(null); 
+
+                if (config.layouts && config.layouts.length > 0) {
+                    state.layouts = config.layouts;
+                    state.activeLayoutId = config.activeLayoutId && config.layouts.some(l => l.id === config.activeLayoutId)
+                        ? config.activeLayoutId
+                        : config.layouts[0].id;
+                } else if (config.gridState) {
+                    console.log("[State] Migrating old config format to new layout structure.");
+                    const defaultLayout = {
+                        id: Date.now(),
+                        name: 'Основной вид',
+                        gridState: config.gridState,
+                        layout: config.layout || { cols: 2, rows: 2 }
+                    };
+                    state.layouts = [defaultLayout];
+                    state.activeLayoutId = defaultLayout.id;
+                    App.saveConfiguration();
+                } else {
+                    helpers.getActiveLayout(state);
+                }
             },
-            setAppSettings(state, settings) { 
+            setAppSettings(state, helpers, settings) { 
                 state.appSettings = { ...state.appSettings, ...settings }; 
                 App.saveAppSettings(); 
             },
-            updateGridState(state, gridState) { 
-                state.gridState = gridState; 
-                App.saveConfiguration(); 
+            updateGridState(state, helpers, gridState) { 
+                const activeLayout = helpers.getActiveLayout(state);
+                if (activeLayout) {
+                    activeLayout.gridState = gridState;
+                    App.saveConfiguration(); 
+                }
             },
-            updateGridLayout(state, layout) { 
-                state.layout = layout; 
-                App.saveConfiguration(); 
+            updateGridLayout(state, helpers, layout) { 
+                const activeLayout = helpers.getActiveLayout(state);
+                if (activeLayout) {
+                    activeLayout.layout = layout;
+                    App.saveConfiguration();
+                }
             },
-            addCamera(state, camera) { 
+            setActiveLayout(state, helpers, layoutId) {
+                if (state.layouts.some(l => l.id === layoutId)) {
+                    state.activeLayoutId = layoutId;
+                    App.saveConfiguration();
+                }
+            },
+            saveLayout(state, helpers, { name }) {
+                const activeLayout = helpers.getActiveLayout(state);
+                const newLayout = {
+                    ...JSON.parse(JSON.stringify(activeLayout)),
+                    id: Date.now(),
+                    name: name
+                };
+                state.layouts = [...state.layouts, newLayout];
+                state.activeLayoutId = newLayout.id;
+                App.saveConfiguration();
+            },
+            addLayout(state, helpers, { name }) {
+                const newLayout = {
+                    id: Date.now(),
+                    name: name,
+                    gridState: Array(64).fill(null), // Новая пустая сетка
+                    layout: { cols: 2, rows: 2 }      // Сетка 2x2 по умолчанию
+                };
+                state.layouts = [...state.layouts, newLayout];
+                state.activeLayoutId = newLayout.id;
+                App.saveConfiguration();
+            },
+            deleteLayout(state, helpers, layoutId) {
+                if (state.layouts.length <= 1) {
+                    alert(App.t('cannot_delete_last_layout'));
+                    return;
+                }
+                state.layouts = state.layouts.filter(l => l.id !== layoutId);
+                if (state.activeLayoutId === layoutId) {
+                    state.activeLayoutId = state.layouts[0].id;
+                }
+                App.saveConfiguration();
+            },
+            renameLayout(state, helpers, { id, newName }) {
+                const layoutToRename = state.layouts.find(l => l.id === id);
+                if (layoutToRename) {
+                    layoutToRename.name = newName;
+                    App.saveConfiguration();
+                }
+            },
+            reorderLayouts(state, helpers, { draggedId, targetId }) {
+                const layouts = state.layouts;
+                const draggedIndex = layouts.findIndex(l => l.id === draggedId);
+                const targetIndex = layouts.findIndex(l => l.id === targetId);
+
+                if (draggedIndex === -1 || targetIndex === -1) return;
+
+                const [draggedItem] = layouts.splice(draggedIndex, 1);
+                layouts.splice(targetIndex, 0, draggedItem);
+                
+                state.layouts = [...layouts];
+                App.saveConfiguration();
+            },
+            addCamera(state, helpers, camera) { 
                 state.cameras = [...state.cameras, { id: Date.now(), groupId: null, ...camera }]; 
                 App.saveConfiguration(); 
             },
-            updateCamera(state, updatedCamera) { 
+            updateCamera(state, helpers, updatedCamera) { 
                 state.cameras = state.cameras.map(c => c.id === updatedCamera.id ? { ...c, ...updatedCamera } : c); 
                 App.saveConfiguration(); 
             },
-            deleteCamera(state, cameraId) {
-                state.gridState = state.gridState.map(cell => {
-                    if (cell && cell.camera.id === cameraId) {
-                        return null;
-                    }
-                    return cell;
+            deleteCamera(state, helpers, cameraId) {
+                state.layouts.forEach(layout => {
+                    layout.gridState = layout.gridState.map(cell => {
+                        if (cell && cell.camera.id === cameraId) {
+                            return null;
+                        }
+                        return cell;
+                    });
                 });
                 
                 state.cameras = state.cameras.filter(c => c.id !== cameraId); 
-                
                 App.saveConfiguration(); 
             },
-            addGroup(state, group) { 
+            addGroup(state, helpers, group) { 
                 state.groups = [...state.groups, { id: Date.now(), ...group }]; 
                 App.saveConfiguration(); 
             },
-            setRecordingState(state, { cameraId, recording }) { 
+            setRecordingState(state, helpers, { cameraId, recording }) { 
                 state.recordingStates = { ...state.recordingStates, [cameraId]: recording }; 
             },
-            setCurrentUser(state, user) {
+            setCurrentUser(state, helpers, user) {
                 state.currentUser = user;
             },
-            logout(state) {
+            logout(state, helpers) {
                 state.currentUser = null;
             }
         }
     });
     
-    App.t = (key) => key;
+    App.t = (key, replacements) => key;
     
     App.i18n = AppModules.createI18n(App);
     App.modalHandler = AppModules.createModalHandler(App);
@@ -81,11 +165,19 @@
     App.archiveManager = AppModules.createArchiveManager(App);
     App.windowControls = AppModules.createWindowControls(App);
 
+    // VVV НОВЫЙ БЛОК: Константы для ролей VVV
+    const USER_ROLES = {
+        ADMIN: 'admin',
+        OPERATOR: 'operator'
+    };
+    // ^^^ КОНЕЦ НОВОГО БЛОКА ^^^
+
     const loginView = document.getElementById('login-view');
     const mainAppContainer = document.getElementById('main-app-container');
     const loginBtn = document.getElementById('login-btn');
     const loginUsername = document.getElementById('login-username');
     const loginPassword = document.getElementById('login-password');
+    const loginRememberMe = document.getElementById('login-remember-me');
     const loginError = document.getElementById('login-error');
     const logoutBtn = document.getElementById('logout-btn');
     const statusInfo = document.getElementById('status-info');
@@ -102,8 +194,8 @@
         const config = {
             cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
             groups: state.groups,
-            gridState: App.gridManager.getGridState(),
-            layout: state.layout,
+            layouts: state.layouts,
+            activeLayoutId: state.activeLayoutId,
         };
         try { await window.api.saveConfiguration(config); } finally { setTimeout(() => { state.isSaving = false; }, 100); }
     }
@@ -140,6 +232,7 @@
     async function handleLogin() {
         const username = loginUsername.value.trim();
         const password = loginPassword.value;
+        const rememberMe = loginRememberMe.checked;
         loginError.textContent = '';
         if (!username || !password) return;
 
@@ -147,7 +240,7 @@
         loginBtn.textContent = App.t('connecting');
 
         try {
-            const result = await window.api.login({ username, password });
+            const result = await window.api.login({ username, password, rememberMe });
             if (result.success) {
                 App.stateManager.setCurrentUser(result.user);
                 loginView.classList.add('hidden');
@@ -163,10 +256,11 @@
     }
     
     function handleLogout() {
+        window.api.logoutClearCredentials();
         App.stateManager.logout();
         mainAppContainer.classList.add('hidden');
         loginView.classList.remove('hidden');
-        document.body.className = ''; // Сброс всех классов
+        document.body.className = '';
         loginUsername.focus();
     }
 
@@ -178,6 +272,22 @@
         await loadAppSettings();
         await App.i18n.init();
         App.t = App.i18n.t;
+
+        window.api.onAutoLoginSuccess((user) => {
+            console.log('[AutoLogin] Received user data from main process. Logging in...');
+            App.stateManager.setCurrentUser(user);
+            loginView.classList.add('hidden');
+            mainAppContainer.classList.remove('hidden');
+            loginPassword.value = '';
+        });
+
+        window.api.onAnalyticsStatusChange(({ cameraId, active }) => {
+            const btn = document.getElementById(`analytics-btn-${cameraId}`);
+            if (btn) {
+                btn.classList.toggle('active', active);
+                btn.querySelector('i').style.color = ''; // Сбрасываем цвет "запуска"
+            }
+        });
 
         App.modalHandler.init();
         App.cameraList.init();
@@ -192,6 +302,117 @@
         });
         logoutBtn.addEventListener('click', handleLogout);
         
+        const saveLayoutBtn = document.getElementById('save-layout-btn');
+        const deleteLayoutBtn = document.getElementById('delete-layout-btn');
+        const renameLayoutBtn = document.getElementById('rename-layout-btn');
+        const layoutTabsContainer = document.querySelector('.header .tabs');
+        const addLayoutBtn = document.getElementById('add-layout-btn');
+
+        function renderLayoutTabs() {
+            const { layouts, activeLayoutId } = App.stateManager.state;
+            layoutTabsContainer.innerHTML = '';
+            
+            if (!layouts) return;
+
+            layouts.forEach(l => {
+                const tab = document.createElement('button');
+                tab.className = 'tab';
+                if (l.id === activeLayoutId) {
+                    tab.classList.add('active');
+                }
+                tab.dataset.layoutId = l.id;
+                
+                tab.draggable = true; 
+
+                const tabName = document.createElement('span');
+                tabName.textContent = l.name;
+                tab.appendChild(tabName);
+
+                const closeBtn = document.createElement('span');
+                closeBtn.className = 'close-tab-btn';
+                closeBtn.innerHTML = '×';
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm(App.t('confirm_delete_layout'))) {
+                        App.stateManager.deleteLayout(l.id);
+                    }
+                });
+                tab.appendChild(closeBtn);
+
+                tab.addEventListener('click', () => {
+                    App.stateManager.setActiveLayout(l.id);
+                });
+
+                tab.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('application/x-layout-id', l.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    tab.classList.add('dragging');
+                });
+                tab.addEventListener('dragend', () => tab.classList.remove('dragging'));
+                tab.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    tab.classList.add('drag-over');
+                });
+                tab.addEventListener('dragleave', () => tab.classList.remove('drag-over'));
+                tab.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    tab.classList.remove('drag-over');
+                    const draggedId = Number(e.dataTransfer.getData('application/x-layout-id'));
+                    const targetId = l.id;
+                    if (draggedId !== targetId) {
+                        App.stateManager.reorderLayouts({ draggedId, targetId });
+                    }
+                });
+
+                layoutTabsContainer.appendChild(tab);
+            });
+        }
+        
+        addLayoutBtn.addEventListener('click', async () => {
+            const layoutCount = App.stateManager.state.layouts ? App.stateManager.state.layouts.length : 0;
+            const name = await App.modalHandler.showPrompt({
+                title: App.t('add_layout_tooltip'),
+                label: App.t('enter_layout_name_prompt'),
+                defaultValue: App.t('new_layout_default_name', { count: layoutCount + 1 })
+            });
+            if (name && name.trim()) {
+                App.stateManager.addLayout({ name: name.trim() });
+            }
+        });
+        
+        saveLayoutBtn.addEventListener('click', async () => {
+            const layoutCount = App.stateManager.state.layouts ? App.stateManager.state.layouts.length : 0;
+            const name = await App.modalHandler.showPrompt({
+                title: App.t('save_layout_tooltip'),
+                label: App.t('enter_layout_name_prompt'),
+                defaultValue: `View ${layoutCount + 1}`
+            });
+            if (name && name.trim()) {
+                App.stateManager.saveLayout({ name: name.trim() });
+            }
+        });
+
+        renameLayoutBtn.addEventListener('click', async () => {
+            const activeLayout = App.stateManager.state.layouts.find(l => l.id === App.stateManager.state.activeLayoutId);
+            if (!activeLayout) return;
+            
+            const newName = await App.modalHandler.showPrompt({
+                title: App.t('rename_layout_tooltip'),
+                label: App.t('enter_new_layout_name'),
+                defaultValue: activeLayout.name
+            });
+            if (newName && newName.trim() && newName.trim() !== activeLayout.name) {
+                App.stateManager.renameLayout({ id: activeLayout.id, newName: newName.trim() });
+            }
+        });
+
+        deleteLayoutBtn.addEventListener('click', () => {
+            if (confirm(App.t('confirm_delete_layout'))) {
+                const activeId = App.stateManager.state.activeLayoutId;
+                App.stateManager.deleteLayout(activeId);
+            }
+        });
+
         let renderTimeout;
         App.stateManager.subscribe(() => {
             clearTimeout(renderTimeout);
@@ -199,17 +420,19 @@
                 console.log("[Renderer] State change detected. Triggering re-render.");
                 App.cameraList.render();
                 App.gridManager.render();
-                App.gridManager.updateGridLayoutView(); 
-            }, 20);
+            }, 50);
+
+            App.gridManager.updateGridLayoutView(); 
+            renderLayoutTabs();
 
             const user = App.stateManager.state.currentUser;
-            // Сначала удаляем все классы ролей и прав
             document.body.className = document.body.className.replace(/role-\w+|can-\w+/g, '').trim();
 
             if (user) {
                 document.body.classList.add(`role-${user.role}`);
-                // Если это оператор, добавляем классы для его прав
-                if (user.role === 'operator' && user.permissions) {
+                // VVV ИЗМЕНЕНИЕ: Используем константу VVV
+                if (user.role === USER_ROLES.OPERATOR && user.permissions) {
+                // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
                     for (const permission in user.permissions) {
                         if (user.permissions[permission]) {
                             document.body.classList.add(`can-${permission.replace(/_/g, '-')}`);
@@ -233,6 +456,8 @@
         setInterval(updateSystemStats, 3000);
         setInterval(() => App.cameraList.pollCameraStatuses(), 10000);
         updateSystemStats();
+
+        window.api.rendererReady();
     }
 
     init();
