@@ -2,17 +2,31 @@
 
 # --- НАЧАЛО БЛОКА КОНФИГУРАЦИИ ---
 
-# Ваш путь к папке site-packages
+# 1. Ваш путь к папке site-packages, определенный командой 'pip show ultralytics'.
+#    Двойные обратные слэши обязательны.
 site_packages_path = 'C:\\Users\\vavol\\AppData\\Roaming\\Python\\Python313\\site-packages'
 
-# Список "скрытых" импортов
+# 2. Список "скрытых" импортов, которые PyInstaller может пропустить.
+#    Это помогает включить все необходимые зависимости.
 hidden_imports_list = [
-    'ultralytics', 'ultralytics.engine.results', 'ultralytics.utils',
-    'torch', 'torchvision', 'cv2', 'numpy', 'yaml', 'tqdm',
-    'pandas', 'seaborn', 'matplotlib', 'scipy', 'psutil'
+    'ultralytics',
+    'ultralytics.engine.results',
+    'ultralytics.utils',
+    'torch',
+    'torchvision',
+    'cv2',
+    'numpy',
+    'yaml',
+    'tqdm',
+    'pandas',
+    'seaborn',
+    'matplotlib',
+    'scipy',
+    'psutil'
 ]
 
-# Список файлов с данными (если нужны)
+# 3. Список файлов с данными (например, веса моделей), которые нужно включить в .exe
+#    Если ultralytics сама скачивает веса, этот список можно оставить пустым.
 datas_list = []
 
 # --- КОНЕЦ БЛОКА КОНФИГУРАЦИИ ---
@@ -20,10 +34,10 @@ datas_list = []
 
 a = Analysis(
     ['analytics.py'],
-    pathex=[site_packages_path],
+    pathex=[site_packages_path],  # <--- Используем ваш путь
     binaries=[],
-    datas=datas_list,
-    hiddenimports=hidden_imports_list,
+    datas=datas_list,             # <--- Используем ваш список данных
+    hiddenimports=hidden_imports_list, # <--- Используем ваш список импортов
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

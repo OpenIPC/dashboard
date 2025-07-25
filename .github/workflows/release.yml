@@ -19,28 +19,42 @@ jobs:
       - name: Check out git repository
         uses: actions/checkout@v4
 
+      # --- [НОВЫЙ БЛОК] Сборка исполняемого файла аналитики ---
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Используем современную версию Python
+
+      - name: Install Python dependencies
+        run: pip install ultralytics pyinstaller
+
+      - name: Build analytics executable
+        # Эта команда соберет исполняемый файл для текущей ОС
+        # (analytics для Linux, analytics.exe для Windows)
+        # и положит его в папку extra/analytics для последующей упаковки
+        run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
+      # -----------------------------------------------------------
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Node.js dependencies
         run: npm ci
       
-      # ---> ИЗМЕНЁН ЭТОТ ШАГ <---
+      # Этот шаг остается, он важен для AppImage
       - name: Install Linux dependencies and set FUSE_PATH
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2 libarchive-tools
-          # Находим реальный путь к библиотеке libfuse.so.2
+          sudo apt-get install -y libfuse2
           FUSE_REAL_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
           echo "Found libfuse.so.2 at: ${FUSE_REAL_PATH}"
-          # Экспортируем этот путь в переменные окружения для последующих шагов
           echo "FUSE_PATH=${FUSE_REAL_PATH}" >> $GITHUB_ENV
 
-      - name: Build and release
+      - name: Build and release Electron app
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run dist -- --publish always
