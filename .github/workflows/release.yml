@@ -24,16 +24,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # УЛУЧШЕНИЕ: Добавлено кэширование pip
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          else
-            pip install torch torchvision
-          fi
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install ultralytics pyinstaller
+          
+      - name: Install Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: pip install ultralytics pyinstaller torch torchvision
 
       - name: Build analytics executable
         run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
@@ -52,28 +52,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2
       
+      # ---> ИЗМЕНЁН ЭТОТ ШАГ <---
       - name: Build and release Electron app
         env:
-          # ИСПРАВЛЕНО: Используем стандартный GITHUB_TOKEN
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
-            FUSE_SYMLINK="/usr/lib/x86_64-linux-gnu/libfuse.so.2"
-            if [ ! -f "$FUSE_SYMLINK" ]; then
-               echo "::error::Symlink for libfuse.so.2 not found at $FUSE_SYMLINK"
-               exit 1
-            fi
-            FUSE_PATH=$(readlink -f $FUSE_SYMLINK)
-            
-            # УЛУЧШЕНИЕ: Проверка, что библиотека найдена
-            if [ -z "$FUSE_PATH" ] || [ ! -f "$FUSE_PATH" ]; then
-              echo "::error::Could not resolve real path for libfuse.so.2"
-              exit 1
-            fi
-
+            FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
             echo "FUSE library found at: $FUSE_PATH"
+            # Передаем extraFiles как JSON-строку в одинарных кавычках, чтобы избежать проблем с парсингом
             EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
             npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
           else
+            # Для Windows просто запускаем сборку как обычно
             npm run dist -- --publish always
           fi
