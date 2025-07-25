@@ -17,14 +17,11 @@ jobs:
 
     steps:
       - name: Check out git repository
-        # ---> ВАЖНОЕ ИЗМЕНЕНИЕ: Указываем fetch-depth: 0 <---
-        # Это нужно, чтобы electron-builder мог правильно работать с тегами Git
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
 
-      # ... (все шаги до "Build and release" остаются без изменений) ...
-
+      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -43,6 +40,7 @@ jobs:
       - name: Build analytics executable
         run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
 
+      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -56,17 +54,19 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2
       
-      # ---> ИЗМЕНЁН ЭТОТ ШАГ <---
-      - name: Build and release Electron app
+      # ---> ИЗМЕНЁН ЭТОТ БЛОК: РАЗДЕЛЕН НА ДВА <---
+      - name: Build and release for Linux
+        if: runner.os == 'Linux'
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
-            echo "FUSE library found at: $FUSE_PATH"
-            EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
-            # Добавляем --winPortable, чтобы собрать и portable-версию для Windows, если нужно
-            npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
-          else
-            npm run dist -- --publish always
-          fi
+          FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
+          echo "FUSE library found at: $FUSE_PATH"
+          EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
+          npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
+      
+      - name: Build and release for Windows
+        if: runner.os == 'Windows'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npm run dist -- --publish always
