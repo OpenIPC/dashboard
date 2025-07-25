@@ -25,18 +25,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ---> ИЗМЕНЁН ЭТОТ ШАГ <---
-      - name: Install Python dependencies
+      # ---> ИЗМЕНЁН ЭТОТ БЛОК <---
+      - name: Install Python dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
-          # Для Linux ставим CPU-only версию torch, чтобы уменьшить размер файла
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          fi
-          # Устанавливаем остальные пакеты для всех ОС
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install ultralytics pyinstaller
+          
+      - name: Install Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: pip install ultralytics pyinstaller torch torchvision
 
       - name: Build analytics executable
-        # Собирает analytics для текущей ОС и кладет в extra/analytics
         run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
 
       # --- [БЛОК 2] Сборка Electron-приложения ---
@@ -49,17 +49,21 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
       
-      # ---> ИЗМЕНЁН ЭТОТ ШАГ (ОБЪЕДИНЕН С ПОСЛЕДУЮЩИМ) <---
+      # ---> ИЗМЕНЁН ЭТОТ БЛОК <---
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+      
       - name: Build and release Electron app
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          # Для Linux устанавливаем зависимости, находим FUSE и передаем путь в electron-builder через --config
+          
           if [ "${{ runner.os }}" == "Linux" ]; then
-            sudo apt-get update && sudo apt-get install -y libfuse2
             FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
             echo "FUSE library found at: $FUSE_PATH"
             npm run dist -- --publish always --config.linux.extraFiles.0.from=$FUSE_PATH --config.linux.extraFiles.0.to=lib/libfuse.so.2
           else
-            # Для Windows просто запускаем сборку как обычно
+           
             npm run dist -- --publish always
+          fi
