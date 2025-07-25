@@ -1,6 +1,6 @@
 {
   "name": "openipc-dashboard",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "App for managing OpenIPC cameras",
   "main": "main.js",
   "scripts": {
