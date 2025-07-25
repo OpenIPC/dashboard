@@ -1095,18 +1095,16 @@ ipcMain.handle('stop-video-stream', async (event, uniqueStreamIdentifier) => {
     return { success: false, error: "Stream not found" };
 });
 
+// =================================================================================
+// --- ИЗМЕНЕННЫЙ БЛОК ДЛЯ УПРАВЛЕНИЯ АНАЛИТИКОЙ ---
+// =================================================================================
 ipcMain.handle('toggle-analytics', async (event, cameraId) => {
     const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
 
-    const configDataFromFile = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
-    const cameraFromConfig = configDataFromFile.cameras.find(c => c.id === cameraId);
-    const analyticsConfig = cameraFromConfig.analyticsConfig || {};
-
+    // Если процесс уже запущен, останавливаем его
     if (processManager.get(analyticsId)) {
-        console.log(`[Analytics] Stopping for camera ${cameraId} (either toggled off or disabled in settings).`);
-        if (processManager.get(analyticsId)) {
-            processManager.stop(analyticsId);
-        }
+        console.log(`[Analytics] Stopping for camera ${cameraId}.`);
+        processManager.stop(analyticsId);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
         }
@@ -1114,27 +1112,52 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
     }
     
     try {
-        const camera = cameraFromConfig;
+        const configDataFromFile = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
+        const camera = configDataFromFile.cameras.find(c => c.id === cameraId);
         if (!camera) {
-            return { success: false, error: 'Camera not found' };
+            return { success: false, error: 'Camera not found in config' };
         }
-        
+        const analyticsConfig = camera.analyticsConfig || {};
+
         const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
         const fullCameraInfo = { ...camera, password: password || '' };
 
         const streamPath = fullCameraInfo.streamPath0 || '/stream0';
         const rtspUrl = `rtsp://${encodeURIComponent(fullCameraInfo.username)}:${encodeURIComponent(fullCameraInfo.password)}@${fullCameraInfo.ip}:${fullCameraInfo.port || 554}${streamPath}`;
         
-        const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
-        const scriptPath = path.join(__dirname, 'analytics.py');
+        // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+        // 1. Определяем имя исполняемого файла аналитики в зависимости от ОС
+        const analyticsExecutableName = process.platform === 'win32' ? 'analytics.exe' : 'analytics';
+
+        // 2. Определяем путь к файлу в зависимости от режима (разработка или собранное приложение)
+        const analyticsPath = app.isPackaged
+            ? path.join(process.resourcesPath, 'analytics', analyticsExecutableName)
+            : path.join(__dirname, 'extra', 'analytics', analyticsExecutableName);
+
+        console.log(`[Analytics] Attempting to launch analytics from: ${analyticsPath}`);
+
+        // 3. Проверяем, существует ли файл, перед запуском
+        if (!fs.existsSync(analyticsPath)) {
+            const errorMsg = `Исполняемый файл видеоаналитики не найден. Ожидаемый путь: ${analyticsPath}`;
+            console.error(`[Analytics] ERROR: ${errorMsg}`);
+            dialog.showErrorBox('Ошибка запуска аналитики', errorMsg);
+            return { success: false, error: errorMsg };
+        }
         
+        // 4. Подготавливаем аргументы (конфигурация кодируется в Base64)
         const configForScript = {
             objects: analyticsConfig.objects,
             roi: analyticsConfig.roi
         };
         const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
-        const analyticsProcess = spawn(pythonExecutable, [scriptPath, rtspUrl, configArg], { windowsHide: true });
+        const args = [rtspUrl, configArg];
         
+        // 5. Запускаем скомпилированный файл
+        const analyticsProcess = spawn(analyticsPath, args, { windowsHide: true });
+        
+        // --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
         processManager.add(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 
         analyticsProcess.stdout.on('data', async (data) => {
@@ -1150,31 +1173,23 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
                         await saveAnalyticsEvent(cameraId, result);
                     }
 
-                    if (result.status === 'motion_detected' || result.status === 'objects_detected') {
+                    // Логика запуска записи по детекции остается прежней
+                    if (result.status === 'motion_detected' || (result.status === 'objects_detected' && result.objects.length > 0)) {
                         if (!recordingManager[cameraId]) {
                             console.log(`[Analytics] Motion/Object detected on camera ${cameraId}, starting recording.`);
-                            try {
-                                const currentConfigData = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
-                                const cameraToRecord = currentConfigData.cameras.find(c => c.id === cameraId);
-                                if (cameraToRecord) {
-                                    await startRecording(cameraToRecord);
-                                } else {
-                                    console.error(`[Analytics] Could not find camera ${cameraId} to start recording.`);
-                                }
-                            } catch (e) {
-                                console.error('[Analytics] Error reading config to start recording:', e);
-                            }
+                            // Используем уже загруженные данные о камере, чтобы не читать файл снова
+                            await startRecording(camera);
                         }
                     }
 
                 } catch (e) {
-                    // Игнорируем ошибки парсинга
+                    console.log(`[Analytics] Non-JSON output received: ${line}`);
                 }
             }
         });
 
         analyticsProcess.stderr.on('data', (data) => {
-            console.error(`[Analytics][Python STDERR] for camera ${cameraId}: ${data.toString()}`);
+            console.error(`[Analytics][Executable STDERR] for camera ${cameraId}: ${data.toString()}`);
         });
 
         analyticsProcess.on('close', (code) => {
