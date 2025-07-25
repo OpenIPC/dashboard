@@ -17,9 +17,14 @@ jobs:
 
     steps:
       - name: Check out git repository
+        # ---> ВАЖНОЕ ИЗМЕНЕНИЕ: Указываем fetch-depth: 0 <---
+        # Это нужно, чтобы electron-builder мог правильно работать с тегами Git
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
+      # ... (все шаги до "Build and release" остаются без изменений) ...
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,7 +43,6 @@ jobs:
       - name: Build analytics executable
         run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
 
-      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -60,10 +64,9 @@ jobs:
           if [ "${{ runner.os }}" == "Linux" ]; then
             FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
             echo "FUSE library found at: $FUSE_PATH"
-            # Передаем extraFiles как JSON-строку в одинарных кавычках, чтобы избежать проблем с парсингом
             EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
+            # Добавляем --winPortable, чтобы собрать и portable-версию для Windows, если нужно
             npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
           else
-            # Для Windows просто запускаем сборку как обычно
             npm run dist -- --publish always
           fi
