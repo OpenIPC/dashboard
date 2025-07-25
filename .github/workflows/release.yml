@@ -19,22 +19,27 @@ jobs:
       - name: Check out git repository
         uses: actions/checkout@v4
 
-      # --- [НОВЫЙ БЛОК] Сборка исполняемого файла аналитики ---
+      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Используем современную версию Python
+          python-version: '3.11'
 
+      # ---> ИЗМЕНЁН ЭТОТ ШАГ <---
       - name: Install Python dependencies
-        run: pip install ultralytics pyinstaller
+        run: |
+          # Для Linux ставим CPU-only версию torch, чтобы уменьшить размер файла
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          fi
+          # Устанавливаем остальные пакеты для всех ОС
+          pip install ultralytics pyinstaller
 
       - name: Build analytics executable
-        # Эта команда соберет исполняемый файл для текущей ОС
-        # (analytics для Linux, analytics.exe для Windows)
-        # и положит его в папку extra/analytics для последующей упаковки
+        # Собирает analytics для текущей ОС и кладет в extra/analytics
         run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
-      # -----------------------------------------------------------
 
+      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -44,17 +49,17 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
       
-      # Этот шаг остается, он важен для AppImage
-      - name: Install Linux dependencies and set FUSE_PATH
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2
-          FUSE_REAL_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
-          echo "Found libfuse.so.2 at: ${FUSE_REAL_PATH}"
-          echo "FUSE_PATH=${FUSE_REAL_PATH}" >> $GITHUB_ENV
-
+      # ---> ИЗМЕНЁН ЭТОТ ШАГ (ОБЪЕДИНЕН С ПОСЛЕДУЮЩИМ) <---
       - name: Build and release Electron app
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: npm run dist -- --publish always
+        run: |
+          # Для Linux устанавливаем зависимости, находим FUSE и передаем путь в electron-builder через --config
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libfuse2
+            FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
+            echo "FUSE library found at: $FUSE_PATH"
+            npm run dist -- --publish always --config.linux.extraFiles.0.from=$FUSE_PATH --config.linux.extraFiles.0.to=lib/libfuse.so.2
+          else
+            # Для Windows просто запускаем сборку как обычно
+            npm run dist -- --publish always
