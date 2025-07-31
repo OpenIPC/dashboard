@@ -1,6 +1,6 @@
-// main.js (Финальная версия со всеми исправлениями)
+// --- ФАЙЛ: main.js ---
 
-const { app, BrowserWindow, ipcMain, Menu, clipboard, dialog, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, clipboard, dialog, shell, protocol, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
@@ -21,7 +21,49 @@ const NetIpCamera = require('./netip-handler.js');
 
 const { Mutex } = require('async-mutex');
 const portMutex = new Mutex();
-const eventsMutex = new Mutex(); // Мьютекс для файла событий
+const eventsMutex = new Mutex(); 
+
+const notificationTimestamps = {};
+const NOTIFICATION_COOLDOWN = 30000; // 30 секунд
+
+async function showSystemNotification({ title, body }) {
+    if (!Notification.isSupported()) return;
+    const settings = await getAppSettings();
+    if (!settings.notifications_enabled) return;
+
+    new Notification({ title, body, icon: path.join(__dirname, 'build/icon.png') }).show();
+}
+
+async function showAnalyticsNotification(cameraName, cameraId, objects) {
+    if (!Notification.isSupported()) return;
+
+    const settings = await getAppSettings();
+    if (!settings.notifications_enabled) return;
+
+    const now = Date.now();
+    const lastTime = notificationTimestamps[cameraId];
+
+    if (lastTime && (now - lastTime < NOTIFICATION_COOLDOWN)) {
+        return;
+    }
+
+    notificationTimestamps[cameraId] = now;
+    
+    console.log(`[Notification] Showing notification for camera: ${cameraName}`);
+
+    const notification = new Notification({
+        title: `Обнаружение на камере: ${cameraName}`,
+        body: `Обнаружены объекты: ${objects.join(', ')}`,
+        icon: path.join(__dirname, 'build/icon.png'),
+        silent: true
+    });
+
+    notification.show();
+}
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId("com.vavol.openipcdashboard");
+}
 
 if (process.platform === 'linux' || process.env.ELECTRON_FORCE_NO_SANDBOX) {
     app.commandLine.appendSwitch('--no-sandbox');
@@ -33,6 +75,7 @@ const ffmpegPath = ffmpeg.path.replace('app.asar', 'app.asar.unpacked');
 let mainWindow = null;
 const streamManager = {};
 const recordingManager = {};
+const recordingStopTimers = {};
 const usedPorts = new Set();
 const BASE_PORT = 9001;
 const KEYTAR_SERVICE = 'OpenIPC-VMS';
@@ -94,18 +137,34 @@ const processManager = {
     },
     stop(key) {
         if (this.processes.has(key)) {
-            const { process, type } = this.processes.get(key);
+            const { process: childProcess, type } = this.processes.get(key);
             console.log(`[ProcessManager] Issuing stop for ${type} process with key: ${key}`);
             try {
-                if (type === PROCESS_TYPES.RECORDING && process.stdin.writable) {
-                    process.stdin.write('q\n');
+                if (type === PROCESS_TYPES.RECORDING && childProcess.stdin.writable) {
+                    childProcess.stdin.write('q\n');
                 } else {
-                    process.kill();
+                    // VVVV --- ВОТ ИСПРАВЛЕНИЕ --- VVVV
+                    if (process.platform === 'win32') {
+                        console.log(`[ProcessManager] Using taskkill on Windows for PID: ${childProcess.pid}`);
+                        // /t - завершает дочерние процессы, /f - принудительно
+                        exec(`taskkill /pid ${childProcess.pid} /f /t`);
+                    } else {
+                        childProcess.kill(); // Стандартный метод для Linux/macOS
+                    }
+                    // ^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^
                 }
             } catch (e) {
                 console.error(`[ProcessManager] Error sending stop signal to ${key}: ${e.message}`);
-                if (!process.killed) process.kill('SIGKILL');
+                // Резервный метод, если основной не сработал
+                if (!childProcess.killed) {
+                    try {
+                        exec(`taskkill /pid ${childProcess.pid} /f /t`);
+                    } catch (killErr) {
+                        console.error('Final fallback kill failed', killErr)
+                    }
+                }
             }
+            this.processes.delete(key);
             return true;
         }
         return false;
@@ -139,7 +198,7 @@ console.log(`[Config] Data path is: ${dataPathRoot}`);
 const configPath = path.join(dataPathRoot, 'config.json');
 const appSettingsPath = path.join(dataPathRoot, 'app-settings.json');
 const usersPath = path.join(dataPathRoot, 'users.json');
-const eventsPath = path.join(dataPathRoot, 'events.json'); // Путь к файлу событий
+const eventsPath = path.join(dataPathRoot, 'events.json');
 const oldCamerasPath = path.join(dataPathRoot, 'cameras.json');
 let sshWindows = {};
 let fileManagerWindows = {};
@@ -268,8 +327,10 @@ async function getAppSettings() {
             recordingsPath: path.join(app.getPath('videos'), 'OpenIPC-VMS'),
             hwAccel: 'auto',
             language: 'en',
-            qscale: 8, // Значение по умолчанию
-            fps: 20    // Значение по умолчанию
+            qscale: 8,
+            fps: 20,
+            analytics_record_duration: 30,
+            notifications_enabled: true
         };
     }
     return appSettingsCache;
@@ -337,6 +398,105 @@ function createFileManagerWindow(camera) {
 }
 
 // --- IPC ОБРАБОТЧИКИ ---
+
+ipcMain.handle('export-config', async () => {
+    try {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+            title: 'Экспорт конфигурации',
+            defaultPath: `dashboard-backup-${new Date().toISOString().slice(0, 10)}.json`,
+            filters: [{ name: 'JSON Files', extensions: ['json'] }]
+        });
+
+        if (canceled || !filePath) {
+            return { success: false, message: 'Export canceled' };
+        }
+
+        const configData = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
+        const appSettingsData = JSON.parse(await fsPromises.readFile(appSettingsPath, 'utf-8'));
+        const usersData = JSON.parse(await fsPromises.readFile(usersPath, 'utf-8'));
+
+        configData.cameras.forEach(camera => {
+            delete camera.password;
+        });
+
+        const backupData = {
+            config: configData,
+            appSettings: appSettingsData,
+            users: usersData,
+        };
+
+        await fsPromises.writeFile(filePath, JSON.stringify(backupData, null, 2));
+        
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Экспорт успешен',
+            message: `Конфигурация успешно сохранена в файл:\n${filePath}`
+        });
+
+        return { success: true };
+    } catch (e) {
+        console.error('[Export] Error:', e);
+        dialog.showErrorBox('Ошибка экспорта', `Не удалось экспортировать конфигурацию: ${e.message}`);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('import-config', async () => {
+    try {
+        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            title: 'Импорт конфигурации',
+            properties: ['openFile'],
+            filters: [{ name: 'JSON Files', extensions: ['json'] }]
+        });
+
+        if (canceled || filePaths.length === 0) {
+            return { success: false, message: 'Import canceled' };
+        }
+
+        const filePath = filePaths[0];
+        const backupContent = await fsPromises.readFile(filePath, 'utf-8');
+        const backupData = JSON.parse(backupContent);
+
+        if (!backupData.config || !backupData.appSettings || !backupData.users) {
+            throw new Error('Неверный формат файла резервной копии.');
+        }
+
+        const { response } = await dialog.showMessageBox(mainWindow, {
+            type: 'warning',
+            title: 'Подтверждение импорта',
+            message: 'Вы уверены, что хотите импортировать конфигурацию?',
+            detail: 'Все текущие камеры, группы, раскладки, пользователи и настройки будут полностью заменены данными из файла. Это действие необратимо.',
+            buttons: ['Импортировать', 'Отмена'],
+            defaultId: 1,
+            cancelId: 1
+        });
+
+        if (response !== 0) {
+            return { success: false, message: 'Import canceled by user' };
+        }
+
+        await fsPromises.writeFile(configPath, JSON.stringify(backupData.config, null, 2));
+        await fsPromises.writeFile(appSettingsPath, JSON.stringify(backupData.appSettings, null, 2));
+        await fsPromises.writeFile(usersPath, JSON.stringify(backupData.users, null, 2));
+        
+        appSettingsCache = null;
+
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Импорт успешен',
+            message: 'Конфигурация успешно импортирована. Приложение будет перезагружено для применения изменений.'
+        }).then(() => {
+            app.relaunch();
+            app.quit();
+        });
+
+        return { success: true };
+    } catch (e) {
+        console.error('[Import] Error:', e);
+        dialog.showErrorBox('Ошибка импорта', `Не удалось импортировать конфигурацию: ${e.message}`);
+        return { success: false, error: e.message };
+    }
+});
 
 ipcMain.handle('get-events-for-date', async (event, { date }) => {
     try {
@@ -693,7 +853,9 @@ ipcMain.handle('load-app-settings', getAppSettings);
 
 ipcMain.handle('save-app-settings', async (event, settings) => {
     try {
-        appSettingsCache = settings;
+        appSettingsCache = null; 
+        appSettingsCache = settings; 
+        
         await fsPromises.writeFile(appSettingsPath, JSON.stringify(settings, null, 2));
         return { success: true };
     } catch (e) {
@@ -737,6 +899,24 @@ ipcMain.handle('open-in-browser', async (event, ip) => {
     }
 });
 
+function stopRecording(cameraId) {
+    if (recordingStopTimers[cameraId]) {
+        clearTimeout(recordingStopTimers[cameraId]);
+        delete recordingStopTimers[cameraId];
+        console.log(`[REC] Manually/Automatically stopped recording for ${cameraId}, timer cleared.`);
+    }
+
+    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, cameraId);
+    if (processManager.stop(recordingId)) {
+        return { success: true };
+    }
+    return { success: false, error: 'Recording not found' };
+}
+
+ipcMain.handle('stop-recording', (event, cameraId) => {
+    return stopRecording(cameraId);
+});
+
 async function startRecording(camera) {
     if (!camera || !camera.id) {
         console.error('[REC] Invalid camera object for recording.');
@@ -745,7 +925,7 @@ async function startRecording(camera) {
     const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, camera.id);
     if (processManager.get(recordingId) || recordingManager[camera.id]) {
         console.log(`[REC] Recording already in progress for camera ${camera.id}. Skipping.`);
-        return { success: false, error: 'Recording is already in progress' };
+        return { success: true, error: 'Recording is already in progress' };
     }
     
     const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
@@ -756,6 +936,7 @@ async function startRecording(camera) {
     try {
         await fsPromises.mkdir(recordingsPath, { recursive: true });
     } catch (e) {
+        console.error(`[REC ERROR] Failed to create recordings folder: ${recordingsPath}`, e);
         return { success: false, error: `Failed to create recordings folder: ${e.message}` };
     }
     const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, 19);
@@ -767,48 +948,75 @@ async function startRecording(camera) {
     const streamUrl = `rtsp://${encodeURIComponent(fullCameraInfo.username)}:${encodeURIComponent(fullCameraInfo.password)}@${fullCameraInfo.ip}:${fullCameraInfo.port || 554}${streamPath0}`;
     
     const ffmpegArgs = [
-        '-rtsp_transport', 'tcp', '-i', streamUrl,
-        '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-        '-movflags', '+faststart', outputPath
+        '-rtsp_transport', 'tcp',
+        '-i', streamUrl,
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath
     ];
+
+    console.log(`[REC] Starting for "${fullCameraInfo.name}" to ${outputPath}`);
+    console.log(`[REC] FFmpeg command: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
+
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { detached: false, windowsHide: true });
     
     processManager.add(recordingId, ffmpegProcess, PROCESS_TYPES.RECORDING);
     recordingManager[camera.id] = { path: outputPath };
     
+    showSystemNotification({
+        title: 'Запись начата',
+        body: `Началась запись с камеры "${fullCameraInfo.name}".`
+    });
+    
     let ffmpegErrorOutput = '';
     ffmpegProcess.stderr.on('data', (data) => {
-        ffmpegErrorOutput += data.toString();
+        const output = data.toString();
+        ffmpegErrorOutput += output;
+        console.log(`[REC FFMPEG STDERR - ${fullCameraInfo.name}]: ${output}`);
     });
 
     ffmpegProcess.on('close', (code) => {
         console.log(`[REC FFMPEG] Finished for "${fullCameraInfo.name}" with code ${code}.`);
         delete recordingManager[camera.id];
         processManager.processes.delete(recordingId);
+        
+        if (recordingStopTimers[camera.id]) {
+            clearTimeout(recordingStopTimers[camera.id]);
+            delete recordingStopTimers[camera.id];
+        }
+
+        const errorMsg = code !== 0 ? (ffmpegErrorOutput.trim().split('\n').pop() || `ffmpeg exited with code ${code}`) : null;
+        
+        if (errorMsg) {
+            console.error(`[REC ERROR] FFmpeg failed for ${fullCameraInfo.name}: ${errorMsg}`);
+            showSystemNotification({
+                title: 'Ошибка записи',
+                body: `Произошла ошибка при записи с камеры "${fullCameraInfo.name}".`
+            });
+        } else {
+            showSystemNotification({
+                title: 'Запись завершена',
+                body: `Запись с камеры "${fullCameraInfo.name}" успешно сохранена.`
+            });
+        }
+
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('recording-state-change', { 
                 cameraId: camera.id, 
                 recording: false, 
                 path: code === 0 ? outputPath : null,
-                error: code !== 0 ? (ffmpegErrorOutput.trim().split('\n').pop() || `ffmpeg exited with code ${code}`) : null 
+                error: errorMsg
             });
         }
     });
 
-    console.log(`[REC] Starting for "${fullCameraInfo.name}" to ${outputPath}`);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('recording-state-change', { cameraId: camera.id, recording: true });
     return { success: true };
 }
 
 ipcMain.handle('start-recording', (event, camera) => startRecording(camera));
-
-ipcMain.handle('stop-recording', (event, cameraId) => {
-    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, cameraId);
-    if (processManager.stop(recordingId)) {
-        return { success: true };
-    }
-    return { success: false, error: 'Recording not found' };
-});
 
 ipcMain.handle('open-recordings-folder', async () => {
     const settings = await getAppSettings();
@@ -1095,49 +1303,66 @@ ipcMain.handle('stop-video-stream', async (event, uniqueStreamIdentifier) => {
     return { success: false, error: "Stream not found" };
 });
 
-// =================================================================================
-// --- ИЗМЕНЕННЫЙ БЛОК ДЛЯ УПРАВЛЕНИЯ АНАЛИТИКОЙ ---
-// =================================================================================
+async function handleAnalyticsDetection(cameraId, camera) {
+    const settings = await getAppSettings();
+    const autoStopDelay = (settings.analytics_record_duration || 30) * 1000;
+
+    if (recordingStopTimers[cameraId]) {
+        clearTimeout(recordingStopTimers[cameraId]);
+    }
+
+    if (recordingManager[cameraId]) {
+        recordingStopTimers[cameraId] = setTimeout(() => {
+            console.log(`[REC] Auto-stopping recording for camera ${cameraId} due to inactivity.`);
+            stopRecording(cameraId);
+        }, autoStopDelay);
+        return;
+    }
+
+    console.log(`[Analytics] Object detected on camera ${cameraId}, starting recording.`);
+    const result = await startRecording(camera);
+    if (result.success) {
+        recordingStopTimers[cameraId] = setTimeout(() => {
+            console.log(`[REC] Auto-stopping recording for camera ${cameraId} due to inactivity.`);
+            stopRecording(cameraId);
+        }, autoStopDelay);
+    }
+}
+
 ipcMain.handle('toggle-analytics', async (event, cameraId) => {
     const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
 
-    // Если процесс уже запущен, останавливаем его
     if (processManager.get(analyticsId)) {
         console.log(`[Analytics] Stopping for camera ${cameraId}.`);
         processManager.stop(analyticsId);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
+        
+        if (recordingStopTimers[cameraId]) {
+            stopRecording(cameraId);
         }
+
+        // Статус изменится сам по событию 'close', которое мы обработаем ниже.
         return { success: true, status: 'stopped' };
     }
     
     try {
+        const appSettings = await getAppSettings();
         const configDataFromFile = JSON.parse(await fsPromises.readFile(configPath, 'utf-8'));
         const camera = configDataFromFile.cameras.find(c => c.id === cameraId);
         if (!camera) {
             return { success: false, error: 'Camera not found in config' };
         }
-        const analyticsConfig = camera.analyticsConfig || {};
-
+        
         const password = await keytar.getPassword(KEYTAR_SERVICE, camera.id.toString());
         const fullCameraInfo = { ...camera, password: password || '' };
 
         const streamPath = fullCameraInfo.streamPath0 || '/stream0';
         const rtspUrl = `rtsp://${encodeURIComponent(fullCameraInfo.username)}:${encodeURIComponent(fullCameraInfo.password)}@${fullCameraInfo.ip}:${fullCameraInfo.port || 554}${streamPath}`;
         
-        // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-
-        // 1. Определяем имя исполняемого файла аналитики в зависимости от ОС
         const analyticsExecutableName = process.platform === 'win32' ? 'analytics.exe' : 'analytics';
-
-        // 2. Определяем путь к файлу в зависимости от режима (разработка или собранное приложение)
         const analyticsPath = app.isPackaged
             ? path.join(process.resourcesPath, 'analytics', analyticsExecutableName)
             : path.join(__dirname, 'extra', 'analytics', analyticsExecutableName);
 
-        console.log(`[Analytics] Attempting to launch analytics from: ${analyticsPath}`);
-
-        // 3. Проверяем, существует ли файл, перед запуском
         if (!fs.existsSync(analyticsPath)) {
             const errorMsg = `Исполняемый файл видеоаналитики не найден. Ожидаемый путь: ${analyticsPath}`;
             console.error(`[Analytics] ERROR: ${errorMsg}`);
@@ -1145,19 +1370,18 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
             return { success: false, error: errorMsg };
         }
         
-        // 4. Подготавливаем аргументы (конфигурация кодируется в Base64)
         const configForScript = {
-            objects: analyticsConfig.objects,
-            roi: analyticsConfig.roi
+            objects: camera.analyticsConfig?.objects || [],
+            roi: camera.analyticsConfig?.roi || null,
+            resize_width: appSettings.analytics_resize_width !== undefined ? appSettings.analytics_resize_width : 416,
+            frame_skip: appSettings.analytics_frame_skip !== undefined ? appSettings.analytics_frame_skip : 10,
         };
+
         const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
         const args = [rtspUrl, configArg];
         
-        // 5. Запускаем скомпилированный файл
         const analyticsProcess = spawn(analyticsPath, args, { windowsHide: true });
         
-        // --- КОНЕЦ ИЗМЕНЕНИЙ ---
-
         processManager.add(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 
         analyticsProcess.stdout.on('data', async (data) => {
@@ -1165,23 +1389,30 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
             for (const line of lines) {
                 try {
                     const result = JSON.parse(line);
-                    if (mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.send('analytics-update', { cameraId, result });
-                    }
 
-                    if (result.status === 'objects_detected' && result.objects.length > 0) {
+                    if (result.status === 'info' && result.provider) {
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('analytics-provider-info', { cameraId, provider: result.provider });
+                        }
+                    } else if (result.status === 'error') {
+                         if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('analytics-provider-info', { cameraId, error: result.message });
+                        }
+                    } else if (result.status === 'objects_detected' && result.objects.length > 0) {
                         await saveAnalyticsEvent(cameraId, result);
-                    }
+                        
+                        const uniqueObjectLabels = [...new Set(result.objects.map(obj => obj.label))];
+                        showAnalyticsNotification(camera.name, cameraId, uniqueObjectLabels);
 
-                    // Логика запуска записи по детекции остается прежней
-                    if (result.status === 'motion_detected' || (result.status === 'objects_detected' && result.objects.length > 0)) {
-                        if (!recordingManager[cameraId]) {
-                            console.log(`[Analytics] Motion/Object detected on camera ${cameraId}, starting recording.`);
-                            // Используем уже загруженные данные о камере, чтобы не читать файл снова
-                            await startRecording(camera);
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('analytics-update', { cameraId, result });
+                        }
+                        await handleAnalyticsDetection(cameraId, camera);
+                    } else {
+                         if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('analytics-update', { cameraId, result });
                         }
                     }
-
                 } catch (e) {
                     console.log(`[Analytics] Non-JSON output received: ${line}`);
                 }
@@ -1194,6 +1425,7 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
 
         analyticsProcess.on('close', (code) => {
             console.log(`[Analytics] Process for camera ${cameraId} exited with code ${code}`);
+            // Удаляем процесс из менеджера только после его фактического завершения
             processManager.processes.delete(analyticsId);
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
@@ -1393,6 +1625,50 @@ ipcMain.handle('get-camera-info', async (event, credentials) => {
 ipcMain.handle('open-file-manager', (event, cameraData) => {
     createFileManagerWindow(cameraData);
 });
+
+// VVV ИЗМЕНЕНИЕ: Добавляем новый обработчик для календаря VVV
+ipcMain.handle('get-dates-with-activity', async (event, cameraName) => {
+    const activeDates = new Set();
+    const settings = await getAppSettings();
+    const recordingsPath = settings.recordingsPath;
+    const saneCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
+
+    // 1. Сканируем папку с записями
+    try {
+        const files = await fsPromises.readdir(recordingsPath);
+        for (const file of files) {
+            if (file.startsWith(saneCameraName) && file.endsWith('.mp4')) {
+                // Извлекаем дату из имени файла, например, 'IP Camera-2025-07-31T...'
+                const match = file.match(/\d{4}-\d{2}-\d{2}/);
+                if (match) {
+                    activeDates.add(match[0]);
+                }
+            }
+        }
+    } catch (e) {
+        if (e.code !== 'ENOENT') {
+            console.error('[Calendar] Error scanning recordings directory:', e);
+        }
+    }
+
+    // 2. Сканируем файл событий
+    try {
+        const eventsData = await fsPromises.readFile(eventsPath, 'utf-8');
+        const allEventsByDate = JSON.parse(eventsData);
+        for (const dateKey in allEventsByDate) {
+            // Ключи в events.json уже имеют формат 'YYYY-MM-DD'
+            activeDates.add(dateKey);
+        }
+    } catch (e) {
+        if (e.code !== 'ENOENT') {
+            console.error('[Calendar] Error reading events file:', e);
+        }
+    }
+    
+    // Преобразуем Set в массив и возвращаем
+    return Array.from(activeDates);
+});
+// ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
 ipcMain.handle('get-recordings-for-date', async (event, { cameraName, date }) => {
     try {

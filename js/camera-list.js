@@ -65,14 +65,19 @@
                     cameraItem.dataset.cameraId = camera.id;
                     cameraItem.draggable = App.stateManager.state.currentUser?.role === 'admin';
                     
+                    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+                    // Кнопка аналитики и индикатор записи теперь в одном контейнере
                     cameraItem.innerHTML = `
                         <i class="status-icon" id="status-icon-${camera.id}"></i>
                         <span>${camera.name}</span>
-                        <div class="camera-item-buttons" style="margin-left: auto; display: flex; gap: 5px;">
-                            <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics"><i class="material-icons" style="font-size: 18px;">insights</i></button>
+                        <div class="camera-item-controls" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                            <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
+                                <i class="material-icons" style="font-size: 18px;">insights</i>
+                            </button>
+                            <div class="rec-indicator"></div>
                         </div>
-                        <div class="rec-indicator"></div>
                     `;
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                     if (recordingStates[camera.id]) {
                         cameraItem.classList.add('recording');

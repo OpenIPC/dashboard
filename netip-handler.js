@@ -1,5 +1,3 @@
-// netip-handler.js (Версия с каноническим MD5 в нижнем регистре)
-
 const net = require('net');
 const fs = require('fs');
 const client = require('http');

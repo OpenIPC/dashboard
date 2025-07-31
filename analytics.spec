@@ -5,14 +5,18 @@ a = Analysis(
     ['analytics.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    # VVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVV
+    # Добавляем всю папку cv2 из виртуального окружения в сборку.
+    # Она будет помещена в папку 'cv2' внутри .exe файла.
+    datas=[('yolov8n.onnx', '.'), 
+           ('.venv/Lib/site-packages/cv2', 'cv2')],
+    # ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
 )
 pyz = PYZ(a.pure)
 

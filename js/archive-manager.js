@@ -1,4 +1,4 @@
-// js/archive-manager.js (Финальная версия с вашими функциями и новыми улучшениями)
+// --- ФАЙЛ: archive-manager.js ---
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -15,22 +15,20 @@
         const timelineWrapper = document.getElementById('timeline-wrapper');
         const archiveExportBtn = document.getElementById('archive-export-btn');
         
-        // Новые элементы для фильтров и списка событий
         const filtersContainer = document.getElementById('archive-filters');
         const eventListEl = document.getElementById('event-list');
 
         const dayInSeconds = 24 * 60 * 60;
         const MIN_ZOOM = 1;
-        const MAX_ZOOM = 24 * 12; // 5-минутный интервал
+        const MAX_ZOOM = 24 * 12;
 
-        // Словарь для цветов маркеров
         const OBJECT_COLORS = {
-            person: '#f85149', // Красный
-            car: '#ffc107',    // Желтый
-            bicycle: '#17a2b8', // Голубой
-            dog: '#fd7e14',    // Оранжевый
-            cat: '#6f42c1',    // Фиолетовый
-            default: '#6c757d' // Серый для остальных
+            person: '#f85149',
+            car: '#ffc107',
+            bicycle: '#17a2b8',
+            dog: '#fd7e14',
+            cat: '#6f42c1',
+            default: '#6c757d'
         };
 
         let currentCamera = null;
@@ -41,8 +39,12 @@
         let viewStartSeconds = 0;
         let timeOffsetSeconds = 0;
 
-        let allCameraEvents = []; // Хранилище всех событий за выбранный день
-        let activeFilters = new Set(); // Хранилище активных фильтров
+        let allCameraEventsForDay = [];
+        let activeFilters = new Set();
+        
+        // VVV ИЗМЕНЕНИЕ: Переменная для хранения экземпляра календаря VVV
+        let calendarInstance = null;
+        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         async function openArchiveForCamera(camera) {
             currentCamera = camera;
@@ -50,7 +52,32 @@
             archiveView.classList.remove('hidden');
 
             archiveCameraNameEl.textContent = `${App.t('archive_title')}: ${camera.name}`;
-            archiveDatePicker.valueAsDate = new Date();
+            
+            // VVV ИЗМЕНЕНИЕ: Инициализация календаря VVV
+            if (calendarInstance) {
+                calendarInstance.destroy();
+            }
+            
+            // Запрашиваем даты с активностью ДО инициализации календаря
+            const activeDates = await window.api.getDatesWithActivity(camera.name);
+
+            calendarInstance = flatpickr(archiveDatePicker, {
+                defaultDate: "today",
+                dateFormat: "Y-m-d",
+                locale: App.stateManager.state.appSettings.language === 'ru' ? 'ru' : 'default',
+                onChange: function(selectedDates, dateStr, instance) {
+                    loadDataForSelectedDate();
+                },
+                // Функция для подсветки дней
+                onDayCreate: function(dObj, dStr, fp, dayElem) {
+                    const date = dayElem.dateObj;
+                    const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    if (activeDates.includes(dateString)) {
+                        dayElem.classList.add("has-activity");
+                    }
+                }
+            });
+            // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
             
             resetPlayer();
             
@@ -72,13 +99,19 @@
                 }
             }
             
-            await loadRecordingsForDate();
+            await loadDataForSelectedDate();
         }
 
         function closeArchive() {
             archiveView.classList.add('hidden');
             mainView.classList.remove('hidden');
             currentCamera = null;
+            // VVV ИЗМЕНЕНИЕ: Уничтожаем календарь при закрытии VVV
+            if (calendarInstance) {
+                calendarInstance.destroy();
+                calendarInstance = null;
+            }
+            // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
             resetPlayer();
         }
         
@@ -88,10 +121,12 @@
             timelineWrapper.scrollLeft = 0;
         }
 
-        async function loadRecordingsForDate() {
+        async function loadDataForSelectedDate() {
             if (!currentCamera) return;
             resetZoom();
+            // VVV ИЗМЕНЕНИЕ: Получаем дату из экземпляра календаря VVV
             const date = archiveDatePicker.value;
+            // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
             timelineRecordingsEl.innerHTML = '<div>Loading...</div>';
             eventListEl.innerHTML = '';
             filtersContainer.innerHTML = '';
@@ -101,16 +136,16 @@
                 window.api.getEventsForDate({ date })
             ]);
             
-            allCameraEvents = events
+            allCameraEventsForDay = events
                 .filter(event => event.cameraId === currentCamera.id)
-                .sort((a, b) => b.timestamp - a.timestamp);
+                .sort((a, b) => b.timestamp - a.timestamp); // Сортируем от новых к старым для списка
 
             renderFilters();
-            applyFiltersAndRender(recordings);
+            applyFiltersAndRender(recordings, allCameraEventsForDay);
         }
-
+        
         function renderFilters() {
-            const allObjectTypes = new Set(allCameraEvents.flatMap(e => e.objects));
+            const allObjectTypes = new Set(allCameraEventsForDay.flatMap(e => e.objects));
             if (allObjectTypes.size === 0) {
                 filtersContainer.innerHTML = '';
                 return;
@@ -135,21 +170,21 @@
                     } else {
                         activeFilters.delete(checkbox.dataset.type);
                     }
-                    loadRecordingsForDate();
+                    loadDataForSelectedDate();
                 });
             });
         }
 
-        function applyFiltersAndRender(recordings) {
-            let filteredEvents = allCameraEvents;
+        function applyFiltersAndRender(recordings, allEvents) {
+            let filteredEvents = allEvents;
             if (activeFilters.size > 0) {
-                filteredEvents = allCameraEvents.filter(event => 
+                filteredEvents = allEvents.filter(event => 
                     event.objects.some(obj => activeFilters.has(obj))
                 );
             }
             
-            renderTimeline(recordings, filteredEvents);
-            renderEventList(filteredEvents);
+            renderTimeline(recordings, allEvents); // На таймлайне показываем ВСЕ маркеры
+            renderEventList(filteredEvents); // В списке показываем отфильтрованные
         }
 
         function renderEventList(events) {
@@ -187,6 +222,11 @@
         }
 
         function renderTimeline(recordings, events = []) {
+            console.log(`[Archive Timeline] Rendering with ${recordings.length} recordings and ${events.length} events.`);
+            if (events.length > 0) {
+                console.log('[Archive Timeline] First event details:', events[0]);
+            }
+            
             const timelineContent = document.createDocumentFragment();
             const labelsContainer = document.createElement('div');
             labelsContainer.id = 'timeline-labels';
@@ -224,7 +264,6 @@
                     
                     block.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        // Клик по блоку теперь тоже перематывает видео
                         const rect = timelineWrapper.getBoundingClientRect();
                         const positionInBlock = e.clientX - e.target.getBoundingClientRect().left;
                         const blockWidthPx = e.target.offsetWidth;
@@ -235,25 +274,27 @@
                     timelineContent.appendChild(block);
                 });
 
-                events.forEach(event => {
-                    const eventDate = new Date(event.timestamp * 1000);
-                    const startOfDay = new Date(eventDate);
-                    startOfDay.setHours(0, 0, 0, 0);
-                    const eventTimeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
-                    const leftPercent = (eventTimeInSeconds / dayInSeconds) * 100;
-                    if (leftPercent < 0 || leftPercent > 100) return;
+                if (events && events.length > 0) {
+                    events.forEach(event => {
+                        const eventDate = new Date(event.timestamp * 1000);
+                        const startOfDay = new Date(eventDate);
+                        startOfDay.setHours(0, 0, 0, 0);
+                        const eventTimeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
+                        const leftPercent = (eventTimeInSeconds / dayInSeconds) * 100;
+                        if (leftPercent < 0 || leftPercent > 100) return;
 
-                    const marker = document.createElement('div');
-                    marker.className = 'timeline-event-marker';
-                    marker.style.left = `${leftPercent}%`;
+                        const marker = document.createElement('div');
+                        marker.className = 'timeline-event-marker';
+                        marker.style.left = `${leftPercent}%`;
 
-                    if (event.objects && event.objects.length > 0) {
-                        const mainObjectType = event.objects[0];
-                        marker.style.backgroundColor = OBJECT_COLORS[mainObjectType] || OBJECT_COLORS.default;
-                        marker.title = `Событие: ${event.objects.join(', ')} @ ${eventDate.toLocaleTimeString()}`;
-                    }
-                    timelineContent.appendChild(marker);
-                });
+                        if (event.objects && event.objects.length > 0) {
+                            const mainObjectType = event.objects[0];
+                            marker.style.backgroundColor = OBJECT_COLORS[mainObjectType] || OBJECT_COLORS.default;
+                            marker.title = `Событие: ${event.objects.join(', ')} @ ${eventDate.toLocaleTimeString()}`;
+                        }
+                        timelineContent.appendChild(marker);
+                    });
+                }
             }
 
             timelineRecordingsEl.innerHTML = '';
@@ -269,7 +310,45 @@
         }
         
         function renderTimelineLabels() {
-            // ... (Код из вашего файла остается, но добавляем стили маркеров) ...
+            const labelsEl = document.getElementById('timeline-labels');
+            if (!labelsEl) return;
+        
+            labelsEl.innerHTML = '';
+        
+            const viewWidthSeconds = dayInSeconds / zoomLevel;
+            let majorStep, minorStep;
+
+            if (viewWidthSeconds > 12 * 3600) { 
+                majorStep = 2 * 3600; 
+                minorStep = 3600; 
+            } else if (viewWidthSeconds > 6 * 3600) { 
+                majorStep = 3600; 
+                minorStep = 1800; 
+            } else if (viewWidthSeconds > 2 * 3600) { 
+                majorStep = 1800; 
+                minorStep = 600; 
+            } else if (viewWidthSeconds > 1 * 3600) { 
+                majorStep = 600; 
+                minorStep = 300; 
+            } else { 
+                majorStep = 300; 
+                minorStep = 60;
+            }
+        
+            for (let s = 0; s < dayInSeconds; s += minorStep) {
+                const isMajor = (s % majorStep === 0);
+                const label = document.createElement('div');
+                label.className = isMajor ? 'timeline-label major' : 'timeline-label minor';
+                label.style.left = `${(s / dayInSeconds) * 100}%`;
+
+                if (isMajor) {
+                    const hour = Math.floor(s / 3600);
+                    const minute = Math.floor((s % 3600) / 60);
+                    label.dataset.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                }
+                labelsEl.appendChild(label);
+            }
+
             const styleId = 'timeline-label-styles';
             let styleEl = document.getElementById(styleId);
             if (!styleEl) {
@@ -319,7 +398,6 @@
 
         function playRecording(filename) {
             if (archiveVideoPlayer.src.includes(encodeURIComponent(filename))) {
-                // Если видео уже проигрывается, не перезагружаем его
                 return;
             }
             archiveVideoPlaceholder.classList.add('hidden');
@@ -341,7 +419,7 @@
             resetSelection();
             resetZoom();
             timeOffsetSeconds = 0;
-            allCameraEvents = [];
+            allCameraEventsForDay = [];
             activeFilters.clear();
         }
 
@@ -369,7 +447,6 @@
         }
 
         function handleTimelineMouseDown(e) {
-            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             isSelecting = true;
             const rect = timelineWrapper.getBoundingClientRect();
             const positionInScrolledContent = timelineWrapper.scrollLeft + e.clientX - rect.left;
@@ -381,7 +458,6 @@
         }
 
         function handleTimelineMouseMove(e) {
-            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             if (!isSelecting) return;
             const rect = timelineWrapper.getBoundingClientRect();
             const positionInScrolledContent = timelineWrapper.scrollLeft + e.clientX - rect.left;
@@ -392,13 +468,18 @@
         }
         
         function handleTimelineMouseUp(e) {
-            // ВАША ЛОГИКА ВЫДЕЛЕНИЯ СОХРАНЕНА
             if (!isSelecting) return;
             isSelecting = false;
             if (Math.abs(selectionEndPercent - selectionStartPercent) > 0.1) {
                 archiveExportBtn.disabled = false;
             } else {
                 resetSelection();
+                const rect = timelineWrapper.getBoundingClientRect();
+                const positionInScrolledContent = timelineWrapper.scrollLeft + e.clientX - rect.left;
+                const totalContentWidth = timelineRecordingsEl.offsetWidth;
+                const clickPercent = (positionInScrolledContent / totalContentWidth) * 100;
+                const timeInSeconds = (clickPercent / 100) * dayInSeconds;
+                seekToTime(timeInSeconds);
             }
         }
 
@@ -445,7 +526,7 @@
             const blocks = timelineRecordingsEl.querySelectorAll('.timeline-block');
             for (const block of blocks) {
                 const blockStart = parseFloat(block.dataset.startTimeSec);
-                const blockEnd = blockStart + 300; // Длительность 5 минут
+                const blockEnd = blockStart + 300;
         
                 if (selectionStartSeconds >= blockStart && selectionEndSeconds <= blockEnd) {
                     sourceBlock = block;
@@ -481,7 +562,6 @@
 
         function init() {
             archiveBackBtn.addEventListener('click', closeArchive);
-            archiveDatePicker.addEventListener('change', loadRecordingsForDate);
             timelineWrapper.addEventListener('mousedown', handleTimelineMouseDown);
             window.addEventListener('mousemove', handleTimelineMouseMove);
             window.addEventListener('mouseup', handleTimelineMouseUp);

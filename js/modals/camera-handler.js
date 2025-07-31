@@ -1,5 +1,3 @@
-// js/modals/camera-handler.js
-
 (function(window) {
     window.AppModules = window.AppModules || {};
 

@@ -26,6 +26,7 @@
     "axios": "^1.6.8",
     "electron-updater": "^6.6.2",
     "express": "^4.19.2",
+    "flatpickr": "^4.6.13",
     "get-port": "^7.1.0",
     "keytar": "^7.9.0",
     "onvif": "^0.6.6",

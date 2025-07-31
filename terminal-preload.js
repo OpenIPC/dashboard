@@ -1,5 +1,3 @@
-// terminal-preload.js (полная исправленная версия)
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('terminalApi', {

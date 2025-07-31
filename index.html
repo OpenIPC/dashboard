@@ -5,6 +5,9 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:*; img-src 'self' data:;">
     <title>DASHBOARD for OpenIPC</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- VVV ИЗМЕНЕНИЕ: Добавляем стили для календаря VVV -->
+    <link rel="stylesheet" href="node_modules/flatpickr/dist/flatpickr.min.css">
+    <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
     <style>
         :root {
             --bg-darker: #2d333b; --bg-dark: #3c3f41; --bg-medium: #4e5254; --bg-light: #6166;
@@ -263,8 +266,20 @@
 
         .status-icon { width: 10px; height: 10px; border-radius: 50%; background-color: #6c757d; flex-shrink: 0; }
         .status-icon.online { background-color: #28a745; }
-        .camera-item .rec-indicator { width: 8px; height: 8px; border-radius: 50%; background-color: var(--danger-color); position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; animation: pulse-rec 1.5s infinite; }
-        .camera-item.recording .rec-indicator { display: block; }
+        
+        .camera-item .rec-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--danger-color);
+            display: none;
+            flex-shrink: 0;
+            animation: pulse-rec 1.5s infinite;
+        }
+
+        .camera-item.recording .rec-indicator {
+            display: block;
+        }
 
         .bottom-toolbar { height: var(--toolbar-height); background-color: var(--bg-dark); border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 15px; flex-shrink: 0; }
         .toolbar-group { display: flex; align-items: center; gap: 5px; }
@@ -373,11 +388,12 @@
         .event-objects {
             color: var(--text-secondary);
         }
+        
         .archive-header { display: flex; align-items: center; padding: 10px 15px; background-color: var(--bg-dark); border-bottom: 1px solid var(--border-color); flex-shrink: 0; gap: 15px; }
         .archive-header h2 { margin: 0; font-size: 1.2em; flex-grow: 1;}
         .archive-header button { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px 10px; border-radius: 4px; cursor: pointer; }
         .archive-header button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .archive-header input[type="date"] { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px; }
+        .archive-header input[type="text"] { background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px; } /* Изменено с date на text */
         .archive-video-container { flex-grow: 1; display: flex; justify-content: center; align-items: center; background-color: #000; overflow: hidden; position: relative; }
         .archive-video-container video { max-width: 100%; max-height: 100%; }
         .archive-video-placeholder { color: var(--text-secondary); }
@@ -467,6 +483,40 @@
             color: #333333 !important;
             border: 1px solid #ccc !important;
         }
+        
+        /* VVV ИЗМЕНЕНИЕ: Стили для кастомизации календаря под нашу тему VVV */
+        .flatpickr-calendar {
+            background-color: var(--bg-dark) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-main) !important;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important;
+        }
+        .flatpickr-months .flatpickr-month, .flatpickr-weekdays, .flatpickr-weekday {
+            background-color: var(--bg-darker) !important;
+            color: var(--text-main) !important;
+        }
+        .flatpickr-day {
+            color: var(--text-secondary) !important;
+        }
+        .flatpickr-day:hover {
+            background-color: var(--bg-medium) !important;
+        }
+        .flatpickr-day.selected, .flatpickr-day.today {
+            background-color: var(--accent-color) !important;
+            border-color: var(--accent-color) !important;
+            color: white !important;
+        }
+        .flatpickr-day.has-activity {
+            /* Подсветка дней с записями */
+            border-bottom: 2px solid var(--accent-color) !important;
+            font-weight: bold !important;
+            color: var(--text-main) !important;
+        }
+        .numInputWrapper span:hover {
+            background: var(--bg-medium) !important;
+        }
+        /* ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ */
+
     </style>
 </head>
 <body>
@@ -549,7 +599,9 @@
                 <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
                 <h2 id="archive-camera-name"></h2>
                 <button id="archive-export-btn" data-i18n-key="archive_export_clip" disabled></button>
-                <input type="date" id="archive-date-picker">
+                <!-- VVV ИЗМЕНЕНИЕ: Заменяем input type="date" на type="text" VVV -->
+                <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
+                <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
             </div>
             <div class="archive-video-container">
                 <video id="archive-video-player" controls class="hidden"></video>
@@ -652,7 +704,22 @@
                             <option value="intel" data-i18n-key="settings_hw_accel_intel"></option>
                             <option value="none" data-i18n-key="settings_hw_accel_none"></option>
                         </select>
+                        <span data-i18n-key="settings_notifications_label"></span>
+                        <div class="form-check-inline">
+                            <input type="checkbox" id="app-settings-notifications-enabled" class="form-check-input">
+                            <label for="app-settings-notifications-enabled" data-i18n-key="settings_notifications_enable_label"></label>
+                        </div>
                     </div>
+                    
+                    <h3 data-i18n-key="settings_config_management_header"></h3>
+                    <div class="form-grid simple">
+                        <span data-i18n-key="settings_config_export_label"></span>
+                        <button id="export-config-btn" style="width: 200px; justify-self: start;" data-i18n-key="settings_config_export_btn"></button>
+                        
+                        <span data-i18n-key="settings_config_import_label"></span>
+                        <button id="import-config-btn" style="width: 200px; justify-self: start; background-color: var(--danger-color);" data-i18n-key="settings_config_import_btn"></button>
+                    </div>
+
                     <h3 data-i18n-key="update_header"></h3>
                     <div class="form-grid simple">
                         <span data-i18n-key="update_status_label"></span>
@@ -678,26 +745,39 @@
                 </div>
                 
                 <div id="tab-analytics" class="tab-content">
-                    <h3>Настройки видеоаналитики</h3>
-                    <div class="form-grid simple">
-                        <label for="analytics.enabled">Включить аналитику</label>
-                        <div class="form-check-inline">
-                            <input type="checkbox" id="analytics.enabled" class="form-check-input">
+                    <!-- Блок для ГЛОБАЛЬНЫХ настроек аналитики -->
+                    <div id="global-analytics-settings">
+                        <h3 data-i18n-key="global_analytics_settings_header">Общие настройки производительности</h3>
+                        <p style="color: #666; font-size: 13px;" data-i18n-key="global_analytics_settings_desc">Эти параметры применяются ко всем камерам при запуске аналитики и влияют на потребление ресурсов CPU/GPU.</p>
+                        <div class="form-grid simple">
+                            <label for="app-settings-analytics-resize-width" data-i18n-key="analytics_resize_width_label">Ширина кадра для анализа (0 - оригинал)</label>
+                            <input type="number" id="app-settings-analytics-resize-width" value="416" min="0" step="16">
+                            
+                            <label for="app-settings-analytics-frame-skip" data-i18n-key="analytics_frame_skip_label">Анализировать каждый N-й кадр</label>
+                            <input type="number" id="app-settings-analytics-frame-skip" value="10" min="1">
+                            <label for="app-settings-analytics-record-duration">Длительность записи после события (сек)</label>
+                            <input type="number" id="app-settings-analytics-record-duration" value="30" min="5">
                         </div>
-                        <label for="analytics.resize_width">Ширина кадра для анализа (0 - оригинал)</label>
-                        <input type="number" id="analytics.resize_width" value="640" min="0" step="16">
-                        <label for="analytics.frame_skip">Анализировать каждый N-й кадр</label>
-                        <input type="number" id="analytics.frame_skip" value="5" min="1">
                     </div>
-            
-                    <h4>Объекты для детекции</h4>
-                    <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
-                        <!-- Чекбоксы будут добавлены динамически -->
+
+                    <!-- Блок для настроек КОНКРЕТНОЙ камеры -->
+                    <div id="camera-specific-analytics-settings">
+                        <h3 data-i18n-key="camera_analytics_settings_header">Настройки для этой камеры</h3>
+                        <div class="form-grid simple">
+                            <label for="analytics.enabled" data-i18n-key="analytics_enable_label">Включить аналитику</label>
+                            <div class="form-check-inline">
+                                <input type="checkbox" id="analytics.enabled" class="form-check-input">
+                            </div>
+                        </div>
+
+                        <h4 data-i18n-key="analytics_objects_header">Объекты для детекции</h4>
+                        <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+                            <!-- Чекбоксы будут добавлены динамически -->
+                        </div>
+
+                        <h4 style="margin-top: 20px;" data-i18n-key="analytics_roi_header">Зона интереса (ROI)</h4>
+                        <p style="color: #666; font-size: 13px;" data-i18n-key="analytics_roi_desc">Функционал в разработке. Сейчас аналитика применяется ко всему кадру.</p>
                     </div>
-            
-                    <h4 style="margin-top: 20px;">Зона интереса (ROI)</h4>
-                    <p style="color: #666; font-size: 13px;">Функционал в разработке. Сейчас аналитика применяется ко всему кадру.</p>
-            
                 </div>
                 
                 <div id="tab-netip" class="tab-content">
@@ -1032,6 +1112,10 @@
     </div>
 
     <script src="jsmpeg.min.js"></script>
+    <!-- VVV ИЗМЕНЕНИЕ: Подключаем скрипт Flatpickr VVV -->
+    <script src="node_modules/flatpickr/dist/flatpickr.js"></script>
+    <script src="node_modules/flatpickr/dist/l10n/ru.js"></script> <!-- Для русской локализации -->
+    <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
     <script src="./js/i18n.js"></script>
     <script src="./js/state-manager.js"></script>
     <script src="./js/modals/camera-handler.js"></script>

@@ -165,12 +165,10 @@
     App.archiveManager = AppModules.createArchiveManager(App);
     App.windowControls = AppModules.createWindowControls(App);
 
-    // VVV НОВЫЙ БЛОК: Константы для ролей VVV
     const USER_ROLES = {
         ADMIN: 'admin',
         OPERATOR: 'operator'
     };
-    // ^^^ КОНЕЦ НОВОГО БЛОКА ^^^
 
     const loginView = document.getElementById('login-view');
     const mainAppContainer = document.getElementById('main-app-container');
@@ -286,6 +284,29 @@
             if (btn) {
                 btn.classList.toggle('active', active);
                 btn.querySelector('i').style.color = ''; // Сбрасываем цвет "запуска"
+            }
+        });
+
+        window.api.onAnalyticsProviderInfo(({ cameraId, provider, error }) => {
+            const camera = App.stateManager.state.cameras.find(c => c.id === cameraId);
+            const cameraName = camera ? camera.name : `ID ${cameraId}`;
+
+            if (error) {
+                App.modalHandler.showToast(`Ошибка аналитики для "${cameraName}": ${error}`, true, 6000);
+                return;
+            }
+
+            if (provider) {
+                let message = '';
+                let isError = false;
+                if (provider.includes('CUDA') || provider.includes('Dml')) {
+                    const gpuType = provider.includes('CUDA') ? 'NVIDIA CUDA' : 'DirectML';
+                    message = `Аналитика для "${cameraName}": используется GPU (${gpuType}).`;
+                } else {
+                    message = `Аналитика для "${cameraName}": используется CPU (GPU недоступен).`;
+                    isError = true; // Показываем как предупреждение/ошибку
+                }
+                App.modalHandler.showToast(message, isError, 5000);
             }
         });
 
@@ -430,9 +451,7 @@
 
             if (user) {
                 document.body.classList.add(`role-${user.role}`);
-                // VVV ИЗМЕНЕНИЕ: Используем константу VVV
                 if (user.role === USER_ROLES.OPERATOR && user.permissions) {
-                // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
                     for (const permission in user.permissions) {
                         if (user.permissions[permission]) {
                             document.body.classList.add(`can-${permission.replace(/_/g, '-')}`);

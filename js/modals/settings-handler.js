@@ -1,4 +1,4 @@
-// js/modals/settings-handler.js
+// --- ФАЙЛ: settings-handler.js ---
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -15,15 +15,21 @@
         const selectRecPathBtn = document.getElementById('select-rec-path-btn');
         const languageSelect = document.getElementById('app-settings-language');
         const hwAccelSelect = document.getElementById('app-settings-hw-accel');
+        const notificationsEnabledInput = document.getElementById('app-settings-notifications-enabled');
         
-        // VVV НОВЫЕ ЭЛЕМЕНТЫ VVV
         const qscaleInput = document.getElementById('app-settings-qscale');
         const fpsInput = document.getElementById('app-settings-fps');
-        // ^^^ КОНЕЦ НОВЫХ ЭЛЕМЕНТОВ ^^^
 
+        const globalAnalyticsResizeWidthInput = document.getElementById('app-settings-analytics-resize-width');
+        const globalAnalyticsFrameSkipInput = document.getElementById('app-settings-analytics-frame-skip');
+        const globalAnalyticsRecordDurationInput = document.getElementById('app-settings-analytics-record-duration');
+        
         const checkForUpdatesBtn = document.getElementById('check-for-updates-btn');
         const updateStatusText = document.getElementById('update-status-text');
         const analyticsObjectsListEl = document.getElementById('analytics-objects-list');
+
+        const exportConfigBtn = document.getElementById('export-config-btn');
+        const importConfigBtn = document.getElementById('import-config-btn');
         
         let settingsCameraId = null;
         let rangeSyncFunctions = {};
@@ -51,19 +57,26 @@
             return syncFunc;
         }
 
-        function setFormValue(id, value) {
-            if (value === undefined || value === null) return;
+        function setFormValue(id, value, defaultValue) {
+            const finalValue = value !== undefined && value !== null ? value : defaultValue;
+            if (finalValue === undefined) return;
+
             const el = document.getElementById(id);
             if (!el) return;
-            if (el.type === 'checkbox') el.checked = !!value;
+        
+            if (el.type === 'checkbox') el.checked = !!finalValue;
             else if (el.type === 'range') {
                 const syncFunc = rangeSyncFunctions[id] || setupRangeSync(id);
-                syncFunc(value);
+                syncFunc(finalValue);
             }
-            else el.value = value;
+            else el.value = finalValue;
         }
 
         async function openSettingsModal(cameraId = null) {
+            // VVVVVV --- ВОТ ИСПРАВЛЕНИЕ --- VVVVVV
+            App.i18n.applyTranslationsToDOM(); // Принудительно переводим все элементы перед показом
+            // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+
             settingsCameraId = cameraId;
             rangeSyncFunctions = {};
             const isGeneralSettings = !cameraId;
@@ -82,41 +95,47 @@
 
                 let show = false;
                 if (isGeneralSettings) {
-                    // Для общих настроек показываем "Общие" и "Трансляция"
-                    show = isGeneralTab || isStreamingTab;
+                    show = isGeneralTab || isStreamingTab || isAnalyticsTab;
                 } else {
-                    // Для настроек конкретной камеры
                     if (isNetipCamera) {
-                        // Для NETIP-камер показываем ТОЛЬКО вкладку "Аналитика"
                         show = isAnalyticsTab;
                     } else {
-                        // Для OpenIPC и других камер показываем их вкладки И вкладку "Аналитика"
                         show = isMajesticOrNetipTab || isAnalyticsTab;
                     }
                 }
-                
                 btn.style.display = show ? 'flex' : 'none';
             });
             
             settingsModal.querySelectorAll('.tab-content, .tab-button').forEach(el => el.classList.remove('active'));
             
-            const activeTab = isGeneralSettings ? 'tab-general' : 'tab-analytics';
-            
+            let activeTab;
+            if (isGeneralSettings) {
+                activeTab = 'tab-general';
+            } else {
+                activeTab = isNetipCamera ? 'tab-analytics' : 'tab-system';
+            }
             tabsContainer.querySelector(`[data-tab="${activeTab}"]`).classList.add('active');
             document.getElementById(activeTab).classList.add('active');
 
+            // --- Заполнение общих настроек ---
             const { appSettings } = stateManager.state;
             recordingsPathInput.value = appSettings.recordingsPath || '';
             languageSelect.value = appSettings.language || 'en';
             hwAccelSelect.value = appSettings.hwAccel || 'auto';
-
-            // Заполняем новые поля настроек трансляции
-            setFormValue('app-settings-qscale', appSettings.qscale !== undefined ? appSettings.qscale : 8);
-            setFormValue('app-settings-fps', appSettings.fps !== undefined ? appSettings.fps : 20);
+            setFormValue('app-settings-notifications-enabled', appSettings.notifications_enabled, true);
+            setFormValue('app-settings-qscale', appSettings.qscale, 8);
+            setFormValue('app-settings-fps', appSettings.fps, 20);
             
-            restartMajesticBtn.style.display = isGeneralSettings || isNetipCamera ? 'none' : 'inline-flex';
+            setFormValue('app-settings-analytics-resize-width', appSettings.analytics_resize_width, 416);
+            setFormValue('app-settings-analytics-frame-skip', appSettings.analytics_frame_skip, 10);
+            setFormValue('app-settings-analytics-record-duration', appSettings.analytics_record_duration, 30);
+            
+            // --- Управление видимостью блоков и кнопок ---
+            document.getElementById('global-analytics-settings').style.display = isGeneralSettings ? 'block' : 'none';
+            document.getElementById('camera-specific-analytics-settings').style.display = isGeneralSettings ? 'none' : 'block';
+            restartMajesticBtn.style.display = isGeneralSettings || (camera && camera.protocol === 'netip') ? 'none' : 'inline-flex';
             killAllBtnModal.style.display = isGeneralSettings ? 'inline-flex' : 'none';
-
+            
             utils.openModal(settingsModal);
 
             if (isGeneralSettings) {
@@ -125,7 +144,8 @@
                 return;
             }
 
-            // Загрузка и отображение настроек аналитики (для всех типов камер)
+            // --- Загрузка и отображение настроек для конкретной камеры ---
+            
             analyticsObjectsListEl.innerHTML = '';
             availableAnalyticsObjects.forEach(obj => {
                 analyticsObjectsListEl.innerHTML += `
@@ -136,9 +156,7 @@
             });
 
             const analyticsConfig = camera.analyticsConfig || {};
-            setFormValue('analytics.enabled', analyticsConfig.enabled);
-            setFormValue('analytics.resize_width', analyticsConfig.resize_width !== undefined ? analyticsConfig.resize_width : 640);
-            setFormValue('analytics.frame_skip', analyticsConfig.frame_skip !== undefined ? analyticsConfig.frame_skip : 5);
+            setFormValue('analytics.enabled', analyticsConfig.enabled, false);
             if (analyticsConfig.objects) {
                 analyticsConfig.objects.forEach(key => {
                     const checkbox = document.getElementById(`analytics.objects.${key}`);
@@ -181,9 +199,12 @@
                     recordingsPath: recordingsPathInput.value.trim(),
                     hwAccel: hwAccelSelect.value,
                     language: languageSelect.value,
-                    // Сохраняем новые настройки трансляции
+                    notifications_enabled: notificationsEnabledInput.checked,
                     qscale: parseInt(qscaleInput.value, 10) || 8,
                     fps: parseInt(fpsInput.value, 10) || 20,
+                    analytics_resize_width: parseInt(globalAnalyticsResizeWidthInput.value, 10) || 416,
+                    analytics_frame_skip: parseInt(globalAnalyticsFrameSkipInput.value, 10) || 10,
+                    analytics_record_duration: parseInt(document.getElementById('app-settings-analytics-record-duration').value, 10) || 30,
                 });
                 utils.showToast(App.i18n.t('app_settings_saved_success'));
             } else {
@@ -191,9 +212,7 @@
                 const camera = stateManager.state.cameras.find(c => c.id === settingsCameraId);
                 if (!camera) { saveSettingsBtn.disabled = false; saveSettingsBtn.textContent = App.i18n.t('save'); return; }
                 
-                if (camera.protocol === 'netip') {
-                    utils.showToast(App.i18n.t('camera_settings_saved_success'));
-                } else {
+                if (camera.protocol !== 'netip') {
                     const settingsDataToSend = {};
                     settingsModal.querySelectorAll('[id*="."]').forEach(el => {
                         const [section, key] = el.id.split('.');
@@ -210,13 +229,10 @@
                     else utils.showToast(`${App.i18n.t('save_settings_error')}: ${result.error}`, true, 5000);
                 }
 
-                // Сохраняем настройки аналитики для любой камеры
                 const analyticsConfig = {
                     enabled: document.getElementById('analytics.enabled').checked,
                     objects: [],
                     roi: camera.analyticsConfig?.roi || null,
-                    resize_width: parseInt(document.getElementById('analytics.resize_width').value, 10) || 0,
-                    frame_skip: parseInt(document.getElementById('analytics.frame_skip').value, 10) || 5
                 };
                 analyticsObjectsListEl.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
                     analyticsConfig.objects.push(checkbox.dataset.objectKey);
@@ -249,6 +265,13 @@
             saveSettingsBtn.addEventListener('click', saveSettings);
             restartMajesticBtn.addEventListener('click', restartMajestic);
             killAllBtnModal.addEventListener('click', async () => { if (confirm(App.i18n.t('kill_all_confirm'))) { const result = await window.api.killAllFfmpeg(); alert(result.message); window.location.reload(); } });
+
+            if (exportConfigBtn) {
+                exportConfigBtn.addEventListener('click', () => window.api.exportConfig());
+            }
+            if (importConfigBtn) {
+                importConfigBtn.addEventListener('click', () => window.api.importConfig());
+            }
 
             languageSelect.addEventListener('change', async (e) => {
                 const newLang = e.target.value;

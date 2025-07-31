@@ -1,4 +1,4 @@
-// preload.js (Полная версия с добавлением API для видеоаналитики и NETIP)
+// --- ФАЙЛ: preload.js ---
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('api', {
     saveConfiguration: (config) => ipcRenderer.invoke('save-configuration', config),
     selectDirectory: () => ipcRenderer.invoke('select-directory'),
     getTranslationFile: (lang) => ipcRenderer.invoke('get-translation-file', lang),
+    exportConfig: () => ipcRenderer.invoke('export-config'),
+    importConfig: () => ipcRenderer.invoke('import-config'),
 
     // Camera Actions & Info
     getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
@@ -50,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
     toggleAnalytics: (cameraId) => ipcRenderer.invoke('toggle-analytics', cameraId),
     onAnalyticsUpdate: (callback) => ipcRenderer.on('analytics-update', (event, data) => callback(data)),
     onAnalyticsStatusChange: (callback) => ipcRenderer.on('analytics-status-change', (event, data) => callback(data)),
+    onAnalyticsProviderInfo: (callback) => ipcRenderer.on('analytics-provider-info', (event, data) => callback(data)),
 
     // Recording & Archive
     startRecording: (camera) => ipcRenderer.invoke('start-recording', camera),
@@ -58,10 +61,11 @@ contextBridge.exposeInMainWorld('api', {
     openRecordingsFolder: () => ipcRenderer.invoke('open-recordings-folder'),
     getRecordingsForDate: (data) => ipcRenderer.invoke('get-recordings-for-date', data),
     exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
-    
-    // VVV НОВЫЙ МЕТОД ДЛЯ ПОЛУЧЕНИЯ СОБЫТИЙ VVV
     getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
-    // ^^^ КОНЕЦ НОВОГО МЕТОДА ^^^
+    
+    // VVV ИЗМЕНЕНИЕ: Добавляем новый метод VVV
+    getDatesWithActivity: (cameraName) => ipcRenderer.invoke('get-dates-with-activity', cameraName),
+    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
