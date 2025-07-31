@@ -2,18 +2,19 @@
 
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 # --- БЛОК 1: Определяем абсолютные пути ---
 
-# Получаем абсолютный путь к папке, где лежит этот .spec файл.
-# Это делает сборку независимой от того, откуда запускается PyInstaller.
-SPEC_DIR = os.path.abspath(os.path.dirname(__file__))
+# VVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVV
+# Используем переменную SPEC, предоставляемую PyInstaller, вместо __file__
+SPEC_DIR = os.path.dirname(SPEC)
+# ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 
 # --- БЛОК 2: Подготовка данных и библиотек ---
 
 # Собираем данные: модель ONNX и все данные из ultralytics.
-# Пути теперь строятся от абсолютного пути к .spec файлу.
 datas = [
     (os.path.join(SPEC_DIR, 'yolov8n.onnx'), '.'),
     *collect_data_files('ultralytics')
@@ -35,7 +36,7 @@ hiddenimports = [
     'PIL',
 ]
 
-# Исключаем ненужные тяжелые библиотеки.
+# Исключаем ненужные тяжелые библиотеки
 excludes = [
     'torch',
     'torchvision',
@@ -59,7 +60,7 @@ a = Analysis(
     excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    cipher=None
+    cipher=None,
 )
 
 # --- БЛОК 4: Сборка исполняемого файла ---
