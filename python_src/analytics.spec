@@ -4,15 +4,19 @@
 a = Analysis(
     ['analytics.py'],
     pathex=[],
-    binaries=[('.\\.venv\\Lib\\site-packages\\cv2\\opencv_videoio_ffmpeg4120_64.dll', '.')],
-    datas=[('yolov8n.onnx', '.')],
+    binaries=[],
+    # VVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVV
+    # Добавляем всю папку cv2 из виртуального окружения в сборку.
+    # Она будет помещена в папку 'cv2' внутри .exe файла.
+    datas=[('yolov8n.onnx', '.'), 
+           ('.venv/Lib/site-packages/cv2', 'cv2')],
+    # ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
 )
 pyz = PYZ(a.pure)
 

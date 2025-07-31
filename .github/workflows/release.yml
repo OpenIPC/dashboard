@@ -27,18 +27,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install ultralytics pyinstaller
-          
-      - name: Install Python dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: pip install ultralytics pyinstaller torch torchvision
+      # Упрощенная и унифицированная установка зависимостей
+      - name: Install Python dependencies
+        run: pip install -r python_requirements.txt
 
+      # ИЗМЕНЕННАЯ КОМАНДА СБОРКИ: Используем .spec файл
       - name: Build analytics executable
-        run: python -m PyInstaller --onefile python_src/analytics.py --distpath extra/analytics --name analytics
+        run: pyinstaller python_src/analytics.spec --distpath extra/analytics --workpath build_pyinstaller
 
       # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
