@@ -21,6 +21,7 @@ jobs:
         with:
           fetch-depth: 0 
 
+      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -29,12 +30,11 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r python_requirements.txt
 
+      # ИЗМЕНЕННАЯ КОМАНДА СБОРКИ: без cd, прямой вызов .spec файла
       - name: Build analytics executable
-        run: |
-          cd python_src
-          pyinstaller analytics.spec --distpath ../extra/analytics --workpath ../build_pyinstaller
+        run: pyinstaller python_src/analytics.spec --distpath extra/analytics --workpath build_pyinstaller
 
-      # ... остальная часть файла без изменений ...
+      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
