@@ -143,19 +143,15 @@ const processManager = {
                 if (type === PROCESS_TYPES.RECORDING && childProcess.stdin.writable) {
                     childProcess.stdin.write('q\n');
                 } else {
-                    // VVVV --- ВОТ ИСПРАВЛЕНИЕ --- VVVV
                     if (process.platform === 'win32') {
                         console.log(`[ProcessManager] Using taskkill on Windows for PID: ${childProcess.pid}`);
-                        // /t - завершает дочерние процессы, /f - принудительно
                         exec(`taskkill /pid ${childProcess.pid} /f /t`);
                     } else {
-                        childProcess.kill(); // Стандартный метод для Linux/macOS
+                        childProcess.kill();
                     }
-                    // ^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^
                 }
             } catch (e) {
                 console.error(`[ProcessManager] Error sending stop signal to ${key}: ${e.message}`);
-                // Резервный метод, если основной не сработал
                 if (!childProcess.killed) {
                     try {
                         exec(`taskkill /pid ${childProcess.pid} /f /t`);
@@ -1339,8 +1335,6 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
         if (recordingStopTimers[cameraId]) {
             stopRecording(cameraId);
         }
-
-        // Статус изменится сам по событию 'close', которое мы обработаем ниже.
         return { success: true, status: 'stopped' };
     }
     
@@ -1359,12 +1353,15 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
         const rtspUrl = `rtsp://${encodeURIComponent(fullCameraInfo.username)}:${encodeURIComponent(fullCameraInfo.password)}@${fullCameraInfo.ip}:${fullCameraInfo.port || 554}${streamPath}`;
         
         const analyticsExecutableName = process.platform === 'win32' ? 'analytics.exe' : 'analytics';
+        
         const analyticsPath = app.isPackaged
             ? path.join(process.resourcesPath, 'analytics', analyticsExecutableName)
             : path.join(__dirname, 'extra', 'analytics', analyticsExecutableName);
-
+        
+        console.log(`[Analytics] Attempting to spawn executable at path: ${analyticsPath}`);
+        
         if (!fs.existsSync(analyticsPath)) {
-            const errorMsg = `Исполняемый файл видеоаналитики не найден. Ожидаемый путь: ${analyticsPath}`;
+            const errorMsg = `Исполняемый файл видеоаналитики не найден по пути: ${analyticsPath}`;
             console.error(`[Analytics] ERROR: ${errorMsg}`);
             dialog.showErrorBox('Ошибка запуска аналитики', errorMsg);
             return { success: false, error: errorMsg };
@@ -1425,7 +1422,6 @@ ipcMain.handle('toggle-analytics', async (event, cameraId) => {
 
         analyticsProcess.on('close', (code) => {
             console.log(`[Analytics] Process for camera ${cameraId} exited with code ${code}`);
-            // Удаляем процесс из менеджера только после его фактического завершения
             processManager.processes.delete(analyticsId);
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
