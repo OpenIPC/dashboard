@@ -1,32 +1,63 @@
 # python_src/analytics.spec
 
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
-# Собираем данные: нам нужна модель ONNX.
-# Убедитесь, что файл 'yolov8n.onnx' лежит в той же папке, что и этот .spec файл.
+# --- БЛОК 1: Подготовка данных и библиотек ---
+
+# Собираем данные: модель ONNX.
 datas = [('yolov8n.onnx', '.')]
 
-# PyInstaller не всегда видит все зависимости. Явно указываем ему включить эти модули.
+# Собираем бинарные файлы (.dll, .so) для onnxruntime и cv2.
+binaries = []
+binaries += collect_dynamic_libs('onnxruntime')
+binaries += collect_dynamic_libs('cv2')
+
+# Собираем дополнительные файлы данных, которые могут понадобиться.
+datas += collect_data_files('onnxruntime')
+datas += collect_data_files('cv2')
+datas += collect_data_files('ultralytics')
+
+# Явно указываем необходимые импорты.
 hiddenimports = [
     'numpy',
     'cv2',
     'onnxruntime',
-    'ultralytics'
+    'scipy',
+    'ultralytics',
+    'ultralytics.engine.results',
+    'PIL',
 ]
+
+# ИСКЛЮЧАЕМ НЕНУЖНЫЕ ТЯЖЕЛЫЕ БИБЛИОТЕКИ, которые тянет ultralytics
+excludes = [
+    'torch',
+    'torchvision',
+    'tensorboard',
+    'pandas',
+    'matplotlib',
+    'seaborn',
+    'tkinter'
+]
+
+# --- БЛОК 2: Основная конфигурация Analysis ---
 
 a = Analysis(
     ['analytics.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=None
 )
+
+
+# --- БЛОК 3: Сборка исполняемого файла ---
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
@@ -47,4 +78,15 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='analytics'
 )

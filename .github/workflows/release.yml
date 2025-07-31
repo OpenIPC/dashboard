@@ -21,29 +21,19 @@ jobs:
         with:
           fetch-depth: 0 
 
-      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # Ваша оригинальная логика установки зависимостей
-      - name: Install Python dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Убираем torch и torchvision, они не нужны для ONNX
-          pip install ultralytics pyinstaller opencv-python onnxruntime numpy
-          
-      - name: Install Python dependencies (Windows)
-        if: runner.os == 'Windows'
-        # Убираем torch и torchvision, они не нужны для ONNX
-        run: pip install ultralytics pyinstaller opencv-python onnxruntime numpy
+      - name: Install Python dependencies
+        run: pip install -r python_requirements.txt
 
-      # ИЗМЕНЕННАЯ КОМАНДА СБОРКИ: Используем .spec файл
       - name: Build analytics executable
-        run: pyinstaller python_src/analytics.spec --distpath extra/analytics --workpath build_pyinstaller
+        run: |
+          cd python_src
+          pyinstaller analytics.spec --distpath ../extra/analytics --workpath ../build_pyinstaller
 
-      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
