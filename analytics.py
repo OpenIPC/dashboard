@@ -1,25 +1,34 @@
-# analytics.py (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ v2)
+# analytics.py
 
 import sys
+import os # <--- Добавили os
 import json
 import time
 import base64
 import threading
 
+# VVVV --- БЛОК ОПРЕДЕЛЕНИЯ ПУТИ ДЛЯ PYINSTALLER --- VVVV
+# Этот код определяет, запущен ли скрипт как скомпилированный .exe
+# Если да, он устанавливает базовый путь к распакованным файлам.
+if getattr(sys, 'frozen', False):
+    # Если мы "заморожены" (скомпилированы в .exe)
+    application_path = sys._MEIPASS
+else:
+    # Если мы запускаемся как обычный .py скрипт
+    application_path = os.path.dirname(os.path.abspath(__file__))
+# ^^^^ --- КОНЕЦ БЛОКА --- ^^^^
+
+
 try:
-    # Основные библиотеки для работы с видео и нейронными сетями
     import cv2
     import numpy as np
     import onnxruntime as ort
 except Exception as e:
-    # Если одна из ключевых библиотек не установлена или не может быть загружена,
-    # отправляем сообщение об ошибке и завершаем работу.
     error_message = f"Fatal error during library import: {str(e)}"
     print(json.dumps({"status": "error", "message": error_message}), flush=True)
     sys.exit(1)
 
-# Встроенный словарь классов COCO.
-# Это делает скрипт независимым от изменений в библиотеке ultralytics.
+# ... (остальной код класса FrameGrabber, preprocess, postprocess без изменений) ...
 COCO_CLASSES = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 6: 'train', 7: 'truck',
     8: 'boat', 9: 'traffic light', 10: 'fire hydrant', 11: 'stop sign', 12: 'parking meter', 13: 'bench',
@@ -103,12 +112,16 @@ def postprocess(output, ratio, pad, confidence_threshold=0.5, iou_threshold=0.5)
         })
     return detections
 
+
 def run_analytics(rtsp_url, config_str):
     try:
         providers = ['CPUExecutionProvider']
         print(json.dumps({"status": "info", "provider": "CPUExecutionProvider"}), flush=True)
         
-        model_path = 'yolov8n.onnx' 
+        # VVVV --- ИЗМЕНЕНИЕ: Используем абсолютный путь к модели --- VVVV
+        model_path = os.path.join(application_path, 'yolov8n.onnx')
+        # ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
+
         session = ort.InferenceSession(model_path, providers=providers)
         
         input_name = session.get_inputs()[0].name
@@ -132,7 +145,6 @@ def run_analytics(rtsp_url, config_str):
     
     frame_grabber = None
     
-    # VVVVVV --- ИЗМЕНЕНИЕ: Добавлен бесконечный цикл --- VVVVVV
     while True: 
         try:
             if frame_grabber is None or frame_grabber.stopped:
@@ -142,7 +154,7 @@ def run_analytics(rtsp_url, config_str):
                     time.sleep(2) 
                 except IOError as e:
                     print(json.dumps({"status": "error", "message": str(e)}), flush=True)
-                    time.sleep(5) # Пауза перед новой попыткой подключения
+                    time.sleep(5)
                     continue
 
             frame_count = 0
@@ -179,13 +191,11 @@ def run_analytics(rtsp_url, config_str):
                     print(json.dumps(result), flush=True)
         
         except Exception as e:
-            # Ловим любые другие ошибки, чтобы скрипт не падал
             print(json.dumps({"status": "error", "message": f"Runtime error: {str(e)}"}), flush=True)
             if frame_grabber:
                 frame_grabber.stop()
             frame_grabber = None
-            time.sleep(5) # Пауза перед перезапуском
-        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+            time.sleep(5)
 
 
 if __name__ == "__main__":
