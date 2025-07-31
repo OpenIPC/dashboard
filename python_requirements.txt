@@ -4,5 +4,3 @@ opencv-python==4.8.0.76
 ultralytics==8.0.190
 onnxruntime==1.15.1
 pyinstaller==6.3.0
-torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
-torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu
