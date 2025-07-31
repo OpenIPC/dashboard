@@ -1,17 +1,12 @@
 # python_requirements.txt
-# Версии указаны для стабильности сборки
-
-numpy==1.24.4
-opencv-python==4.8.0.76
-onnxruntime==1.15.1
-pyinstaller==6.3.0
-scipy==1.10.1
-Pillow==10.0.0
-requests==2.31.0
-tqdm==4.65.0
-PyYAML==6.0
-pandas==2.0.3
-matplotlib==3.7.2
-seaborn==0.12.2
-lap==0.5.12
-ultralytics==8.0.190
+numpy
+opencv-python
+ultralytics
+onnxruntime
+pyinstaller
+scipy
+Pillow
+requests
+tqdm
+PyYAML
+lap

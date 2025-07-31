@@ -34,6 +34,7 @@ jobs:
           cd python_src
           pyinstaller analytics.spec --distpath ../extra/analytics --workpath ../build_pyinstaller
 
+      # ... остальная часть файла без изменений ...
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
