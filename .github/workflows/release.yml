@@ -27,9 +27,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Упрощенная и унифицированная установка зависимостей
-      - name: Install Python dependencies
-        run: pip install -r python_requirements.txt
+      # Ваша оригинальная логика установки зависимостей
+      - name: Install Python dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Убираем torch и torchvision, они не нужны для ONNX
+          pip install ultralytics pyinstaller opencv-python onnxruntime numpy
+          
+      - name: Install Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        # Убираем torch и torchvision, они не нужны для ONNX
+        run: pip install ultralytics pyinstaller opencv-python onnxruntime numpy
 
       # ИЗМЕНЕННАЯ КОМАНДА СБОРКИ: Используем .spec файл
       - name: Build analytics executable
@@ -49,7 +57,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse2
       
-      - name: Build and release
+      - name: Build and release for Linux
+        if: runner.os == 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
+          echo "FUSE library found at: $FUSE_PATH"
+          EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
+          npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
+      
+      - name: Build and release for Windows
+        if: runner.os == 'Windows'
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run dist -- --publish always

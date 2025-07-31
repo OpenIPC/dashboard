@@ -1,42 +1,50 @@
+# python_src/analytics.spec
+
 # -*- mode: python ; coding: utf-8 -*-
 
+# Собираем данные: нам нужна модель ONNX.
+# Убедитесь, что файл 'yolov8n.onnx' лежит в той же папке, что и этот .spec файл.
+datas = [('yolov8n.onnx', '.')]
+
+# PyInstaller не всегда видит все зависимости. Явно указываем ему включить эти модули.
+hiddenimports = [
+    'numpy',
+    'cv2',
+    'onnxruntime',
+    'ultralytics'
+]
 
 a = Analysis(
     ['analytics.py'],
     pathex=[],
     binaries=[],
-    # VVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVV
-    # Добавляем всю папку cv2 из виртуального окружения в сборку.
-    # Она будет помещена в папку 'cv2' внутри .exe файла.
-    datas=[('yolov8n.onnx', '.'), 
-           ('.venv/Lib/site-packages/cv2', 'cv2')],
-    # ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=None
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='analytics',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_console=True,
     runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
-    argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
-    entitlements_file=None,
+    entitlements_file=None
 )
