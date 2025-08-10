@@ -43,11 +43,12 @@ module.exports = class CAM_NETIP
         try {
             console.log(`[NETIP DEBUG] Connecting to ${this.host_ip}:${this.host_port}`);
             await this.promiseSocket.connect({port: this.host_port, host: this.host_ip});
-            console.log(`[NETIP DEBUG] Socket connected. Attempting login with lowercase MD5 hash.`);
             
-            // VVV --- ГЛАВНОЕ ИЗМЕНЕНИЕ --- VVV
-            const passwordHash = this.pass ? crypto.createHash('md5').update(this.pass).digest('hex') : "";
-            // ^^^ --- УБРАЛИ .toUpperCase() --- ^^^
+            // VVVVVV --- ИСПРАВЛЕНИЕ АУТЕНТИФИКАЦИИ --- VVVVVV
+            // Согласно документации (и стандартной практике XM), хеш должен быть в верхнем регистре.
+            console.log(`[NETIP DEBUG] Attempting login with UPPERCASE MD5 hash.`);
+            const passwordHash = this.pass ? crypto.createHash('md5').update(this.pass).digest('hex').toUpperCase() : "";
+            // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
 
             const loginPayload = {
                 "EncryptType": "MD5",
@@ -76,6 +77,18 @@ module.exports = class CAM_NETIP
             if(this._socket) this._socket.destroy();
             throw error; 
         }
+    }
+    
+    async ptz_control(command, speed = 4) {
+        const ptzPayload = {
+            "Name": "PTZ",
+            "SessionID": this.session,
+            "PTZ": {
+                "Command": command,
+                "Speed": speed,
+            }
+        };
+        return await this._sendData(1080, ptzPayload);
     }
 
     async get_system_info(){ return await this.get_info("SystemInfo", 1020); }

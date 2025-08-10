@@ -34,6 +34,44 @@
         let settingsCameraId = null;
         let rangeSyncFunctions = {};
 
+        // VVVVVV --- ИЗМЕНЕНИЕ: Добавляем словарь описаний полей --- VVVVVV
+        const FIELD_DEFINITIONS = {
+            // System
+            logLevel: { type: 'select', options: ['verbose', 'debug', 'info', 'warn', 'error'] },
+            // ISP
+            slowShutter: { type: 'select', options: ['auto', 'fast', 'medium', 'slow'] },
+            rawMode: { type: 'select', options: ['auto', 'raw', 'yuv', 'slow'] },
+            memMode: { type: 'select', options: ['single', 'continuous', 'reduction'] },
+            antiFlicker: { type: 'select', options: ['disabled', '50hz', '60hz'] },
+            // Image
+            contrast: { type: 'range', min: 0, max: 100 },
+            hue: { type: 'range', min: 0, max: 100 },
+            saturation: { type: 'range', min: 0, max: 100 },
+            luminance: { type: 'range', min: 0, max: 100 },
+            // --- Специальные правила для полей с одинаковыми именами ---
+            codec: {
+                type: 'select',
+                // Правила применяются в зависимости от секции
+                _perSection: {
+                    video0: { options: ['h264', 'h265', 'mjpeg'] },
+                    video1: { options: ['h264', 'h265', 'mjpeg'] },
+                    audio: { options: ['g711a', 'g711u', 'aac'] } // Правильные аудиокодеки!
+                }
+            },
+            // Video0 & Video1
+            rcMode: { type: 'select', options: ['cbr', 'vbr'] },
+            profile: { type: 'select', options: ['baseline', 'main', 'high'] },
+            gopMode: { type: 'select', options: ['normal', 'dual', 'smart'] },
+            // Audio
+            srate: {
+                type: 'select',
+                _perSection: {
+                    audio: { options: [8000, 16000, 32000, 44100, 48000] }
+                }
+            }
+        };
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        
         const availableAnalyticsObjects = [
             { key: 'person', label: 'Человек' },
             { key: 'car', label: 'Автомобиль' },
@@ -57,6 +95,96 @@
             return syncFunc;
         }
 
+        function clearDynamicSettings() {
+            settingsModal.querySelectorAll('.tab-content.dynamic').forEach(tab => {
+                tab.innerHTML = '';
+                tab.classList.remove('dynamic');
+            });
+        }
+        
+        function formatLabel(key) {
+            const result = key.replace(/([A-Z])/g, ' $1');
+            return result.charAt(0).toUpperCase() + result.slice(1);
+        }
+
+        // VVVVVV --- ИЗМЕНЕНИЕ: Улучшенная функция генерации полей --- VVVVVV
+        function createSettingInput(section, key, value) {
+            const id = `${section}.${key}`;
+            let definition = FIELD_DEFINITIONS[key] || {};
+            if (definition._perSection && definition._perSection[section]) {
+                definition = { ...definition, ...definition._perSection[section] };
+            }
+            
+            const type = definition.type || (typeof value === 'boolean' ? 'boolean' : (typeof value === 'number' ? 'number' : 'string'));
+            
+            const labelText = formatLabel(key);
+            const labelHtml = `<label class="form-label" for="${id}">${labelText}</label>`;
+            let inputHtml = '';
+            
+            switch (type) {
+                case 'boolean':
+                    const checked = value ? 'checked' : '';
+                    inputHtml = `
+                        <div class="p-boolean">
+                            ${labelHtml}
+                            <div class="form-check form-switch">
+                                <input type="checkbox" id="${id}" name="${id}" class="form-check-input" ${checked}>
+                            </div>
+                        </div>`;
+                    break;
+                
+                case 'select':
+                    let optionsHtml = '';
+                    (definition.options || []).forEach(opt => {
+                        const selected = opt == value ? 'selected' : '';
+                        optionsHtml += `<option value="${opt}" ${selected}>${opt}</option>`;
+                    });
+                    inputHtml = `
+                        <div class="p-setting">
+                            ${labelHtml}
+                            <div class="input-group">
+                                <select class="form-select" id="${id}" name="${id}">${optionsHtml}</select>
+                            </div>
+                        </div>`;
+                    break;
+                
+                case 'range':
+                    const min = definition.min !== undefined ? definition.min : 0;
+                    const max = definition.max !== undefined ? definition.max : 100;
+                    inputHtml = `
+                        <div class="p-setting">
+                            ${labelHtml}
+                            <div class="input-group range-slider-wrapper">
+                                <input type="range" id="${id}" name="${id}" class="form-range" value="${value}" min="${min}" max="${max}">
+                                <span class="range-value">${value}</span>
+                            </div>
+                        </div>`;
+                    break;
+                
+                case 'number':
+                     inputHtml = `
+                        <div class="p-setting">
+                            ${labelHtml}
+                            <div class="input-group">
+                                <input type="number" id="${id}" name="${id}" class="form-control text-end" value="${value}">
+                            </div>
+                        </div>`;
+                    break;
+
+                default: // string
+                     inputHtml = `
+                        <div class="p-setting">
+                            ${labelHtml}
+                            <div class="input-group">
+                                <input type="text" id="${id}" name="${id}" class="form-control" value="${value}">
+                            </div>
+                        </div>`;
+                    break;
+            }
+            return inputHtml;
+        }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
         function setFormValue(id, value, defaultValue) {
             const finalValue = value !== undefined && value !== null ? value : defaultValue;
             if (finalValue === undefined) return;
@@ -73,9 +201,9 @@
         }
 
         async function openSettingsModal(cameraId = null) {
-            // VVVVVV --- ВОТ ИСПРАВЛЕНИЕ --- VVVVVV
-            App.i18n.applyTranslationsToDOM(); // Принудительно переводим все элементы перед показом
-            // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+            App.i18n.applyTranslationsToDOM();
+
+            clearDynamicSettings();
 
             settingsCameraId = cameraId;
             rangeSyncFunctions = {};
@@ -98,7 +226,7 @@
                     show = isGeneralTab || isStreamingTab || isAnalyticsTab;
                 } else {
                     if (isNetipCamera) {
-                        show = isAnalyticsTab;
+                        show = tab === 'tab-netip' || isAnalyticsTab;
                     } else {
                         show = isMajesticOrNetipTab || isAnalyticsTab;
                     }
@@ -112,12 +240,19 @@
             if (isGeneralSettings) {
                 activeTab = 'tab-general';
             } else {
-                activeTab = isNetipCamera ? 'tab-analytics' : 'tab-system';
+                activeTab = isNetipCamera ? 'tab-netip' : 'tab-system';
             }
-            tabsContainer.querySelector(`[data-tab="${activeTab}"]`).classList.add('active');
-            document.getElementById(activeTab).classList.add('active');
+            
+            const activeButton = tabsContainer.querySelector(`[data-tab="${activeTab}"]`);
+            const activeContent = document.getElementById(activeTab);
 
-            // --- Заполнение общих настроек ---
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
+            if (activeContent) {
+                activeContent.classList.add('active');
+            }
+
             const { appSettings } = stateManager.state;
             recordingsPathInput.value = appSettings.recordingsPath || '';
             languageSelect.value = appSettings.language || 'en';
@@ -130,7 +265,6 @@
             setFormValue('app-settings-analytics-frame-skip', appSettings.analytics_frame_skip, 10);
             setFormValue('app-settings-analytics-record-duration', appSettings.analytics_record_duration, 30);
             
-            // --- Управление видимостью блоков и кнопок ---
             document.getElementById('global-analytics-settings').style.display = isGeneralSettings ? 'block' : 'none';
             document.getElementById('camera-specific-analytics-settings').style.display = isGeneralSettings ? 'none' : 'block';
             restartMajesticBtn.style.display = isGeneralSettings || (camera && camera.protocol === 'netip') ? 'none' : 'inline-flex';
@@ -144,25 +278,17 @@
                 return;
             }
 
-            // --- Загрузка и отображение настроек для конкретной камеры ---
-            
+            const analyticsConfig = camera.analyticsConfig || {};
+            setFormValue('analytics.enabled', analyticsConfig.enabled, false);
             analyticsObjectsListEl.innerHTML = '';
             availableAnalyticsObjects.forEach(obj => {
+                const isChecked = analyticsConfig.objects && analyticsConfig.objects.includes(obj.key);
                 analyticsObjectsListEl.innerHTML += `
                     <div class="form-check-inline">
-                        <input type="checkbox" id="analytics.objects.${obj.key}" class="form-check-input" data-object-key="${obj.key}">
+                        <input type="checkbox" id="analytics.objects.${obj.key}" class="form-check-input" data-object-key="${obj.key}" ${isChecked ? 'checked' : ''}>
                         <label for="analytics.objects.${obj.key}">${obj.label}</label>
                     </div>`;
             });
-
-            const analyticsConfig = camera.analyticsConfig || {};
-            setFormValue('analytics.enabled', analyticsConfig.enabled, false);
-            if (analyticsConfig.objects) {
-                analyticsConfig.objects.forEach(key => {
-                    const checkbox = document.getElementById(`analytics.objects.${key}`);
-                    if (checkbox) checkbox.checked = true;
-                });
-            }
 
             saveSettingsBtn.disabled = true;
             saveSettingsBtn.textContent = App.i18n.t('loading_text');
@@ -171,12 +297,25 @@
                     const settings = await window.api.getCameraSettings(camera);
                     if (settings && !settings.error) {
                         for (const section in settings) {
-                            if (typeof settings[section] === 'object' && settings[section] !== null) {
+                            const tabContent = document.getElementById(`tab-${section}`);
+                            if (tabContent && typeof settings[section] === 'object' && settings[section] !== null) {
+                                tabContent.classList.add('dynamic');
+                                let sectionHtml = '';
                                 for (const key in settings[section]) {
-                                    setFormValue(`${section}.${key}`, settings[section][key]);
+                                    sectionHtml += createSettingInput(section, key, settings[section][key]);
                                 }
+                                tabContent.innerHTML = sectionHtml;
                             }
                         }
+                        
+                        settingsModal.querySelectorAll('.form-range').forEach(slider => {
+                            const valueSpan = slider.parentElement.querySelector('.range-value');
+                            if (valueSpan) {
+                                slider.addEventListener('input', () => {
+                                    valueSpan.textContent = slider.value;
+                                });
+                            }
+                        });
                     } else {
                         throw new Error(settings?.error || App.i18n.t('unknown_error'));
                     }
@@ -194,7 +333,6 @@
             saveSettingsBtn.disabled = true;
             saveSettingsBtn.textContent = App.i18n.t('saving_text');
             if (settingsCameraId === null) {
-                // Сохранение ОБЩИХ настроек
                 stateManager.setAppSettings({
                     recordingsPath: recordingsPathInput.value.trim(),
                     hwAccel: hwAccelSelect.value,
@@ -208,22 +346,27 @@
                 });
                 utils.showToast(App.i18n.t('app_settings_saved_success'));
             } else {
-                // Сохранение настроек КАМЕРЫ
                 const camera = stateManager.state.cameras.find(c => c.id === settingsCameraId);
                 if (!camera) { saveSettingsBtn.disabled = false; saveSettingsBtn.textContent = App.i18n.t('save'); return; }
                 
                 if (camera.protocol !== 'netip') {
+                    // VVVVVV --- ИЗМЕНЕНИЕ: Улучшенная логика сохранения --- VVVVVV
                     const settingsDataToSend = {};
-                    settingsModal.querySelectorAll('[id*="."]').forEach(el => {
-                        const [section, key] = el.id.split('.');
-                        if (!section || !key || el.id.startsWith('app-settings-') || el.id.startsWith('analytics.')) return;
+                    settingsModal.querySelectorAll('.tab-content.dynamic [name]').forEach(el => {
+                        const [section, key] = el.name.split('.');
+                        if (!section || !key) return;
                         if (!settingsDataToSend[section]) settingsDataToSend[section] = {};
-                        if (el.type === 'checkbox') settingsDataToSend[section][key] = el.checked;
-                        else if (el.value !== '' && el.value !== null) {
-                            const val = (el.type === 'number' || el.type === 'range') ? Number(el.value) : el.value;
+
+                        if (el.type === 'checkbox') {
+                            settingsDataToSend[section][key] = el.checked;
+                        } else if (el.value !== '' && el.value !== null) {
+                            const isNumeric = el.type === 'number' || el.type === 'range' || !isNaN(el.value);
+                            const val = isNumeric ? Number(el.value) : el.value;
                             settingsDataToSend[section][key] = val;
                         }
                     });
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+                    
                     const result = await window.api.setCameraSettings({ credentials: camera, settingsData: settingsDataToSend });
                     if (result.success) utils.showToast(App.i18n.t('camera_settings_saved_success'));
                     else utils.showToast(`${App.i18n.t('save_settings_error')}: ${result.error}`, true, 5000);

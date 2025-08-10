@@ -1,14 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('scpApi', {
-    // VVV ИЗМЕНЕНИЕ: Добавлены функции управления окном VVV
+    // Функции управления окном
     minimize: () => ipcRenderer.send('minimize-window'),
     maximize: () => ipcRenderer.send('maximize-window'),
     close: () => ipcRenderer.send('close-window'),
     onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', callback),
     onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', callback),
-    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
+    // API для работы с файлами
     connect: (camera) => ipcRenderer.invoke('scp-connect', camera),
     list: (cameraId, path) => ipcRenderer.invoke('scp-list', { cameraId, path }),
     download: (cameraId, remotePath) => ipcRenderer.invoke('scp-download', { cameraId, remotePath }),
@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('scpApi', {
     deleteFile: (cameraId, path) => ipcRenderer.invoke('scp-delete-file', { cameraId, path }),
     deleteDirectory: (cameraId, path) => ipcRenderer.invoke('scp-delete-dir', { cameraId, path }),
     
-    // Для локальной файловой системы
+    // API для локальной файловой системы
     getLocalDiskList: () => ipcRenderer.invoke('get-local-disk-list'),
     listLocal: (path) => ipcRenderer.invoke('list-local-files', path),
 

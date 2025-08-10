@@ -4,12 +4,7 @@
     window.AppModules = window.AppModules || {};
 
     AppModules.createUserModalHandler = function(App, utils) {
-        // VVV НОВЫЙ БЛОК: Константы для ролей VVV
-        const USER_ROLES = {
-            ADMIN: 'admin',
-            OPERATOR: 'operator'
-        };
-        // ^^^ КОНЕЦ НОВОГО БЛОКА ^^^
+        // VVV УДАЛЕНА ЛОКАЛЬНАЯ КОНСТАНТА USER_ROLES VVV
 
         const userManagementModal = document.getElementById('user-management-modal');
         const userManagementCloseBtn = document.getElementById('user-management-close-btn');
@@ -63,7 +58,7 @@
                     li.innerHTML = `
                         <div style="flex-grow: 1;"><strong>${user.username}</strong> <small>(${App.t('role_' + user.role)})</small></div>
                         <div style="display: flex; gap: 10px;">
-                            ${user.role === USER_ROLES.OPERATOR ? `<button class="permissions-btn" data-username="${user.username}">${App.t('permissions_btn')}</button>` : ''}
+                            ${user.role === App.USER_ROLES.OPERATOR ? `<button class="permissions-btn" data-username="${user.username}">${App.t('permissions_btn')}</button>` : ''}
                             <button class="change-pass-btn">${App.t('change_password')}</button>
                             <button class="delete-user-btn" ${isCurrentUser ? 'disabled' : ''}>${App.t('context_delete')}</button>
                         </div>`;
@@ -88,9 +83,7 @@
         function openAddUserModal() {
             document.getElementById('add-user-username').value = '';
             document.getElementById('add-user-password').value = '';
-            // VVV ИЗМЕНЕНИЕ: Используем константу VVV
-            document.getElementById('add-user-role').value = USER_ROLES.OPERATOR;
-            // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
+            document.getElementById('add-user-role').value = App.USER_ROLES.OPERATOR;
             utils.openModal(addUserModal);
             document.getElementById('add-user-username').focus();
         }
@@ -185,7 +178,7 @@
             window.addEventListener('language-changed', () => {
                 if (!userManagementModal.classList.contains('hidden')) {
                     document.querySelector('#user-management-modal h2').textContent = App.t('user_management_title');
-                    renderUserList(); // Re-render to update button text
+                    renderUserList();
                 }
                 if (!addUserModal.classList.contains('hidden')) {
                     document.querySelector('#add-user-modal h2').textContent = App.t('add_user_title');

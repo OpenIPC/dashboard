@@ -1,4 +1,4 @@
-// js/modal-handler.js
+// --- ФАЙЛ: js/modal-handler.js ---
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -37,7 +37,7 @@
         const promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
         const promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
 
-        // VVV ИЗМЕНЕНИЕ: Улучшенная логика асинхронного prompt VVV
+        // Улучшенная логика асинхронного prompt
         function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel') }) {
             return new Promise((resolve) => {
                 promptModalTitle.textContent = title;
@@ -50,14 +50,13 @@
                 promptModalInput.focus();
                 promptModalInput.select();
                 
-                // Переменная, чтобы гарантировать вызов resolve только один раз
                 let isResolved = false;
 
                 const cleanupAndResolve = (value) => {
                     if (isResolved) return;
                     isResolved = true;
                     
-                    // Удаляем обработчики
+                    // Удаляем обработчики, чтобы избежать утечек памяти
                     promptModalOkBtn.removeEventListener('click', onOk);
                     promptModalCancelBtn.removeEventListener('click', onCancel);
                     promptModal.removeEventListener('keydown', onKeydown);
@@ -71,7 +70,7 @@
                 };
 
                 const onCancel = () => {
-                    cleanupAndResolve(null); // Возвращаем null при отмене, как и стандартный prompt
+                    cleanupAndResolve(null); // Возвращаем null при отмене
                 };
                 
                 const onKeydown = (e) => {
@@ -88,7 +87,6 @@
                 promptModal.addEventListener('keydown', onKeydown);
             });
         }
-        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         function init() {
             // --- Инициализация всех дочерних обработчиков ---
@@ -105,7 +103,7 @@
             
             // --- Обработчики для кастомного prompt ---
             promptModalCloseBtn.addEventListener('click', () => {
-                // Имитируем клик по кнопке отмены, чтобы Promise завершился
+                // Имитируем клик по кнопке отмены, чтобы Promise завершился корректно
                 promptModalCancelBtn.click();
             });
             promptModal.addEventListener('click', (e) => { 
@@ -117,9 +115,9 @@
             // Закрытие любого открытого модального окна по клавише Escape
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
-                    // Проверяем, не открыт ли наш промпт, чтобы избежать двойного закрытия
+                    // Проверяем, не открыт ли наш prompt, чтобы избежать двойного закрытия
                     if (!promptModal.classList.contains('hidden')) {
-                        // Даем собственному обработчику prompt-а сработать, он сам вызовет отмену
+                        // Даем собственному обработчику prompt-а сработать
                         promptModalCancelBtn.click();
                         return; 
                     }
@@ -131,12 +129,13 @@
         }
 
         // --- Публичный API модуля ---
-        // Предоставляем доступ к публичным методам дочерних обработчиков
+        // Предоставляем доступ к публичным методам дочерних обработчиков и общим утилитам
         return { 
             init,
             openAddModal: cameraHandler.openAddModal,
             openSettingsModal: settingsHandler.openSettingsModal,
             showPrompt,
+            showToast: utils.showToast, // <--- ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ
         };
     };
 })(window);

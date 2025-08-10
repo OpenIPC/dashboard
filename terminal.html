@@ -13,7 +13,6 @@
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-color); }
         .container { display: flex; flex-direction: column; height: 100vh; border: 1px solid var(--border-color); }
         
-        /* VVV ИЗМЕНЕНИЕ: Стили для кастомного заголовка VVV */
         .header {
             height: 32px; background-color: var(--header-bg); display: flex;
             align-items: center; padding-left: 12px; flex-shrink: 0;
@@ -30,7 +29,6 @@
         .window-control-btn i { font-size: 18px; }
         .window-control-btn:hover { background-color: rgba(255,255,255,0.1); }
         .window-control-btn.close-btn:hover { background-color: var(--danger-color); color: white; }
-        /* ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ */
         
         #terminal-container { flex-grow: 1; padding: 5px; }
         #terminal { height: 100%; width: 100%; }
@@ -38,7 +36,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- VVV ИЗМЕНЕНИЕ: Добавлен кастомный заголовок VVV -->
         <div class="header">
             <div class="title" id="window-title">SSH Терминал</div>
             <div class="window-controls">
@@ -47,7 +44,6 @@
                 <button id="close-btn" class="window-control-btn close-btn"><i class="material-icons">close</i></button>
             </div>
         </div>
-        <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
 
         <div id="terminal-container">
             <div id="terminal"></div>
@@ -57,7 +53,6 @@
     <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
     <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
     
-    <!-- VVV ИЗМЕНЕНИЕ: Добавлен скрипт для кнопок управления VVV -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const camera = JSON.parse(new URLSearchParams(window.location.search).get('camera'));
@@ -75,7 +70,6 @@
             });
         });
     </script>
-    <!-- ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^ -->
 
     <script src="./terminal.js"></script>
 </body>

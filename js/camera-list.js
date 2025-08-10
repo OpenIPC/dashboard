@@ -65,17 +65,16 @@
                     cameraItem.dataset.cameraId = camera.id;
                     cameraItem.draggable = App.stateManager.state.currentUser?.role === 'admin';
                     
-                    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
-                    // Кнопка аналитики и индикатор записи теперь в одном контейнере
+                    // VVVVVV --- ИСПРАВЛЕНИЕ ШАБЛОНА --- VVVVVV
+                    // Возвращаем иконку статуса в начало и делаем контейнер с кнопками более явным.
+                    // span с именем теперь растягивается, чтобы прижать контролы вправо.
                     cameraItem.innerHTML = `
                         <i class="status-icon" id="status-icon-${camera.id}"></i>
-                        <span>${camera.name}</span>
-                        <div class="camera-item-controls" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-                            <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
-                                <i class="material-icons" style="font-size: 18px;">insights</i>
-                            </button>
-                            <div class="rec-indicator"></div>
-                        </div>
+                        <span style="flex-grow: 1;">${camera.name}</span>
+                        <div class="rec-indicator"></div>
+                        <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
+                            <i class="material-icons" style="font-size: 18px;">insights</i>
+                        </button>
                     `;
                     // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 

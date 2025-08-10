@@ -14,6 +14,8 @@
         let fullscreenCellIndex = null;
         let currentAudioPlayer = null;
 
+        let restartAttempts = {};
+
         function getActiveLayoutState() {
             const { layouts, activeLayoutId } = stateManager.state;
             if (!layouts || layouts.length === 0) return null;
@@ -82,7 +84,7 @@
                 } else {
                     const cellState = (gridState && gridState[i]) ? gridState[i] : null;
                     if (cellState) {
-                        const uniqueId = `${cellState.camera.id}_${cellState.streamId}`;
+                        const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}`;
                         if (localPlayers[uniqueId]) destroyPlayer(uniqueId);
                     }
                     cell.style.display = 'none';
@@ -138,7 +140,7 @@
             };
 
             const audioBtn = controls.querySelector('.audio-btn');
-            const uniqueId = `${cellState.camera.id}_${cellState.streamId}`;
+            const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}`;
             const player = localPlayers[uniqueId]?.player;
 
             if (player) {
@@ -189,7 +191,7 @@
             const desiredStreams = new Set();
             if (gridState) {
                 gridState.forEach(cell => {
-                    if (cell) desiredStreams.add(`${cell.camera.id}_${cell.streamId}`);
+                    if (cell) desiredStreams.add(`stream-${cell.camera.id}_${cell.streamId}`);
                 });
             }
 
@@ -210,7 +212,7 @@
                     const camera = cameras.find(c => c.id === cellState.camera.id);
                     if (!camera) continue;
 
-                    const uniqueStreamIdentifier = `${camera.id}_${cellState.streamId}`;
+                    const uniqueStreamIdentifier = `stream-${camera.id}_${cellState.streamId}`;
 
                     if (localPlayers[uniqueStreamIdentifier]) {
                         const playerInfo = localPlayers[uniqueStreamIdentifier];
@@ -235,29 +237,36 @@
                         }
 
                         if (result.success) {
-                            cellElement.innerHTML = '';
-                            const canvas = document.createElement('canvas');
-                            cellElement.appendChild(canvas);
+                            if (restartAttempts[uniqueStreamIdentifier]) {
+                                console.log(`[Grid] Stream ${uniqueStreamIdentifier} reconnected successfully. Resetting restart counter.`);
+                                delete restartAttempts[uniqueStreamIdentifier];
+                            }
+                            
+                            const template = document.getElementById('grid-cell-content-template');
+                            const content = template.content.cloneNode(true);
+
+                            const videoCanvas = content.querySelector('.video-canvas');
+                            const nameDiv = content.querySelector('.cell-name');
+                            const statsDiv = content.querySelector('.cell-stats');
 
                             const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
-                            const controlsDiv = document.createElement('div');
-                            controlsDiv.className = 'cell-controls';
-                            controlsDiv.innerHTML = `<button class="record-btn" title="Запись"><i class="material-icons">fiber_manual_record</i></button><button class="audio-btn" title="Звук"><i class="material-icons">volume_off</i></button><button class="stream-switch-btn" title="Переключить поток (HD/SD)"><i class="material-icons">hd</i></button><button class="fullscreen-btn" title="На весь экран"><i class="material-icons">fullscreen</i></button><button class="close-btn" title="Закрыть"><i class="material-icons">close</i></button>`;
-
-                            const nameDiv = document.createElement('div');
-                            nameDiv.className = 'cell-name';
                             nameDiv.textContent = `${camera.name} (${qualityLabel})`;
+                            
+                            // VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+                            // Присваиваем ID, который соответствует ID из main-процесса
+                            const identifierForStats = `${camera.id}_${cellState.streamId}`;
+                            statsDiv.id = `stats-${uniqueStreamIdentifier}`; // было: statsDiv.id = `stats-${identifierForStats}`;
+                            // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
 
-                            const statsDiv = document.createElement('div');
-                            statsDiv.className = 'cell-stats';
-                            statsDiv.id = `stats-${uniqueStreamIdentifier}`;
-
-                            cellElement.appendChild(controlsDiv);
-                            cellElement.appendChild(nameDiv);
-                            cellElement.appendChild(statsDiv);
+                            cellElement.innerHTML = '';
+                            cellElement.appendChild(content);
 
                             const player = new JSMpeg.Player(`ws://localhost:${result.wsPort}`, {
-                                canvas, autoplay: true, audio: true, volume: 0, disableWebAssembly: true
+                                canvas: videoCanvas,
+                                autoplay: true,
+                                audio: true,
+                                volume: 0,
+                                disableWebAssembly: true
                             });
                             localPlayers[uniqueStreamIdentifier].player = player;
                         } else {
@@ -367,7 +376,6 @@
             });
             window.addEventListener('language-changed', updatePlaceholdersLanguage);
 
-            // VVVVVV --- ИЗМЕНЕНИЕ: ОБНОВЛЕННЫЙ ОБРАБОТЧИК ДЛЯ РИСОВАНИЯ РАМОК --- VVVVVV
             window.api.onAnalyticsUpdate(({ cameraId, result }) => {
                 const gridState = getGridState();
                 const cellIndex = gridState.findIndex(cell => cell && cell.camera.id === cameraId);
@@ -376,74 +384,81 @@
                 const cellElement = gridCells[cellIndex];
                 if (!cellElement) return;
 
-                // Удаляем старые рамки (вне зависимости от типа)
-                cellElement.querySelectorAll('.motion-box, .object-box').forEach(box => box.remove());
+                const videoWrapper = cellElement.querySelector('.video-wrapper');
+                if (!videoWrapper) return;
+                
+                const videoCanvas = videoWrapper.querySelector('.video-canvas');
+                const overlayCanvas = videoWrapper.querySelector('.overlay-canvas');
+                if (!videoCanvas || !overlayCanvas) return;
 
-                // --- Обработка простого детектора движения ---
-                if (result.status === 'motion_detected' && result.boxes) {
-                    const videoCanvas = cellElement.querySelector('canvas');
-                    if (!videoCanvas) return;
-
-                    result.boxes.forEach(box => {
-                        const div = document.createElement('div');
-                        div.className = 'motion-box';
-                        
-                        div.style.left = `${(box.x / videoCanvas.width) * 100}%`;
-                        div.style.top = `${(box.y / videoCanvas.height) * 100}%`;
-                        div.style.width = `${(box.w / videoCanvas.width) * 100}%`;
-                        div.style.height = `${(box.h / videoCanvas.height) * 100}%`;
-                        
-                        cellElement.appendChild(div);
-                        setTimeout(() => div.remove(), 1000);
-                    });
+                if (overlayCanvas.width !== videoCanvas.clientWidth || overlayCanvas.height !== videoCanvas.clientHeight) {
+                    overlayCanvas.width = videoCanvas.clientWidth;
+                    overlayCanvas.height = videoCanvas.clientHeight;
                 }
+                
+                const ctx = overlayCanvas.getContext('2d');
+                
+                setTimeout(() => {
+                     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                }, 1000);
 
-                // --- Обработка детектора объектов (YOLO) ---
+                ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
                 if (result.status === 'objects_detected' && result.objects) {
-                    const videoCanvas = cellElement.querySelector('canvas');
-                    if (!videoCanvas) return;
+                    const scaleX = overlayCanvas.width / videoCanvas.width;
+                    const scaleY = overlayCanvas.height / videoCanvas.height;
 
                     result.objects.forEach(obj => {
-                        const div = document.createElement('div');
-                        div.className = 'object-box';
-                        div.dataset.label = `${obj.label} (${Math.round(obj.confidence * 100)}%)`;
-                        
-                        div.style.left = `${(obj.box.x / videoCanvas.width) * 100}%`;
-                        div.style.top = `${(obj.box.y / videoCanvas.height) * 100}%`;
-                        div.style.width = `${(obj.box.w / videoCanvas.width) * 100}%`;
-                        div.style.height = `${(obj.box.h / videoCanvas.height) * 100}%`;
-                        
-                        if (obj.label === 'person') {
-                            div.style.borderColor = '#3498db'; // Синий
-                        } else {
-                            div.style.borderColor = '#f1c40f'; // Желтый
-                        }
-                        
-                        cellElement.appendChild(div);
-                        setTimeout(() => div.remove(), 1000);
+                        const x = obj.box.x * scaleX;
+                        const y = obj.box.y * scaleY;
+                        const w = obj.box.w * scaleX;
+                        const h = obj.box.h * scaleY;
+                        const label = `${obj.label} (${Math.round(obj.confidence * 100)}%)`;
+
+                        ctx.strokeStyle = (obj.label === 'person') ? '#3498db' : '#f1c40f';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, w, h);
+
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        const textMetrics = ctx.measureText(label);
+                        ctx.fillRect(x, y > 18 ? y - 18 : y, textMetrics.width + 8, 16);
+
+                        ctx.fillStyle = 'white';
+                        ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                        ctx.fillText(label, x + 4, y > 18 ? y - 5 : y + 12);
                     });
                 }
             });
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         }
 
         async function handleStreamDeath(uniqueStreamIdentifier) {
             console.log(`[Grid] Stream ${uniqueStreamIdentifier} died. Cleaning up.`);
             if (localPlayers[uniqueStreamIdentifier]) {
                 const playerInfo = localPlayers[uniqueStreamIdentifier];
-                if (playerInfo.cell) {
-                    playerInfo.cell.innerHTML = `<span><i class="material-icons">error_outline</i><br>${App.t('stream_died_reconnecting')}</span>`;
-                }
-                delete localPlayers[uniqueStreamIdentifier];
+                delete localPlayers[uniqueStreamIdentifier]; 
+                
+                restartAttempts[uniqueStreamIdentifier] = (restartAttempts[uniqueStreamIdentifier] || 0) + 1;
+                
+                const delay = Math.min(5000 * Math.pow(2, restartAttempts[uniqueStreamIdentifier] - 1), 120000);
+                
+                const reconnectingMessage = `${App.t('stream_died_reconnecting')} (попытка #${restartAttempts[uniqueStreamIdentifier]}, след. через ${delay / 1000}с)`;
 
+                if (playerInfo.cell) {
+                    playerInfo.cell.innerHTML = `<span><i class="material-icons">error_outline</i><br>${reconnectingMessage}</span>`;
+                }
+                
+                console.log(`[Grid] Will attempt to restart stream ${uniqueStreamIdentifier} in ${delay / 1000}s.`);
+                
                 setTimeout(() => {
                     const currentState = getGridState();
-                    const needsRestart = currentState.some(cell => cell && `${cell.camera.id}_${cell.streamId}` === uniqueStreamIdentifier);
+                    const needsRestart = currentState.some(cell => cell && `stream-${cell.camera.id}_${cell.streamId}` === uniqueStreamIdentifier);
                     if (needsRestart) {
-                        console.log(`[Grid] Attempting to restart stream ${uniqueStreamIdentifier}.`);
+                        console.log(`[Grid] Executing restart for stream ${uniqueStreamIdentifier}.`);
                         render();
+                    } else {
+                        delete restartAttempts[uniqueStreamIdentifier];
                     }
-                }, 5000);
+                }, delay);
             }
         }
 
@@ -451,7 +466,7 @@
             console.log(`[Grid] Restarting all streams for camera ID: ${cameraId}`);
             const streamsToRestart = [];
             for (const id in localPlayers) {
-                if (id.startsWith(`${cameraId}_`)) {
+                if (id.startsWith(`stream-${cameraId}_`)) {
                     streamsToRestart.push(id);
                 }
             }
@@ -462,6 +477,15 @@
 
             setTimeout(() => render(), 100);
         }
+        
+        function updateStreamStats({ uniqueStreamIdentifier, fps, bitrate }) {
+            console.log(`[STATS UPDATE] ID: ${uniqueStreamIdentifier}, FPS: ${fps}, Bitrate: ${bitrate}`);
+            
+            const statsDiv = document.getElementById(`stats-${uniqueStreamIdentifier}`);
+            if (statsDiv) {
+                statsDiv.textContent = `${Math.round(fps)}fps, ${Math.round(bitrate)}kbps`;
+            }
+        }
 
         return {
             init,
@@ -470,7 +494,8 @@
             updateGridLayoutView,
             updatePlaceholdersLanguage,
             handleStreamDeath,
-            restartStreamsForCamera
+            restartStreamsForCamera,
+            updateStreamStats
         };
     };
 })(window);

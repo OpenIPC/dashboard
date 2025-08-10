@@ -1,0 +1,354 @@
+<template id="archive-template">
+    <div id="archive-view" class="hidden">
+        <div class="archive-main-content">
+            <div class="archive-header">
+                <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
+                <h2 id="archive-camera-name"></h2>
+                <button id="archive-export-btn" data-i18n-key="archive_export_clip" disabled></button>
+                <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
+            </div>
+            <div class="archive-video-container">
+                <video id="archive-video-player" controls class="hidden"></video>
+                <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
+            </div>
+            <div class="timeline-container">
+                <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
+                <div class="timeline-wrapper" id="timeline-wrapper">
+                    <canvas id="timeline-canvas"></canvas>
+                    <div id="timeline-labels" class="timeline-labels"></div>
+                </div>
+                <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
+            </div>
+        </div>
+        <div class="archive-sidebar">
+            <h3>События</h3>
+            <div id="archive-filters"></div>
+            <ul id="event-list"></ul>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна добавления/редактирования камеры -->
+<template id="add-camera-modal-template">
+    <div id="add-camera-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <span id="add-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="add-modal-title"></h2>
+            <div class="form-grid simple">
+                <b data-i18n-key="camera_name"></b> <input type="text" id="new-cam-name" data-i18n-placeholder="camera_name_placeholder">
+                <b data-i18n-key="ip_address"></b>  <input type="text" id="new-cam-ip" placeholder="192.168.1.100">
+                <b>Протокол</b>
+                <select id="new-cam-protocol">
+                    <option value="openipc" selected>OpenIPC (Majestic)</option>
+                    <option value="netip">NETIP (Xiongmai)</option>
+                    <option value="onvif">Generic ONVIF</option>
+                </select>
+                <b data-i18n-key="rtsp_port"></b> <input type="number" id="new-cam-port" placeholder="554">
+                <b data-i18n-key="login"></b>     <input type="text" id="new-cam-user" value="root">
+                <b data-i18n-key="password"></b>    <input type="password" id="new-cam-pass">
+                <b data-i18n-key="onvif_authentication"></b>
+                <div class="form-check-inline">
+                    <input type="checkbox" id="new-cam-onvif-auth" class="form-check-input" checked>
+                    <label for="new-cam-onvif-auth" data-i18n-key="onvif_auth_label"></label>
+                </div>
+                <b data-i18n-key="stream_path_hd"></b>
+                <input type="text" id="new-cam-stream-path0" placeholder="/stream0">
+                <b data-i18n-key="stream_path_sd"></b>
+                <input type="text" id="new-cam-stream-path1" placeholder="/stream1">
+                <b></b>
+                <div class="form-buttons">
+                    <button id="save-camera-btn" data-i18n-key="save"></button>
+                    <button id="cancel-camera-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна настроек -->
+<template id="settings-modal-template">
+    <div id="settings-modal" class="modal-backdrop hidden">
+        <div class="modal-content large">
+            <span id="settings-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="settings-modal-title"></h2>
+            <div class="modal-body">
+                <div class="tabs">
+                    <button class="tab-button" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
+                    <button class="tab-button" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
+                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
+                    <button class="tab-button" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
+                    <button class="tab-button" data-tab="tab-system" data-i18n-key="settings_tab_system"></button>
+                    <button class="tab-button" data-tab="tab-isp" data-i18n-key="settings_tab_isp"></button>
+                    <button class="tab-button" data-tab="tab-image" data-i18n-key="settings_tab_image"></button>
+                    <button class="tab-button" data-tab="tab-video0" data-i18n-key="settings_tab_video0"></button>
+                    <button class="tab-button" data-tab="tab-video1" data-i18n-key="settings_tab_video1"></button>
+                    <button class="tab-button" data-tab="tab-jpeg" data-i18n-key="settings_tab_jpeg"></button>
+                    <button class="tab-button" data-tab="tab-osd" data-i18n-key="settings_tab_osd"></button>
+                    <button class="tab-button" data-tab="tab-audio" data-i18n-key="settings_tab_audio"></button>
+                    <button class="tab-button" data-tab="tab-rtsp" data-i18n-key="settings_tab_rtsp"></button>
+                    <button class="tab-button" data-tab="tab-nightMode" data-i18n-key="settings_tab_night"></button>
+                    <button class="tab-button" data-tab="tab-motionDetect" data-i18n-key="settings_tab_motion"></button>
+                    <button class="tab-button" data-tab="tab-records" data-i18n-key="settings_tab_record"></button>
+                    <button class="tab-button" data-tab="tab-outgoing" data-i18n-key="settings_tab_outgoing"></button>
+                    <button class="tab-button" data-tab="tab-watchdog" data-i18n-key="settings_tab_watchdog"></button>
+                    <button class="tab-button" data-tab="tab-hls" data-i18n-key="settings_tab_hls"></button>
+                    <button class="tab-button" data-tab="tab-onvif" data-i18n-key="settings_tab_onvif"></button>
+                    <button class="tab-button" data-tab="tab-ipeye" data-i18n-key="settings_tab_ipeye"></button>
+                </div>
+
+                <!-- Статические вкладки -->
+                <div id="tab-general" class="tab-content">
+                    <h3 data-i18n-key="settings_app_header"></h3>
+                    <div class="form-grid simple with-button">
+                        <span data-i18n-key="settings_language"></span>
+                        <select id="app-settings-language">
+                            <option value="en">English</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                        <span data-i18n-key="settings_recordings_folder"></span>
+                        <div class="form-input-wrapper">
+                           <input type="text" id="app-settings-recordings-path" readonly>
+                           <button id="select-rec-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
+                        </div>
+                        <span data-i18n-key="settings_hw_accel"></span>
+                        <select id="app-settings-hw-accel">
+                            <option value="auto" data-i18n-key="settings_hw_accel_auto"></option>
+                            <option value="nvidia" data-i18n-key="settings_hw_accel_nvidia"></option>
+                            <option value="intel" data-i18n-key="settings_hw_accel_intel"></option>
+                            <option value="none" data-i18n-key="settings_hw_accel_none"></option>
+                        </select>
+                        <span data-i18n-key="settings_notifications_label"></span>
+                        <div class="form-check-inline">
+                            <input type="checkbox" id="app-settings-notifications-enabled" class="form-check-input">
+                            <label for="app-settings-notifications-enabled" data-i18n-key="settings_notifications_enable_label"></label>
+                        </div>
+                    </div>
+                    <h3 data-i18n-key="settings_config_management_header"></h3>
+                    <div class="form-grid simple">
+                        <span data-i18n-key="settings_config_export_label"></span>
+                        <button id="export-config-btn" style="width: 200px; justify-self: start;" data-i18n-key="settings_config_export_btn"></button>
+                        <span data-i18n-key="settings_config_import_label"></span>
+                        <button id="import-config-btn" style="width: 200px; justify-self: start; background-color: var(--danger-color);" data-i18n-key="settings_config_import_btn"></button>
+                    </div>
+                    <h3 data-i18n-key="update_header"></h3>
+                    <div class="form-grid simple">
+                        <span data-i18n-key="update_status_label"></span>
+                        <span id="update-status-text" style="font-style: italic;" data-i18n-key="update_check_prompt"></span>
+                        <span data-i18n-key="update_action_label"></span>
+                        <button id="check-for-updates-btn" style="width: 200px; justify-self: start;" data-i18n-key="update_check_button"></button>
+                    </div>
+                </div>
+                <div id="tab-streaming" class="tab-content">
+                    <h3 data-i18n-key="streaming_settings_header"></h3>
+                    <p style="color: #666; font-size: 13px;" data-i18n-key="streaming_settings_desc"></p>
+                    <div class="form-grid simple">
+                        <label for="app-settings-qscale" data-i18n-key="streaming_qscale_label"></label>
+                        <div class="form-input-wrapper">
+                            <input type="range" id="app-settings-qscale" min="2" max="31" step="1" style="flex-grow: 1;">
+                            <span class="range-value" id="app-settings-qscale-value" style="min-width: 30px; text-align: center;">8</span>
+                        </div>
+                        <label for="app-settings-fps" data-i18n-key="streaming_fps_label"></label>
+                        <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
+                    </div>
+                </div>
+                <div id="tab-analytics" class="tab-content">
+                    <div id="global-analytics-settings">
+                        <h3 data-i18n-key="global_analytics_settings_header"></h3>
+                        <p style="color: #666; font-size: 13px;" data-i18n-key="global_analytics_settings_desc"></p>
+                        <div class="form-grid simple">
+                            <label for="app-settings-analytics-resize-width" data-i18n-key="analytics_resize_width_label"></label>
+                            <input type="number" id="app-settings-analytics-resize-width" value="416" min="0" step="16">
+                            <label for="app-settings-analytics-frame-skip" data-i18n-key="analytics_frame_skip_label"></label>
+                            <input type="number" id="app-settings-analytics-frame-skip" value="10" min="1">
+                            <label for="app-settings-analytics-record-duration">Длительность записи после события (сек)</label>
+                            <input type="number" id="app-settings-analytics-record-duration" value="30" min="5">
+                        </div>
+                    </div>
+                    <div id="camera-specific-analytics-settings">
+                        <h3 data-i18n-key="camera_analytics_settings_header"></h3>
+                        <div class="form-grid simple">
+                            <label for="analytics.enabled" data-i18n-key="analytics_enable_label"></label>
+                            <div class="form-check form-switch">
+                                <input type="checkbox" id="analytics.enabled" class="form-check-input">
+                            </div>
+                        </div>
+                        <h4 data-i18n-key="analytics_objects_header"></h4>
+                        <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;"></div>
+                        <h4 style="margin-top: 20px;" data-i18n-key="analytics_roi_header"></h4>
+                        <p style="color: #666; font-size: 13px;" data-i18n-key="analytics_roi_desc"></p>
+                    </div>
+                </div>
+                <div id="tab-netip" class="tab-content">
+                    <h3>Настройки видео</h3>
+                    <p style="color: #666; font-size: 13px;">Сохранение настроек для NETIP-камер находится в разработке.</p>
+                    <div class="form-grid simple">
+                        <label for="netip.video.resolution">Разрешение</label><input type="text" id="netip.video.resolution" readonly>
+                        <label for="netip.video.bitrate">Битрейт (kbps)</label><input type="number" id="netip.video.bitrate" readonly>
+                    </div>
+                    <h3>Информация о системе</h3>
+                    <div class="form-grid simple">
+                        <label for="netip.system.devicename">Имя устройства</label><input type="text" id="netip.system.devicename" readonly>
+                        <label for="netip.system.hardware">Аппаратная вер.</label><input type="text" id="netip.system.hardware" readonly>
+                        <label for="netip.system.software">Версия ПО</label><input type="text" id="netip.system.software" readonly>
+                    </div>
+                </div>
+                
+                <!-- Пустые контейнеры для динамической генерации -->
+                <div id="tab-system" class="tab-content"></div>
+                <div id="tab-isp" class="tab-content"></div>
+                <div id="tab-image" class="tab-content"></div>
+                <div id="tab-video0" class="tab-content"></div>
+                <div id="tab-video1" class="tab-content"></div>
+                <div id="tab-jpeg" class="tab-content"></div>
+                <div id="tab-osd" class="tab-content"></div>
+                <div id="tab-audio" class="tab-content"></div>
+                <div id="tab-rtsp" class="tab-content"></div>
+                <div id="tab-nightMode" class="tab-content"></div>
+                <div id="tab-motionDetect" class="tab-content"></div>
+                <div id="tab-records" class="tab-content"></div>
+                <div id="tab-outgoing" class="tab-content"></div>
+                <div id="tab-watchdog" class="tab-content"></div>
+                <div id="tab-hls" class="tab-content"></div>
+                <div id="tab-onvif" class="tab-content"></div>
+                <div id="tab-ipeye" class="tab-content"></div>
+
+            </div>
+            <div class="modal-footer">
+                <button id="save-settings-btn" data-i18n-key="save"></button>
+                <button id="restart-majestic-btn" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
+                <button id="kill-all-btn-modal" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
+            </div>
+            <div id="settings-toast" class="toast-notification"></div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна управления пользователями -->
+<template id="user-management-modal-template">
+    <div id="user-management-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 600px;">
+            <span id="user-management-close-btn" class="modal-close-btn">×</span>
+            <h2 data-i18n-key="user_management_title"></h2>
+            <div class="modal-body">
+                <div id="user-list-container" style="min-height: 200px; max-height: 50vh; overflow-y: auto; border: 1px solid #eee; margin-top: 15px;">
+                    <ul id="user-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+                </div>
+                <div class="form-buttons" style="justify-content: flex-start; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                    <button id="open-add-user-modal-btn" data-i18n-key="add_user"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна добавления группы -->
+<template id="add-group-modal-template">
+    <div id="add-group-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <span id="add-group-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="add-group-modal-title" data-i18n-key="create_group_title"></h2>
+            <div class="form-grid simple">
+                <b data-i18n-key="camera_name"></b> <input type="text" id="new-group-name" data-i18n-placeholder="group_name_placeholder">
+                <b></b>
+                <div class="form-buttons">
+                    <button id="save-group-btn" data-i18n-key="save"></button>
+                    <button id="cancel-group-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна поиска камер -->
+<template id="discover-modal-template">
+    <div id="discover-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <span id="discover-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 data-i18n-key="discover_modal_title"></h2>
+            <div id="discover-list-container" style="min-height: 200px; max-height: 40vh; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; margin-top: 15px;">
+                <ul id="discover-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+            </div>
+            <div class="form-buttons">
+                <button id="add-discovered-btn" data-i18n-key="add_selected_camera" disabled></button>
+                <button id="rediscover-btn" data-i18n-key="search_again"></button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна добавления пользователя -->
+<template id="add-user-modal-template">
+    <div id="add-user-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 400px;">
+            <span id="add-user-close-btn" class="modal-close-btn">×</span>
+            <h2 data-i18n-key="add_user_title"></h2>
+            <div class="form-grid simple" style="grid-template-columns: 100px 1fr; padding-top: 10px;">
+                <b data-i18n-key="login"></b> <input type="text" id="add-user-username" autocomplete="off">
+                <b data-i18n-key="password"></b> <input type="password" id="add-user-password" autocomplete="new-password">
+                <b data-i18n-key="user_role"></b> 
+                <select id="add-user-role">
+                    <option value="operator" data-i18n-key="role_operator"></option>
+                    <option value="admin" data-i18n-key="role_admin"></option>
+                </select>
+                <b></b>
+                <div class="form-buttons">
+                    <button id="save-user-btn" data-i18n-key="save"></button>
+                    <button id="cancel-user-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна прав пользователя -->
+<template id="permissions-modal-template">
+    <div id="permissions-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 500px;">
+            <span id="permissions-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="permissions-modal-title"></h2>
+            <div class="modal-body" style="padding-top: 15px;">
+                <div id="permissions-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;"></div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end;">
+                <button id="save-permissions-btn" data-i18n-key="save"></button>
+                <button id="cancel-permissions-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна смены пароля -->
+<template id="change-password-modal-template">
+    <div id="change-password-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 400px;">
+            <span id="change-pass-close-btn" class="modal-close-btn">×</span>
+            <h2 id="change-pass-modal-title"></h2>
+            <div class="form-grid simple" style="grid-template-columns: 120px 1fr; padding-top: 10px;">
+                <b data-i18n-key="new_password"></b> <input type="password" id="change-user-password" autocomplete="new-password">
+                <b></b>
+                <div class="form-buttons">
+                    <button id="save-new-password-btn" data-i18n-key="save"></button>
+                    <button id="cancel-change-password-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для модального окна prompt -->
+<template id="prompt-modal-template">
+    <div id="prompt-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="width: 400px;">
+            <span id="prompt-modal-close-btn" class="modal-close-btn">×</span>
+            <h2 id="prompt-modal-title"></h2>
+            <div class="form-grid simple">
+                <b id="prompt-modal-label"></b> 
+                <input type="text" id="prompt-modal-input">
+                <div class="form-buttons">
+                    <button id="prompt-modal-ok-btn"></button>
+                    <button id="prompt-modal-cancel-btn" style="background-color: #6c757d;"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>

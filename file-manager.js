@@ -1,15 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Проверяем, загрузился ли preload-скрипт
     if (!window.scpApi) {
-        document.body.innerHTML = `<div style="color: #ff6b6b; background-color: #1e1e1e; font-family: sans-serif; padding: 20px; height: 100%; box-sizing: border-box;">
-            <h1>Критическая ошибка</h1>
-            <p>Не удалось загрузить скрипт для связи с основным процессом (preload-скрипт).</p>
-            <p>Возможные причины:</p>
-            <ul>
-                <li>Файл <strong>fm-preload.js</strong> отсутствует или переименован.</li>
-                <li>В файле <strong>main.js</strong> указан неверный путь к preload-скрипту в функции <strong>createFileManagerWindow</strong>.</li>
-            </ul>
-        </div>`;
+        document.body.innerHTML = `<div style="color: #ff6b6b; background-color: #1e1e1e; font-family: sans-serif; padding: 20px; height: 100%; box-sizing: border-box;"><h1>Критическая ошибка</h1><p>Не удалось загрузить скрипт для связи с основным процессом (preload-скрипт).</p></div>`;
         return;
     }
     
@@ -72,14 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
         progressBarFill.classList.remove('pulse');
     }
     
-    // VVV ИЗМЕНЕНИЕ: Новая функция для неопределенного прогресса VVV
     function showIndeterminateProgress() {
         progressBarContainer.style.display = 'block';
         statusTextEl.style.display = 'none';
         progressBarFill.style.width = '100%';
         progressBarFill.classList.add('pulse');
     }
-    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
     function hideProgress() {
         progressBarContainer.style.display = 'none';
@@ -220,9 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownload.addEventListener('click', async () => {
         if (!selectedRemoteFile || selectedRemoteFile.isDirectory || !await ensureConnection()) return;
         setBusy(true, `Скачивание ${selectedRemoteFile.name}...`);
-        // VVV ИЗМЕНЕНИЕ: Используем неопределенный индикатор VVV
         showIndeterminateProgress();
-        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         const remoteFilePath = pathModule.posix.join(remotePath, selectedRemoteFile.name);
         try {
@@ -243,9 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnUpload.addEventListener('click', async () => {
         if (!selectedLocalFile || selectedLocalFile.isDirectory || !await ensureConnection()) return;
         setBusy(true, `Загрузка ${selectedLocalFile.name}...`);
-        // VVV ИЗМЕНЕНИЕ: Используем неопределенный индикатор VVV
         showIndeterminateProgress();
-        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
         try {
             const result = await window.scpApi.upload(camera.id, remotePath);
              if (result.success) {
@@ -331,7 +316,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(e.key === 'Enter') await listLocalFiles(localPathInput.value);
     });
 
-    // SCP не возвращает прогресс, поэтому этот обработчик больше не будет вызываться
     window.scpApi.onProgress(updateProgress); 
     window.scpApi.onClose(() => {
         setStatus('Соединение с камерой закрыто.', true);

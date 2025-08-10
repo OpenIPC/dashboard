@@ -1,3 +1,5 @@
+// --- ФАЙЛ: camera-handler.js ---
+
 (function(window) {
     window.AppModules = window.AppModules || {};
 
@@ -22,7 +24,7 @@
         const discoverList = document.getElementById('discover-list');
         const addDiscoveredBtn = document.getElementById('add-discovered-btn');
         const rediscoverBtn = document.getElementById('rediscover-btn');
-        
+                
         const newCamProtocolSelect = document.getElementById('new-cam-protocol');
 
         let editingCameraId = null;
@@ -42,6 +44,7 @@
             document.getElementById('new-cam-port').value = camera.port || '554';
             document.getElementById('new-cam-user').value = camera.username || 'root';
             document.getElementById('new-cam-pass').value = '';
+            document.getElementById('new-cam-onvif-auth').checked = camera.onvifAuth !== false;
             document.getElementById('new-cam-stream-path0').value = camera.streamPath0 !== undefined ? camera.streamPath0 : '/stream0';
             document.getElementById('new-cam-stream-path1').value = camera.streamPath1 !== undefined ? camera.streamPath1 : '/stream1';
             utils.openModal(addModal);
@@ -56,7 +59,8 @@
                 username: document.getElementById('new-cam-user').value.trim(),
                 streamPath0: document.getElementById('new-cam-stream-path0').value.trim(),
                 streamPath1: document.getElementById('new-cam-stream-path1').value.trim(),
-                protocol: newCamProtocolSelect ? newCamProtocolSelect.value : 'openipc'
+                protocol: newCamProtocolSelect ? newCamProtocolSelect.value : 'openipc',
+                onvifAuth: document.getElementById('new-cam-onvif-auth').checked
             };
             const password = document.getElementById('new-cam-pass').value;
             if (password) {
@@ -76,7 +80,8 @@
                                      (cameraDataToUpdate.password) || 
                                      oldCam.streamPath0 !== cameraDataToUpdate.streamPath0 || 
                                      oldCam.streamPath1 !== cameraDataToUpdate.streamPath1 ||
-                                     oldCam.protocol !== cameraDataToUpdate.protocol;
+                                     oldCam.protocol !== cameraDataToUpdate.protocol ||
+                                     oldCam.onvifAuth !== cameraDataToUpdate.onvifAuth;
                 stateManager.updateCamera({ id: editingCameraId, ...cameraDataToUpdate });
                 if (needsRestart) {
                     setTimeout(() => App.gridManager.restartStreamsForCamera(editingCameraId), 100);
@@ -100,6 +105,7 @@
             utils.closeModal(addGroupModal);
         }
 
+        // VVVVVV --- ИЗМЕНЕНИЕ: Упрощенная логика запуска комплексного поиска --- VVVVVV
         async function startDiscovery() {
             if (isDiscovering) return;
             isDiscovering = true;
@@ -109,74 +115,67 @@
             rediscoverBtn.disabled = true;
             selectedDiscoveredDevice = null;
             
-            const onvifResultPromise = window.api.discoverOnvifDevices();
-            const netipResultPromise = window.api.discoverNetipDevices();
+            // Запускаем единый комплексный поиск в main-процессе
+            await window.api.discoverDevices();
 
-            // Ждем завершения обоих процессов
-            const [onvifResult, netipResult] = await Promise.all([onvifResultPromise, netipResultPromise]);
-            
-            isDiscovering = false;
-            rediscoverBtn.disabled = false;
-            
-            // VVV ИЗМЕНЕНИЕ: Улучшенная логика проверки результата VVV
-            // Проверяем, был ли начальный текст "поиск..." заменен найденными устройствами.
-            const devicesWereFound = !discoverList.innerHTML.includes(App.i18n.t('searching_for_cameras'));
-
-            if (!onvifResult.success || !netipResult.success) {
-                const error = onvifResult.error || netipResult.error || 'Unknown discovery error';
-                // Показываем ошибку, только если список все еще пуст (ничего не нашлось)
-                if (!devicesWereFound) {
-                   discoverList.innerHTML = `<li style="padding: 10px; color: var(--danger-color);">Error: ${error}</li>`;
+            // Через 20 секунд проверяем, нашлось ли что-то. Если нет, сообщаем об этом.
+            setTimeout(() => {
+                isDiscovering = false;
+                rediscoverBtn.disabled = false;
+                
+                const initialSearchMessage = App.i18n.t('searching_for_cameras');
+                const listContent = discoverList.innerHTML;
+                
+                if (listContent.includes(initialSearchMessage)) {
+                    discoverList.innerHTML = `<li style="padding: 10px; color: #666;">${App.i18n.t('no_cameras_found')}</li>`;
                 }
-            } else if (!devicesWereFound) {
-                // Если ошибок не было, но и устройств не нашли, показываем сообщение "не найдено".
-                 discoverList.innerHTML = `<li style="padding: 10px; color: #666;">${App.i18n.t('no_cameras_found')}</li>`;
-            }
-            // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
+            }, 20000); // Увеличиваем таймаут для более надежного глубокого сканирования
         }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function addDiscoveredCamera() {
             if (!selectedDiscoveredDevice) return;
             const { ip, name, protocol } = selectedDiscoveredDevice;
-            const cameraToEdit = { name, ip, protocol, streamPath0: '/stream0', streamPath1: '/stream1' };
+            
+            const cameraToEdit = { 
+                name: protocol === 'rtsp' ? `RTSP Camera ${ip}` : name,
+                ip: ip, 
+                protocol: protocol,
+                streamPath0: '/stream0', 
+                streamPath1: '/stream1' 
+            };
+            
+            if (protocol === 'rtsp' || protocol === 'onvif') {
+                cameraToEdit.protocol = 'openipc';
+            }
+
             utils.closeModal(discoverModal);
             openAddModal(cameraToEdit);
         }
         
         function init() {
-            window.api.onOnvifDeviceFound((device) => {
-                if (discoverList.children.length > 0 && discoverList.children[0].textContent.includes(App.i18n.t('searching_for_cameras'))) {
+            window.api.onDeviceFound((device) => {
+                // VVVVVV --- ИЗМЕНЕНИЕ: Очищаем "Поиск..." при первом найденном устройстве --- VVVVVV
+                const placeholderMessage = App.i18n.t('searching_for_cameras');
+                if (discoverList.children.length > 0 && discoverList.children[0].textContent.includes(placeholderMessage)) {
                     discoverList.innerHTML = '';
                 }
-                const existingItem = Array.from(discoverList.children).find(li => li.innerHTML.includes(device.ip));
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
+                const existingItem = Array.from(discoverList.children).find(li => li.dataset.ip === device.ip);
                 if (existingItem) return;
 
                 const li = document.createElement('li');
                 li.style.cssText = "padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;";
-                li.innerHTML = `<strong>${device.name}</strong> [ONVIF]<br><small>${device.ip}</small>`;
+                li.dataset.ip = device.ip;
+                
+                const protocolTag = `[${device.protocol.toUpperCase()}]`;
+                li.innerHTML = `<strong>${device.name}</strong> ${protocolTag}<br><small>${device.ip}</small>`;
+                
                 li.addEventListener('click', () => {
                     discoverList.querySelectorAll('li').forEach(el => el.style.backgroundColor = '');
                     li.style.backgroundColor = '#d4e6f1';
-                    selectedDiscoveredDevice = { ...device, protocol: 'openipc' }; // ONVIF камеры считаем openipc по умолчанию
-                    addDiscoveredBtn.disabled = false;
-                });
-                discoverList.appendChild(li);
-            });
-
-            window.api.onNetipDeviceFound((device) => {
-                if (discoverList.children.length > 0 && discoverList.children[0].textContent.includes(App.i18n.t('searching_for_cameras'))) {
-                    discoverList.innerHTML = '';
-                }
-                const existingItem = Array.from(discoverList.children).find(li => li.innerHTML.includes(device.ip));
-                if (existingItem) return;
-
-                const li = document.createElement('li');
-                li.style.cssText = "padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;";
-                li.innerHTML = `<strong>${device.name}</strong> [NETIP]<br><small>${device.ip}</small>`;
-                li.addEventListener('click', () => {
-                    discoverList.querySelectorAll('li').forEach(el => el.style.backgroundColor = '');
-                    li.style.backgroundColor = '#d4e6f1';
-                    selectedDiscoveredDevice = device; // device уже содержит protocol: 'netip'
+                    selectedDiscoveredDevice = device;
                     addDiscoveredBtn.disabled = false;
                 });
                 discoverList.appendChild(li);

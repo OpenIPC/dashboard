@@ -1,5 +1,3 @@
-// --- ФАЙЛ: preload.js ---
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -38,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
 
     // Camera Actions & Info
     getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
+    ptzControl: (data) => ipcRenderer.invoke('ptz-control', data),
     getCameraTime: (camera) => ipcRenderer.invoke('get-camera-time', camera),
     getCameraSettings: (camera) => ipcRenderer.invoke('get-camera-settings', camera),
     setCameraSettings: (data) => ipcRenderer.invoke('set-camera-settings', data),
@@ -62,15 +61,13 @@ contextBridge.exposeInMainWorld('api', {
     getRecordingsForDate: (data) => ipcRenderer.invoke('get-recordings-for-date', data),
     exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
     getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
-    
-    // VVV ИЗМЕНЕНИЕ: Добавляем новый метод VVV
     getDatesWithActivity: (cameraName) => ipcRenderer.invoke('get-dates-with-activity', cameraName),
-    // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
     onStreamDied: (callback) => ipcRenderer.on('stream-died', (event, streamId) => callback(streamId)),
     onStreamStats: (callback) => ipcRenderer.on('stream-stats', (event, data) => callback(data)),
+    onMainError: (callback) => ipcRenderer.on('on-main-error', (event, data) => callback(data)),
     showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
     onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, data) => callback(data)),
     killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
@@ -79,13 +76,11 @@ contextBridge.exposeInMainWorld('api', {
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
 
-    // ONVIF Discovery
-    discoverOnvifDevices: () => ipcRenderer.invoke('discover-onvif-devices'),
-    onOnvifDeviceFound: (callback) => ipcRenderer.on('onvif-device-found', (event, data) => callback(data)),
+    // Discovery
+    discoverDevices: () => ipcRenderer.invoke('discover-devices'),
+    onDeviceFound: (callback) => ipcRenderer.on('device-found', (event, data) => callback(data)),
     
-    // NETIP
-    discoverNetipDevices: () => ipcRenderer.invoke('discover-netip-devices'),
-    onNetipDeviceFound: (callback) => ipcRenderer.on('netip-device-found', (event, data) => callback(data)),
+    // NETIP (остается для прямого взаимодействия, если понадобится в будущем)
     getNetipSettings: (camera) => ipcRenderer.invoke('get-netip-settings', camera),
     setNetipSettings: (data) => ipcRenderer.invoke('set-netip-settings', data),
 });
