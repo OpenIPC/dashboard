@@ -9,7 +9,7 @@ const WebSocket = require('ws');
 const { Mutex } = require('async-mutex');
 const { app, dialog } = require('electron');
 
-// VVVV --- ИЗМЕНЕНИЕ: Добавлен импорт systeminformation --- VVVV
+// VVVVVV --- ИЗМЕНЕНИЕ: Добавлен импорт systeminformation --- VVVVVV
 const si = require('systeminformation');
 // ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 
@@ -18,7 +18,7 @@ const authManager = require('./auth-manager');
 const services = require('./services');
 const FfmpegCommandBuilder = require('./ffmpeg-builder');
 
-// VVVV --- ИЗМЕНЕНИЕ: Добавлен кэш для информации о GPU --- VVVV
+// VVVVVV --- ИЗМЕНЕНИЕ: Добавлен кэш для информации о GPU --- VVVVVV
 let gpuInfoCache = null;
 // ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 

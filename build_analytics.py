@@ -8,12 +8,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.resolve()
 VENV_DIR = BASE_DIR / ".analytics_venvs"
-# VVVVVV --- ИЗМЕНЕНИЕ 1: Определяем пути к папке с исходниками и к модели --- VVVVVV
-# Это делает код чище и позволяет легко ссылаться на модель
 SRC_DIR = BASE_DIR / "python_src"
 SRC_FILE = SRC_DIR / "analytics.py"
 MODEL_FILE = SRC_DIR / "yolov8n.onnx"
-# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 1 --- ^^^^^^
 DIST_PATH = BASE_DIR / "extra" / "analytics"
 REQUIREMENTS_DIR = BASE_DIR / "python_src" / "requirements"
 
@@ -35,6 +32,17 @@ def run_command(command, shell=True, cwd=None):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
 
+# VVVVVV --- НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ --- VVVVVV
+def get_onnx_libs_path(venv_path):
+    """Находит путь к библиотекам onnxruntime внутри виртуального окружения."""
+    if sys.platform == "win32":
+        return venv_path / "Lib" / "site-packages" / "onnxruntime" / "capi"
+    else:
+        # Путь для Linux/macOS может отличаться
+        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        return venv_path / "lib" / py_version / "site-packages" / "onnxruntime" / "capi"
+# ^^^^^^ --- КОНЕЦ НОВОЙ ФУНКЦИИ --- ^^^^^^
+
 def create_and_build(name, req_file):
     print(f"\n{'='*20} Building: {name.upper()} {'='*20}")
     
@@ -55,19 +63,36 @@ def create_and_build(name, req_file):
     run_command([str(pip_executable), "install", "-r", str(req_file)])
 
     print(f"Running PyInstaller for {name}...")
-    # VVVVVV --- ИЗМЕНЕНИЕ 2: Добавляем флаг --add-data в команду PyInstaller --- VVVVVV
-    # Эта строка говорит PyInstaller включить файл модели в исполняемый файл.
-    # "MODEL_FILE:." означает: взять файл модели и положить его в корень (.) сборки.
-    # os.pathsep используется для кросс-платформенной совместимости (';' для Windows, ':' для Linux).
+    
     pyinstaller_command = [
         str(python_executable), "-m", "PyInstaller",
         "--noconfirm", "--onefile",
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
-        f"--add-data={MODEL_FILE}{os.pathsep}.", # <--- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
-        str(SRC_FILE)
+        f"--add-data={MODEL_FILE}{os.pathsep}."
     ]
-    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 2 --- ^^^^^^
+
+    # VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Добавляем DLL --- VVVVVV
+    # PyInstaller не всегда сам находит нужные DLL для onnxruntime,
+    # поэтому мы добавляем их вручную с помощью флага --add-binary.
+    onnx_libs_path = get_onnx_libs_path(venv_path)
+    binary_sep = os.pathsep
+
+    if name == "cuda" and onnx_libs_path.exists():
+        print("Adding CUDA provider binaries...")
+        for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_cuda.dll"]:
+             if (onnx_libs_path / lib).exists():
+                pyinstaller_command.append(f"--add-binary={(onnx_libs_path / lib)}{binary_sep}.")
+
+    if name == "dml" and onnx_libs_path.exists():
+        print("Adding DirectML provider binaries...")
+        for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_dml.dll", "DirectML.dll"]:
+            if (onnx_libs_path / lib).exists():
+                pyinstaller_command.append(f"--add-binary={(onnx_libs_path / lib)}{binary_sep}.")
+    # ^^^^^^ --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ --- ^^^^^^
+
+    pyinstaller_command.append(str(SRC_FILE))
+    
     run_command(pyinstaller_command)
     print(f"--- Successfully built {name} version! ---")
 
@@ -77,12 +102,10 @@ if __name__ == "__main__":
         print(f"Error: Source file not found at {SRC_FILE}")
         sys.exit(1)
 
-    # VVVVVV --- ИЗМЕНЕНИЕ 3: Добавляем проверку наличия файла модели --- VVVVVV
     if not MODEL_FILE.exists():
         print(f"Error: Model file not found at {MODEL_FILE}")
         print("Please make sure 'yolov8n.onnx' is placed in the 'python_src' directory.")
         sys.exit(1)
-    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 3 --- ^^^^^^
         
     VENV_DIR.mkdir(exist_ok=True)
     DIST_PATH.mkdir(exist_ok=True)

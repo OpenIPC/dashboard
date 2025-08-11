@@ -1,23 +1,16 @@
-# analytics.py
+# --- ФАЙЛ: python_src/analytics.py (финальная отказоустойчивая версия) ---
 
 import sys
-import os # <--- Добавили os
+import os
 import json
 import time
 import base64
 import threading
 
-# VVVV --- БЛОК ОПРЕДЕЛЕНИЯ ПУТИ ДЛЯ PYINSTALLER --- VVVV
-# Этот код определяет, запущен ли скрипт как скомпилированный .exe
-# Если да, он устанавливает базовый путь к распакованным файлам.
 if getattr(sys, 'frozen', False):
-    # Если мы "заморожены" (скомпилированы в .exe)
     application_path = sys._MEIPASS
 else:
-    # Если мы запускаемся как обычный .py скрипт
     application_path = os.path.dirname(os.path.abspath(__file__))
-# ^^^^ --- КОНЕЦ БЛОКА --- ^^^^
-
 
 try:
     import cv2
@@ -28,7 +21,7 @@ except Exception as e:
     print(json.dumps({"status": "error", "message": error_message}), flush=True)
     sys.exit(1)
 
-# ... (остальной код класса FrameGrabber, preprocess, postprocess без изменений) ...
+# ... (весь код классов FrameGrabber, COCO_CLASSES, и функций preprocess/postprocess остается БЕЗ ИЗМЕНЕНИЙ) ...
 COCO_CLASSES = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 6: 'train', 7: 'truck',
     8: 'boat', 9: 'traffic light', 10: 'fire hydrant', 11: 'stop sign', 12: 'parking meter', 13: 'bench',
@@ -111,19 +104,40 @@ def postprocess(output, ratio, pad, confidence_threshold=0.5, iou_threshold=0.5)
             'box': {'x': int(x1[i]), 'y': int(y1[i]), 'w': int(x2[i] - x1[i]), 'h': int(y2[i] - y1[i])}
         })
     return detections
-
+# ... (конец неизмененного кода) ...
 
 def run_analytics(rtsp_url, config_str):
     try:
-        providers = ['CPUExecutionProvider']
-        print(json.dumps({"status": "info", "provider": "CPUExecutionProvider"}), flush=True)
-        
-        # VVVV --- ИЗМЕНЕНИЕ: Используем абсолютный путь к модели --- VVVV
         model_path = os.path.join(application_path, 'yolov8n.onnx')
-        # ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
-
-        session = ort.InferenceSession(model_path, providers=providers)
+        session = None
         
+        # VVVVVV --- Логика плавного перехода (Graceful Fallback) --- VVVVVV
+        available_providers = ort.get_available_providers()
+        
+        # 1. Попытка использовать CUDA (самый быстрый)
+        if 'CUDAExecutionProvider' in available_providers:
+            try:
+                session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                print(json.dumps({"status": "info", "provider": "CUDAExecutionProvider"}), flush=True)
+            except Exception as e:
+                print(json.dumps({"status": "info", "provider": "CUDA", "error": f"CUDA failed: {str(e)}"}), flush=True)
+                session = None
+
+        # 2. Если CUDA не удался, попытка использовать DirectML (для Windows)
+        if session is None and 'DmlExecutionProvider' in available_providers:
+            try:
+                session = ort.InferenceSession(model_path, providers=['DmlExecutionProvider', 'CPUExecutionProvider'])
+                print(json.dumps({"status": "info", "provider": "DmlExecutionProvider"}), flush=True)
+            except Exception as e:
+                print(json.dumps({"status": "info", "provider": "DML", "error": f"DML failed: {str(e)}"}), flush=True)
+                session = None
+
+        # 3. Если ничего не помогло, используем CPU
+        if session is None:
+            session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+            print(json.dumps({"status": "info", "provider": "CPUExecutionProvider"}), flush=True)
+        # ^^^^^^ --- КОНЕЦ Логики плавного перехода --- ^^^^^^
+
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
         input_height = session.get_inputs()[0].shape[2]
@@ -131,7 +145,8 @@ def run_analytics(rtsp_url, config_str):
     except Exception as e:
         print(json.dumps({"status": "error", "message": f"Failed to load ONNX model: {str(e)}"}), flush=True)
         sys.exit(1)
-
+        
+    # ... (остальной код функции run_analytics остается БЕЗ ИЗМЕНЕНИЙ) ...
     config = {}
     if config_str:
         try:
