@@ -5,7 +5,7 @@ name: Build & Release Cross-Platform
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*.*.*' # Используем более гибкий триггер для тестов
 
 jobs:
   release:
@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Тоже обновим на всякий случай
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,50 +34,45 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+
       - name: Build Python analytics executables
         run: python ./build_analytics.py
       
       - name: List built analytics files (for debugging)
         run: ls -R extra/analytics
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfuse2
-
       - name: Build and package Electron app
-        # Теперь мы не публикуем релиз здесь, а только собираем файлы
         run: npm run dist -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      # VVVV --- ИЗМЕНЕНИЕ: Загружаем артефакты для передачи в следующую задачу --- VVVV
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # <--- ИСПРАВЛЕНИЕ 1
         with:
           name: ${{ matrix.os }}-build
           path: dist/
 
-  # VVVV --- ИЗМЕНЕНИЕ: Новая задача (job) для создания релиза --- VVVV
   create_release:
-    # Эта задача будет запущена только после успешного завершения всех сборок
     needs: release 
     runs-on: ubuntu-latest
 
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4 # <--- ИСПРАВЛЕНИЕ 2
         with:
-          path: artifacts/ # Скачиваем все артефакты в одну папку
+          path: artifacts/
 
       - name: List downloaded files (for debugging)
         run: ls -R artifacts/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2 # Также обновим и этот action до последней версии
         with:
-          # `files` автоматически найдет и загрузит все файлы из указанных папок
           files: |
             artifacts/windows-latest/*
             artifacts/ubuntu-latest/*
