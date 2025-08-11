@@ -32,7 +32,15 @@
         // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         async function deleteCamera(cameraId) {
-            if (confirm(App.i18n.t('confirm_delete_camera'))) {
+            const confirmation = await App.modalHandler.showPrompt({
+                title: App.i18n.t('context_delete'),
+                label: App.i18n.t('confirm_delete_camera'),
+                okText: App.i18n.t('context_delete'),
+                cancelText: App.i18n.t('cancel'),
+                inputType: 'none'
+            });
+
+            if (confirmation) {
                 if (stateManager.state.recordingStates[cameraId]) {
                     await window.api.stopRecording(cameraId);
                 }
@@ -43,6 +51,42 @@
                 stateManager.deleteCamera(cameraId);
             }
         }
+
+        // VVVVVV --- НОВЫЕ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ ГРУППАМИ --- VVVVVV
+        async function renameGroup(groupId) {
+            const group = stateManager.state.groups.find(g => g.id === groupId);
+            if (!group) return;
+
+            const newName = await App.modalHandler.showPrompt({
+                title: App.i18n.t('context_rename_group'),
+                label: App.i18n.t('enter_new_group_name'),
+                defaultValue: group.name,
+                okText: App.i18n.t('save'),
+                cancelText: App.i18n.t('cancel')
+            });
+
+            if (newName && newName.trim() !== '' && newName.trim() !== group.name) {
+                stateManager.renameGroup({ id: groupId, newName: newName.trim() });
+            }
+        }
+
+        async function deleteGroup(groupId) {
+            const group = stateManager.state.groups.find(g => g.id === groupId);
+            if (!group) return;
+
+            const confirmation = await App.modalHandler.showPrompt({
+                title: App.i18n.t('context_delete_group'),
+                label: App.i18n.t('confirm_delete_group', { groupName: group.name }) + '\n' + App.i18n.t('confirm_delete_group_detail'),
+                okText: App.i18n.t('context_delete'),
+                cancelText: App.i18n.t('cancel'),
+                inputType: 'none'
+            });
+
+            if (confirmation) {
+                stateManager.deleteGroup(groupId);
+            }
+        }
+        // ^^^^^^ --- КОНЕЦ НОВЫХ ФУНКЦИЙ --- ^^^^^^
 
         function render() {
             cameraListContainer.innerHTML = '';
@@ -56,6 +100,28 @@
                 groupHeader.className = 'group-header';
                 groupHeader.innerHTML = `<i class="material-icons toggle-icon">arrow_drop_down</i><span class="group-name">${group.name}</span>`;
         
+                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+                // Добавляем обработчик правого клика только для реальных групп (не для "Камеры без группы")
+                if (group.id !== null) {
+                    groupHeader.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        
+                        const currentUser = App.stateManager.state.currentUser;
+                        if (currentUser?.role !== 'admin' && !currentUser.permissions?.edit_cameras) {
+                            return;
+                        }
+
+                        window.api.showGroupContextMenu({
+                            groupId: group.id,
+                            labels: {
+                                rename: App.i18n.t('context_rename_group'),
+                                delete: App.i18n.t('context_delete_group')
+                            }
+                        });
+                    });
+                }
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
                 const groupCamerasList = document.createElement('div');
                 groupCamerasList.className = 'group-cameras';
         
@@ -65,9 +131,6 @@
                     cameraItem.dataset.cameraId = camera.id;
                     cameraItem.draggable = App.stateManager.state.currentUser?.role === 'admin';
                     
-                    // VVVVVV --- ИСПРАВЛЕНИЕ ШАБЛОНА --- VVVVVV
-                    // Возвращаем иконку статуса в начало и делаем контейнер с кнопками более явным.
-                    // span с именем теперь растягивается, чтобы прижать контролы вправо.
                     cameraItem.innerHTML = `
                         <i class="status-icon" id="status-icon-${camera.id}"></i>
                         <span style="flex-grow: 1;">${camera.name}</span>
@@ -76,7 +139,6 @@
                             <i class="material-icons" style="font-size: 18px;">insights</i>
                         </button>
                     `;
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                     if (recordingStates[camera.id]) {
                         cameraItem.classList.add('recording');
@@ -205,6 +267,20 @@
                     case 'delete': deleteCamera(cameraId); break;
                 }
             });
+
+            // VVVVVV --- НОВЫЙ КОД --- VVVVVV
+            // Слушаем команды от контекстного меню группы
+            window.api.onGroupContextMenuCommand(({ command, groupId }) => {
+                switch (command) {
+                    case 'rename':
+                        renameGroup(groupId);
+                        break;
+                    case 'delete':
+                        deleteGroup(groupId);
+                        break;
+                }
+            });
+            // ^^^^^^ --- КОНЕЦ НОВОГО КОДА --- ^^^^^^
         }
 
         return {

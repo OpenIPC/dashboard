@@ -6,7 +6,7 @@
     AppModules.createModalHandler = function(App) {
         // --- Общие утилиты для всех модальных окон ---
         let toastTimeout;
-        const settingsToast = document.getElementById('settings-toast');
+        const appToast = document.getElementById('app-toast');
 
         const utils = {
             openModal: (modalElement) => modalElement.classList.remove('hidden'),
@@ -15,11 +15,11 @@
             },
             showToast: (message, isError = false, duration = 3000) => {
                 if (toastTimeout) clearTimeout(toastTimeout);
-                settingsToast.textContent = message;
-                settingsToast.className = 'toast-notification';
-                if (isError) settingsToast.classList.add('error');
-                settingsToast.classList.add('show');
-                toastTimeout = setTimeout(() => { settingsToast.classList.remove('show'); }, duration);
+                appToast.textContent = message;
+                appToast.className = 'toast-notification';
+                if (isError) appToast.classList.add('error');
+                appToast.classList.add('show');
+                toastTimeout = setTimeout(() => { appToast.classList.remove('show'); }, duration);
             }
         };
 
@@ -37,18 +37,27 @@
         const promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
         const promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
 
-        // Улучшенная логика асинхронного prompt
-        function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel') }) {
+        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+        // Улучшенная логика асинхронного prompt с возможностью скрытия поля ввода
+        function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel'), inputType = 'text' }) {
             return new Promise((resolve) => {
                 promptModalTitle.textContent = title;
                 promptModalLabel.textContent = label;
-                promptModalInput.value = defaultValue;
                 promptModalOkBtn.textContent = okText;
                 promptModalCancelBtn.textContent = cancelText;
 
+                // Управляем видимостью поля ввода
+                if (inputType === 'none') {
+                    promptModalInput.classList.add('hidden');
+                    promptModalInput.value = ''; // Очищаем на всякий случай
+                } else {
+                    promptModalInput.classList.remove('hidden');
+                    promptModalInput.value = defaultValue;
+                    promptModalInput.focus();
+                    promptModalInput.select();
+                }
+
                 utils.openModal(promptModal);
-                promptModalInput.focus();
-                promptModalInput.select();
                 
                 let isResolved = false;
 
@@ -66,7 +75,9 @@
                 };
 
                 const onOk = () => {
-                    cleanupAndResolve(promptModalInput.value);
+                    // Для confirm-диалога возвращаем true, для prompt - значение поля
+                    const valueToResolve = (inputType === 'none') ? true : promptModalInput.value;
+                    cleanupAndResolve(valueToResolve);
                 };
 
                 const onCancel = () => {
@@ -87,6 +98,7 @@
                 promptModal.addEventListener('keydown', onKeydown);
             });
         }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function init() {
             // --- Инициализация всех дочерних обработчиков ---
@@ -135,7 +147,7 @@
             openAddModal: cameraHandler.openAddModal,
             openSettingsModal: settingsHandler.openSettingsModal,
             showPrompt,
-            showToast: utils.showToast, // <--- ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ
+            showToast: utils.showToast,
         };
     };
 })(window);

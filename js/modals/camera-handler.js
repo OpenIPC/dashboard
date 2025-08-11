@@ -45,8 +45,12 @@
             document.getElementById('new-cam-user').value = camera.username || 'root';
             document.getElementById('new-cam-pass').value = '';
             document.getElementById('new-cam-onvif-auth').checked = camera.onvifAuth !== false;
-            document.getElementById('new-cam-stream-path0').value = camera.streamPath0 !== undefined ? camera.streamPath0 : '/stream0';
-            document.getElementById('new-cam-stream-path1').value = camera.streamPath1 !== undefined ? camera.streamPath1 : '/stream1';
+
+            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (Значения по умолчанию) --- VVVVVV
+            document.getElementById('new-cam-stream-path0').value = camera.streamPath0 !== undefined ? camera.streamPath0 : '/stream=0';
+            document.getElementById('new-cam-stream-path1').value = camera.streamPath1 !== undefined ? camera.streamPath1 : '/stream=1';
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
             utils.openModal(addModal);
             document.getElementById('new-cam-name').focus();
         }
@@ -68,7 +72,7 @@
             }
 
             if (!cameraDataToUpdate.name || !cameraDataToUpdate.ip) {
-                alert(App.i18n.t('name_and_ip_required'));
+                App.modalHandler.showToast(App.i18n.t('name_and_ip_required'), true);
                 return;
             }
             
@@ -100,7 +104,7 @@
 
         async function saveNewGroup() {
             const name = newGroupNameInput.value.trim();
-            if (!name) { alert(App.i18n.t('group_name_empty_error')); return; }
+            if (!name) { App.modalHandler.showToast(App.i18n.t('group_name_empty_error'), true); return; }
             stateManager.addGroup({ name });
             utils.closeModal(addGroupModal);
         }
@@ -137,13 +141,15 @@
             if (!selectedDiscoveredDevice) return;
             const { ip, name, protocol } = selectedDiscoveredDevice;
             
+            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (Значения для найденных камер) --- VVVVVV
             const cameraToEdit = { 
                 name: protocol === 'rtsp' ? `RTSP Camera ${ip}` : name,
                 ip: ip, 
                 protocol: protocol,
-                streamPath0: '/stream0', 
-                streamPath1: '/stream1' 
+                streamPath0: '/stream=0', 
+                streamPath1: '/stream=1' 
             };
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             
             if (protocol === 'rtsp' || protocol === 'onvif') {
                 cameraToEdit.protocol = 'openipc';

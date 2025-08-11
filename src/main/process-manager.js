@@ -9,10 +9,18 @@ const WebSocket = require('ws');
 const { Mutex } = require('async-mutex');
 const { app, dialog } = require('electron');
 
+// VVVV --- ИЗМЕНЕНИЕ: Добавлен импорт systeminformation --- VVVV
+const si = require('systeminformation');
+// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
+
 const configManager = require('./config-manager');
 const authManager = require('./auth-manager');
 const services = require('./services');
 const FfmpegCommandBuilder = require('./ffmpeg-builder');
+
+// VVVV --- ИЗМЕНЕНИЕ: Добавлен кэш для информации о GPU --- VVVV
+let gpuInfoCache = null;
+// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 
 function getLocalTimestampForFilename() {
     const d = new Date();
@@ -303,6 +311,54 @@ async function handleAnalyticsDetection(cameraId, camera) {
     }, autoStopDelay);
 }
 
+// VVVV --- ИЗМЕНЕНИЕ: Новая функция для выбора исполняемого файла аналитики --- VVVV
+/**
+ * Определяет, какой исполняемый файл аналитики использовать, на основе GPU и ОС.
+ * @returns {Promise<string>} Путь к исполняемому файлу.
+ */
+async function getAnalyticsExecutablePath() {
+    if (!gpuInfoCache) {
+        try {
+            gpuInfoCache = await si.graphics();
+        } catch (e) {
+            console.error('Could not get graphics info:', e);
+            gpuInfoCache = { controllers: [] }; // Fallback
+        }
+    }
+
+    const hasNvidia = gpuInfoCache.controllers.some(c => c.vendor.toLowerCase().includes('nvidia'));
+    const platform = process.platform;
+
+    let exeName = 'analytics_cpu'; // По умолчанию
+
+    if (hasNvidia) {
+        // CUDA доступен на всех платформах
+        exeName = 'analytics_cuda';
+        console.log('[Analytics] NVIDIA GPU detected. Selecting CUDA executable.');
+    } else if (platform === 'win32') {
+        // DirectML - только для Windows
+        exeName = 'analytics_dml';
+        console.log('[Analytics] Windows system detected. Selecting DirectML executable.');
+    } else if (platform === 'darwin') {
+        // Для macOS можно будет добавить поддержку CoreML/Metal, если появится onnxruntime-coreml
+        console.log('[Analytics] macOS detected. Falling back to CPU executable.');
+    } else {
+        // Для Linux без NVIDIA пока только CPU
+        console.log('[Analytics] Linux system (non-NVIDIA). Falling back to CPU executable.');
+    }
+
+    // Добавляем .exe только для Windows
+    if (platform === 'win32') {
+        exeName += '.exe';
+    }
+    
+    return app.isPackaged
+        ? path.join(process.resourcesPath, 'analytics', exeName)
+        : path.join(__dirname, '../../extra/analytics', exeName);
+}
+// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
+
+
 async function toggleAnalytics(cameraId, mainWindow) {
     const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
     if (getProcess(analyticsId)) {
@@ -320,10 +376,9 @@ async function toggleAnalytics(cameraId, mainWindow) {
     const builder = new FfmpegCommandBuilder(settings);
     const rtspUrl = builder.buildRtspUrl(fullCameraInfo, fullCameraInfo.streamPath0 || '/stream0');
     
-    const analyticsExeName = process.platform === 'win32' ? 'analytics.exe' : 'analytics';
-    const analyticsPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'analytics', analyticsExeName)
-        : path.join(__dirname, '../../extra/analytics', analyticsExeName);
+    // VVVV --- ИЗМЕНЕНИЕ: Используем новую функцию для получения пути --- VVVV
+    const analyticsPath = await getAnalyticsExecutablePath();
+    // ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
     
     if (!fs.existsSync(analyticsPath)) {
         const errorMsg = `Analytics executable not found: ${analyticsPath}`;

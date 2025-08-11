@@ -407,7 +407,26 @@
             settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) utils.closeModal(settingsModal); });
             saveSettingsBtn.addEventListener('click', saveSettings);
             restartMajesticBtn.addEventListener('click', restartMajestic);
-            killAllBtnModal.addEventListener('click', async () => { if (confirm(App.i18n.t('kill_all_confirm'))) { const result = await window.api.killAllFfmpeg(); alert(result.message); window.location.reload(); } });
+            
+            // VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+            // Заменяем нативный confirm на кастомный prompt
+            killAllBtnModal.addEventListener('click', async () => {
+                const confirmation = await App.modalHandler.showPrompt({
+                    title: App.i18n.t('settings_kill_all'),
+                    label: App.i18n.t('kill_all_confirm'),
+                    okText: App.i18n.t('settings_kill_all'),
+                    cancelText: App.i18n.t('cancel'),
+                    inputType: 'none'
+                });
+
+                if (confirmation !== null) {
+                    const result = await window.api.killAllFfmpeg();
+                    // Заменяем alert на toast, чтобы не сломать фокус
+                    App.modalHandler.showToast(result.message); 
+                    setTimeout(() => window.location.reload(), 1500); 
+                }
+            });
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             if (exportConfigBtn) {
                 exportConfigBtn.addEventListener('click', () => window.api.exportConfig());

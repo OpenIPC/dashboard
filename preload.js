@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld('api', {
     onMainError: (callback) => ipcRenderer.on('on-main-error', (event, data) => callback(data)),
     showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
     onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, data) => callback(data)),
+    
+    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+    showGroupContextMenu: (data) => ipcRenderer.send('show-group-context-menu', data),
+    onGroupContextMenuCommand: (callback) => ipcRenderer.on('group-context-menu-command', (event, data) => callback(data)),
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
     killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
     
     // Updates

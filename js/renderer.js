@@ -138,6 +138,23 @@
                 state.groups = [...state.groups, { id: Date.now(), ...group }]; 
                 App.saveConfiguration(); 
             },
+            renameGroup(state, helpers, { id, newName }) {
+                const groupToRename = state.groups.find(g => g.id === id);
+                if (groupToRename) {
+                    groupToRename.name = newName;
+                    App.saveConfiguration();
+                }
+            },
+            deleteGroup(state, helpers, groupId) {
+                state.cameras = state.cameras.map(camera => {
+                    if (camera.groupId === groupId) {
+                        return { ...camera, groupId: null };
+                    }
+                    return camera;
+                });
+                state.groups = state.groups.filter(g => g.id !== groupId);
+                App.saveConfiguration();
+            },
             setRecordingState(state, helpers, { cameraId, recording }) { 
                 state.recordingStates = { ...state.recordingStates, [cameraId]: recording }; 
             },
@@ -155,7 +172,7 @@
     App.i18n = AppModules.createI18n(App);
     
     let loginView, mainAppContainer, loginBtn, loginUsername, loginPassword,
-        loginRememberMe, loginError, logoutBtn, statusInfo;
+        loginRememberMe, loginError, logoutBtn, statusInfo, loginCloseBtn;
 
     async function loadConfiguration() { const config = await window.api.loadConfiguration(); App.stateManager.setInitialConfig(config); }
     async function loadAppSettings() { App.stateManager.state.appSettings = await window.api.loadAppSettings(); }
@@ -291,6 +308,10 @@
         loginError = document.getElementById('login-error');
         logoutBtn = document.getElementById('logout-btn');
         statusInfo = document.getElementById('status-info');
+        
+        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (1/2) --- VVVVVV
+        loginCloseBtn = document.getElementById('login-close-btn');
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         App.modalHandler.init();
         App.cameraList.init();
@@ -303,6 +324,10 @@
         loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
         logoutBtn.addEventListener('click', handleLogout);
         
+        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (2/2) --- VVVVVV
+        loginCloseBtn.addEventListener('click', () => window.api.closeWindow());
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        
         initLayoutControls();
         
         window.api.onMainError(({ context, message }) => {
@@ -313,14 +338,11 @@
         window.api.onRecordingStateChange(({ cameraId, recording }) => App.stateManager.setRecordingState({ cameraId, recording }));
         window.api.onStreamDied(uniqueStreamIdentifier => App.gridManager.handleStreamDeath(uniqueStreamIdentifier));
         
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
-        // Заменяем старую логику на новую, которая делегирует обновление в gridManager
         window.api.onStreamStats((data) => {
             if (App.gridManager) {
                 App.gridManager.updateStreamStats(data);
             }
         });
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         window.api.onAutoLoginSuccess((user) => {
             console.log('[AutoLogin] Received user data from main process. Logging in...');

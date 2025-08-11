@@ -66,13 +66,30 @@
                     
                     li.querySelector('.permissions-btn')?.addEventListener('click', () => openPermissionsModal(user));
                     li.querySelector('.change-pass-btn').addEventListener('click', () => openChangePasswordModal(user));
+
+                    // VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+                    // Заменяем нативный confirm на кастомный prompt.
                     li.querySelector('.delete-user-btn').addEventListener('click', async () => {
-                        if (confirm(App.t('confirm_delete_user', { username: user.username }))) {
+                        const confirmation = await App.modalHandler.showPrompt({
+                            title: App.t('context_delete'),
+                            label: App.t('confirm_delete_user', { username: user.username }),
+                            okText: App.t('context_delete'),
+                            cancelText: App.t('cancel'),
+                            inputType: 'none'
+                        });
+
+                        if (confirmation !== null) {
                             const deleteResult = await window.api.deleteUser({ username: user.username });
-                            if (deleteResult.success) await renderUserList();
-                            else alert(`${App.t('error')}: ${deleteResult.error}`);
+                            if (deleteResult.success) {
+                                await renderUserList();
+                            } else {
+                                // Заменяем alert на более дружелюбный toast
+                                App.modalHandler.showToast(`${App.t('error')}: ${deleteResult.error}`, true);
+                            }
                         }
                     });
+                    // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+                    
                     userListEl.appendChild(li);
                 });
             } else {
@@ -94,7 +111,7 @@
             const role = document.getElementById('add-user-role').value;
 
             if (!username || !password) {
-                alert(App.t('username_and_password_required'));
+                App.modalHandler.showToast(App.t('username_and_password_required'), true);
                 return;
             }
             const result = await window.api.addUser({ username, password, role });
@@ -102,7 +119,7 @@
                 utils.closeModal(addUserModal);
                 await renderUserList();
             } else {
-                alert(`${App.t('error')}: ${result.error}`);
+                App.modalHandler.showToast(`${App.t('error')}: ${result.error}`, true);
             }
         }
 
@@ -124,7 +141,7 @@
                 utils.showToast(App.t('password_changed_success'));
                 utils.closeModal(changePasswordModal);
             } else {
-                alert(`${App.t('error')}: ${updateResult.error}`);
+                App.modalHandler.showToast(`${App.t('error')}: ${updateResult.error}`, true);
             }
         }
 
@@ -151,7 +168,7 @@
                 utils.closeModal(permissionsModal);
                 await renderUserList();
             } else {
-                alert(`${App.t('error')}: ${result.error}`);
+                App.modalHandler.showToast(`${App.t('error')}: ${result.error}`, true);
             }
         }
 

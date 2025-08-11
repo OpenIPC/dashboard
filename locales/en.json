@@ -220,5 +220,10 @@
   "settings_key_maxThreshold": "Max Threshold",
   "no_cameras_found_fast": "Fast search found no devices. Try a deep scan.",
   "searching_for_cameras_deep": "Performing deep scan of the network... This may take a few minutes.",
-  "deep_scan_btn": "Deep Scan"
+  "deep_scan_btn": "Deep Scan",
+  "context_rename_group": "Rename Group",
+  "context_delete_group": "Delete Group",
+  "enter_new_group_name": "Enter a new name for the group:",
+  "confirm_delete_group": "Are you sure you want to delete the group '{{groupName}}'?",
+  "confirm_delete_group_detail": "Cameras in this group will become ungrouped."
 }

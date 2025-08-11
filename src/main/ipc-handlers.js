@@ -122,6 +122,22 @@ function registerIpcHandlers() {
         menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
     });
 
+    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+    ipcMain.on('show-group-context-menu', (event, { groupId, labels }) => {
+        const menu = Menu.buildFromTemplate([
+            {
+                label: labels.rename,
+                click: () => event.sender.send('group-context-menu-command', { command: 'rename', groupId })
+            },
+            {
+                label: labels.delete,
+                click: () => event.sender.send('group-context-menu-command', { command: 'delete', groupId })
+            },
+        ]);
+        menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    });
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
     // --- Helper Windows (File Manager & SSH) ---
     ipcMain.handle('open-file-manager', (e, camera) => createFileManagerWindow(camera, fileManagerConnections));
     ipcMain.handle('open-ssh-terminal', (e, camera) => {

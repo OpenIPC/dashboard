@@ -19,17 +19,25 @@
     <!-- Экран входа -->
     <div id="login-view" class="modal-backdrop">
         <div class="modal-content" style="width: 400px; text-align: center;">
+            
+            <span id="login-close-btn" class="modal-close-btn">&times;</span>
+
             <h2 data-i18n-key="app_title"></h2>
             <p data-i18n-key="login_prompt" style="color: #6c757d;"></p>
             <div class="form-grid simple" style="grid-template-columns: 100px 1fr; padding-top: 10px;">
                 <b data-i18n-key="login"></b> <input type="text" id="login-username" autofocus>
                 <b data-i18n-key="password"></b> <input type="password" id="login-password">
-                <b></b>
+                
+                <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
+                <!-- Пустой <b> удален, чтобы не создавать лишнюю ячейку -->
                 <div class="form-check-inline">
                     <input type="checkbox" id="login-remember-me" class="form-check-input">
                     <label for="login-remember-me" data-i18n-key="remember_me"></label>
                 </div>
-            </div>
+            
+            </div> <!-- <-- ВОТ ЭТОТ ЗАКРЫВАЮЩИЙ ТЕГ БЫЛ ПРОПУЩЕН И ТЕПЕРЬ ДОБАВЛЕН -->
+            <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
+            
             <p id="login-error" style="color: var(--danger-color); height: 20px; margin-top: 10px;"></p>
             <button id="login-btn" style="width: 100%; padding: 10px; margin-top: 5px;" data-i18n-key="login_btn"></button>
         </div>
@@ -123,7 +131,7 @@
         </div>
     </template>
     <!-- === КОНЕЦ ИЗМЕНЕНИЙ === -->
-    
+    <div id="app-toast" class="toast-notification"></div>
     <!-- Подключение скриптов -->
     <script src="jsmpeg.min.js"></script>
     <script src="node_modules/flatpickr/dist/flatpickr.js"></script>

@@ -218,7 +218,7 @@
                 <button id="restart-majestic-btn" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
                 <button id="kill-all-btn-modal" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
             </div>
-            <div id="settings-toast" class="toast-notification"></div>
+            
         </div>
     </div>
 </template>
@@ -343,7 +343,9 @@
             <h2 id="prompt-modal-title"></h2>
             <div class="form-grid simple">
                 <b id="prompt-modal-label"></b> 
-                <input type="text" id="prompt-modal-input">
+                <!-- VVVVVV ИЗМЕНЕНИЕ ЗДЕСЬ VVVVVV: Добавлен класс .hidden, чтобы им можно было управлять -->
+                <input type="text" id="prompt-modal-input" class="hidden">
+                <!-- ^^^^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^^^^ -->
                 <div class="form-buttons">
                     <button id="prompt-modal-ok-btn"></button>
                     <button id="prompt-modal-cancel-btn" style="background-color: #6c757d;"></button>

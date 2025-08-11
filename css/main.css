@@ -859,8 +859,10 @@ h3:first-child {
     margin-bottom: -5px;
 }
 
+
 #login-view .form-check-inline {
-    justify-self: start;
+    grid-column: 2 / -1;  /* Занять место со второй колонки до конца */
+    justify-self: start;  /* Прижаться к левому краю этой области */
     margin-top: 10px;
     color: #6c757d;
 }
@@ -1146,16 +1148,6 @@ body.role-operator .cell-controls .record-btn {
 #user-list button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.modal-content input[type="text"],
-.modal-content input[type="number"],
-.modal-content input[type="password"],
-.modal-content select {
-    pointer-events: auto !important;
-    background-color: #ffffff !important;
-    color: #333333 !important;
-    border: 1px solid #ccc !important;
 }
 
 .flatpickr-calendar {

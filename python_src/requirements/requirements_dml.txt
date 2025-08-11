@@ -1,0 +1,4 @@
+onnxruntime-directml==1.17.1
+opencv-python-headless
+numpy
+pyinstaller

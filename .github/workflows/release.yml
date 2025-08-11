@@ -1,6 +1,6 @@
 # .github/workflows/release.yml
 
-name: Build & Release
+name: Build & Release Cross-Platform
 
 on:
   push:
@@ -11,30 +11,14 @@ jobs:
   release:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest, ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Check out git repository
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
 
-      # --- [БЛОК 1] Сборка исполняемого файла аналитики ---
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        run: pip install -r python_requirements.txt
-
-      # ИЗМЕНЕННАЯ КОМАНДА СБОРКИ: без cd, прямой вызов .spec файла
-      - name: Build analytics executable
-        run: pyinstaller python_src/analytics.spec --distpath extra/analytics --workpath build_pyinstaller
-
-      # --- [БЛОК 2] Сборка Electron-приложения ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -43,23 +27,59 @@ jobs:
 
       - name: Install Node.js dependencies
         run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Build Python analytics executables
+        run: python ./build_analytics.py
       
-      - name: Install Linux dependencies
+      - name: List built analytics files (for debugging)
+        run: ls -R extra/analytics
+
+      - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfuse2
-      
-      - name: Build and release for Linux
-        if: runner.os == 'Linux'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          FUSE_PATH=$(readlink -f /usr/lib/x86_64-linux-gnu/libfuse.so.2)
-          echo "FUSE library found at: $FUSE_PATH"
-          EXTRA_FILES_CONFIG='[{"from": "'"$FUSE_PATH"'", "to": "lib/libfuse.so.2"}]'
-          npm run dist -- --publish always --config.linux.extraFiles="$EXTRA_FILES_CONFIG"
-      
-      - name: Build and release for Windows
-        if: runner.os == 'Windows'
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+
+      - name: Build and package Electron app
+        # Теперь мы не публикуем релиз здесь, а только собираем файлы
+        run: npm run dist -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: npm run dist -- --publish always
+
+      # VVVV --- ИЗМЕНЕНИЕ: Загружаем артефакты для передачи в следующую задачу --- VVVV
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-build
+          path: dist/
+
+  # VVVV --- ИЗМЕНЕНИЕ: Новая задача (job) для создания релиза --- VVVV
+  create_release:
+    # Эта задача будет запущена только после успешного завершения всех сборок
+    needs: release 
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts/ # Скачиваем все артефакты в одну папку
+
+      - name: List downloaded files (for debugging)
+        run: ls -R artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          # `files` автоматически найдет и загрузит все файлы из указанных папок
+          files: |
+            artifacts/windows-latest/*
+            artifacts/ubuntu-latest/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
