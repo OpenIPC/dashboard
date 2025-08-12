@@ -105,14 +105,17 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
         model_path = os.path.join(application_path, 'yolov8n.onnx')
         session = None
         
-        # VVVVVV --- ИЗМЕНЕНИЕ: Логика выбора провайдера на основе аргумента --- VVVVVV
         available_providers = ort.get_available_providers()
         
         def try_provider(provider_name):
             nonlocal session
             if provider_name in available_providers:
                 try:
-                    session = ort.InferenceSession(model_path, providers=[provider_name, 'CPUExecutionProvider'])
+                    provider_options = {}
+                    if provider_name == 'DmlExecutionProvider':
+                        provider_options = {'device_id': '0'}
+                    
+                    session = ort.InferenceSession(model_path, providers=[(provider_name, provider_options), 'CPUExecutionProvider'])
                     print(json.dumps({"status": "info", "provider": provider_name}), flush=True)
                     return True
                 except Exception as e:
@@ -123,44 +126,35 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
         if provider_choice == 'dml':
             try_provider('DmlExecutionProvider')
         elif provider_choice == 'auto':
-            # В режиме "Авто" для Windows пробуем DML, для остальных - сразу CPU
             if sys.platform == "win32":
                 if not try_provider('DmlExecutionProvider'):
                     try_provider('CPUExecutionProvider')
             else:
                  try_provider('CPUExecutionProvider')
         
-        # Если выбор был 'cpu' или все остальное провалилось, используем CPU
         if session is None:
             if not try_provider('CPUExecutionProvider'):
                  raise RuntimeError("Could not initialize any ONNX Runtime provider.")
-
-        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
         input_height = session.get_inputs()[0].shape[2]
         input_width = session.get_inputs()[0].shape[3]
-    except Exception as e:
-        print(json.dumps({"status": "error", "message": f"Failed to load ONNX model or provider: {str(e)}"}), flush=True)
-        sys.exit(1)
+            
+        config = {}
+        if config_str:
+            try:
+                config_json = base64.b64decode(config_str).decode('utf-8')
+                config = json.loads(config_json)
+            except Exception:
+                pass
         
-    # --- Основной цикл (без изменений) ---
-    config = {}
-    if config_str:
-        try:
-            config_json = base64.b64decode(config_str).decode('utf-8')
-            config = json.loads(config_json)
-        except Exception:
-            pass
-    
-    objects_to_detect = config.get('objects', None)
-    confidence_threshold = config.get('confidence', 0.5)
-    frame_skip = int(config.get('frame_skip', 5)) or 1
-    frame_grabber = None
-    
-    while True: 
-        try:
+        objects_to_detect = config.get('objects', None)
+        confidence_threshold = config.get('confidence', 0.5)
+        frame_skip = int(config.get('frame_skip', 5)) or 1
+        frame_grabber = None
+        
+        while True: 
             if frame_grabber is None or frame_grabber.stopped:
                 try:
                     frame_grabber = FrameGrabber(rtsp_url)
@@ -194,22 +188,21 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
                         "objects": filtered_objects
                     }
                     print(json.dumps(result), flush=True)
-        
-        except Exception as e:
-            print(json.dumps({"status": "error", "message": f"Runtime error: {str(e)}"}), flush=True)
-            if frame_grabber:
-                frame_grabber.stop()
-            frame_grabber = None
-            time.sleep(5)
+    
+    except Exception as e:
+        print(json.dumps({"status": "error", "message": f"CRITICAL RUNTIME ERROR: {str(e)}"}), flush=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        rtsp_stream_url = sys.argv[1]
-        config_arg = sys.argv[2] if len(sys.argv) > 2 else None
-        # VVVVVV --- ИЗМЕНЕНИЕ: Читаем третий аргумент --- VVVVVV
-        provider_arg = sys.argv[3] if len(sys.argv) > 3 else 'auto'
-        run_analytics(rtsp_stream_url, config_arg, provider_arg)
-        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-    else:
-        print(json.dumps({"status": "error", "message": "RTSP URL not provided"}), flush=True)
+    try:
+        if len(sys.argv) > 1:
+            rtsp_stream_url = sys.argv[1]
+            config_arg = sys.argv[2] if len(sys.argv) > 2 else None
+            provider_arg = sys.argv[3] if len(sys.argv) > 3 else 'auto'
+            run_analytics(rtsp_stream_url, config_arg, provider_arg)
+        else:
+            print(json.dumps({"status": "error", "message": "RTSP URL not provided"}), flush=True)
+            sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"status": "error", "message": f"CRITICAL STARTUP ERROR: {str(e)}"}), flush=True)
         sys.exit(1)

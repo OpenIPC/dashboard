@@ -1,4 +1,4 @@
 onnxruntime==1.17.1
 opencv-python-headless
-numpy
+numpy<2.0
 pyinstaller

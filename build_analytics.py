@@ -14,14 +14,12 @@ MODEL_FILE = SRC_DIR / "yolov8n.onnx"
 DIST_PATH = BASE_DIR / "extra" / "analytics"
 REQUIREMENTS_DIR = BASE_DIR / "python_src" / "requirements"
 
-# VVVVVV --- ИЗМЕНЕНИЕ: Убираем сборку для CUDA --- VVVVVV
 BUILDS = {
     "cpu": "requirements_cpu.txt",
 }
 
 if sys.platform == "win32":
     BUILDS["dml"] = "requirements_dml.txt"
-# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
 def run_command(command, shell=True, cwd=None):
     print(f"--- Running command: {' '.join(command) if isinstance(command, list) else command}")
@@ -34,7 +32,6 @@ def run_command(command, shell=True, cwd=None):
         raise subprocess.CalledProcessError(process.returncode, command)
 
 def get_onnx_libs_path(venv_path):
-    """Находит путь к библиотекам onnxruntime внутри виртуального окружения."""
     if sys.platform == "win32":
         return venv_path / "Lib" / "site-packages" / "onnxruntime" / "capi"
     else:
@@ -67,19 +64,20 @@ def create_and_build(name, req_file):
         "--noconfirm", "--onefile",
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
-        f"--add-data={MODEL_FILE}{os.pathsep}."
+        f"--add-data={MODEL_FILE}{os.pathsep}.",
+        # VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Добавляем "скрытый" импорт --- VVVVVV
+        "--hidden-import=numpy.core._multiarray_umath",
+        # ^^^^^^ --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ --- ^^^^^^
     ]
 
     onnx_libs_path = get_onnx_libs_path(venv_path)
     binary_sep = os.pathsep
 
-    # VVVVVV --- ИЗМЕНЕНИЕ: Убираем блок для CUDA, оставляем только для DML --- VVVVVV
     if name == "dml" and onnx_libs_path.exists():
         print("Adding DirectML provider binaries...")
         for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_dml.dll", "DirectML.dll"]:
             if (onnx_libs_path / lib).exists():
                 pyinstaller_command.append(f"--add-binary={(onnx_libs_path / lib)}{binary_sep}.")
-    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     pyinstaller_command.append(str(SRC_FILE))
     

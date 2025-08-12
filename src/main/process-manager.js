@@ -307,7 +307,6 @@ async function handleAnalyticsDetection(cameraId, camera) {
     }, autoStopDelay);
 }
 
-// VVVVVV --- ИЗМЕНЕНИЕ: Логика выбора EXE файла упрощена --- VVVVVV
 /**
  * Определяет, какой исполняемый файл аналитики использовать.
  * @returns {string} Путь к исполняемому файлу.
@@ -332,8 +331,6 @@ function getAnalyticsExecutablePath() {
         ? path.join(process.resourcesPath, 'analytics', exeName)
         : path.join(__dirname, '../../extra/analytics', exeName);
 }
-// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-
 
 async function toggleAnalytics(cameraId, mainWindow) {
     const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
@@ -367,11 +364,9 @@ async function toggleAnalytics(cameraId, mainWindow) {
     };
     const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
     
-    // VVVVVV --- ИЗМЕНЕНИЕ: Передаем выбор провайдера как 3-й аргумент --- VVVVVV
-    const providerChoice = settings.analytics_provider || 'auto'; // 'auto', 'dml', 'cpu'
+    const providerChoice = settings.analytics_provider || 'auto';
     console.log(`[Analytics] Starting with provider choice: ${providerChoice}`);
     const analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg, providerChoice], { windowsHide: true });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
     
     addProcess(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 
@@ -395,6 +390,20 @@ async function toggleAnalytics(cameraId, mainWindow) {
             }
         });
     });
+
+    // VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЕН ОБРАБОТЧИК STDERR --- VVVVVV
+    // Слушаем поток ошибок. Любой вывод здесь означает критическую проблему.
+    analyticsProcess.stderr.on('data', (data) => {
+        console.error(`[Analytics STDERR] for camera ${cameraId}: ${data.toString()}`);
+        // Отправляем ошибку в интерфейс, чтобы пользователь тоже ее увидел
+        if (mainWindow && !mainWindow.isDestroyed()) {
+             mainWindow.webContents.send('on-main-error', {
+                context: `Analytics Script (camId: ${cameraId})`,
+                message: data.toString()
+            });
+        }
+    });
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     analyticsProcess.on('close', (code) => {
         stopProcess(analyticsId);
