@@ -3,11 +3,11 @@
 import os
 import subprocess
 import sys
-import venv
 from pathlib import Path
+import site # <-- Импортируем новый модуль
 
 BASE_DIR = Path(__file__).parent.resolve()
-VENV_DIR = BASE_DIR / ".analytics_venvs"
+# VENV_DIR больше не нужен
 SRC_DIR = BASE_DIR / "python_src"
 SRC_FILE = SRC_DIR / "analytics.py"
 MODEL_FILE = SRC_DIR / "yolov8n.onnx"
@@ -22,22 +22,15 @@ if sys.platform == "win32":
     BUILDS["dml"] = "requirements_dml.txt"
 
 def run_command(command, cwd=None):
-    """Runs a command, ensuring shell is used for strings."""
-    is_string = isinstance(command, str)
-    print(f"--- Running command: {command}")
+    """Runs a command as a list of arguments, which is safer."""
+    print(f"--- Running command: {' '.join(command)}")
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        shell=is_string,
         cwd=cwd,
         text=True,
-        encoding='utf-8',
-        # VVVVVV --- ИЗМЕНЕНИЕ 1: Добавляем executable для Linux/macOS --- VVVVVV
-        # Это заставляет Popen использовать /bin/bash, который лучше понимает команду 'source' (или '.'),
-        # чем стандартный /bin/sh.
-        executable="/bin/bash" if not is_string and sys.platform != "win32" else None
-        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 1 --- ^^^^^^
+        encoding='utf-8'
     )
     for line in process.stdout:
         print(line, end='')
@@ -45,46 +38,42 @@ def run_command(command, cwd=None):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
 
-def get_onnx_libs_path(venv_path):
-    if sys.platform == "win32":
-        return venv_path / "Lib" / "site-packages" / "onnxruntime" / "capi"
-    else:
-        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        return venv_path / "lib" / py_version / "site-packages" / "onnxruntime" / "capi"
+# VVVVVV --- ИЗМЕНЕНИЕ: Ищем библиотеки в системном site-packages --- VVVVVV
+def get_onnx_libs_path():
+    """Finds the onnxruntime/capi path in the main Python environment."""
+    # site.getsitepackages() возвращает список путей, обычно один
+    for site_path in site.getsitepackages():
+        potential_path = Path(site_path) / "onnxruntime" / "capi"
+        if potential_path.exists():
+            return potential_path
+    # Если не нашли, возвращаем None
+    return None
+# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
 
 def create_and_build(name, req_file):
     print(f"\n{'='*20} Building: {name.upper()} {'='*20}")
     
-    venv_path = VENV_DIR / name
-    
-    if sys.platform == "win32":
-        python_executable = venv_path / "Scripts" / "python.exe"
-    else:
-        python_executable = venv_path / "bin" / "python"
-
-    if not venv_path.exists():
-        print(f"Creating virtual environment for {name}...")
-        venv.create(venv_path, with_pip=True)
+    # VVVVVV --- ИЗМЕНЕНИЕ: Используем Python, который запустил этот скрипт --- VVVVVV
+    python_executable = sys.executable
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     print(f"Installing dependencies for {name} from {req_file}...")
     
-    # VVVVVV --- ИЗМЕНЕНИЕ 2: Формируем команду с активацией venv --- VVVVVV
-    if sys.platform == "win32":
-        activate_script = venv_path / "Scripts" / "activate.bat"
-        # На Windows используем `call` и `&&` для последовательного выполнения
-        cmd_as_string = f'call "{activate_script}" && python -m pip install -r "{req_file}"'
-    else:
-        # На Linux используем `.` (аналог `source`) и `&&`
-        activate_script = venv_path / "bin" / "activate"
-        cmd_as_string = f'. "{activate_script}" && pip install -r "{req_file}"'
-    
-    run_command(cmd_as_string)
-    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 2 --- ^^^^^^
+    # VVVVVV --- ИЗМЕНЕНИЕ: Простая и надежная команда установки --- VVVVVV
+    install_command = [
+        python_executable,
+        "-m", "pip",
+        "install",
+        "-r", str(req_file)
+    ]
+    run_command(install_command)
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
     pyinstaller_command = [
-        str(python_executable), "-m", "PyInstaller",
+        python_executable, "-m", "PyInstaller",
         "--noconfirm", "--onefile",
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
@@ -92,10 +81,12 @@ def create_and_build(name, req_file):
         "--hidden-import=numpy.core._multiarray_umath",
     ]
 
-    onnx_libs_path = get_onnx_libs_path(venv_path)
+    # VVVVVV --- ИЗМЕНЕНИЕ: Используем новую функцию поиска библиотек --- VVVVVV
+    onnx_libs_path = get_onnx_libs_path()
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
     binary_sep = os.pathsep
 
-    if name == "dml" and onnx_libs_path.exists():
+    if name == "dml" and onnx_libs_path and onnx_libs_path.exists():
         print("Adding DirectML provider binaries...")
         for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_dml.dll", "DirectML.dll"]:
             if (onnx_libs_path / lib).exists():
@@ -117,7 +108,7 @@ if __name__ == "__main__":
         print("Please make sure 'yolov8n.onnx' is placed in the 'python_src' directory.")
         sys.exit(1)
         
-    VENV_DIR.mkdir(exist_ok=True)
+    # VENV_DIR.mkdir(exist_ok=True) <-- Больше не нужно
     DIST_PATH.mkdir(parents=True, exist_ok=True)
     
     for name, req_filename in BUILDS.items():
