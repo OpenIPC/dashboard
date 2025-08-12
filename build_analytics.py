@@ -21,7 +21,6 @@ BUILDS = {
 if sys.platform == "win32":
     BUILDS["dml"] = "requirements_dml.txt"
 
-# VVVVVV --- ИЗМЕНЕНИЕ 1: Упрощенная и более надежная функция --- VVVVVV
 def run_command(command, cwd=None):
     """Runs a command, ensuring shell is used for strings."""
     is_string = isinstance(command, str)
@@ -30,17 +29,21 @@ def run_command(command, cwd=None):
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        shell=is_string,  # Use shell only for string commands
+        shell=is_string,
         cwd=cwd,
         text=True,
-        encoding='utf-8'
+        encoding='utf-8',
+        # VVVVVV --- ИЗМЕНЕНИЕ 1: Добавляем executable для Linux/macOS --- VVVVVV
+        # Это заставляет Popen использовать /bin/bash, который лучше понимает команду 'source' (или '.'),
+        # чем стандартный /bin/sh.
+        executable="/bin/bash" if not is_string and sys.platform != "win32" else None
+        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 1 --- ^^^^^^
     )
     for line in process.stdout:
         print(line, end='')
     process.wait()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
-# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 1 --- ^^^^^^
 
 def get_onnx_libs_path(venv_path):
     if sys.platform == "win32":
@@ -56,10 +59,8 @@ def create_and_build(name, req_file):
     
     if sys.platform == "win32":
         python_executable = venv_path / "Scripts" / "python.exe"
-        pip_executable = venv_path / "Scripts" / "pip.exe"
     else:
         python_executable = venv_path / "bin" / "python"
-        pip_executable = venv_path / "bin" / "pip"
 
     if not venv_path.exists():
         print(f"Creating virtual environment for {name}...")
@@ -67,8 +68,16 @@ def create_and_build(name, req_file):
 
     print(f"Installing dependencies for {name} from {req_file}...")
     
-    # VVVVVV --- ИЗМЕНЕНИЕ 2: Вызываем pip напрямую и как строку --- VVVVVV
-    cmd_as_string = f"{str(pip_executable)} install -r {str(req_file)}"
+    # VVVVVV --- ИЗМЕНЕНИЕ 2: Формируем команду с активацией venv --- VVVVVV
+    if sys.platform == "win32":
+        activate_script = venv_path / "Scripts" / "activate.bat"
+        # На Windows используем `call` и `&&` для последовательного выполнения
+        cmd_as_string = f'call "{activate_script}" && python -m pip install -r "{req_file}"'
+    else:
+        # На Linux используем `.` (аналог `source`) и `&&`
+        activate_script = venv_path / "bin" / "activate"
+        cmd_as_string = f'. "{activate_script}" && pip install -r "{req_file}"'
+    
     run_command(cmd_as_string)
     # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 2 --- ^^^^^^
 
@@ -94,7 +103,6 @@ def create_and_build(name, req_file):
 
     pyinstaller_command.append(str(SRC_FILE))
     
-    # Вызываем PyInstaller списком, как и раньше, т.к. это надежнее для сложных команд
     run_command(pyinstaller_command)
     print(f"--- Successfully built {name} version! ---")
 
