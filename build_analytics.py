@@ -53,11 +53,7 @@ def create_and_build(name, req_file):
         venv.create(venv_path, with_pip=True)
 
     print(f"Installing dependencies for {name} from {req_file}...")
-    # VVVVVV --- ИЗМЕНЕНИЕ: Используем более надежный способ вызова pip --- VVVVVV
-    # Вместо прямого вызова '.../bin/pip', мы вызываем '.../bin/python -m pip ...'
-    # Это стандартный и более надежный способ для работы с venv.
     run_command([str(python_executable), "-m", "pip", "install", "-r", str(req_file)])
-    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
@@ -96,7 +92,11 @@ if __name__ == "__main__":
         sys.exit(1)
         
     VENV_DIR.mkdir(exist_ok=True)
-    DIST_PATH.mkdir(exist_ok=True)
+    
+    # VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+    # Добавляем parents=True, чтобы создать родительскую директорию 'extra', если ее нет
+    DIST_PATH.mkdir(parents=True, exist_ok=True)
+    # ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
     
     for name, req_filename in BUILDS.items():
         create_and_build(name, REQUIREMENTS_DIR / req_filename)
