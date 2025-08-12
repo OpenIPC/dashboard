@@ -23,6 +23,7 @@ if sys.platform == "win32":
 
 def run_command(command, shell=True, cwd=None):
     print(f"--- Running command: {' '.join(command) if isinstance(command, list) else command}")
+    # Эта логика немного странная, но мы будем с ней работать, вызывая команду правильно
     use_shell = isinstance(command, str) if sys.platform != "win32" else shell
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=use_shell, cwd=cwd, text=True, encoding='utf-8')
     for line in process.stdout:
@@ -53,7 +54,13 @@ def create_and_build(name, req_file):
         venv.create(venv_path, with_pip=True)
 
     print(f"Installing dependencies for {name} from {req_file}...")
-    run_command([str(python_executable), "-m", "pip", "install", "-r", str(req_file)])
+    
+    # VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+    # Формируем команду как единую строку, чтобы функция run_command
+    # гарантированно использовала `shell=True`, что более надежно в CI/CD.
+    cmd_as_string = f"\"{str(python_executable)}\" -m pip install -r \"{str(req_file)}\""
+    run_command(cmd_as_string)
+    # ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
@@ -92,11 +99,7 @@ if __name__ == "__main__":
         sys.exit(1)
         
     VENV_DIR.mkdir(exist_ok=True)
-    
-    # VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
-    # Добавляем parents=True, чтобы создать родительскую директорию 'extra', если ее нет
-    DIST_PATH.mkdir(parents=True, exist_ok=True)
-    # ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+    DIST_PATH.mkdir(parents=True, exist_ok=True) # <-- предыдущее исправление оставлено
     
     for name, req_filename in BUILDS.items():
         create_and_build(name, REQUIREMENTS_DIR / req_filename)
