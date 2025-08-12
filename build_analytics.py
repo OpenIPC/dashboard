@@ -21,15 +21,26 @@ BUILDS = {
 if sys.platform == "win32":
     BUILDS["dml"] = "requirements_dml.txt"
 
-def run_command(command, shell=True, cwd=None):
-    print(f"--- Running command: {' '.join(command) if isinstance(command, list) else command}")
-    use_shell = isinstance(command, str) if sys.platform != "win32" else shell
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=use_shell, cwd=cwd, text=True, encoding='utf-8')
+# VVVVVV --- ИЗМЕНЕНИЕ 1: Упрощенная и более надежная функция --- VVVVVV
+def run_command(command, cwd=None):
+    """Runs a command, ensuring shell is used for strings."""
+    is_string = isinstance(command, str)
+    print(f"--- Running command: {command}")
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        shell=is_string,  # Use shell only for string commands
+        cwd=cwd,
+        text=True,
+        encoding='utf-8'
+    )
     for line in process.stdout:
         print(line, end='')
     process.wait()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
+# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 1 --- ^^^^^^
 
 def get_onnx_libs_path(venv_path):
     if sys.platform == "win32":
@@ -45,8 +56,10 @@ def create_and_build(name, req_file):
     
     if sys.platform == "win32":
         python_executable = venv_path / "Scripts" / "python.exe"
+        pip_executable = venv_path / "Scripts" / "pip.exe"
     else:
         python_executable = venv_path / "bin" / "python"
+        pip_executable = venv_path / "bin" / "pip"
 
     if not venv_path.exists():
         print(f"Creating virtual environment for {name}...")
@@ -54,15 +67,13 @@ def create_and_build(name, req_file):
 
     print(f"Installing dependencies for {name} from {req_file}...")
     
-    # VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
-    # Убираем кавычки вокруг путей. В Linux-окружении без пробелов они не нужны и могут мешать.
-    cmd_as_string = f"{str(python_executable)} -m pip install -r {str(req_file)}"
+    # VVVVVV --- ИЗМЕНЕНИЕ 2: Вызываем pip напрямую и как строку --- VVVVVV
+    cmd_as_string = f"{str(pip_executable)} install -r {str(req_file)}"
     run_command(cmd_as_string)
-    # ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ 2 --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
-    # PyInstaller лучше вызывать списком, это более надежно
     pyinstaller_command = [
         str(python_executable), "-m", "PyInstaller",
         "--noconfirm", "--onefile",
@@ -83,6 +94,7 @@ def create_and_build(name, req_file):
 
     pyinstaller_command.append(str(SRC_FILE))
     
+    # Вызываем PyInstaller списком, как и раньше, т.к. это надежнее для сложных команд
     run_command(pyinstaller_command)
     print(f"--- Successfully built {name} version! ---")
 
