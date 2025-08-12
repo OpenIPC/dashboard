@@ -157,3 +157,5 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+# Generated analytics executables
+/extra/

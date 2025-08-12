@@ -45,17 +45,19 @@ def create_and_build(name, req_file):
     
     if sys.platform == "win32":
         python_executable = venv_path / "Scripts" / "python.exe"
-        pip_executable = venv_path / "Scripts" / "pip.exe"
     else:
         python_executable = venv_path / "bin" / "python"
-        pip_executable = venv_path / "bin" / "pip"
 
     if not venv_path.exists():
         print(f"Creating virtual environment for {name}...")
         venv.create(venv_path, with_pip=True)
 
     print(f"Installing dependencies for {name} from {req_file}...")
-    run_command([str(pip_executable), "install", "-r", str(req_file)])
+    # VVVVVV --- ИЗМЕНЕНИЕ: Используем более надежный способ вызова pip --- VVVVVV
+    # Вместо прямого вызова '.../bin/pip', мы вызываем '.../bin/python -m pip ...'
+    # Это стандартный и более надежный способ для работы с venv.
+    run_command([str(python_executable), "-m", "pip", "install", "-r", str(req_file)])
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
@@ -65,9 +67,7 @@ def create_and_build(name, req_file):
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
         f"--add-data={MODEL_FILE}{os.pathsep}.",
-        # VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Добавляем "скрытый" импорт --- VVVVVV
         "--hidden-import=numpy.core._multiarray_umath",
-        # ^^^^^^ --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ --- ^^^^^^
     ]
 
     onnx_libs_path = get_onnx_libs_path(venv_path)
