@@ -225,5 +225,9 @@
   "context_delete_group": "Удалить группу",
   "enter_new_group_name": "Введите новое название для группы:",
   "confirm_delete_group": "Вы уверены, что хотите удалить группу '{{groupName}}'?",
-  "confirm_delete_group_detail": "Камеры из этой группы не будут удалены, а переместятся в 'Камеры без группы'."
+  "confirm_delete_group_detail": "Камеры из этой группы не будут удалены, а переместятся в 'Камеры без группы'.",
+  "settings_analytics_provider": "Провайдер аналитики (GPU/CPU)",
+  "analytics_provider_auto": "Авто (GPU, если доступен)",
+  "analytics_provider_dml": "GPU (DirectML - только Windows)",
+  "analytics_provider_cpu": "Только ЦП (макс. совместимость)"
 }

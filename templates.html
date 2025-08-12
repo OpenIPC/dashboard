@@ -12,12 +12,10 @@
                 <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
             </div>
             <div class="timeline-container">
-                <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
                 <div class="timeline-wrapper" id="timeline-wrapper">
                     <canvas id="timeline-canvas"></canvas>
                     <div id="timeline-labels" class="timeline-labels"></div>
                 </div>
-                <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
             </div>
         </div>
         <div class="archive-sidebar">
@@ -117,6 +115,16 @@
                             <option value="intel" data-i18n-key="settings_hw_accel_intel"></option>
                             <option value="none" data-i18n-key="settings_hw_accel_none"></option>
                         </select>
+                        
+                        <!-- VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЕН БЛОК НАСТРОЕК АНАЛИТИКИ --- VVVVVV -->
+                        <span data-i18n-key="settings_analytics_provider"></span>
+                        <select id="app-settings-analytics-provider">
+                            <option value="auto" data-i18n-key="analytics_provider_auto"></option>
+                            <option value="dml" data-i18n-key="analytics_provider_dml"></option>
+                            <option value="cpu" data-i18n-key="analytics_provider_cpu"></option>
+                        </select>
+                        <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
+
                         <span data-i18n-key="settings_notifications_label"></span>
                         <div class="form-check-inline">
                             <input type="checkbox" id="app-settings-notifications-enabled" class="form-check-input">
@@ -343,9 +351,7 @@
             <h2 id="prompt-modal-title"></h2>
             <div class="form-grid simple">
                 <b id="prompt-modal-label"></b> 
-                <!-- VVVVVV ИЗМЕНЕНИЕ ЗДЕСЬ VVVVVV: Добавлен класс .hidden, чтобы им можно было управлять -->
                 <input type="text" id="prompt-modal-input" class="hidden">
-                <!-- ^^^^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^^^^ -->
                 <div class="form-buttons">
                     <button id="prompt-modal-ok-btn"></button>
                     <button id="prompt-modal-cancel-btn" style="background-color: #6c757d;"></button>

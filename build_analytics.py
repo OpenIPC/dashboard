@@ -14,13 +14,14 @@ MODEL_FILE = SRC_DIR / "yolov8n.onnx"
 DIST_PATH = BASE_DIR / "extra" / "analytics"
 REQUIREMENTS_DIR = BASE_DIR / "python_src" / "requirements"
 
+# VVVVVV --- ИЗМЕНЕНИЕ: Убираем сборку для CUDA --- VVVVVV
 BUILDS = {
     "cpu": "requirements_cpu.txt",
-    "cuda": "requirements_cuda.txt",
 }
 
 if sys.platform == "win32":
     BUILDS["dml"] = "requirements_dml.txt"
+# ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
 def run_command(command, shell=True, cwd=None):
     print(f"--- Running command: {' '.join(command) if isinstance(command, list) else command}")
@@ -32,16 +33,13 @@ def run_command(command, shell=True, cwd=None):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, command)
 
-# VVVVVV --- НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ --- VVVVVV
 def get_onnx_libs_path(venv_path):
     """Находит путь к библиотекам onnxruntime внутри виртуального окружения."""
     if sys.platform == "win32":
         return venv_path / "Lib" / "site-packages" / "onnxruntime" / "capi"
     else:
-        # Путь для Linux/macOS может отличаться
         py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
         return venv_path / "lib" / py_version / "site-packages" / "onnxruntime" / "capi"
-# ^^^^^^ --- КОНЕЦ НОВОЙ ФУНКЦИИ --- ^^^^^^
 
 def create_and_build(name, req_file):
     print(f"\n{'='*20} Building: {name.upper()} {'='*20}")
@@ -72,24 +70,16 @@ def create_and_build(name, req_file):
         f"--add-data={MODEL_FILE}{os.pathsep}."
     ]
 
-    # VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ: Добавляем DLL --- VVVVVV
-    # PyInstaller не всегда сам находит нужные DLL для onnxruntime,
-    # поэтому мы добавляем их вручную с помощью флага --add-binary.
     onnx_libs_path = get_onnx_libs_path(venv_path)
     binary_sep = os.pathsep
 
-    if name == "cuda" and onnx_libs_path.exists():
-        print("Adding CUDA provider binaries...")
-        for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_cuda.dll"]:
-             if (onnx_libs_path / lib).exists():
-                pyinstaller_command.append(f"--add-binary={(onnx_libs_path / lib)}{binary_sep}.")
-
+    # VVVVVV --- ИЗМЕНЕНИЕ: Убираем блок для CUDA, оставляем только для DML --- VVVVVV
     if name == "dml" and onnx_libs_path.exists():
         print("Adding DirectML provider binaries...")
         for lib in ["onnxruntime_providers_shared.dll", "onnxruntime_providers_dml.dll", "DirectML.dll"]:
             if (onnx_libs_path / lib).exists():
                 pyinstaller_command.append(f"--add-binary={(onnx_libs_path / lib)}{binary_sep}.")
-    # ^^^^^^ --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ --- ^^^^^^
+    # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     pyinstaller_command.append(str(SRC_FILE))
     

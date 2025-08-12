@@ -1,4 +1,4 @@
-# --- ФАЙЛ: python_src/analytics.py (финальная отказоустойчивая версия) ---
+# --- ФАЙЛ: python_src/analytics.py (финальная версия с выбором провайдера) ---
 
 import sys
 import os
@@ -21,7 +21,7 @@ except Exception as e:
     print(json.dumps({"status": "error", "message": error_message}), flush=True)
     sys.exit(1)
 
-# ... (весь код классов FrameGrabber, COCO_CLASSES, и функций preprocess/postprocess остается БЕЗ ИЗМЕНЕНИЙ) ...
+# --- Классы и функции-хелперы (без изменений) ---
 COCO_CLASSES = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 6: 'train', 7: 'truck',
     8: 'boat', 9: 'traffic light', 10: 'fire hydrant', 11: 'stop sign', 12: 'parking meter', 13: 'bench',
@@ -87,14 +87,8 @@ def postprocess(output, ratio, pad, confidence_threshold=0.5, iou_threshold=0.5)
     class_ids = np.argmax(predictions[:, 4:], axis=1)
     boxes = predictions[:, :4]
     x, y, w, h = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-    x1 = x - w / 2
-    y1 = y - h / 2
-    x2 = x + w / 2
-    y2 = y + h / 2
-    x1 = (x1 - pad[0]) / ratio
-    y1 = (y1 - pad[1]) / ratio
-    x2 = (x2 - pad[0]) / ratio
-    y2 = (y2 - pad[1]) / ratio
+    x1, y1, x2, y2 = x - w / 2, y - h / 2, x + w / 2, y + h / 2
+    x1, y1, x2, y2 = (x1 - pad[0]) / ratio, (y1 - pad[1]) / ratio, (x2 - pad[0]) / ratio, (y2 - pad[1]) / ratio
     indices = cv2.dnn.NMSBoxes(np.column_stack((x1, y1, x2 - x1, y2 - y1)), scores, confidence_threshold, iou_threshold)
     detections = []
     for i in indices:
@@ -104,60 +98,65 @@ def postprocess(output, ratio, pad, confidence_threshold=0.5, iou_threshold=0.5)
             'box': {'x': int(x1[i]), 'y': int(y1[i]), 'w': int(x2[i] - x1[i]), 'h': int(y2[i] - y1[i])}
         })
     return detections
-# ... (конец неизмененного кода) ...
+# --- Конец хелперов ---
 
-def run_analytics(rtsp_url, config_str):
+def run_analytics(rtsp_url, config_str, provider_choice='auto'):
     try:
         model_path = os.path.join(application_path, 'yolov8n.onnx')
         session = None
         
-        # VVVVVV --- Логика плавного перехода (Graceful Fallback) --- VVVVVV
+        # VVVVVV --- ИЗМЕНЕНИЕ: Логика выбора провайдера на основе аргумента --- VVVVVV
         available_providers = ort.get_available_providers()
         
-        # 1. Попытка использовать CUDA (самый быстрый)
-        if 'CUDAExecutionProvider' in available_providers:
-            try:
-                session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-                print(json.dumps({"status": "info", "provider": "CUDAExecutionProvider"}), flush=True)
-            except Exception as e:
-                print(json.dumps({"status": "info", "provider": "CUDA", "error": f"CUDA failed: {str(e)}"}), flush=True)
-                session = None
+        def try_provider(provider_name):
+            nonlocal session
+            if provider_name in available_providers:
+                try:
+                    session = ort.InferenceSession(model_path, providers=[provider_name, 'CPUExecutionProvider'])
+                    print(json.dumps({"status": "info", "provider": provider_name}), flush=True)
+                    return True
+                except Exception as e:
+                    print(json.dumps({"status": "info", "provider": provider_name, "error": f"{provider_name} failed: {str(e)}"}), flush=True)
+                    session = None
+            return False
 
-        # 2. Если CUDA не удался, попытка использовать DirectML (для Windows)
-        if session is None and 'DmlExecutionProvider' in available_providers:
-            try:
-                session = ort.InferenceSession(model_path, providers=['DmlExecutionProvider', 'CPUExecutionProvider'])
-                print(json.dumps({"status": "info", "provider": "DmlExecutionProvider"}), flush=True)
-            except Exception as e:
-                print(json.dumps({"status": "info", "provider": "DML", "error": f"DML failed: {str(e)}"}), flush=True)
-                session = None
-
-        # 3. Если ничего не помогло, используем CPU
+        if provider_choice == 'dml':
+            try_provider('DmlExecutionProvider')
+        elif provider_choice == 'auto':
+            # В режиме "Авто" для Windows пробуем DML, для остальных - сразу CPU
+            if sys.platform == "win32":
+                if not try_provider('DmlExecutionProvider'):
+                    try_provider('CPUExecutionProvider')
+            else:
+                 try_provider('CPUExecutionProvider')
+        
+        # Если выбор был 'cpu' или все остальное провалилось, используем CPU
         if session is None:
-            session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
-            print(json.dumps({"status": "info", "provider": "CPUExecutionProvider"}), flush=True)
-        # ^^^^^^ --- КОНЕЦ Логики плавного перехода --- ^^^^^^
+            if not try_provider('CPUExecutionProvider'):
+                 raise RuntimeError("Could not initialize any ONNX Runtime provider.")
+
+        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
         input_height = session.get_inputs()[0].shape[2]
         input_width = session.get_inputs()[0].shape[3]
     except Exception as e:
-        print(json.dumps({"status": "error", "message": f"Failed to load ONNX model: {str(e)}"}), flush=True)
+        print(json.dumps({"status": "error", "message": f"Failed to load ONNX model or provider: {str(e)}"}), flush=True)
         sys.exit(1)
         
-    # ... (остальной код функции run_analytics остается БЕЗ ИЗМЕНЕНИЙ) ...
+    # --- Основной цикл (без изменений) ---
     config = {}
     if config_str:
         try:
             config_json = base64.b64decode(config_str).decode('utf-8')
             config = json.loads(config_json)
-        except Exception: pass
+        except Exception:
+            pass
     
     objects_to_detect = config.get('objects', None)
     confidence_threshold = config.get('confidence', 0.5)
     frame_skip = int(config.get('frame_skip', 5)) or 1
-    
     frame_grabber = None
     
     while True: 
@@ -171,7 +170,6 @@ def run_analytics(rtsp_url, config_str):
                     print(json.dumps({"status": "error", "message": str(e)}), flush=True)
                     time.sleep(5)
                     continue
-
             frame_count = 0
             while not frame_grabber.stopped:
                 ret, frame = frame_grabber.read()
@@ -180,22 +178,14 @@ def run_analytics(rtsp_url, config_str):
                     if frame_grabber.stopped:
                         break 
                     continue
-                
                 frame_count += 1
                 if frame_count % frame_skip != 0:
                     continue
-
                 input_tensor, ratio, pad = preprocess(frame, input_width, input_height)
                 outputs = session.run([output_name], {input_name: input_tensor})
                 detections = postprocess(outputs[0], ratio, pad, confidence_threshold)
-
-                filtered_objects = []
-                if objects_to_detect:
-                    for obj in detections:
-                        if obj['label'] in objects_to_detect:
-                            filtered_objects.append(obj)
-                else:
-                    filtered_objects = detections
+                
+                filtered_objects = [obj for obj in detections if obj['label'] in objects_to_detect] if objects_to_detect else detections
 
                 if len(filtered_objects) > 0:
                     result = {
@@ -212,12 +202,14 @@ def run_analytics(rtsp_url, config_str):
             frame_grabber = None
             time.sleep(5)
 
-
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         rtsp_stream_url = sys.argv[1]
         config_arg = sys.argv[2] if len(sys.argv) > 2 else None
-        run_analytics(rtsp_stream_url, config_arg)
+        # VVVVVV --- ИЗМЕНЕНИЕ: Читаем третий аргумент --- VVVVVV
+        provider_arg = sys.argv[3] if len(sys.argv) > 3 else 'auto'
+        run_analytics(rtsp_stream_url, config_arg, provider_arg)
+        # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
     else:
         print(json.dumps({"status": "error", "message": "RTSP URL not provided"}), flush=True)
         sys.exit(1)

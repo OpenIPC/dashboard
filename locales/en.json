@@ -225,5 +225,9 @@
   "context_delete_group": "Delete Group",
   "enter_new_group_name": "Enter a new name for the group:",
   "confirm_delete_group": "Are you sure you want to delete the group '{{groupName}}'?",
-  "confirm_delete_group_detail": "Cameras in this group will become ungrouped."
+  "confirm_delete_group_detail": "Cameras in this group will become ungrouped.",
+  "settings_analytics_provider": "Analytics Provider (GPU/CPU)",
+  "analytics_provider_auto": "Auto (GPU if available)",
+  "analytics_provider_dml": "GPU (DirectML - Windows only)",
+  "analytics_provider_cpu": "CPU only (max compatibility)"
 }

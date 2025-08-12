@@ -9,18 +9,14 @@ const WebSocket = require('ws');
 const { Mutex } = require('async-mutex');
 const { app, dialog } = require('electron');
 
-// VVVVVV --- ИЗМЕНЕНИЕ: Добавлен импорт systeminformation --- VVVVVV
 const si = require('systeminformation');
-// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 
 const configManager = require('./config-manager');
 const authManager = require('./auth-manager');
 const services = require('./services');
 const FfmpegCommandBuilder = require('./ffmpeg-builder');
 
-// VVVVVV --- ИЗМЕНЕНИЕ: Добавлен кэш для информации о GPU --- VVVVVV
 let gpuInfoCache = null;
-// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
 
 function getLocalTimestampForFilename() {
     const d = new Date();
@@ -311,43 +307,23 @@ async function handleAnalyticsDetection(cameraId, camera) {
     }, autoStopDelay);
 }
 
-// VVVV --- ИЗМЕНЕНИЕ: Новая функция для выбора исполняемого файла аналитики --- VVVV
+// VVVVVV --- ИЗМЕНЕНИЕ: Логика выбора EXE файла упрощена --- VVVVVV
 /**
- * Определяет, какой исполняемый файл аналитики использовать, на основе GPU и ОС.
- * @returns {Promise<string>} Путь к исполняемому файлу.
+ * Определяет, какой исполняемый файл аналитики использовать.
+ * @returns {string} Путь к исполняемому файлу.
  */
-async function getAnalyticsExecutablePath() {
-    if (!gpuInfoCache) {
-        try {
-            gpuInfoCache = await si.graphics();
-        } catch (e) {
-            console.error('Could not get graphics info:', e);
-            gpuInfoCache = { controllers: [] }; // Fallback
-        }
-    }
-
-    const hasNvidia = gpuInfoCache.controllers.some(c => c.vendor.toLowerCase().includes('nvidia'));
+function getAnalyticsExecutablePath() {
     const platform = process.platform;
+    let exeName = 'analytics_cpu'; // По умолчанию для Linux, macOS
 
-    let exeName = 'analytics_cpu'; // По умолчанию
-
-    if (hasNvidia) {
-        // CUDA доступен на всех платформах
-        exeName = 'analytics_cuda';
-        console.log('[Analytics] NVIDIA GPU detected. Selecting CUDA executable.');
-    } else if (platform === 'win32') {
-        // DirectML - только для Windows
+    if (platform === 'win32') {
+        // Для Windows по умолчанию используем DirectML, так как он более универсален
         exeName = 'analytics_dml';
         console.log('[Analytics] Windows system detected. Selecting DirectML executable.');
-    } else if (platform === 'darwin') {
-        // Для macOS можно будет добавить поддержку CoreML/Metal, если появится onnxruntime-coreml
-        console.log('[Analytics] macOS detected. Falling back to CPU executable.');
     } else {
-        // Для Linux без NVIDIA пока только CPU
-        console.log('[Analytics] Linux system (non-NVIDIA). Falling back to CPU executable.');
+        console.log(`[Analytics] ${platform} system detected. Selecting CPU executable.`);
     }
 
-    // Добавляем .exe только для Windows
     if (platform === 'win32') {
         exeName += '.exe';
     }
@@ -356,7 +332,7 @@ async function getAnalyticsExecutablePath() {
         ? path.join(process.resourcesPath, 'analytics', exeName)
         : path.join(__dirname, '../../extra/analytics', exeName);
 }
-// ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
+// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
 
 async function toggleAnalytics(cameraId, mainWindow) {
@@ -376,9 +352,7 @@ async function toggleAnalytics(cameraId, mainWindow) {
     const builder = new FfmpegCommandBuilder(settings);
     const rtspUrl = builder.buildRtspUrl(fullCameraInfo, fullCameraInfo.streamPath0 || '/stream0');
     
-    // VVVV --- ИЗМЕНЕНИЕ: Используем новую функцию для получения пути --- VVVV
-    const analyticsPath = await getAnalyticsExecutablePath();
-    // ^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^
+    const analyticsPath = getAnalyticsExecutablePath();
     
     if (!fs.existsSync(analyticsPath)) {
         const errorMsg = `Analytics executable not found: ${analyticsPath}`;
@@ -393,7 +367,12 @@ async function toggleAnalytics(cameraId, mainWindow) {
     };
     const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
     
-    const analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg], { windowsHide: true });
+    // VVVVVV --- ИЗМЕНЕНИЕ: Передаем выбор провайдера как 3-й аргумент --- VVVVVV
+    const providerChoice = settings.analytics_provider || 'auto'; // 'auto', 'dml', 'cpu'
+    console.log(`[Analytics] Starting with provider choice: ${providerChoice}`);
+    const analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg, providerChoice], { windowsHide: true });
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+    
     addProcess(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 
     analyticsProcess.stdout.on('data', async (data) => {

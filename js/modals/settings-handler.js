@@ -15,6 +15,9 @@
         const selectRecPathBtn = document.getElementById('select-rec-path-btn');
         const languageSelect = document.getElementById('app-settings-language');
         const hwAccelSelect = document.getElementById('app-settings-hw-accel');
+        // VVVVVV --- НОВЫЙ ЭЛЕМЕНТ --- VVVVVV
+        const analyticsProviderSelect = document.getElementById('app-settings-analytics-provider');
+        // ^^^^^^ --- КОНЕЦ --- ^^^^^^
         const notificationsEnabledInput = document.getElementById('app-settings-notifications-enabled');
         
         const qscaleInput = document.getElementById('app-settings-qscale');
@@ -34,7 +37,6 @@
         let settingsCameraId = null;
         let rangeSyncFunctions = {};
 
-        // VVVVVV --- ИЗМЕНЕНИЕ: Добавляем словарь описаний полей --- VVVVVV
         const FIELD_DEFINITIONS = {
             // System
             logLevel: { type: 'select', options: ['verbose', 'debug', 'info', 'warn', 'error'] },
@@ -55,7 +57,7 @@
                 _perSection: {
                     video0: { options: ['h264', 'h265', 'mjpeg'] },
                     video1: { options: ['h264', 'h265', 'mjpeg'] },
-                    audio: { options: ['g711a', 'g711u', 'aac'] } // Правильные аудиокодеки!
+                    audio: { options: ['g711a', 'g711u', 'aac'] }
                 }
             },
             // Video0 & Video1
@@ -70,7 +72,6 @@
                 }
             }
         };
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         
         const availableAnalyticsObjects = [
             { key: 'person', label: 'Человек' },
@@ -107,7 +108,6 @@
             return result.charAt(0).toUpperCase() + result.slice(1);
         }
 
-        // VVVVVV --- ИЗМЕНЕНИЕ: Улучшенная функция генерации полей --- VVVVVV
         function createSettingInput(section, key, value) {
             const id = `${section}.${key}`;
             let definition = FIELD_DEFINITIONS[key] || {};
@@ -183,7 +183,6 @@
             }
             return inputHtml;
         }
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function setFormValue(id, value, defaultValue) {
             const finalValue = value !== undefined && value !== null ? value : defaultValue;
@@ -257,6 +256,9 @@
             recordingsPathInput.value = appSettings.recordingsPath || '';
             languageSelect.value = appSettings.language || 'en';
             hwAccelSelect.value = appSettings.hwAccel || 'auto';
+            // VVVVVV --- ИЗМЕНЕНИЕ: ЗАГРУЗКА НОВОЙ НАСТРОЙКИ --- VVVVVV
+            analyticsProviderSelect.value = appSettings.analytics_provider || 'auto';
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             setFormValue('app-settings-notifications-enabled', appSettings.notifications_enabled, true);
             setFormValue('app-settings-qscale', appSettings.qscale, 8);
             setFormValue('app-settings-fps', appSettings.fps, 20);
@@ -337,6 +339,9 @@
                     recordingsPath: recordingsPathInput.value.trim(),
                     hwAccel: hwAccelSelect.value,
                     language: languageSelect.value,
+                    // VVVVVV --- ИЗМЕНЕНИЕ: СОХРАНЕНИЕ НОВОЙ НАСТРОЙКИ --- VVVVVV
+                    analytics_provider: analyticsProviderSelect.value,
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                     notifications_enabled: notificationsEnabledInput.checked,
                     qscale: parseInt(qscaleInput.value, 10) || 8,
                     fps: parseInt(fpsInput.value, 10) || 20,
@@ -350,7 +355,6 @@
                 if (!camera) { saveSettingsBtn.disabled = false; saveSettingsBtn.textContent = App.i18n.t('save'); return; }
                 
                 if (camera.protocol !== 'netip') {
-                    // VVVVVV --- ИЗМЕНЕНИЕ: Улучшенная логика сохранения --- VVVVVV
                     const settingsDataToSend = {};
                     settingsModal.querySelectorAll('.tab-content.dynamic [name]').forEach(el => {
                         const [section, key] = el.name.split('.');
@@ -365,7 +369,6 @@
                             settingsDataToSend[section][key] = val;
                         }
                     });
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                     
                     const result = await window.api.setCameraSettings({ credentials: camera, settingsData: settingsDataToSend });
                     if (result.success) utils.showToast(App.i18n.t('camera_settings_saved_success'));
@@ -408,8 +411,6 @@
             saveSettingsBtn.addEventListener('click', saveSettings);
             restartMajesticBtn.addEventListener('click', restartMajestic);
             
-            // VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
-            // Заменяем нативный confirm на кастомный prompt
             killAllBtnModal.addEventListener('click', async () => {
                 const confirmation = await App.modalHandler.showPrompt({
                     title: App.i18n.t('settings_kill_all'),
@@ -421,12 +422,10 @@
 
                 if (confirmation !== null) {
                     const result = await window.api.killAllFfmpeg();
-                    // Заменяем alert на toast, чтобы не сломать фокус
                     App.modalHandler.showToast(result.message); 
                     setTimeout(() => window.location.reload(), 1500); 
                 }
             });
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             if (exportConfigBtn) {
                 exportConfigBtn.addEventListener('click', () => window.api.exportConfig());
