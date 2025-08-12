@@ -23,7 +23,6 @@ if sys.platform == "win32":
 
 def run_command(command, shell=True, cwd=None):
     print(f"--- Running command: {' '.join(command) if isinstance(command, list) else command}")
-    # Эта логика немного странная, но мы будем с ней работать, вызывая команду правильно
     use_shell = isinstance(command, str) if sys.platform != "win32" else shell
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=use_shell, cwd=cwd, text=True, encoding='utf-8')
     for line in process.stdout:
@@ -56,14 +55,14 @@ def create_and_build(name, req_file):
     print(f"Installing dependencies for {name} from {req_file}...")
     
     # VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
-    # Формируем команду как единую строку, чтобы функция run_command
-    # гарантированно использовала `shell=True`, что более надежно в CI/CD.
-    cmd_as_string = f"\"{str(python_executable)}\" -m pip install -r \"{str(req_file)}\""
+    # Убираем кавычки вокруг путей. В Linux-окружении без пробелов они не нужны и могут мешать.
+    cmd_as_string = f"{str(python_executable)} -m pip install -r {str(req_file)}"
     run_command(cmd_as_string)
     # ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
 
     print(f"Running PyInstaller for {name}...")
     
+    # PyInstaller лучше вызывать списком, это более надежно
     pyinstaller_command = [
         str(python_executable), "-m", "PyInstaller",
         "--noconfirm", "--onefile",
@@ -99,7 +98,7 @@ if __name__ == "__main__":
         sys.exit(1)
         
     VENV_DIR.mkdir(exist_ok=True)
-    DIST_PATH.mkdir(parents=True, exist_ok=True) # <-- предыдущее исправление оставлено
+    DIST_PATH.mkdir(parents=True, exist_ok=True)
     
     for name, req_filename in BUILDS.items():
         create_and_build(name, REQUIREMENTS_DIR / req_filename)
