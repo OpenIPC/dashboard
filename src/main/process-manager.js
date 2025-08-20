@@ -1,4 +1,6 @@
-// --- ФАЙЛ: src/main/process-manager.js ---
+// --- START OF FILE src/main/process-manager.js ---
+// Файл: src/main/process-manager.js
+// Управляет дочерними процессами, такими как FFmpeg и скрипты аналитики.
 
 const { spawn, exec } = require('child_process');
 const path = require('path');
@@ -9,14 +11,10 @@ const WebSocket = require('ws');
 const { Mutex } = require('async-mutex');
 const { app, dialog } = require('electron');
 
-const si = require('systeminformation');
-
 const configManager = require('./config-manager');
 const authManager = require('./auth-manager');
 const services = require('./services');
 const FfmpegCommandBuilder = require('./ffmpeg-builder');
-
-let gpuInfoCache = null;
 
 function getLocalTimestampForFilename() {
     const d = new Date();
@@ -32,7 +30,7 @@ const portMutex = new Mutex();
 const usedPorts = new Set();
 const BASE_PORT = 9001;
 
-const PROCESS_TYPES = { STREAM: 'stream', RECORDING: 'recording', ANALYTICS: 'analytics' };
+const PROCESS_TYPES = { STREAM: 'stream', RECORDING: 'recording', ANALYTICS: 'analytics', HLS: 'hls' };
 const processes = new Map();
 const streamManager = {};
 const recordingManager = {};
@@ -50,7 +48,7 @@ function stopProcess(key) {
         const { process: childProcess, type } = processes.get(key);
         console.log(`[ProcessManager] Issuing stop for ${type} process with key: ${key}`);
         try {
-            if (type === PROCESS_TYPES.RECORDING && childProcess.stdin && childProcess.stdin.writable) {
+            if ((type === PROCESS_TYPES.RECORDING || type === PROCESS_TYPES.HLS) && childProcess.stdin && childProcess.stdin.writable) {
                 childProcess.stdin.write('q\n');
             } else if (!childProcess.killed) {
                 if (process.platform === 'win32') {
@@ -128,8 +126,10 @@ function releasePort(port) {
     }
 }
 
-async function startVideoStream({ credentials, streamId }) {
-    const uniqueStreamIdentifier = buildProcessId(PROCESS_TYPES.STREAM, `${credentials.id}_${streamId}`);
+async function startVideoStream({ credentials, streamId, uniqueStreamIdentifier }) {
+    if (!uniqueStreamIdentifier) {
+        return { success: false, error: 'uniqueStreamIdentifier is required' };
+    }
     if (getProcess(uniqueStreamIdentifier) || streamManager[uniqueStreamIdentifier]) {
         return { success: true, wsPort: streamManager[uniqueStreamIdentifier].port };
     }
@@ -154,6 +154,15 @@ async function startVideoStream({ credentials, streamId }) {
     const ffmpegProcess = spawn(command, ffmpegArgs, { detached: false, windowsHide: true });
     
     addProcess(uniqueStreamIdentifier, ffmpegProcess, PROCESS_TYPES.STREAM);
+    
+    ffmpegProcess.on('error', (err) => {
+        console.error(`[FFMPEG] Failed to start process for ${uniqueStreamIdentifier}:`, err);
+        services.handleError(err, `ffmpeg-spawn-${uniqueStreamIdentifier}`);
+        wss.close(); 
+        releasePort(wsPort); 
+        delete streamManager[uniqueStreamIdentifier];
+        stopProcess(uniqueStreamIdentifier);
+    });
     
     ffmpegProcess.stdout.on('data', (data) => wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(data)));
     
@@ -180,9 +189,11 @@ async function startVideoStream({ credentials, streamId }) {
         }
     });
 
-    ffmpegProcess.on('close', (code) => {
-        console.warn(`[FFMPEG] Process ${uniqueStreamIdentifier} exited with code ${code}.`);
-        if (code !== 0) console.error(`[FFMPEG Last Stderr] ${uniqueStreamIdentifier}: ${lastErrorOutput}`);
+    ffmpegProcess.on('close', (code, signal) => {
+        console.warn(`[FFMPEG] Process ${uniqueStreamIdentifier} exited. Code: ${code}, Signal: ${signal}.`);
+        if (code !== 0 && code !== null) {
+            console.error(`[FFMPEG Last Stderr] ${uniqueStreamIdentifier}: ${lastErrorOutput}`);
+        }
         
         if (streamManager[uniqueStreamIdentifier]) { 
             streamManager[uniqueStreamIdentifier].wss.close(); 
@@ -201,6 +212,12 @@ async function startVideoStream({ credentials, streamId }) {
 
 async function stopVideoStream(uniqueStreamIdentifier) {
     if (stopProcess(uniqueStreamIdentifier)) {
+        const streamData = streamManager[uniqueStreamIdentifier];
+        if (streamData) {
+            streamData.wss.close();
+            releasePort(streamData.port);
+            delete streamManager[uniqueStreamIdentifier];
+        }
         return { success: true };
     }
     return { success: false, error: "Stream not found" };
@@ -261,6 +278,76 @@ function stopRecording(cameraId) {
     return { success: false, error: 'Recording not found' };
 }
 
+async function prepareArchiveForHls(sourceFilename) {
+    const HLS_PROCESS_KEY = buildProcessId(PROCESS_TYPES.HLS, 'conversion');
+    
+    if (getProcess(HLS_PROCESS_KEY)) {
+        console.log('[HLS] Stopping previous conversion process.');
+        stopProcess(HLS_PROCESS_KEY);
+    }
+
+    const settings = await configManager.getAppSettings();
+    const sourcePath = path.join(settings.recordingsPath, sourceFilename);
+    const hlsTempPath = path.join(app.getPath('temp'), 'hls');
+    const playlistPath = path.join(hlsTempPath, 'playlist.m3u8');
+    
+    try {
+        await fsPromises.rm(hlsTempPath, { recursive: true, force: true });
+        await fsPromises.mkdir(hlsTempPath, { recursive: true });
+    } catch (e) {
+        return { success: false, error: `Failed to clean HLS temp directory: ${e.message}` };
+    }
+
+    const builder = new FfmpegCommandBuilder(settings);
+    const { command, args } = builder.buildForHls(sourcePath, hlsTempPath);
+    console.log(`[HLS] Starting FFmpeg: ${command} ${args.join(' ')}`);
+
+    const ffmpegProcess = spawn(command, args, { windowsHide: true });
+    addProcess(HLS_PROCESS_KEY, ffmpegProcess, PROCESS_TYPES.HLS);
+
+    ffmpegProcess.stderr.on('data', (data) => {
+        // console.log(`[HLS FFmpeg]: ${data.toString()}`);
+    });
+
+    ffmpegProcess.on('close', (code) => {
+        console.log(`[HLS] FFmpeg process exited with code ${code}`);
+        stopProcess(HLS_PROCESS_KEY);
+    });
+
+    return new Promise((resolve) => {
+        // VVVVVV --- ИЗМЕНЕНИЕ: УВЕЛИЧИВАЕМ ТАЙМАУТ --- VVVVVV
+        const timeout = setTimeout(() => {
+            stopProcess(HLS_PROCESS_KEY);
+            resolve({ success: false, error: 'HLS conversion timed out.' });
+        }, 60000); // 60 секунд таймаут
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
+        const checkFile = () => {
+            if (fs.existsSync(playlistPath)) {
+                clearTimeout(timeout);
+                const hlsServer = require('./hls-server');
+                if (!hlsServer.serverPort || !hlsServer.serverPort.port) {
+                    resolve({ success: false, error: 'HLS server is not running or has no port.' });
+                    return;
+                }
+                const { port } = hlsServer.serverPort;
+                resolve({ success: true, url: `http://localhost:${port}/hls/playlist.m3u8` });
+            } else {
+                setTimeout(checkFile, 200);
+            }
+        };
+        checkFile();
+    });
+}
+
+function getRecordingStates() {
+    const states = {};
+    Object.keys(recordingManager).forEach(cameraId => {
+        states[cameraId] = !!recordingManager[cameraId];
+    });
+    return states;
+}
+
 async function exportArchiveClip({ sourceFilename, startTime, duration }, mainWindow) {
     const settings = await configManager.getAppSettings();
     const sourcePath = path.join(settings.recordingsPath, sourceFilename);
@@ -307,16 +394,11 @@ async function handleAnalyticsDetection(cameraId, camera) {
     }, autoStopDelay);
 }
 
-/**
- * Определяет, какой исполняемый файл аналитики использовать.
- * @returns {string} Путь к исполняемому файлу.
- */
 function getAnalyticsExecutablePath() {
     const platform = process.platform;
-    let exeName = 'analytics_cpu'; // По умолчанию для Linux, macOS
+    let exeName = 'analytics_cpu';
 
     if (platform === 'win32') {
-        // Для Windows по умолчанию используем DirectML, так как он более универсален
         exeName = 'analytics_dml';
         console.log('[Analytics] Windows system detected. Selecting DirectML executable.');
     } else {
@@ -332,7 +414,7 @@ function getAnalyticsExecutablePath() {
         : path.join(__dirname, '../../extra/analytics', exeName);
 }
 
-async function toggleAnalytics(cameraId, mainWindow) {
+async function toggleAnalytics(cameraId, mainWindow, moduleManager) {
     const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
     if (getProcess(analyticsId)) {
         stopProcess(analyticsId);
@@ -343,6 +425,14 @@ async function toggleAnalytics(cameraId, mainWindow) {
     const settings = await configManager.getAppSettings();
     const camera = await configManager.getCameraConfig(cameraId);
     if (!camera) return { success: false, error: 'Camera not found' };
+
+    let translations = {};
+    try {
+        const lang = settings.language || 'en';
+        translations = await configManager.getTranslationFile(lang);
+    } catch (e) {
+        console.error('Could not load translation file for analytics notifications.', e);
+    }
     
     const password = await authManager.getPasswordForCamera(camera.id);
     const fullCameraInfo = { ...camera, password };
@@ -370,42 +460,69 @@ async function toggleAnalytics(cameraId, mainWindow) {
     
     addProcess(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 
+    analyticsProcess.on('error', (err) => {
+        console.error(`[Analytics] Failed to start process for camera ${cameraId}:`, err);
+        services.handleError(err, `analytics-spawn-cam-${cameraId}`);
+        stopProcess(analyticsId);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
+        }
+    });
+
     analyticsProcess.stdout.on('data', async (data) => {
-        data.toString().split('\n').filter(Boolean).forEach(async line => {
+        const rawData = data.toString();
+        console.log(`[ProcessManager DEBUG] Raw data from analytics script: ${rawData.trim()}`);
+
+        rawData.split('\n').filter(Boolean).forEach(async line => {
+            let result;
             try {
-                const result = JSON.parse(line);
-                if (result.status === 'objects_detected' && result.objects.length > 0) {
-                    await configManager.saveAnalyticsEvent({cameraId, ...result});
-                    const labels = [...new Set(result.objects.map(o => o.label))];
-                    services.showAnalyticsNotification(camera.name, cameraId, labels);
-                    await handleAnalyticsDetection(cameraId, camera);
-                }
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    const channel = result.status === 'info' ? 'analytics-provider-info' : 'analytics-update';
-                    const payload = { cameraId, result: result };
-                    mainWindow.webContents.send(channel, payload);
-                }
+                result = JSON.parse(line);
             } catch (e) {
                 console.warn(`[Analytics] Non-JSON output from script for camera ${cameraId}:`, line);
+                return;
+            }
+            
+            console.log(`[ProcessManager DEBUG] Parsed result:`, result);
+            
+            const listeners = moduleManager.getListeners('analytics-update');
+
+            console.log(`[ProcessManager DEBUG] Found ${listeners.length} listeners for 'analytics-update'.`);
+
+            for (const listener of listeners) {
+                try {
+                    console.log('[ProcessManager DEBUG] Executing listener...');
+                    await listener({ cameraId, result });
+                } catch (e) {
+                    console.error(`[ProcessManager DEBUG] Error executing module listener:`, e);
+                }
+            }
+            
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                const channel = result.status === 'info' ? 'analytics-provider-info' : 'analytics-update';
+                const payload = { cameraId, result: { ...result, frame_width: 1920, frame_height: 1080 } };
+                mainWindow.webContents.send(channel, payload);
+            }
+            
+            if (result.status === 'objects_detected' && result.objects.length > 0) {
+                const t = (key) => (translations[key] || null);
+                await configManager.saveAnalyticsEvent({cameraId, ...result});
+                const labels = [...new Set(result.objects.map(o => t('object_' + o.label) || o.label))];
+                services.showAnalyticsNotification(camera.name, cameraId, labels);
+                await handleAnalyticsDetection(cameraId, camera);
             }
         });
     });
 
-    // VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЕН ОБРАБОТЧИК STDERR --- VVVVVV
-    // Слушаем поток ошибок. Любой вывод здесь означает критическую проблему.
     analyticsProcess.stderr.on('data', (data) => {
-        console.error(`[Analytics STDERR] for camera ${cameraId}: ${data.toString()}`);
-        // Отправляем ошибку в интерфейс, чтобы пользователь тоже ее увидел
+        const errorMessage = data.toString();
+        console.error(`[Analytics STDERR] for camera ${cameraId}: ${errorMessage}`);
         if (mainWindow && !mainWindow.isDestroyed()) {
-             mainWindow.webContents.send('on-main-error', {
-                context: `Analytics Script (camId: ${cameraId})`,
-                message: data.toString()
-            });
+             services.handleError(new Error(errorMessage), `Analytics Script (camId: ${cameraId})`);
         }
     });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
-    analyticsProcess.on('close', (code) => {
+    analyticsProcess.on('close', (code, signal) => {
+        console.warn(`[Analytics] Process for camera ${cameraId} exited. Code: ${code}, Signal: ${signal}.`);
         stopProcess(analyticsId);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
@@ -419,19 +536,15 @@ async function toggleAnalytics(cameraId, mainWindow) {
 }
 
 async function killAllFfmpeg() {
+    console.log('[ProcessManager] Received kill-all command. Stopping all tracked processes.');
     stopAllProcesses(); 
-    const builder = new FfmpegCommandBuilder({});
-    const ffmpegProcessName = path.basename(builder.command);
-    const command = process.platform === 'win32' ? `taskkill /IM ${ffmpegProcessName} /F` : `pkill -f ${ffmpegProcessName}`;
-    return new Promise(resolve => {
-        exec(command, () => {
-            Object.values(streamManager).forEach(s => s.wss?.close());
-            usedPorts.clear();
-            Object.keys(streamManager).forEach(k => delete streamManager[k]);
-            Object.keys(recordingManager).forEach(k => delete recordingManager[k]);
-            resolve({ success: true, message: "Все потоки сброшены." });
-        });
-    });
+    
+    Object.values(streamManager).forEach(s => s.wss?.close());
+    usedPorts.clear();
+    Object.keys(streamManager).forEach(k => delete streamManager[k]);
+    Object.keys(recordingManager).forEach(k => delete recordingManager[k]);
+    
+    return { success: true, message: "Все потоки и процессы сброшены." };
 }
 
 module.exports = {
@@ -446,5 +559,8 @@ module.exports = {
     stopRecording,
     exportArchiveClip,
     toggleAnalytics,
-    killAllFfmpeg
+    killAllFfmpeg,
+    getRecordingStates,
+    prepareArchiveForHls,
 };
+// --- END OF FILE src/main/process-manager.js ---

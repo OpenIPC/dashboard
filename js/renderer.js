@@ -1,276 +1,281 @@
+// js/renderer.js (Полная версия с загрузчиком скриптов для модулей)
+
 (function(window) {
     'use strict';
     
-    const App = {};
-    window.App = App;
+    let App;
 
-    App.USER_ROLES = {
-        ADMIN: 'admin',
-        OPERATOR: 'operator'
-    };
-
-    App.stateManager = AppModules.createStateManager({
-        initialState: {
-            cameras: [],
-            groups: [],
-            layouts: [],
-            activeLayoutId: null,
-            recordingStates: {},
-            appSettings: {},
-            isSaving: false,
-            currentUser: null,
-        },
-        mutations: {
-            setInitialConfig(state, helpers, config) { 
-                state.cameras = config.cameras || []; 
-                state.groups = config.groups || []; 
-
-                if (config.layouts && config.layouts.length > 0) {
-                    state.layouts = config.layouts;
-                    state.activeLayoutId = config.activeLayoutId && config.layouts.some(l => l.id === config.activeLayoutId)
-                        ? config.activeLayoutId
-                        : config.layouts[0].id;
-                } else if (config.gridState) {
-                    console.log("[State] Migrating old config format to new layout structure.");
-                    const defaultLayout = {
-                        id: Date.now(),
-                        name: 'Основной вид',
-                        gridState: config.gridState,
-                        layout: config.layout || { cols: 2, rows: 2 }
-                    };
-                    state.layouts = [defaultLayout];
-                    state.activeLayoutId = defaultLayout.id;
-                    App.saveConfiguration();
-                } else {
-                    helpers.getActiveLayout(state);
-                }
-            },
-            setAppSettings(state, helpers, settings) { 
-                state.appSettings = { ...state.appSettings, ...settings }; 
-                App.saveAppSettings(); 
-            },
-            updateGridState(state, helpers, gridState) { 
-                const activeLayout = helpers.getActiveLayout(state);
-                if (activeLayout) {
-                    activeLayout.gridState = gridState;
-                    App.saveConfiguration(); 
-                }
-            },
-            updateGridLayout(state, helpers, layout) { 
-                const activeLayout = helpers.getActiveLayout(state);
-                if (activeLayout) {
-                    activeLayout.layout = layout;
-                    App.saveConfiguration();
-                }
-            },
-            setActiveLayout(state, helpers, layoutId) {
-                if (state.layouts.some(l => l.id === layoutId)) {
-                    state.activeLayoutId = layoutId;
-                    App.saveConfiguration();
-                }
-            },
-            saveLayout(state, helpers, { name }) {
-                const activeLayout = helpers.getActiveLayout(state);
-                const newLayout = {
-                    ...JSON.parse(JSON.stringify(activeLayout)),
-                    id: Date.now(),
-                    name: name
-                };
-                state.layouts = [...state.layouts, newLayout];
-                state.activeLayoutId = newLayout.id;
-                App.saveConfiguration();
-            },
-            addLayout(state, helpers, { name }) {
-                const newLayout = {
-                    id: Date.now(),
-                    name: name,
-                    gridState: Array(64).fill(null),
-                    layout: { cols: 2, rows: 2 }
-                };
-                state.layouts = [...state.layouts, newLayout];
-                state.activeLayoutId = newLayout.id;
-                App.saveConfiguration();
-            },
-            deleteLayout(state, helpers, layoutId) {
-                if (state.layouts.length <= 1) {
-                    alert(App.t('cannot_delete_last_layout'));
-                    return;
-                }
-                state.layouts = state.layouts.filter(l => l.id !== layoutId);
-                if (state.activeLayoutId === layoutId) {
-                    state.activeLayoutId = state.layouts[0].id;
-                }
-                App.saveConfiguration();
-            },
-            renameLayout(state, helpers, { id, newName }) {
-                const layoutToRename = state.layouts.find(l => l.id === id);
-                if (layoutToRename) {
-                    layoutToRename.name = newName;
-                    App.saveConfiguration();
-                }
-            },
-            reorderLayouts(state, helpers, { draggedId, targetId }) {
-                const layouts = state.layouts;
-                const draggedIndex = layouts.findIndex(l => l.id === draggedId);
-                const targetIndex = layouts.findIndex(l => l.id === targetId);
-                if (draggedIndex === -1 || targetIndex === -1) return;
-                const [draggedItem] = layouts.splice(draggedIndex, 1);
-                layouts.splice(targetIndex, 0, draggedItem);
-                state.layouts = [...layouts];
-                App.saveConfiguration();
-            },
-            addCamera(state, helpers, camera) { 
-                state.cameras = [...state.cameras, { id: Date.now(), groupId: null, ...camera }]; 
-                App.saveConfiguration(); 
-            },
-            updateCamera(state, helpers, updatedCamera) { 
-                state.cameras = state.cameras.map(c => c.id === updatedCamera.id ? { ...c, ...updatedCamera } : c); 
-                App.saveConfiguration(); 
-            },
-            deleteCamera(state, helpers, cameraId) {
-                state.layouts.forEach(layout => {
-                    layout.gridState = layout.gridState.map(cell => (cell && cell.camera.id === cameraId) ? null : cell);
-                });
-                state.cameras = state.cameras.filter(c => c.id !== cameraId); 
-                App.saveConfiguration(); 
-            },
-            addGroup(state, helpers, group) { 
-                state.groups = [...state.groups, { id: Date.now(), ...group }]; 
-                App.saveConfiguration(); 
-            },
-            renameGroup(state, helpers, { id, newName }) {
-                const groupToRename = state.groups.find(g => g.id === id);
-                if (groupToRename) {
-                    groupToRename.name = newName;
-                    App.saveConfiguration();
-                }
-            },
-            deleteGroup(state, helpers, groupId) {
-                state.cameras = state.cameras.map(camera => {
-                    if (camera.groupId === groupId) {
-                        return { ...camera, groupId: null };
-                    }
-                    return camera;
-                });
-                state.groups = state.groups.filter(g => g.id !== groupId);
-                App.saveConfiguration();
-            },
-            setRecordingState(state, helpers, { cameraId, recording }) { 
-                state.recordingStates = { ...state.recordingStates, [cameraId]: recording }; 
-            },
-            setCurrentUser(state, helpers, user) {
-                state.currentUser = user;
-            },
-            logout(state, helpers) {
-                state.currentUser = null;
-            }
-        }
-    });
-    
-    App.t = (key, replacements) => key;
-    
-    App.i18n = AppModules.createI18n(App);
-    
-    let loginView, mainAppContainer, loginBtn, loginUsername, loginPassword,
-        loginRememberMe, loginError, logoutBtn, statusInfo, loginCloseBtn;
-
-    async function loadConfiguration() { const config = await window.api.loadConfiguration(); App.stateManager.setInitialConfig(config); }
-    async function loadAppSettings() { App.stateManager.state.appSettings = await window.api.loadAppSettings(); }
-    App.saveAppSettings = async () => { await window.api.saveAppSettings(App.stateManager.state.appSettings); };
-
-    let saveTimeout;
-
-    async function saveConfiguration() {
-        const state = App.stateManager.state;
-        if (state.isSaving) return;
-
-        clearTimeout(saveTimeout);
-
-        saveTimeout = setTimeout(async () => {
-            state.isSaving = true;
-            console.log('[Config] Debounced save triggered. Writing to disk...');
-            const config = {
-                cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
-                groups: state.groups,
-                layouts: state.layouts,
-                activeLayoutId: state.activeLayoutId,
-            };
-            try { 
-                await window.api.saveConfiguration(config); 
-            } finally { 
-                setTimeout(() => { state.isSaving = false; }, 100); 
-            }
-        }, 500);
-    }
-
-    App.saveConfiguration = saveConfiguration;
-    async function toggleRecording(camera) {
-        if (App.stateManager.state.recordingStates[camera.id]) { 
-            await window.api.stopRecording(camera.id); 
-        } else { 
-            const fullCameraInfo = App.stateManager.state.cameras.find(c => c.id === camera.id);
-            await window.api.startRecording(fullCameraInfo); 
-        }
-    }
-    App.toggleRecording = toggleRecording;
-    function updateSystemStats() {
-        window.api.getSystemStats().then(stats => {
-            if (statusInfo) {
-                statusInfo.textContent = `${App.t('status_cpu')}: ${stats.cpu}% | ${App.t('status_ram')}: ${stats.ram} MB`;
-            }
-        });
-    }
-
-    function initPresentationMode() {
-        const presentationBtn = document.getElementById('presentation-mode-btn');
-        presentationBtn.addEventListener('click', () => {
-            document.body.classList.toggle('presentation-mode');
-            setTimeout(() => window.dispatchEvent(new Event('resize')), 50); 
-        });
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.body.classList.contains('presentation-mode')) {
-                document.body.classList.remove('presentation-mode');
-                setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-            }
-        });
-    }
-
-    async function handleLogin() {
-        const username = loginUsername.value.trim();
-        const password = loginPassword.value;
-        const rememberMe = loginRememberMe.checked;
-        loginError.textContent = '';
-        if (!username || !password) return;
-
-        loginBtn.disabled = true;
-        loginBtn.textContent = App.t('connecting');
-
-        try {
-            const result = await window.api.login({ username, password, rememberMe });
-            if (result.success) {
-                App.stateManager.setCurrentUser(result.user);
-                loginView.classList.add('hidden');
-                mainAppContainer.classList.remove('hidden');
-                loginPassword.value = ''; 
-            } else {
-                loginError.textContent = App.t('invalid_credentials');
-            }
-        } finally {
-            loginBtn.disabled = false;
-            loginBtn.textContent = App.t('login_btn');
-        }
-    }
-    
-    function handleLogout() {
-        window.api.logoutClearCredentials();
-        App.stateManager.logout();
-        mainAppContainer.classList.add('hidden');
-        loginView.classList.remove('hidden');
-        document.body.className = '';
-        loginUsername.focus();
-    }
-    
     async function init() {
+        App = {};
+        window.App = App;
+
+        App.USER_ROLES = {
+            ADMIN: 'admin',
+            OPERATOR: 'operator'
+        };
+
+        App.stateManager = AppModules.createStateManager({
+            initialState: {
+                cameras: [],
+                groups: [],
+                layouts: [],
+                activeLayoutId: null,
+                recordingStates: {},
+                appSettings: {},
+                isSaving: false,
+                currentUser: null,
+            },
+            mutations: {
+                setInitialConfig(state, helpers, config) { 
+                    state.cameras = config.cameras || []; 
+                    state.groups = config.groups || []; 
+
+                    if (config.layouts && config.layouts.length > 0) {
+                        state.layouts = config.layouts;
+                        state.activeLayoutId = config.activeLayoutId && config.layouts.some(l => l.id === config.activeLayoutId)
+                            ? config.activeLayoutId
+                            : config.layouts[0].id;
+                    } else if (config.gridState) {
+                        console.log("[State] Migrating old config format to new layout structure.");
+                        const defaultLayout = {
+                            id: Date.now(),
+                            name: 'Основной вид',
+                            gridState: config.gridState,
+                            layout: config.layout || { cols: 2, rows: 2 }
+                        };
+                        state.layouts = [defaultLayout];
+                        state.activeLayoutId = defaultLayout.id;
+                        App.saveConfiguration();
+                    } else {
+                        helpers.getActiveLayout(state);
+                    }
+                },
+                setAppSettings(state, helpers, settings) { 
+                    state.appSettings = { ...state.appSettings, ...settings }; 
+                    App.saveAppSettings(); 
+                },
+                updateGridState(state, helpers, gridState) { 
+                    const activeLayout = helpers.getActiveLayout(state);
+                    if (activeLayout) {
+                        activeLayout.gridState = gridState;
+                        App.saveConfiguration(); 
+                    }
+                },
+                updateGridLayout(state, helpers, layout) { 
+                    const activeLayout = helpers.getActiveLayout(state);
+                    if (activeLayout) {
+                        activeLayout.layout = layout;
+                        App.saveConfiguration();
+                    }
+                },
+                setActiveLayout(state, helpers, layoutId) {
+                    if (state.layouts.some(l => l.id === layoutId)) {
+                        state.activeLayoutId = layoutId;
+                        App.saveConfiguration();
+                    }
+                },
+                saveLayout(state, helpers, { name }) {
+                    const activeLayout = helpers.getActiveLayout(state);
+                    const newLayout = {
+                        ...JSON.parse(JSON.stringify(activeLayout)),
+                        id: Date.now(),
+                        name: name
+                    };
+                    state.layouts = [...state.layouts, newLayout];
+                    state.activeLayoutId = newLayout.id;
+                    App.saveConfiguration();
+                },
+                addLayout(state, helpers, { name }) {
+                    const newLayout = {
+                        id: Date.now(),
+                        name: name,
+                        gridState: Array(64).fill(null),
+                        layout: { cols: 2, rows: 2 }
+                    };
+                    state.layouts = [...state.layouts, newLayout];
+                    state.activeLayoutId = newLayout.id;
+                    App.saveConfiguration();
+                },
+                deleteLayout(state, helpers, layoutId) {
+                    if (state.layouts.length <= 1) {
+                        alert(App.t('cannot_delete_last_layout'));
+                        return;
+                    }
+                    state.layouts = state.layouts.filter(l => l.id !== layoutId);
+                    if (state.activeLayoutId === layoutId) {
+                        state.activeLayoutId = state.layouts[0].id;
+                    }
+                    App.saveConfiguration();
+                },
+                renameLayout(state, helpers, { id, newName }) {
+                    const layoutToRename = state.layouts.find(l => l.id === id);
+                    if (layoutToRename) {
+                        layoutToRename.name = newName;
+                        App.saveConfiguration();
+                    }
+                },
+                reorderLayouts(state, helpers, { draggedId, targetId }) {
+                    const layouts = state.layouts;
+                    const draggedIndex = layouts.findIndex(l => l.id === draggedId);
+                    const targetIndex = layouts.findIndex(l => l.id === targetId);
+                    if (draggedIndex === -1 || targetIndex === -1) return;
+                    const [draggedItem] = layouts.splice(draggedIndex, 1);
+                    layouts.splice(targetIndex, 0, draggedItem);
+                    state.layouts = [...state.layouts];
+                    App.saveConfiguration();
+                },
+                addCamera(state, helpers, camera) { 
+                    state.cameras = [...state.cameras, { id: Date.now(), groupId: null, ...camera }]; 
+                    App.saveConfiguration(); 
+                },
+                updateCamera(state, helpers, updatedCamera) { 
+                    state.cameras = state.cameras.map(c => c.id === updatedCamera.id ? { ...c, ...updatedCamera } : c); 
+                    App.saveConfiguration(); 
+                },
+                deleteCamera(state, helpers, cameraId) {
+                    state.layouts.forEach(layout => {
+                        layout.gridState = layout.gridState.map(cell => (cell && cell.camera.id === cameraId) ? null : cell);
+                    });
+                    state.cameras = state.cameras.filter(c => c.id !== cameraId); 
+                    App.saveConfiguration(); 
+                },
+                addGroup(state, helpers, group) { 
+                    state.groups = [...state.groups, { id: Date.now(), ...group }]; 
+                    App.saveConfiguration(); 
+                },
+                renameGroup(state, helpers, { id, newName }) {
+                    const groupToRename = state.groups.find(g => g.id === id);
+                    if (groupToRename) {
+                        groupToRename.name = newName;
+                        App.saveConfiguration();
+                    }
+                },
+                deleteGroup(state, helpers, groupId) {
+                    state.cameras = state.cameras.map(camera => {
+                        if (camera.groupId === groupId) {
+                            return { ...camera, groupId: null };
+                        }
+                        return camera;
+                    });
+                    state.groups = state.groups.filter(g => g.id !== groupId);
+                    App.saveConfiguration();
+                },
+                setRecordingState(state, helpers, { cameraId, recording }) { 
+                    state.recordingStates = { ...state.recordingStates, [cameraId]: recording }; 
+                },
+                setCurrentUser(state, helpers, user) {
+                    state.currentUser = user;
+                },
+                logout(state, helpers) {
+                    state.currentUser = null;
+                }
+            }
+        });
+        
+        App.t = (key, replacements) => key;
+        
+        App.i18n = AppModules.createI18n(App);
+        
+        let loginView, mainAppContainer, loginBtn, loginUsername, loginPassword,
+            loginRememberMe, loginError, logoutBtn, statusInfo, loginCloseBtn;
+
+        async function loadConfiguration() { const config = await window.api.loadConfiguration(); App.stateManager.setInitialConfig(config); }
+        async function loadAppSettings() { App.stateManager.state.appSettings = await window.api.loadAppSettings(); }
+        App.saveAppSettings = async () => { await window.api.saveAppSettings(App.stateManager.state.appSettings); };
+
+        let saveTimeout;
+
+        async function saveConfiguration() {
+            const state = App.stateManager.state;
+            if (state.isSaving) return;
+
+            clearTimeout(saveTimeout);
+
+            saveTimeout = setTimeout(async () => {
+                state.isSaving = true;
+                console.log('[Config] Debounced save triggered. Writing to disk...');
+                const config = {
+                    cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
+                    groups: state.groups,
+                    layouts: state.layouts,
+                    activeLayoutId: state.activeLayoutId,
+                };
+                try { 
+                    await window.api.saveConfiguration(config); 
+                } finally { 
+                    setTimeout(() => { state.isSaving = false; }, 100); 
+                }
+            }, 500);
+        }
+        App.saveConfiguration = saveConfiguration;
+
+        async function toggleRecording(camera) {
+            if (App.stateManager.state.recordingStates[camera.id]) { 
+                await window.api.stopRecording(camera.id); 
+            } else { 
+                const fullCameraInfo = App.stateManager.state.cameras.find(c => c.id === camera.id);
+                await window.api.startRecording(fullCameraInfo); 
+            }
+        }
+        App.toggleRecording = toggleRecording;
+
+        function updateSystemStats() {
+            window.api.getSystemStats().then(stats => {
+                if (statusInfo) {
+                    statusInfo.textContent = `${App.t('status_cpu')}: ${stats.cpu}% | ${App.t('status_ram')}: ${stats.ram} MB`;
+                }
+            });
+        }
+
+        function initPresentationMode() {
+            const presentationBtn = document.getElementById('presentation-mode-btn');
+            presentationBtn.addEventListener('click', () => {
+                document.body.classList.toggle('presentation-mode');
+                setTimeout(() => window.dispatchEvent(new Event('resize')), 50); 
+            });
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && document.body.classList.contains('presentation-mode')) {
+                    document.body.classList.remove('presentation-mode');
+                    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+                }
+            });
+        }
+
+        async function handleLogin() {
+            const username = loginUsername.value.trim();
+            const password = loginPassword.value;
+            const rememberMe = loginRememberMe.checked;
+            loginError.textContent = '';
+            if (!username || !password) return;
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = App.t('connecting');
+
+            try {
+                const result = await window.api.login({ username, password, rememberMe });
+                if (result.success) {
+                    App.stateManager.setCurrentUser(result.user);
+                    loginView.classList.add('hidden');
+                    mainAppContainer.classList.remove('hidden');
+                    loginPassword.value = ''; 
+                } else {
+                    loginError.textContent = App.t('invalid_credentials');
+                }
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = App.t('login_btn');
+            }
+        }
+        
+        function handleLogout() {
+            window.api.logoutClearCredentials();
+            App.stateManager.logout();
+            mainAppContainer.classList.add('hidden');
+            loginView.classList.remove('hidden');
+            document.body.className = '';
+            loginUsername.focus();
+        }
+
         try {
             const response = await fetch('./templates.html');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -308,10 +313,7 @@
         loginError = document.getElementById('login-error');
         logoutBtn = document.getElementById('logout-btn');
         statusInfo = document.getElementById('status-info');
-        
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (1/2) --- VVVVVV
         loginCloseBtn = document.getElementById('login-close-btn');
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         App.modalHandler.init();
         App.cameraList.init();
@@ -323,10 +325,7 @@
         loginBtn.addEventListener('click', handleLogin);
         loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
         logoutBtn.addEventListener('click', handleLogout);
-        
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (2/2) --- VVVVVV
         loginCloseBtn.addEventListener('click', () => window.api.closeWindow());
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         
         initLayoutControls();
         
@@ -370,6 +369,35 @@
                 App.modalHandler.showToast(message, !isGpu, 5000);
             }
         });
+        
+        // ================================================================
+        // VVVVVV --- ИЗМЕНЕНИЕ: АКТИВНЫЙ ЗАПРОС СКРИПТОВ МОДУЛЕЙ --- VVVVVV
+        // ================================================================
+        async function loadRendererModules() {
+            try {
+                const scripts = await window.api.getRendererModules();
+                console.log('[Modules] Received renderer scripts from main process:', scripts);
+                
+                scripts.forEach(scriptPath => {
+                    const script = document.createElement('script');
+                    // Заменяем обратные слеши на прямые для HTML-совместимости
+                    const cleanPath = scriptPath.replace(/\\/g, '/');
+                    script.src = cleanPath;
+                    
+                    script.onload = () => console.log(`[Modules] Script loaded successfully: ${cleanPath}`);
+                    script.onerror = (e) => console.error(`[Modules] FAILED to load script: ${cleanPath}`, e);
+                    
+                    document.head.appendChild(script); // Добавляем скрипты в <head>
+                });
+            } catch (error) {
+                console.error('[Modules] Failed to get renderer modules from main process:', error);
+            }
+        }
+        await loadRendererModules();
+        // ================================================================
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        // ================================================================
+
 
         App.stateManager.subscribe(() => {
             renderLayoutTabs();
@@ -479,7 +507,7 @@
         }
     }
     
-    init();
+    document.addEventListener('DOMContentLoaded', init);
 
     (function() {
         const updateStatusInfo = document.createElement('div');

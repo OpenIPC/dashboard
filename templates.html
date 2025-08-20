@@ -1,3 +1,4 @@
+<!-- Шаблон для архива -->
 <template id="archive-template">
     <div id="archive-view" class="hidden">
         <div class="archive-main-content">
@@ -8,9 +9,18 @@
                 <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
             </div>
             <div class="archive-video-container">
-                <video id="archive-video-player" controls class="hidden"></video>
+                <video id="archive-video-player"  class="hidden"></video>
                 <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
             </div>
+            
+            <!-- VVVVVV --- НОВЫЙ БЛОК УПРАВЛЕНИЯ ПЛЕЕРОМ --- VVVVVV -->
+            <div class="archive-controls">
+                <button id="ac-play-pause-btn" class="icon-button"><i class="material-icons">play_arrow</i></button>
+                <button id="ac-speed-btn" class="control-button">1.0x</button>
+                <span id="ac-time-display" class="time-display">00:00:00</span>
+            </div>
+            <!-- ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА --- ^^^^^^ -->
+            
             <div class="timeline-container">
                 <div class="timeline-wrapper" id="timeline-wrapper">
                     <canvas id="timeline-canvas"></canvas>
@@ -73,8 +83,10 @@
                 <div class="tabs">
                     <button class="tab-button" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
                     <button class="tab-button" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
-                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
+                    <button class="tab-button" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
                     <button class="tab-button" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
+                    <button class="tab-button" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
+                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
                     <button class="tab-button" data-tab="tab-system" data-i18n-key="settings_tab_system"></button>
                     <button class="tab-button" data-tab="tab-isp" data-i18n-key="settings_tab_isp"></button>
                     <button class="tab-button" data-tab="tab-image" data-i18n-key="settings_tab_image"></button>
@@ -115,16 +127,12 @@
                             <option value="intel" data-i18n-key="settings_hw_accel_intel"></option>
                             <option value="none" data-i18n-key="settings_hw_accel_none"></option>
                         </select>
-                        
-                        <!-- VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЕН БЛОК НАСТРОЕК АНАЛИТИКИ --- VVVVVV -->
                         <span data-i18n-key="settings_analytics_provider"></span>
                         <select id="app-settings-analytics-provider">
                             <option value="auto" data-i18n-key="analytics_provider_auto"></option>
                             <option value="dml" data-i18n-key="analytics_provider_dml"></option>
                             <option value="cpu" data-i18n-key="analytics_provider_cpu"></option>
                         </select>
-                        <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
-
                         <span data-i18n-key="settings_notifications_label"></span>
                         <div class="form-check-inline">
                             <input type="checkbox" id="app-settings-notifications-enabled" class="form-check-input">
@@ -159,6 +167,13 @@
                         <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
                     </div>
                 </div>
+                <div id="tab-modules" class="tab-content">
+                    <h3 data-i18n-key="modules_management_header"></h3>
+                    <p style="color: #6c757d; font-size: 13px;" data-i18n-key="modules_description"></p>
+                    <div id="modules-list" style="margin-top: 15px;">
+                        <!-- Сюда будет динамически загружен список модулей -->
+                    </div>
+                </div>
                 <div id="tab-analytics" class="tab-content">
                     <div id="global-analytics-settings">
                         <h3 data-i18n-key="global_analytics_settings_header"></h3>
@@ -168,7 +183,7 @@
                             <input type="number" id="app-settings-analytics-resize-width" value="416" min="0" step="16">
                             <label for="app-settings-analytics-frame-skip" data-i18n-key="analytics_frame_skip_label"></label>
                             <input type="number" id="app-settings-analytics-frame-skip" value="10" min="1">
-                            <label for="app-settings-analytics-record-duration">Длительность записи после события (сек)</label>
+                            <label for="app-settings-analytics-record-duration" data-i18n-key="analytics_record_duration_label"></label>
                             <input type="number" id="app-settings-analytics-record-duration" value="30" min="5">
                         </div>
                     </div>
@@ -184,6 +199,23 @@
                         <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;"></div>
                         <h4 style="margin-top: 20px;" data-i18n-key="analytics_roi_header"></h4>
                         <p style="color: #666; font-size: 13px;" data-i18n-key="analytics_roi_desc"></p>
+                    </div>
+                </div>
+                <div id="tab-about" class="tab-content">
+                    <div class="about-container">
+                        <img src="assets/logo.png" alt="App Logo" class="about-logo">
+                        <h3 data-i18n-key="app_title"></h3>
+                        <p><span data-i18n-key="about_version"></span>: <span id="app-version"></span></p>
+                        <p data-i18n-key="about_description"></p>
+                        <p data-i18n-key="about_author"></p>
+                        
+                        <div class="donation-section">
+                            <p data-i18n-key="about_donation_prompt"></p>
+                            <button id="donate-btn" class="donation-button">
+                                <i class="material-icons">volunteer_activism</i>
+                                <span data-i18n-key="about_donation_button"></span>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="tab-netip" class="tab-content">
@@ -223,6 +255,7 @@
             </div>
             <div class="modal-footer">
                 <button id="save-settings-btn" data-i18n-key="save"></button>
+                <button id="report-issue-btn" style="background-color: #6c757d; margin-left: auto;" data-i18n-key="report_issue_button"></button>
                 <button id="restart-majestic-btn" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
                 <button id="kill-all-btn-modal" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
             </div>
@@ -231,7 +264,27 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна управления пользователями -->
+<!-- Шаблон для окна отчета о проблеме -->
+<template id="report-issue-modal-template">
+    <div id="report-issue-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <span id="report-issue-close-btn" class="modal-close-btn">×</span>
+            <h2 data-i18n-key="report_issue_title"></h2>
+            <p style="color: #6c757d; font-size: 13px;" data-i18n-key="report_issue_desc"></p>
+            <textarea id="issue-description" style="width: 100%; min-height: 100px; margin-top: 10px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;" data-i18n-placeholder="report_issue_placeholder"></textarea>
+            
+            <div id="screenshots-preview" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px; max-height: 110px; overflow-y: auto;"></div>
+
+            <div class="form-buttons" style="margin-top: 20px;">
+                <button id="send-report-btn" data-i18n-key="report_issue_send_btn"></button>
+                <button id="add-screenshot-btn" style="background-color: #17a2b8;" data-i18n-key="report_issue_add_screenshot_btn"></button>
+                <button id="cancel-report-btn" style="background-color: #6c757d;" data-i18n-key="cancel"></button>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Шаблон для управления пользователями -->
 <template id="user-management-modal-template">
     <div id="user-management-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 600px;">
@@ -249,7 +302,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна добавления группы -->
+<!-- Шаблон для добавления группы -->
 <template id="add-group-modal-template">
     <div id="add-group-modal" class="modal-backdrop hidden">
         <div class="modal-content">
@@ -267,7 +320,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна поиска камер -->
+<!-- Шаблон для поиска камер -->
 <template id="discover-modal-template">
     <div id="discover-modal" class="modal-backdrop hidden">
         <div class="modal-content">
@@ -284,7 +337,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна добавления пользователя -->
+<!-- Шаблон для добавления пользователя -->
 <template id="add-user-modal-template">
     <div id="add-user-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">
@@ -308,7 +361,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна прав пользователя -->
+<!-- Шаблон для редактирования прав -->
 <template id="permissions-modal-template">
     <div id="permissions-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 500px;">
@@ -325,7 +378,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна смены пароля -->
+<!-- Шаблон для смены пароля -->
 <template id="change-password-modal-template">
     <div id="change-password-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">
@@ -343,7 +396,7 @@
     </div>
 </template>
 
-<!-- Шаблон для модального окна prompt -->
+<!-- Шаблон для кастомного prompt -->
 <template id="prompt-modal-template">
     <div id="prompt-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">

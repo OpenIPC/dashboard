@@ -1,4 +1,9 @@
-/* --- ФАЙЛ: main.css --- */
+/* Подсветка дат с событиями в календаре */
+.has-activity {
+    background: linear-gradient(90deg, #007bff 40%, #00c6ff 100%);
+    border-radius: 50%;
+    box-shadow: 0 0 8px #007bff;
+}
 
 :root {
     --bg-darker: #2d333b;
@@ -247,6 +252,9 @@ body {
     width: 100%;
     flex: 1; /* <-- ЗАМЕНА height: 100% */
     min-height: 0; /* <-- ДОБАВЛЕНО для правильной работы flex-сжатия */
+    display: flex; /* <-- Добавлено для внутреннего выравнивания */
+    align-items: center; /* <-- Добавлено */
+    justify-content: center; /* <-- Добавлено */
 }
 
 .grid-cell .video-canvas, 
@@ -1012,8 +1020,11 @@ h3:first-child {
     border-radius: 4px;
     position: relative;
     border: 1px solid var(--border-color);
-    cursor: pointer;
-    overflow-x: auto;
+    cursor: grab; /* Меняем курсор на "руку" для перетаскивания */
+    overflow-x: hidden; /* Убираем нативный скроллбар */
+}
+.timeline-wrapper.grabbing {
+    cursor: grabbing;
 }
 
 #timeline-canvas {
@@ -1101,16 +1112,35 @@ body.can-manage-layout #view-layout-controls {
     display: flex !important;
 }
 
+/* VVVVVV --- ИЗМЕНЕНИЕ: Это правило было удалено --- VVVVVV */
+/* 
+    Это правило меняло курсор на стандартный, создавая ощущение, 
+    что перетаскивание не работает. Его удаление возвращает курсор 'grab'.
+*/
+/*
 body.role-operator .camera-item,
 body.role-operator .grid-cell.active {
     cursor: default;
 }
+*/
+/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */
 
+
+/* VVVVVV --- ИЗМЕНЕНИЕ: Это правило было удалено --- VVVVVV */
+/* 
+    Это правило скрывало кнопку "закрыть" и другие в ячейке. 
+    Его удаление делает элементы управления снова видимыми для всех,
+    а JS-логика прав доступа будет решать, можно ли ими пользоваться.
+*/
+/*
 body.role-operator .cell-controls .close-btn,
 body.role-operator .cell-controls .stream-switch-btn,
 body.role-operator .cell-controls .record-btn {
     display: none !important;
 }
+*/
+/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */
+
 
 #user-list button {
     background: none;
@@ -1434,3 +1464,157 @@ body.role-operator .cell-controls .record-btn {
     font-size: 13px;
 }
 /* ^^^^^^ --- КОНЕЦ НОВЫХ СТИЛЕЙ --- ^^^^^^ */
+
+/* VVVVVV --- НОВЫЕ СТИЛИ ДЛЯ БАГРЕПОРТОВ --- VVVVVV */
+
+/* Стили для превью скриншотов */
+#screenshots-preview .screenshot-thumb {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#screenshots-preview .screenshot-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#screenshots-preview .screenshot-thumb .remove-screenshot-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    line-height: 1;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#screenshots-preview .screenshot-thumb:hover .remove-screenshot-btn {
+    opacity: 1;
+    
+}
+/* --- Стили для модуля счётчика объектов --- */
+.object-counter-display {
+    position: absolute;
+    top: 40px;
+    right: 5px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    z-index: 15;
+    pointer-events: none;
+    /* Убрали opacity и transition, чтобы счётчик был виден всегда */
+    
+}
+/* --- Стили для вкладки "О программе" --- */
+.about-container {
+    text-align: center;
+    padding: 20px;
+    color: #333; /* В модальном окне текст темный */
+}
+
+.about-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 15px;
+}
+
+.about-container h3 {
+    margin-top: 0;
+    font-size: 1.5em;
+}
+
+.about-container p {
+    color: #666;
+    line-height: 1.6;
+}
+
+.donation-section {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.donation-button {
+    background-color: #ffc107; /* Яркий, привлекающий внимание цвет */
+    color: #212529;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.donation-button:hover {
+    background-color: #ffca2c;
+}
+/* --- Стили для управления плеером архива --- */
+.archive-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 15px;
+    background-color: var(--bg-dark);
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.archive-controls .icon-button {
+    background-color: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.archive-controls .icon-button:hover {
+    background-color: var(--accent-color);
+}
+.archive-controls .icon-button i {
+    font-size: 24px;
+    color: var(--text-main);
+}
+
+.archive-controls .control-button {
+    background-color: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 5px 10px;
+    color: var(--text-main);
+    cursor: pointer;
+    font-family: monospace;
+}
+.archive-controls .control-button:hover {
+    background-color: var(--accent-color);
+}
+
+.archive-controls .time-display {
+    font-family: monospace;
+    font-size: 16px;
+    color: var(--text-main);
+}

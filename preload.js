@@ -1,3 +1,7 @@
+// --- START OF FILE preload.js ---
+// Файл: /preload.js
+// Этот скрипт служит безопасным мостом между рендер-процессом (UI) и main-процессом (бэкенд).
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -33,6 +37,11 @@ contextBridge.exposeInMainWorld('api', {
     getTranslationFile: (lang) => ipcRenderer.invoke('get-translation-file', lang),
     exportConfig: () => ipcRenderer.invoke('export-config'),
     importConfig: () => ipcRenderer.invoke('import-config'),
+    
+    // VVVVVV --- НОВЫЕ МЕТОДЫ ДЛЯ ВКЛАДКИ "О ПРОГРАММЕ" --- VVVVVV
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
+    // ^^^^^^ --- КОНЕЦ НОВЫХ МЕТОДОВ --- ^^^^^^
 
     // Camera Actions & Info
     getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
@@ -62,6 +71,9 @@ contextBridge.exposeInMainWorld('api', {
     exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
     getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
     getDatesWithActivity: (cameraName) => ipcRenderer.invoke('get-dates-with-activity', cameraName),
+    // VVVVVV --- ИЗМЕНЕНИЕ: НОВЫЙ МЕТОД ДЛЯ HLS --- VVVVVV
+    prepareArchiveForHls: (filename) => ipcRenderer.invoke('prepare-archive-for-hls', filename),
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
@@ -70,12 +82,8 @@ contextBridge.exposeInMainWorld('api', {
     onMainError: (callback) => ipcRenderer.on('on-main-error', (event, data) => callback(data)),
     showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
     onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, data) => callback(data)),
-    
-    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
     showGroupContextMenu: (data) => ipcRenderer.send('show-group-context-menu', data),
     onGroupContextMenuCommand: (callback) => ipcRenderer.on('group-context-menu-command', (event, data) => callback(data)),
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-
     killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
     
     // Updates
@@ -86,7 +94,46 @@ contextBridge.exposeInMainWorld('api', {
     discoverDevices: () => ipcRenderer.invoke('discover-devices'),
     onDeviceFound: (callback) => ipcRenderer.on('device-found', (event, data) => callback(data)),
     
-    // NETIP (остается для прямого взаимодействия, если понадобится в будущем)
+    // NETIP
     getNetipSettings: (camera) => ipcRenderer.invoke('get-netip-settings', camera),
     setNetipSettings: (data) => ipcRenderer.invoke('set-netip-settings', data),
+    
+    // Reporting
+    openImageFiles: () => ipcRenderer.invoke('open-and-read-image-files'),
+    submitReport: (data) => ipcRenderer.invoke('submit-report', data),
+
+    // Logging from renderer
+    log: {
+        info: (text) => ipcRenderer.send('log', { level: 'info', text }),
+        warn: (text) => ipcRenderer.send('log', { level: 'warn', text }),
+        error: (text) => ipcRenderer.send('log', { level: 'error', text }),
+    },
+
+    // ================================================================
+    // VVVVVV --- ФУНКЦИИ ДЛЯ МОДУЛЬНОЙ СИСТЕМЫ --- VVVVVV
+    // ================================================================
+    getAvailableModules: () => ipcRenderer.invoke('get-available-modules'),
+    saveEnabledModules: (enabledIds) => ipcRenderer.invoke('save-enabled-modules', enabledIds),
+    getRendererModules: () => ipcRenderer.invoke('get-renderer-modules'),
+    
+    // Прослушиватель для динамической загрузки скриптов модулей (оставляем для возможной обратной совместимости)
+    onLoadRendererModules: (callback) => ipcRenderer.on('load-renderer-modules', (event, scripts) => callback(scripts)),
+
+    // Универсальный прослушиватель для событий от модулей.
+    // Он обеспечивает безопасность, пропуская только разрешенные каналы.
+    on: (channel, callback) => {
+        const validChannels = [
+            'module-object-counter-update',
+            'module-object-counter-cleanup'
+            // Сюда можно будет добавлять каналы от других модулей
+        ];
+        if (validChannels.includes(channel)) {
+            // Если канал разрешен, создаем для него подписчика
+            ipcRenderer.on(channel, (event, ...args) => callback(...args));
+        }
+    }
+    // ================================================================
+    // ^^^^^^ --- КОНЕЦ НОВЫХ ФУНКЦИЙ --- ^^^^^^
+    // ================================================================
 });
+// --- END OF FILE preload.js ---

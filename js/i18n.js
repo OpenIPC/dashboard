@@ -42,22 +42,27 @@
             }
             return translation;
         }
-
-        function applyTranslationsToDOM() {
-            document.querySelectorAll('[data-i18n-key]').forEach(element => {
+        
+        // VVVVVV --- ИЗМЕНЕННАЯ ФУНКЦИЯ --- VVVVVV
+        function applyTranslationsToDOM(scopeElement = document) {
+            // Ищем элементы с ключом для основного текста/HTML
+            scopeElement.querySelectorAll('[data-i18n-key]').forEach(element => {
                 const key = element.getAttribute('data-i18n-key');
                 const attr = element.hasAttribute('data-i18n-is-html') ? 'innerHTML' : 'textContent';
                 element[attr] = t(key);
             });
-            document.querySelectorAll('[data-i18n-tooltip]').forEach(element => {
+            // Ищем элементы с ключом для всплывающей подсказки (атрибут title)
+            scopeElement.querySelectorAll('[data-i18n-tooltip]').forEach(element => {
                 const key = element.getAttribute('data-i18n-tooltip');
                 element.title = t(key);
             });
-            document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+            // Ищем элементы с ключом для плейсхолдера (атрибут placeholder)
+            scopeElement.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
                 const key = element.getAttribute('data-i18n-placeholder');
                 element.placeholder = t(key);
             });
         }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         
         async function setLanguage(lang) {
             if (!supportedLangs.includes(lang) || lang === currentLang) {
@@ -73,7 +78,6 @@
         async function init() {
             const lang = stateManager.state.appSettings.language || getPreferredLanguage();
             await loadTranslations(lang);
-            // App.t = t; // ЭТА СТРОКА УДАЛЕНА. За это теперь отвечает renderer.js
             applyTranslationsToDOM();
         }
 

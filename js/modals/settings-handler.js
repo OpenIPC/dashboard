@@ -15,9 +15,7 @@
         const selectRecPathBtn = document.getElementById('select-rec-path-btn');
         const languageSelect = document.getElementById('app-settings-language');
         const hwAccelSelect = document.getElementById('app-settings-hw-accel');
-        // VVVVVV --- НОВЫЙ ЭЛЕМЕНТ --- VVVVVV
         const analyticsProviderSelect = document.getElementById('app-settings-analytics-provider');
-        // ^^^^^^ --- КОНЕЦ --- ^^^^^^
         const notificationsEnabledInput = document.getElementById('app-settings-notifications-enabled');
         
         const qscaleInput = document.getElementById('app-settings-qscale');
@@ -53,7 +51,6 @@
             // --- Специальные правила для полей с одинаковыми именами ---
             codec: {
                 type: 'select',
-                // Правила применяются в зависимости от секции
                 _perSection: {
                     video0: { options: ['h264', 'h265', 'mjpeg'] },
                     video1: { options: ['h264', 'h265', 'mjpeg'] },
@@ -198,12 +195,82 @@
             }
             else el.value = finalValue;
         }
+        
+        async function renderModulesTab() {
+            const modulesListEl = document.getElementById('modules-list');
+            if (!modulesListEl) return;
 
+            modulesListEl.innerHTML = `<p>${App.i18n.t('loading_text')}</p>`;
+            
+            try {
+                const availableModules = await window.api.getAvailableModules();
+                const { appSettings } = stateManager.state;
+                const enabledModules = new Set(appSettings.enabledModules || []);
+
+                modulesListEl.innerHTML = ''; 
+
+                if (availableModules.length === 0) {
+                    modulesListEl.innerHTML = `<p>Модули не найдены в папке /modules.</p>`;
+                    return;
+                }
+
+                availableModules.forEach(mod => {
+                    const isChecked = enabledModules.has(mod.id);
+                    const description = App.t(`module_${mod.id}_description`) || mod.description;
+                    const author = App.t(`module_${mod.id}_author`) || mod.author;
+
+                    let moduleHtml = `
+                        <div class="form-check-inline" style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; width: 100%; align-items: flex-start;">
+                            <input type="checkbox" id="module-${mod.id}" data-id="${mod.id}" class="form-check-input module-checkbox" ${isChecked ? 'checked' : ''} style="margin-top: 5px;">
+                            <div style="flex-grow: 1;">
+                                <label for="module-${mod.id}" style="font-weight: bold; font-size: 1.1em;">${mod.name} <span style="font-size: 0.8em; color: #666;">v${mod.version}</span></label>
+                                <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #333;">${description}</p>
+                                <p style="margin: 5px 0 0 0; font-size: 0.8em; color: #888;">${App.t('author_prefix') || 'Автор'}: ${author}</p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (mod.id === 'face-detector' && isChecked) {
+                        const savePathKey = `module_face-detector_savePath`;
+                        const currentPath = appSettings[savePathKey] || App.t('module_face-detector_default_path');
+
+                        moduleHtml += `
+                            <div class="form-grid simple with-button" style="grid-template-columns: 150px 1fr; margin-left: 35px; margin-bottom: 15px;">
+                                <span data-i18n-key="module_face-detector_save_path_label"></span>
+                                <div class="form-input-wrapper">
+                                    <input type="text" id="face-detector-path" data-key="${savePathKey}" value="${currentPath}" readonly>
+                                    <button class="select-face-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    modulesListEl.innerHTML += moduleHtml;
+                });
+
+                App.i18n.applyTranslationsToDOM(modulesListEl);
+
+                const selectFacePathBtn = document.querySelector('.select-face-path-btn');
+                if (selectFacePathBtn) {
+                    selectFacePathBtn.addEventListener('click', async () => {
+                        const result = await window.api.selectDirectory();
+                        if (!result.canceled && result.filePaths.length > 0) {
+                            const pathInput = document.getElementById('face-detector-path');
+                            const newPath = result.filePaths[0];
+                            pathInput.value = newPath;
+                            
+                            stateManager.setAppSettings({ [pathInput.dataset.key]: newPath });
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to render modules tab:', error);
+                modulesListEl.innerHTML = `<p style="color: var(--danger-color);">${App.i18n.t('error')}: ${error.message}</p>`;
+            }
+        }
+        
         async function openSettingsModal(cameraId = null) {
             App.i18n.applyTranslationsToDOM();
-
             clearDynamicSettings();
-
             settingsCameraId = cameraId;
             rangeSyncFunctions = {};
             const isGeneralSettings = !cameraId;
@@ -218,11 +285,17 @@
                 const isGeneralTab = tab === 'tab-general';
                 const isStreamingTab = tab === 'tab-streaming';
                 const isAnalyticsTab = tab === 'tab-analytics';
-                const isMajesticOrNetipTab = !isGeneralTab && !isAnalyticsTab && !isStreamingTab;
+                const isModulesTab = tab === 'tab-modules';
+                // VVVVVV --- ИЗМЕНЕНИЕ --- VVVVVV
+                const isAboutTab = tab === 'tab-about'; 
+                const isMajesticOrNetipTab = !isGeneralTab && !isAnalyticsTab && !isStreamingTab && !isModulesTab && !isAboutTab;
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                 let show = false;
                 if (isGeneralSettings) {
-                    show = isGeneralTab || isStreamingTab || isAnalyticsTab;
+                    // VVVVVV --- ИЗМЕНЕНИЕ --- VVVVVV
+                    show = isGeneralTab || isStreamingTab || isAnalyticsTab || isModulesTab || isAboutTab;
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                 } else {
                     if (isNetipCamera) {
                         show = tab === 'tab-netip' || isAnalyticsTab;
@@ -235,34 +308,22 @@
             
             settingsModal.querySelectorAll('.tab-content, .tab-button').forEach(el => el.classList.remove('active'));
             
-            let activeTab;
-            if (isGeneralSettings) {
-                activeTab = 'tab-general';
-            } else {
-                activeTab = isNetipCamera ? 'tab-netip' : 'tab-system';
-            }
+            let activeTab = isGeneralSettings ? 'tab-general' : (isNetipCamera ? 'tab-netip' : 'tab-system');
             
             const activeButton = tabsContainer.querySelector(`[data-tab="${activeTab}"]`);
             const activeContent = document.getElementById(activeTab);
 
-            if (activeButton) {
-                activeButton.classList.add('active');
-            }
-            if (activeContent) {
-                activeContent.classList.add('active');
-            }
+            if (activeButton) activeButton.classList.add('active');
+            if (activeContent) activeContent.classList.add('active');
 
             const { appSettings } = stateManager.state;
             recordingsPathInput.value = appSettings.recordingsPath || '';
             languageSelect.value = appSettings.language || 'en';
             hwAccelSelect.value = appSettings.hwAccel || 'auto';
-            // VVVVVV --- ИЗМЕНЕНИЕ: ЗАГРУЗКА НОВОЙ НАСТРОЙКИ --- VVVVVV
             analyticsProviderSelect.value = appSettings.analytics_provider || 'auto';
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             setFormValue('app-settings-notifications-enabled', appSettings.notifications_enabled, true);
             setFormValue('app-settings-qscale', appSettings.qscale, 8);
             setFormValue('app-settings-fps', appSettings.fps, 20);
-            
             setFormValue('app-settings-analytics-resize-width', appSettings.analytics_resize_width, 416);
             setFormValue('app-settings-analytics-frame-skip', appSettings.analytics_frame_skip, 10);
             setFormValue('app-settings-analytics-record-duration', appSettings.analytics_record_duration, 30);
@@ -273,6 +334,25 @@
             killAllBtnModal.style.display = isGeneralSettings ? 'inline-flex' : 'none';
             
             utils.openModal(settingsModal);
+
+            // VVVVVV --- ИЗМЕНЕНИЕ: ЛОГИКА ДЛЯ ВКЛАДКИ "О ПРОГРАММЕ" --- VVVVVV
+            if (isGeneralSettings) {
+                window.api.getAppVersion().then(version => {
+                    const versionEl = document.getElementById('app-version');
+                    if (versionEl) {
+                        versionEl.textContent = version;
+                    }
+                });
+                
+                const donateBtn = document.getElementById('donate-btn');
+                if (donateBtn) {
+                    donateBtn.onclick = () => {
+                        window.api.openExternalLink('https://pay.web.money/d/r8qq'); 
+                    };
+                }
+                renderModulesTab();
+            }
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             if (isGeneralSettings) {
                 saveSettingsBtn.disabled = false;
@@ -334,22 +414,42 @@
         async function saveSettings() {
             saveSettingsBtn.disabled = true;
             saveSettingsBtn.textContent = App.i18n.t('saving_text');
+            
             if (settingsCameraId === null) {
+                const currentlyEnabled = stateManager.state.appSettings.enabledModules || [];
+                const checkedCheckboxes = document.querySelectorAll('#modules-list .module-checkbox:checked');
+                const newEnabledIds = Array.from(checkedCheckboxes).map(cb => cb.dataset.id);
+
+                const hasChanges = JSON.stringify([...currentlyEnabled].sort()) !== JSON.stringify([...newEnabledIds].sort());
+
+                if (hasChanges) {
+                    await window.api.saveEnabledModules(newEnabledIds);
+                }
+
+                const moduleSettingsInputs = document.querySelectorAll('#modules-list [data-key]');
+                const newModuleSettings = {};
+                moduleSettingsInputs.forEach(input => {
+                    newModuleSettings[input.dataset.key] = input.value;
+                });
+
                 stateManager.setAppSettings({
+                    ...newModuleSettings,
                     recordingsPath: recordingsPathInput.value.trim(),
                     hwAccel: hwAccelSelect.value,
                     language: languageSelect.value,
-                    // VVVVVV --- ИЗМЕНЕНИЕ: СОХРАНЕНИЕ НОВОЙ НАСТРОЙКИ --- VVVVVV
                     analytics_provider: analyticsProviderSelect.value,
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                     notifications_enabled: notificationsEnabledInput.checked,
                     qscale: parseInt(qscaleInput.value, 10) || 8,
                     fps: parseInt(fpsInput.value, 10) || 20,
                     analytics_resize_width: parseInt(globalAnalyticsResizeWidthInput.value, 10) || 416,
                     analytics_frame_skip: parseInt(globalAnalyticsFrameSkipInput.value, 10) || 10,
                     analytics_record_duration: parseInt(document.getElementById('app-settings-analytics-record-duration').value, 10) || 30,
+                    enabledModules: newEnabledIds
                 });
-                utils.showToast(App.i18n.t('app_settings_saved_success'));
+
+                if (!hasChanges) {
+                    utils.showToast(App.i18n.t('app_settings_saved_success'));
+                }
             } else {
                 const camera = stateManager.state.cameras.find(c => c.id === settingsCameraId);
                 if (!camera) { saveSettingsBtn.disabled = false; saveSettingsBtn.textContent = App.i18n.t('save'); return; }
@@ -392,8 +492,10 @@
                     window.api.toggleAnalytics(settingsCameraId);
                 }
             }
-            saveSettingsBtn.disabled = false;
-            saveSettingsBtn.textContent = App.i18n.t('save');
+            if (!document.querySelector('#settings-modal.hidden')) {
+                saveSettingsBtn.disabled = false;
+                saveSettingsBtn.textContent = App.i18n.t('save');
+            }
         }
 
         async function restartMajestic() { 
@@ -410,6 +512,14 @@
             settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) utils.closeModal(settingsModal); });
             saveSettingsBtn.addEventListener('click', saveSettings);
             restartMajesticBtn.addEventListener('click', restartMajestic);
+            
+            const reportIssueBtn = document.getElementById('report-issue-btn');
+            if (reportIssueBtn) {
+                reportIssueBtn.addEventListener('click', () => {
+                    utils.closeModal(settingsModal);
+                    App.modalHandler.showReportModal();
+                });
+            }
             
             killAllBtnModal.addEventListener('click', async () => {
                 const confirmation = await App.modalHandler.showPrompt({
@@ -446,9 +556,9 @@
 
             selectRecPathBtn.addEventListener('click', async () => { 
                 const result = await window.api.selectDirectory(); 
-                if (!result.canceled) { 
-                    recordingsPathInput.value = result.path; 
-                    stateManager.setAppSettings({ recordingsPath: result.path });
+                if (!result.canceled && result.filePaths.length > 0) { // <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
+                    recordingsPathInput.value = result.filePaths[0]; // <-- И ИСПРАВЛЕНИЕ ЗДЕСЬ
+                    stateManager.setAppSettings({ recordingsPath: result.filePaths[0] });
                 } 
             });
 

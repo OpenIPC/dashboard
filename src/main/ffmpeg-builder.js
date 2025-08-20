@@ -1,3 +1,4 @@
+// --- START OF FILE src/main/ffmpeg-builder.js ---
 // --- ФАЙЛ: src/main/ffmpeg-builder.js (НОВЫЙ) ---
 
 const path = require('path');
@@ -21,32 +22,28 @@ class FfmpegCommandBuilder {
         const streamPath = streamId === 0 ? (credentials.streamPath0 || '/stream0') : (credentials.streamPath1 || '/stream1');
         const streamUrl = this.buildRtspUrl(credentials, streamPath);
         
-        // Используем getHwAccelOptions для определения декодера и фильтров
-        const { decoderArgs, vfString } = this.getHwAccelOptions(credentials.codec || 'h264', streamId);
+        const { decoderArgs, vfArgs } = this.getHwAccelOptions(streamId);
 
         const args = [
             ...decoderArgs,
             '-loglevel', 'error',
             '-rtsp_transport', 'tcp',
-            '-err_detect', 'ignore_err',
             '-i', streamUrl,
-            '-progress', 'pipe:2', // Для получения статистики
+            '-progress', 'pipe:2',
             '-f', 'mpegts',
             '-c:v', 'mpeg1video',
-            '-preset', 'ultrafast',
-            '-vf', vfString,
+            ...vfArgs,
             '-q:v', String(this.settings.qscale || 8),
             '-r', String(this.settings.fps || 20),
             '-bf', '0',
-            '-ignore_unknown', 
             '-c:a', 'mp2', 
             '-b:a', '128k', 
             '-ar', '44100', 
             '-ac', '1',
-            '-' // Вывод в stdout
+            '-'
         ];
 
-        return { command: ffmpegPath, args };
+        return { command: ffmpegPath, args: args.filter(Boolean) }; // Убираем пустые элементы
     }
 
     /**
@@ -60,10 +57,10 @@ class FfmpegCommandBuilder {
         const args = [
             '-rtsp_transport', 'tcp',
             '-i', streamUrl,
-            '-c:v', 'copy',      // Простое копирование видеопотока без перекодирования
-            '-c:a', 'aac',       // Перекодирование аудио в AAC
+            '-c:v', 'copy',
+            '-c:a', 'aac',
             '-b:a', '128k',
-            '-movflags', '+faststart', // Для возможности просмотра до полной загрузки
+            '-movflags', '+faststart',
             outputPath
         ];
         return { command: ffmpegPath, args };
@@ -82,8 +79,41 @@ class FfmpegCommandBuilder {
             '-i', sourcePath,
             '-ss', String(startTime),
             '-t', String(duration),
-            '-c', 'copy', // Копируем без перекодирования
+            '-c', 'copy',
             outputPath
+        ];
+        return { command: ffmpegPath, args };
+    }
+
+    /**
+     * Формирует аргументы для нарезки архивного файла в HLS.
+     * @param {string} sourcePath - Путь к исходному файлу .mp4.
+     * @param {string} outputPath - Путь к папке, куда будут складываться .m3u8 и .ts файлы.
+     * @returns {{ command: string, args: string[] }}
+     */
+    buildForHls(sourcePath, outputPath) {
+        const playlistPath = path.join(outputPath, 'playlist.m3u8');
+        const args = [
+            // Входной файл
+            '-i', sourcePath,
+
+            // Параметры видеокодека: перекодируем в h264 с очень быстрым пресетом
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+
+            // Параметры аудиокодека: перекодируем в AAC
+            '-c:a', 'aac',
+            '-b:a', '128k',
+
+            // Параметры HLS
+            '-f', 'hls',
+            '-hls_time', '4',
+            '-hls_playlist_type', 'vod',
+            '-hls_segment_filename', path.join(outputPath, 'segment%03d.ts'),
+            
+            // Выходной файл (плейлист)
+            playlistPath
         ];
         return { command: ffmpegPath, args };
     }
@@ -100,44 +130,32 @@ class FfmpegCommandBuilder {
      * Вспомогательная функция для выбора опций аппаратного ускорения.
      * @private
      */
-    getHwAccelOptions(codec, streamId) {
+    getHwAccelOptions(streamId) {
         const preference = this.settings.hwAccel || 'auto';
         const isSD = streamId === 1;
 
-        if (preference === 'nvidia') {
-            const decoder = codec === 'h264' ? 'h264_cuvid' : 'hevc_cuvid';
-            const decoderArgs = ['-c:v', decoder];
-            // Встроенный ресайз в декодере NVIDIA CUVID
-            if (isSD) decoderArgs.push('-resize', '640x360'); 
-            console.log(`[FFMPEG Builder] Using HW Accel: ${decoder} ${isSD ? 'with built-in resize' : 'for HD'}`);
-            return { decoderArgs, vfString: 'format=yuv420p' };
-        }
-
-        if (preference === 'intel') {
-            const decoder = codec === 'h264' ? 'h264_qsv' : 'hevc_qsv';
-            let vfString = 'hwdownload,format=yuv420p';
-            if (isSD) vfString = 'scale_qsv=w=640:h=-2,' + vfString;
-            console.log(`[FFMPEG Builder] Using HW Accel: ${decoder} ${isSD ? 'with QSV scaler' : 'for HD'}`);
-            return { decoderArgs: ['-c:v', decoder], vfString };
-        }
-
         let decoderArgs = [];
-        let platformMsg = '';
-        if (preference === 'auto') {
-            switch (process.platform) {
-                case 'win32': decoderArgs = ['-hwaccel', 'd3d11va']; platformMsg = 'Auto-selecting d3d11va'; break;
-                case 'darwin': decoderArgs = ['-hwaccel', 'videotoolbox']; platformMsg = 'Auto-selecting videotoolbox'; break;
-                default: platformMsg = 'Auto-selection on Linux: Using CPU for stability.'; break;
-            }
+        let vfArgs = ['-vf'];
+        let vfString = 'format=yuv420p'; // Базовый формат, необходимый для mpeg1video
+
+        if (preference === 'nvidia') {
+            console.log(`[FFMPEG Builder] Using HW Accel: NVIDIA (CUVID)`);
+            decoderArgs = ['-c:v', 'h264_cuvid']; // Используем декодер CUVID
+            if (isSD) decoderArgs.push('-resize', '640x360'); // Встроенный ресайз
+        } else if (preference === 'intel') {
+            console.log(`[FFMPEG Builder] Using HW Accel: Intel (QSV)`);
+            decoderArgs = ['-c:v', 'h264_qsv']; // Используем декодер QSV
+            if (isSD) vfString = `scale_qsv=w=640:h=-2,${vfString}`; // Ресайз через фильтр QSV
         } else {
-            platformMsg = 'Hardware acceleration disabled.';
+            // Для 'auto' или 'none' используем CPU. Это самый надежный вариант.
+            console.log(`[FFMPEG Builder] Using CPU decoding.`);
+            if (isSD) vfString = `scale=w=640:h=-2,${vfString}`; // Программный ресайз
         }
 
-        let vfString = 'format=yuv420p';
-        if (isSD) vfString = 'scale=w=640:h=-2,' + vfString;
-        console.log(`[FFMPEG Builder] ${platformMsg}. ${isSD ? 'Using CPU scaler for SD.' : ''}`);
-        return { decoderArgs, vfString };
+        vfArgs.push(vfString);
+        return { decoderArgs, vfArgs };
     }
 }
 
 module.exports = FfmpegCommandBuilder;
+// --- END OF FILE src/main/ffmpeg-builder.js ---

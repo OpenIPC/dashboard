@@ -1,5 +1,14 @@
+// --- START OF FILE src/main/ipc-handlers.js ---
+// Файл: /src/main/ipc-handlers.js
+// Это центральный файл для всех IPC-обработчиков.
+
 const { ipcMain, Menu, clipboard, dialog, shell, protocol, app, BrowserWindow } = require('electron');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const log = require('electron-log');
+const axios = require('axios');
+
 const { getMainWindow, createFileManagerWindow, createSshTerminalWindow } = require('./window-manager');
 const configManager = require('./config-manager');
 const authManager = require('./auth-manager');
@@ -14,37 +23,95 @@ const fileManagerConnections = {};
 const withErrorHandling = (handler, context) => async (event, ...args) => {
     try {
         const result = await handler(event, ...args);
-        if (result === undefined) {
-            return { success: true };
-        }
-        return result;
+        return result === undefined ? { success: true } : result;
     } catch (error) {
         services.handleError(error, context);
         return { success: false, error: error.message };
     }
 };
 
+function anonymizeConfig(config) {
+    const safeConfig = JSON.parse(JSON.stringify(config)); 
+    if (safeConfig.cameras && Array.isArray(safeConfig.cameras)) {
+        safeConfig.cameras = safeConfig.cameras.map((cam, index) => ({
+            id: `camera_${index}`, protocol: cam.protocol, streamPath0: cam.streamPath0,
+            streamPath1: cam.streamPath1, port: cam.port, onvifAuth: cam.onvifAuth,
+            name: `[REDACTED_NAME]`, ip: `[REDACTED_IP]`, username: `[REDACTED_USER]`,
+        }));
+    }
+    if (safeConfig.appSettings && safeConfig.appSettings.recordingsPath) {
+        safeConfig.appSettings.recordingsPath = '[REDACTED_PATH]';
+    }
+    if (safeConfig.users) {
+        safeConfig.users = { user_count: Array.isArray(safeConfig.users) ? safeConfig.users.length : 0 };
+    }
+    delete safeConfig.groups;
+    delete safeConfig.layouts;
+    delete safeConfig.activeLayoutId;
+    delete safeConfig.gridState;
+    return safeConfig;
+}
 
-function registerIpcHandlers() {
+async function submitReport(event, { description, screenshots }) {
+    try {
+        const logPath = log.transports.file.getFile().path;
+        const fullConfig = await configManager.loadConfiguration();
+        const anonymizedConfig = anonymizeConfig(fullConfig);
+    
+        const report = {
+            description, screenshots,
+            systemInfo: JSON.stringify({
+                os: `${os.type()} ${os.release()}`, arch: os.arch(),
+                cpu: os.cpus()[0].model, version: app.getVersion()
+            }, null, 2),
+            logContent: fs.readFileSync(logPath, 'utf-8'),
+            config: JSON.stringify(anonymizedConfig, null, 2)
+        };
+    
+        const postData = JSON.stringify(report);
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwOYrQ131378iHYwZHVrlswLzco4e1_BJlI1W4Xj0q1y1J2OmDuXuz_9Jl6gI5bCwCiAA/exec";
+        log.info('Submitting report to Google Apps Script...');
+        const response = await axios.post(SCRIPT_URL, postData, {
+            headers: { 'Content-Type': 'application/json' }, timeout: 60000 
+        });
+        log.info(`Report submission response: ${response.status}`, response.data);
+        if (response.status === 200 && response.data.status === 'success') {
+            return { success: true, messageKey: 'report_issue_success' };
+        } else {
+            const serverMessage = response.data.message || JSON.stringify(response.data);
+            dialog.showErrorBox('Ошибка отправки', `Сервер ответил со статусом ${response.status}. Ответ: ${serverMessage}`);
+        }
+        return { success: true };
+    } catch (error) {
+        log.error('Failed to prepare and send report:', error);
+        let errorMessage = `Не удалось отправить отчет: ${error.message}`;
+        if (error.response) {
+            errorMessage += `\nСервер ответил: ${error.response.status} ${error.response.statusText}`;
+        } else if (error.request) {
+            errorMessage += `\nОтвет от сервера не получен. Проверьте подключение к интернету.`;
+        }
+        dialog.showErrorBox('Критическая ошибка', errorMessage);
+        return { success: false, error: error.message };
+    }
+}
+
+function registerIpcHandlers(moduleManager) {
     // --- Window Controls ---
     const handleWindowAction = (action) => (event) => {
         const win = BrowserWindow.fromWebContents(event.sender);
-        if (win) {
-            if (action === 'maximize') {
-                win.isMaximized() ? win.unmaximize() : win.maximize();
-            } else {
-                win[action]();
-            }
-        }
+        if (win) win[action]();
     };
     ipcMain.on('minimize-window', handleWindowAction('minimize'));
-    ipcMain.on('maximize-window', handleWindowAction('maximize'));
+    ipcMain.on('maximize-window', (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (win) win.isMaximized() ? win.unmaximize() : win.maximize();
+    });
     ipcMain.on('close-window', handleWindowAction('close'));
 
     // --- Clipboard ---
     ipcMain.handle('clipboardRead', withErrorHandling(() => clipboard.readText(), 'clipboardRead'));
     ipcMain.handle('clipboardWrite', withErrorHandling((event, text) => clipboard.writeText(text), 'clipboardWrite'));
-
+    
     // --- Authentication & Users ---
     ipcMain.handle('login', withErrorHandling((event, creds) => authManager.handleLogin(creds), 'login'));
     ipcMain.on('renderer-ready-for-autologin', () => authManager.handleAutoLogin(getMainWindow()));
@@ -66,6 +133,15 @@ function registerIpcHandlers() {
     ipcMain.handle('export-config', withErrorHandling(() => configManager.exportConfig(getMainWindow()), 'exportConfig'));
     ipcMain.handle('import-config', withErrorHandling(() => configManager.importConfig(getMainWindow()), 'importConfig'));
 
+    // VVVVVV --- ДОБАВЛЕНЫ НОВЫЕ ОБРАБОТЧИКИ --- VVVVVV
+    ipcMain.handle('get-app-version', () => {
+        return app.getVersion();
+    });
+    ipcMain.on('open-external-link', (event, url) => {
+        shell.openExternal(url);
+    });
+    // ^^^^^^ --- КОНЕЦ НОВЫХ ОБРАБОТЧИКОВ --- ^^^^^^
+
     // --- Camera Actions & Info ---
     ipcMain.handle('get-camera-pulse', withErrorHandling((event, camera) => cameraAPI.getCameraPulse(camera), 'getCameraPulse'));
     ipcMain.handle('ptz-control', withErrorHandling((event, data) => cameraAPI.ptzControl(data), 'ptzControl'));
@@ -80,11 +156,20 @@ function registerIpcHandlers() {
     ipcMain.handle('stop-video-stream', withErrorHandling((event, streamId) => processManager.stopVideoStream(streamId), 'stopVideoStream'));
 
     // --- Video Analytics ---
-    ipcMain.handle('toggle-analytics', withErrorHandling((event, cameraId) => processManager.toggleAnalytics(cameraId, getMainWindow()), 'toggleAnalytics'));
+    ipcMain.handle('toggle-analytics', withErrorHandling((event, cameraId) => processManager.toggleAnalytics(cameraId, getMainWindow(), moduleManager), 'toggleAnalytics'));
     
     // --- Recording & Archive ---
-    ipcMain.handle('start-recording', withErrorHandling((event, camera) => processManager.startRecording(camera, getMainWindow()), 'startRecording'));
-    ipcMain.handle('stop-recording', withErrorHandling((event, cameraId) => processManager.stopRecording(cameraId), 'stopRecording'));
+    ipcMain.handle('start-recording', withErrorHandling(async (event, camera) => {
+        const result = await processManager.startRecording(camera, getMainWindow());
+        getMainWindow()?.webContents.send('recording-state-change', { cameraId: camera.id, recording: true });
+        return result;
+    }, 'startRecording'));
+    ipcMain.handle('stop-recording', withErrorHandling(async (event, cameraId) => {
+        const result = await processManager.stopRecording(cameraId);
+        getMainWindow()?.webContents.send('recording-state-change', { cameraId: cameraId, recording: false });
+        return result;
+    }, 'stopRecording'));
+    
     ipcMain.handle('open-recordings-folder', withErrorHandling(async () => {
         const settings = await configManager.getAppSettings();
         await shell.openPath(settings.recordingsPath);
@@ -93,36 +178,70 @@ function registerIpcHandlers() {
     ipcMain.handle('export-archive-clip', withErrorHandling((event, data) => processManager.exportArchiveClip(data, getMainWindow()), 'exportArchiveClip'));
     ipcMain.handle('get-events-for-date', withErrorHandling((event, data) => configManager.getEventsForDate(data), 'getEventsForDate'));
     ipcMain.handle('get-dates-with-activity', withErrorHandling((event, cameraName) => configManager.getDatesWithActivity(cameraName), 'getDatesWithActivity'));
+    // VVVVVV --- ИЗМЕНЕНИЕ: НОВЫЙ ОБРАБОТЧИК ДЛЯ HLS --- VVVVVV
+    ipcMain.handle('prepare-archive-for-hls', withErrorHandling((event, filename) => processManager.prepareArchiveForHls(filename), 'prepareArchiveForHls'));
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
-    // --- System & Events ---
+    // --- System, Updates, Reporting ---
     ipcMain.handle('get-system-stats', withErrorHandling(services.getSystemStats, 'getSystemStats'));
     ipcMain.handle('kill-all-ffmpeg', withErrorHandling(processManager.killAllFfmpeg, 'killAllFfmpeg'));
     ipcMain.handle('check-for-updates', withErrorHandling(services.checkForUpdates, 'checkForUpdates'));
+    ipcMain.handle('submit-report', withErrorHandling(submitReport, 'submitReport'));
+    ipcMain.handle('open-and-read-image-files', withErrorHandling(async () => {
+        const { canceled, filePaths } = await dialog.showOpenDialog({
+            title: 'Select Screenshots', properties: ['openFile', 'multiSelections'],
+            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }]
+        });
+        if (canceled || !filePaths) return [];
+        return filePaths.map(filePath => {
+            try {
+                const buffer = fs.readFileSync(filePath);
+                const base64 = buffer.toString('base64');
+                const extension = path.extname(filePath).substring(1);
+                return `data:image/${extension};base64,${base64}`;
+            } catch (e) {
+                console.error(`Failed to read file ${filePath}:`, e);
+                return null;
+            }
+        }).filter(Boolean);
+    }, 'openImageFiles'));
 
-    // --- Discovery ---
+    // --- Discovery & NETIP ---
     ipcMain.handle('discover-devices', withErrorHandling(() => discoverDevices(getMainWindow()), 'discoverDevices'));
-
-    // --- NETIP ---
     ipcMain.handle('get-netip-settings', withErrorHandling((event, camera) => cameraAPI.getNetipSettings(camera), 'getNetipSettings'));
     ipcMain.handle('set-netip-settings', withErrorHandling((event, data) => cameraAPI.setNetipSettings(data), 'setNetipSettings'));
 
     // --- Context Menu ---
     ipcMain.on('show-camera-context-menu', (event, { cameraId, labels }) => {
-        const menu = Menu.buildFromTemplate([
-            { label: labels.open_in_browser, click: () => event.sender.send('context-menu-command', { command: 'open_in_browser', cameraId }) },
-            { type: 'separator' },
-            { label: labels.files, click: () => event.sender.send('context-menu-command', { command: 'files', cameraId }) },
-            { label: labels.ssh, click: () => event.sender.send('context-menu-command', { command: 'ssh', cameraId }) },
-            { label: labels.archive, click: () => event.sender.send('context-menu-command', { command: 'archive', cameraId }) },
-            { label: labels.settings, click: () => event.sender.send('context-menu-command', { command: 'settings', cameraId }) },
-            { label: labels.edit, click: () => event.sender.send('context-menu-command', { command: 'edit', cameraId }) },
-            { type: 'separator' },
-            { label: labels.delete, click: () => event.sender.send('context-menu-command', { command: 'delete', cameraId }) },
-        ]);
-        menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+        const template = [];
+        const commands = [
+            'open_in_browser', 'files', 'ssh', 'archive', 
+            'settings', 'edit', 'delete'
+        ];
+        
+        commands.forEach(command => {
+            if (command === 'files' || command === 'delete') {
+                if (template.length > 0 && template[template.length - 1].type !== 'separator') {
+                    template.push({ type: 'separator' });
+                }
+            }
+            
+            if (labels[command]) {
+                template.push({
+                    label: labels[command],
+                    click: () => {
+                        getMainWindow()?.webContents.send('context-menu-command', { command, cameraId });
+                    }
+                });
+            }
+        });
+
+        if (template.length > 0) {
+            const menu = Menu.buildFromTemplate(template);
+            menu.popup({ window: getMainWindow() });
+        }
     });
 
-    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
     ipcMain.on('show-group-context-menu', (event, { groupId, labels }) => {
         const menu = Menu.buildFromTemplate([
             {
@@ -136,21 +255,18 @@ function registerIpcHandlers() {
         ]);
         menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
     });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     // --- Helper Windows (File Manager & SSH) ---
     ipcMain.handle('open-file-manager', (e, camera) => createFileManagerWindow(camera, fileManagerConnections));
-    ipcMain.handle('open-ssh-terminal', (e, camera) => {
+    ipcMain.handle('open-ssh-terminal', (e, camera) => { 
         try {
             const win = createSshTerminalWindow(camera, sshConnections);
-            if (win) { // Если было создано новое окно
-                cameraAPI.setupSshConnection(win, camera, sshConnections);
-            }
+            if (win) cameraAPI.setupSshConnection(win, camera, sshConnections);
         } catch (error) {
             services.handleError(error, 'openSshTerminal');
         }
     });
-
+    
     // --- SCP Handlers ---
     ipcMain.handle('scp-connect', withErrorHandling((e, camera) => cameraAPI.scp.connect(camera, fileManagerConnections), 'scpConnect'));
     ipcMain.handle('scp-list', withErrorHandling((e, data) => cameraAPI.scp.list(data, fileManagerConnections), 'scpList'));
@@ -164,14 +280,13 @@ function registerIpcHandlers() {
     ipcMain.handle('get-local-disk-list', withErrorHandling(configManager.getLocalDiskList, 'getLocalDiskList'));
     ipcMain.handle('list-local-files', withErrorHandling((e, path) => configManager.listLocalFiles(path), 'listLocalFiles'));
 
-    // --- Protocol registration ---
+    // --- Protocol & Logging ---
     protocol.registerFileProtocol('video-archive', async (request, callback) => {
         try {
             const settings = await configManager.getAppSettings();
             const recordingsPath = settings.recordingsPath;
             const filename = decodeURIComponent(request.url.replace('video-archive://', ''));
             const filePath = path.join(recordingsPath, filename);
-
             if (path.dirname(filePath) !== path.resolve(recordingsPath)) {
                 console.error(`[Security] Blocked path traversal attempt: ${filePath}`);
                 return callback({ error: -6 });
@@ -182,6 +297,34 @@ function registerIpcHandlers() {
             callback({ error: -2 });
         }
     });
+    ipcMain.on('log', (event, { level, text }) => { if (log[level]) { log[level](`[Renderer] ${text}`); } });
+
+    // --- Module System Handlers ---
+    ipcMain.handle('get-available-modules', withErrorHandling(() => {
+        return moduleManager.availableModules.map(mod => ({
+            id: mod.id, name: mod.name, version: mod.version,
+            description: mod.description, author: mod.author
+        }));
+    }, 'getAvailableModules'));
+
+    ipcMain.handle('save-enabled-modules', withErrorHandling(async (event, enabledIds) => {
+        const settings = await configManager.getAppSettings();
+        settings.enabledModules = enabledIds;
+        await configManager.saveAppSettings(settings);
+        await dialog.showMessageBox({
+            type: 'info', title: 'Требуется перезапуск',
+            message: 'Настройки модулей сохранены.',
+            detail: 'Для применения изменений приложение необходимо перезапустить.',
+            buttons: ['Перезапустить сейчас', 'Позже'], defaultId: 0, cancelId: 1
+        }).then(result => {
+            if (result.response === 0) {
+                app.relaunch();
+                app.quit();
+            }
+        });
+        return { success: true };
+    }, 'saveEnabledModules'));
 }
 
 module.exports = { registerIpcHandlers };
+// --- END OF FILE src/main/ipc-handlers.js ---

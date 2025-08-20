@@ -1,9 +1,9 @@
-// js/grid-manager.js (Полная версия с добавлением Bounding Boxes для аналитики)
+// js/grid-manager.js (Полная версия с исправлением ошибки "неудаляемой" ячейки)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
 
-    AppModules.createGridManager = function(App) {
+    window.AppModules.createGridManager = function(App) {
         const stateManager = App.stateManager;
         const gridContainer = document.getElementById('grid-container');
         const layoutControls = document.getElementById('layout-controls');
@@ -84,7 +84,7 @@
                 } else {
                     const cellState = (gridState && gridState[i]) ? gridState[i] : null;
                     if (cellState) {
-                        const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}`;
+                        const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}_${i}`;
                         if (localPlayers[uniqueId]) destroyPlayer(uniqueId);
                     }
                     cell.style.display = 'none';
@@ -140,7 +140,7 @@
             };
 
             const audioBtn = controls.querySelector('.audio-btn');
-            const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}`;
+            const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}_${cellIndex}`;
             const player = localPlayers[uniqueId]?.player;
 
             if (player) {
@@ -190,8 +190,8 @@
             const { cameras, recordingStates } = stateManager.state;
             const desiredStreams = new Set();
             if (gridState) {
-                gridState.forEach(cell => {
-                    if (cell) desiredStreams.add(`stream-${cell.camera.id}_${cell.streamId}`);
+                gridState.forEach((cell, index) => {
+                    if (cell) desiredStreams.add(`stream-${cell.camera.id}_${cell.streamId}_${index}`);
                 });
             }
 
@@ -212,54 +212,54 @@
                     const camera = cameras.find(c => c.id === cellState.camera.id);
                     if (!camera) continue;
 
-                    const uniqueStreamIdentifier = `stream-${camera.id}_${cellState.streamId}`;
+                    const uniqueStreamIdentifier = `stream-${camera.id}_${cellState.streamId}_${i}`;
 
-                    if (localPlayers[uniqueStreamIdentifier]) {
-                        const playerInfo = localPlayers[uniqueStreamIdentifier];
-                        if (playerInfo.cell !== cellElement) {
-                            console.log(`[Grid] Moving player ${uniqueStreamIdentifier} to cell ${i}`);
-                            const contentToMove = Array.from(playerInfo.cell.childNodes);
-                            playerInfo.cell.innerHTML = `<span><i class="material-icons placeholder-icon">add_photo_alternate</i><br>${App.i18n.t('drop_camera_here')}</span>`;
-                            playerInfo.cell.classList.remove('active');
-                            cellElement.innerHTML = '';
-                            contentToMove.forEach(node => cellElement.appendChild(node));
-                            playerInfo.cell = cellElement;
-                        }
-                    } else {
-                        cellElement.innerHTML = `<span>${App.i18n.t('connecting')}</span>`;
+                    // ================================================================
+                    // VVVVVV --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ РЕШЕНИЯ ПРОБЛЕМЫ --- VVVVVV
+                    // ================================================================
+                    // Логика переписана: сначала всегда создаем UI, потом подключаемся.
+                    if (!localPlayers[uniqueStreamIdentifier]) {
+                        
+                        // 1. Создаем объект-плейсхолдер, чтобы избежать повторных попыток подключения
                         localPlayers[uniqueStreamIdentifier] = { player: null, cell: cellElement };
 
-                        const result = await window.api.startVideoStream({ credentials: camera, streamId: cellState.streamId });
+                        // 2. Всегда вставляем полный HTML-шаблон в ячейку.
+                        //    Это гарантирует, что кнопки управления (.cell-controls) будут на месте.
+                        const template = document.getElementById('grid-cell-content-template');
+                        const content = template.content.cloneNode(true);
+                        
+                        const nameDiv = content.querySelector('.cell-name');
+                        const statsDiv = content.querySelector('.cell-stats');
+                        const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
+                        nameDiv.textContent = `${camera.name} (${qualityLabel})`;
+                        statsDiv.id = `stats-${uniqueStreamIdentifier}`;
 
+                        cellElement.innerHTML = '';
+                        cellElement.appendChild(content);
+                        cellElement.querySelector('.video-wrapper').innerHTML += `<span>${App.i18n.t('connecting')}</span>`;
+
+                        // 3. Пытаемся запустить видеопоток
+                        const result = await window.api.startVideoStream({ 
+                            credentials: camera, 
+                            streamId: cellState.streamId,
+                            uniqueStreamIdentifier: uniqueStreamIdentifier 
+                        });
+
+                        // 4. Проверяем, не была ли ячейка очищена, пока мы подключались
                         if (!localPlayers[uniqueStreamIdentifier]) {
                             await window.api.stopVideoStream(uniqueStreamIdentifier);
                             continue;
                         }
 
+                        // 5. Обрабатываем результат
                         if (result.success) {
+                            // Успех: создаем плеер и удаляем текст "Подключение..."
                             if (restartAttempts[uniqueStreamIdentifier]) {
-                                console.log(`[Grid] Stream ${uniqueStreamIdentifier} reconnected successfully. Resetting restart counter.`);
                                 delete restartAttempts[uniqueStreamIdentifier];
                             }
-                            
-                            const template = document.getElementById('grid-cell-content-template');
-                            const content = template.content.cloneNode(true);
-
-                            const videoCanvas = content.querySelector('.video-canvas');
-                            const nameDiv = content.querySelector('.cell-name');
-                            const statsDiv = content.querySelector('.cell-stats');
-
-                            const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
-                            nameDiv.textContent = `${camera.name} (${qualityLabel})`;
-                            
-                            // VVVVVV --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
-                            // Присваиваем ID, который соответствует ID из main-процесса
-                            const identifierForStats = `${camera.id}_${cellState.streamId}`;
-                            statsDiv.id = `stats-${uniqueStreamIdentifier}`; // было: statsDiv.id = `stats-${identifierForStats}`;
-                            // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
-
-                            cellElement.innerHTML = '';
-                            cellElement.appendChild(content);
+                            const videoCanvas = cellElement.querySelector('.video-canvas');
+                            const connectingSpan = cellElement.querySelector('span');
+                            if(connectingSpan) connectingSpan.remove();
 
                             const player = new JSMpeg.Player(`ws://localhost:${result.wsPort}`, {
                                 canvas: videoCanvas,
@@ -270,17 +270,28 @@
                             });
                             localPlayers[uniqueStreamIdentifier].player = player;
                         } else {
-                            cellElement.innerHTML = `<span>${App.i18n.t('error')}: ${result.error || App.i18n.t('unknown_error')}</span>`;
+                            // Ошибка: показываем сообщение об ошибке, но кнопки остаются!
+                            const videoWrapper = cellElement.querySelector('.video-wrapper');
+                            if (videoWrapper) {
+                                videoWrapper.innerHTML = `<span>${App.i18n.t('error')}: ${result.error || App.i18n.t('unknown_error')}</span>`;
+                            }
+                            // Удаляем плейсхолдер, чтобы можно было попробовать снова
                             delete localPlayers[uniqueStreamIdentifier];
                         }
                     }
+                    // ================================================================
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+                    // ================================================================
 
+                    // Эта функция теперь всегда будет находить кнопки, т.к. шаблон вставлен
                     attachControlEvents(cellElement, i);
+                    
                     const recordBtn = cellElement.querySelector('.record-btn');
                     if (recordBtn) recordBtn.classList.toggle('recording', !!recordingStates[camera.id]);
 
                     cellElement.classList.add('active');
-                    cellElement.draggable = App.stateManager.state.currentUser?.role === 'admin';
+                    const currentUser = stateManager.state.currentUser;
+                    cellElement.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
 
                     if (cellElement._dragStartHandler) cellElement.removeEventListener('dragstart', cellElement._dragStartHandler);
                     cellElement._dragStartHandler = (e) => {
@@ -343,28 +354,37 @@
                 cell.addEventListener('dragleave', () => {
                     cell.classList.remove('drag-over');
                 });
+                
                 cell.addEventListener('drop', (e) => {
-                    if (App.stateManager.state.currentUser?.role !== 'admin' &&
-                        App.stateManager.state.currentUser?.permissions?.manage_layout !== true) {
-                        e.preventDefault();
-                        return;
-                    }
                     e.preventDefault();
                     cell.classList.remove('drag-over');
+
+                    const currentUser = App.stateManager.state.currentUser;
+                    if (currentUser?.role !== 'admin' && !currentUser?.permissions?.manage_layout) {
+                        return;
+                    }
+
                     const newGrid = getGridState().map(g => g ? { ...g } : null);
                     const targetIndex = i;
-                    const sourceCellIndex = e.dataTransfer.getData("application/x-grid-cell-index");
-                    if (sourceCellIndex !== "") {
-                        const sourceIdx = parseInt(sourceCellIndex, 10);
-                        [newGrid[targetIndex], newGrid[sourceIdx]] = [newGrid[sourceIdx], newGrid[targetIndex]];
-                    } else {
-                        const cameraId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+
+                    const cameraIdStr = e.dataTransfer.getData('application/x-camera-id');
+                    if (cameraIdStr) {
+                        const cameraId = parseInt(cameraIdStr, 10);
                         if (!isNaN(cameraId)) {
                             newGrid[targetIndex] = { camera: { id: cameraId }, streamId: 0 };
+                            stateManager.updateGridState(newGrid);
                         }
+                        return;
                     }
-                    stateManager.updateGridState(newGrid);
+
+                    const sourceCellIndexStr = e.dataTransfer.getData("application/x-grid-cell-index");
+                    if (sourceCellIndexStr !== "") {
+                        const sourceIdx = parseInt(sourceCellIndexStr, 10);
+                        [newGrid[targetIndex], newGrid[sourceIdx]] = [newGrid[sourceIdx], newGrid[targetIndex]];
+                        stateManager.updateGridState(newGrid);
+                    }
                 });
+
                 gridContainer.appendChild(cell);
                 gridCells.push(cell);
             }
@@ -378,56 +398,58 @@
 
             window.api.onAnalyticsUpdate(({ cameraId, result }) => {
                 const gridState = getGridState();
-                const cellIndex = gridState.findIndex(cell => cell && cell.camera.id === cameraId);
-                if (cellIndex === -1) return;
+                gridState.forEach((cell, cellIndex) => {
+                    if (cell && cell.camera.id === cameraId) {
+                        const cellElement = gridCells[cellIndex];
+                        if (!cellElement) return;
 
-                const cellElement = gridCells[cellIndex];
-                if (!cellElement) return;
+                        const videoWrapper = cellElement.querySelector('.video-wrapper');
+                        if (!videoWrapper) return;
+                        
+                        const videoCanvas = videoWrapper.querySelector('.video-canvas');
+                        const overlayCanvas = videoWrapper.querySelector('.overlay-canvas');
+                        if (!videoCanvas || !overlayCanvas) return;
 
-                const videoWrapper = cellElement.querySelector('.video-wrapper');
-                if (!videoWrapper) return;
-                
-                const videoCanvas = videoWrapper.querySelector('.video-canvas');
-                const overlayCanvas = videoWrapper.querySelector('.overlay-canvas');
-                if (!videoCanvas || !overlayCanvas) return;
+                        if (overlayCanvas.width !== videoCanvas.clientWidth || overlayCanvas.height !== videoCanvas.clientHeight) {
+                            overlayCanvas.width = videoCanvas.clientWidth;
+                            overlayCanvas.height = videoCanvas.clientHeight;
+                        }
+                        
+                        const ctx = overlayCanvas.getContext('2d');
+                        
+                        setTimeout(() => {
+                             ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        }, 1000);
 
-                if (overlayCanvas.width !== videoCanvas.clientWidth || overlayCanvas.height !== videoCanvas.clientHeight) {
-                    overlayCanvas.width = videoCanvas.clientWidth;
-                    overlayCanvas.height = videoCanvas.clientHeight;
-                }
-                
-                const ctx = overlayCanvas.getContext('2d');
-                
-                setTimeout(() => {
-                     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-                }, 1000);
+                        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-                ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        if (result.status === 'objects_detected' && result.objects) {
+                            const scaleX = overlayCanvas.width / result.frame_width;
+                            const scaleY = overlayCanvas.height / result.frame_height;
 
-                if (result.status === 'objects_detected' && result.objects) {
-                    const scaleX = overlayCanvas.width / videoCanvas.width;
-                    const scaleY = overlayCanvas.height / videoCanvas.height;
+                            result.objects.forEach(obj => {
+                                const x = obj.box.x * scaleX;
+                                const y = obj.box.y * scaleY;
+                                const w = obj.box.w * scaleX;
+                                const h = obj.box.h * scaleY;
+                                const translatedLabel = App.t('object_' + obj.label) || obj.label;
+const label = `${translatedLabel} (${Math.round(obj.confidence * 100)}%)`;
 
-                    result.objects.forEach(obj => {
-                        const x = obj.box.x * scaleX;
-                        const y = obj.box.y * scaleY;
-                        const w = obj.box.w * scaleX;
-                        const h = obj.box.h * scaleY;
-                        const label = `${obj.label} (${Math.round(obj.confidence * 100)}%)`;
+                                ctx.strokeStyle = (obj.label === 'person') ? '#3498db' : '#f1c40f';
+                                ctx.lineWidth = 2;
+                                ctx.strokeRect(x, y, w, h);
 
-                        ctx.strokeStyle = (obj.label === 'person') ? '#3498db' : '#f1c40f';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(x, y, w, h);
+                                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                                const textMetrics = ctx.measureText(label);
+                                ctx.fillRect(x, y > 18 ? y - 18 : y, textMetrics.width + 8, 16);
 
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        const textMetrics = ctx.measureText(label);
-                        ctx.fillRect(x, y > 18 ? y - 18 : y, textMetrics.width + 8, 16);
-
-                        ctx.fillStyle = 'white';
-                        ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                        ctx.fillText(label, x + 4, y > 18 ? y - 5 : y + 12);
-                    });
-                }
+                                ctx.fillStyle = 'white';
+                                ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+                                ctx.fillText(label, x + 4, y > 18 ? y - 5 : y + 12);
+                            });
+                        }
+                    }
+                });
             });
         }
 
@@ -439,7 +461,7 @@
                 
                 restartAttempts[uniqueStreamIdentifier] = (restartAttempts[uniqueStreamIdentifier] || 0) + 1;
                 
-                const delay = Math.min(5000 * Math.pow(2, restartAttempts[uniqueStreamIdentifier] - 1), 120000);
+                const delay = Math.min(5000 * Math.pow(2, restartAttempts[uniqueStreamIdentifier] - 1), 60000);
                 
                 const reconnectingMessage = `${App.t('stream_died_reconnecting')} (попытка #${restartAttempts[uniqueStreamIdentifier]}, след. через ${delay / 1000}с)`;
 
@@ -451,11 +473,17 @@
                 
                 setTimeout(() => {
                     const currentState = getGridState();
-                    const needsRestart = currentState.some(cell => cell && `stream-${cell.camera.id}_${cell.streamId}` === uniqueStreamIdentifier);
+                    const streamParts = uniqueStreamIdentifier.split('_');
+                    const cellIndex = parseInt(streamParts[streamParts.length - 1], 10);
+                    
+                    const cellState = currentState[cellIndex];
+                    const needsRestart = cellState && `stream-${cellState.camera.id}_${cellState.streamId}_${cellIndex}` === uniqueStreamIdentifier;
+                    
                     if (needsRestart) {
                         console.log(`[Grid] Executing restart for stream ${uniqueStreamIdentifier}.`);
                         render();
                     } else {
+                        console.log(`[Grid] Stream ${uniqueStreamIdentifier} no longer needed. Cancelling restart.`);
                         delete restartAttempts[uniqueStreamIdentifier];
                     }
                 }, delay);
@@ -479,8 +507,6 @@
         }
         
         function updateStreamStats({ uniqueStreamIdentifier, fps, bitrate }) {
-            console.log(`[STATS UPDATE] ID: ${uniqueStreamIdentifier}, FPS: ${fps}, Bitrate: ${bitrate}`);
-            
             const statsDiv = document.getElementById(`stats-${uniqueStreamIdentifier}`);
             if (statsDiv) {
                 statsDiv.textContent = `${Math.round(fps)}fps, ${Math.round(bitrate)}kbps`;

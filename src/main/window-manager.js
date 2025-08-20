@@ -24,6 +24,7 @@ function createWindow() {
         titleBarStyle: 'hidden',
         icon: path.join(__dirname, '../../build/icon.png'),
         webPreferences: {
+            // Подключаем основной preload-скрипт, который предоставляет API в renderer-процесс
             preload: path.join(__dirname, '../../preload.js')
         }
     });
@@ -36,6 +37,7 @@ function createWindow() {
         }
     });
 
+    // Отправляем события в renderer для обновления иконки максимизации
     mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized'));
     mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-unmaximized'));
 
@@ -59,7 +61,7 @@ function createFileManagerWindow(camera, fileManagerConnections) {
         parent: mainWindow,
         modal: true,
         webPreferences: {
-            // VVV Используем новый preload-скрипт VVV
+            // Подключаем preload-скрипт специально для файлового менеджера
             preload: path.join(__dirname, '../../fm-preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
@@ -101,7 +103,7 @@ function createSshTerminalWindow(cameraData, sshConnections) {
         titleBarStyle: 'hidden',
         parent: mainWindow,
         webPreferences: {
-            // VVV Используем новый preload-скрипт VVV
+            // Подключаем preload-скрипт специально для SSH терминала
             preload: path.join(__dirname, '../../terminal-preload.js')
         }
     });

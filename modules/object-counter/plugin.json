@@ -1,0 +1,10 @@
+{
+  "name": "Object Counter",
+  "version": "0.0.1",
+  "description": "Displays a counter of detected objects in the cell.",
+  "author": "Rinibr",
+  "entryPoints": {
+    "main": "main.js",
+    "renderer": "renderer.js"
+  }
+}

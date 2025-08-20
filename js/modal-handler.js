@@ -1,15 +1,17 @@
-// --- ФАЙЛ: js/modal-handler.js ---
+// --- ФАЙЛ: js/modal-handler.js (Оригинальная версия до Svelte) ---
 
 (function(window) {
     window.AppModules = window.AppModules || {};
 
-    AppModules.createModalHandler = function(App) {
+    window.AppModules.createModalHandler = function(App) {
         // --- Общие утилиты для всех модальных окон ---
         let toastTimeout;
         const appToast = document.getElementById('app-toast');
 
         const utils = {
-            openModal: (modalElement) => modalElement.classList.remove('hidden'),
+            openModal: (modalElement) => {
+                if (modalElement) modalElement.classList.remove('hidden');
+            },
             closeModal: (modalElement) => {
                 if (modalElement) modalElement.classList.add('hidden');
             },
@@ -37,8 +39,17 @@
         const promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
         const promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
 
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
-        // Улучшенная логика асинхронного prompt с возможностью скрытия поля ввода
+        // --- Элементы для окна отправки отчета ---
+        const reportModal = document.getElementById('report-issue-modal');
+        const sendReportBtn = document.getElementById('send-report-btn');
+        const cancelReportBtn = document.getElementById('cancel-report-btn');
+        const reportIssueCloseBtn = document.getElementById('report-issue-close-btn');
+        const issueDescription = document.getElementById('issue-description');
+        const addScreenshotBtn = document.getElementById('add-screenshot-btn');
+        const screenshotsPreview = document.getElementById('screenshots-preview');
+        
+        let attachedScreenshots = []; // Массив для хранения Base64 скриншотов
+
         function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel'), inputType = 'text' }) {
             return new Promise((resolve) => {
                 promptModalTitle.textContent = title;
@@ -46,10 +57,9 @@
                 promptModalOkBtn.textContent = okText;
                 promptModalCancelBtn.textContent = cancelText;
 
-                // Управляем видимостью поля ввода
                 if (inputType === 'none') {
                     promptModalInput.classList.add('hidden');
-                    promptModalInput.value = ''; // Очищаем на всякий случай
+                    promptModalInput.value = '';
                 } else {
                     promptModalInput.classList.remove('hidden');
                     promptModalInput.value = defaultValue;
@@ -65,7 +75,6 @@
                     if (isResolved) return;
                     isResolved = true;
                     
-                    // Удаляем обработчики, чтобы избежать утечек памяти
                     promptModalOkBtn.removeEventListener('click', onOk);
                     promptModalCancelBtn.removeEventListener('click', onCancel);
                     promptModal.removeEventListener('keydown', onKeydown);
@@ -75,13 +84,12 @@
                 };
 
                 const onOk = () => {
-                    // Для confirm-диалога возвращаем true, для prompt - значение поля
                     const valueToResolve = (inputType === 'none') ? true : promptModalInput.value;
                     cleanupAndResolve(valueToResolve);
                 };
 
                 const onCancel = () => {
-                    cleanupAndResolve(null); // Возвращаем null при отмене
+                    cleanupAndResolve(null);
                 };
                 
                 const onKeydown = (e) => {
@@ -92,13 +100,48 @@
                     }
                 };
 
-                // Назначаем обработчики
                 promptModalOkBtn.addEventListener('click', onOk);
                 promptModalCancelBtn.addEventListener('click', onCancel);
                 promptModal.addEventListener('keydown', onKeydown);
             });
         }
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        
+        function showReportModal() {
+            if (issueDescription) issueDescription.value = '';
+            // Очищаем предыдущие скриншоты при открытии
+            attachedScreenshots = [];
+            if(screenshotsPreview) screenshotsPreview.innerHTML = '';
+            utils.openModal(reportModal);
+        }
+
+        function addScreenshotToPreview(dataUrl) {
+            const index = attachedScreenshots.length - 1;
+            const thumb = document.createElement('div');
+            thumb.className = 'screenshot-thumb';
+            thumb.innerHTML = `
+                <img src="${dataUrl}" alt="${App.t('report_issue_screenshot_alt', { index: index + 1 })}">
+                <span class="remove-screenshot-btn" title="${App.t('report_issue_remove_tooltip')}">&times;</span>
+            `;
+            
+            thumb.querySelector('.remove-screenshot-btn').onclick = () => {
+                // Удаляем из массива и из DOM
+                attachedScreenshots.splice(index, 1);
+                thumb.remove();
+                // Перерисовываем превью, чтобы индексы были правильными
+                redrawScreenshotsPreview();
+            };
+            screenshotsPreview.appendChild(thumb);
+        }
+
+        function redrawScreenshotsPreview() {
+            screenshotsPreview.innerHTML = '';
+            const currentScreenshots = [...attachedScreenshots];
+            attachedScreenshots = [];
+            currentScreenshots.forEach(dataUrl => {
+                attachedScreenshots.push(dataUrl);
+                addScreenshotToPreview(dataUrl);
+            });
+        }
 
         function init() {
             // --- Инициализация всех дочерних обработчиков ---
@@ -115,7 +158,6 @@
             
             // --- Обработчики для кастомного prompt ---
             promptModalCloseBtn.addEventListener('click', () => {
-                // Имитируем клик по кнопке отмены, чтобы Promise завершился корректно
                 promptModalCancelBtn.click();
             });
             promptModal.addEventListener('click', (e) => { 
@@ -124,14 +166,73 @@
                 }
             });
 
+            // --- Обработчики для окна отчета об ошибке ---
+            if (sendReportBtn) {
+                sendReportBtn.addEventListener('click', async () => {
+                    const description = issueDescription.value.trim();
+                    if (!description) {
+                        utils.showToast(App.t('report_issue_desc_required'), true);
+                        return;
+                    }
+                    sendReportBtn.disabled = true;
+                    sendReportBtn.textContent = App.t('sending_text');
+                    try {
+                        const result = await window.api.submitReport({ description, screenshots: attachedScreenshots });
+                        
+                        if (result.success && result.messageKey) {
+                            utils.showToast(App.t(result.messageKey));
+                        }
+                        
+                        utils.closeModal(reportModal);
+                    } catch (e) {
+                        utils.showToast(`${App.t('error')}: ${e.message}`, true);
+                    } finally {
+                        sendReportBtn.disabled = false;
+                        sendReportBtn.textContent = App.t('report_issue_send_btn');
+                        attachedScreenshots = [];
+                        screenshotsPreview.innerHTML = '';
+                    }
+                });
+            }
+
+            if (addScreenshotBtn) {
+                addScreenshotBtn.addEventListener('click', async () => {
+                    try {
+                        addScreenshotBtn.disabled = true;
+                        const dataUrls = await window.api.openImageFiles();
+
+                        if (dataUrls && dataUrls.length > 0) {
+                            dataUrls.forEach(dataUrl => {
+                                if (attachedScreenshots.length < 5) { 
+                                    attachedScreenshots.push(dataUrl);
+                                    addScreenshotToPreview(dataUrl);
+                                } else {
+                                    utils.showToast(App.t('report_issue_limit_error'), true);
+                                }
+                            });
+                        }
+                    } finally {
+                        addScreenshotBtn.disabled = false;
+                    }
+                });
+            }
+
+            if (cancelReportBtn) cancelReportBtn.addEventListener('click', () => utils.closeModal(reportModal));
+            if (reportIssueCloseBtn) reportIssueCloseBtn.addEventListener('click', () => utils.closeModal(reportModal));
+            if (reportModal) reportModal.addEventListener('click', (e) => { 
+                if (e.target === reportModal) utils.closeModal(reportModal);
+            });
+
             // Закрытие любого открытого модального окна по клавише Escape
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
-                    // Проверяем, не открыт ли наш prompt, чтобы избежать двойного закрытия
                     if (!promptModal.classList.contains('hidden')) {
-                        // Даем собственному обработчику prompt-а сработать
                         promptModalCancelBtn.click();
                         return; 
+                    }
+                    if (reportModal && !reportModal.classList.contains('hidden')) {
+                        utils.closeModal(reportModal);
+                        return;
                     }
                     cameraHandler.closeAll();
                     settingsHandler.closeAll();
@@ -141,13 +242,13 @@
         }
 
         // --- Публичный API модуля ---
-        // Предоставляем доступ к публичным методам дочерних обработчиков и общим утилитам
         return { 
             init,
             openAddModal: cameraHandler.openAddModal,
             openSettingsModal: settingsHandler.openSettingsModal,
             showPrompt,
             showToast: utils.showToast,
+            showReportModal,
         };
     };
 })(window);

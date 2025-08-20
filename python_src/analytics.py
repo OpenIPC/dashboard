@@ -1,20 +1,22 @@
-# --- ФАЙЛ: python_src/analytics.py (финальная версия с выбором провайдера) ---
+# --- ФАЙЛ: python_src/analytics.py (ВЕРСИЯ С ВРЕМЕННЫМИ ФАЙЛАМИ) ---
 
 import sys
 import os
 import json
 import time
-import base64
+import tempfile # <-- Импортируем модуль для работы с временными файлами
 import threading
+import numpy as np
 
+# Проверяем, запущено ли приложение как .exe (frozen) или как .py скрипт
 if getattr(sys, 'frozen', False):
     application_path = sys._MEIPASS
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
 
+# Импортируем основные библиотеки
 try:
     import cv2
-    import numpy as np
     import onnxruntime as ort
 except Exception as e:
     error_message = f"Fatal error during library import: {str(e)}"
@@ -104,7 +106,6 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
     try:
         model_path = os.path.join(application_path, 'yolov8n.onnx')
         session = None
-        
         available_providers = ort.get_available_providers()
         
         def try_provider(provider_name):
@@ -114,7 +115,6 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
                     provider_options = {}
                     if provider_name == 'DmlExecutionProvider':
                         provider_options = {'device_id': '0'}
-                    
                     session = ort.InferenceSession(model_path, providers=[(provider_name, provider_options), 'CPUExecutionProvider'])
                     print(json.dumps({"status": "info", "provider": provider_name}), flush=True)
                     return True
@@ -154,6 +154,9 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
         frame_skip = int(config.get('frame_skip', 5)) or 1
         frame_grabber = None
         
+        # Получаем системную папку для временных файлов
+        temp_dir = tempfile.gettempdir()
+        
         while True: 
             if frame_grabber is None or frame_grabber.stopped:
                 try:
@@ -164,6 +167,7 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
                     print(json.dumps({"status": "error", "message": str(e)}), flush=True)
                     time.sleep(5)
                     continue
+
             frame_count = 0
             while not frame_grabber.stopped:
                 ret, frame = frame_grabber.read()
@@ -175,18 +179,37 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
                 frame_count += 1
                 if frame_count % frame_skip != 0:
                     continue
+                
+                original_height, original_width = frame.shape[:2]
                 input_tensor, ratio, pad = preprocess(frame, input_width, input_height)
                 outputs = session.run([output_name], {input_name: input_tensor})
                 detections = postprocess(outputs[0], ratio, pad, confidence_threshold)
                 
                 filtered_objects = [obj for obj in detections if obj['label'] in objects_to_detect] if objects_to_detect else detections
+                persons_found = any(obj['label'] == 'person' for obj in filtered_objects)
+
+                result = {
+                    "status": "objects_detected",
+                    "timestamp": time.time(),
+                    "objects": filtered_objects,
+                    "frame_width": original_width,
+                    "frame_height": original_height
+                }
+
+                # VVVVVV --- ИЗМЕНЕНИЕ: СОХРАНЯЕМ КАДР В ФАЙЛ ВМЕСТО BASE64 --- VVVVVV
+                if persons_found:
+                    # Создаем уникальное имя для временного файла
+                    temp_filename = f"dashboard_frame_{time.time()}_{os.getpid()}.jpg"
+                    temp_filepath = os.path.join(temp_dir, temp_filename)
+                    
+                    # Сохраняем кадр в этот файл с высоким качеством
+                    cv2.imwrite(temp_filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                    
+                    # Добавляем в JSON не сам кадр, а ТОЛЬКО ПУТЬ к нему
+                    result['frame_path'] = temp_filepath
+                # ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                 if len(filtered_objects) > 0:
-                    result = {
-                        "status": "objects_detected",
-                        "timestamp": time.time(),
-                        "objects": filtered_objects
-                    }
                     print(json.dumps(result), flush=True)
     
     except Exception as e:

@@ -1,38 +1,18 @@
+// Файл: /main.js (в корне проекта)
+// Это точка входа для Electron. Его задача - запустить основную логику.
+
 const { app } = require('electron');
-const { initializeApp, onAppWillQuit } = require('./src/main/app-lifecycle');
-const { createWindow } = require('./src/main/window-manager');
-const { registerIpcHandlers } = require('./src/main/ipc-handlers');
 
-// Предотвращаем запуск нескольких экземпляров приложения
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-}
+// Подключаем и выполняем основной файл приложения из папки src/main
+require('./src/main/main.js');
 
-// Принудительно отключаем аппаратное ускорение, если есть проблемы
-// app.disableHardwareAcceleration();
-
-if (process.platform === 'linux' || process.env.ELECTRON_FORCE_NO_SANDBOX) {
-    app.commandLine.appendSwitch('--no-sandbox');
-}
-app.commandLine.appendSwitch('force_high_performance_gpu');
-
-initializeApp();
-
-app.whenReady().then(() => {
-    createWindow();
-    registerIpcHandlers();
-});
-
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
+// Здесь можно добавить обработчик 'second-instance', если нужно
+// чтобы при повторном запуске приложения фокус передавался уже открытому окну.
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+    const { getMainWindow } = require('./src/main/window-manager');
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
     }
 });
-
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-    }
-});
-
-app.on('will-quit', onAppWillQuit);

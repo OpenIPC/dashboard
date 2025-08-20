@@ -1,4 +1,4 @@
-// --- ФАЙЛ: src/main/services.js ---
+// --- ФАЙЛ: src/main/services.js (ИСПРАВЛЕННАЯ ВЕРСИЯ) ---
 
 const { app, Notification, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');

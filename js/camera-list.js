@@ -1,16 +1,13 @@
-// js/camera-list.js (Полная версия с изменениями для системы пользователей и видеоаналитики)
+// js/camera-list.js (Полная версия с исправлением прав доступа)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
 
-    AppModules.createCameraList = function(App) {
+    window.AppModules.createCameraList = function(App) {
         const stateManager = App.stateManager;
         const cameraListContainer = document.getElementById('camera-list-container');
         const openRecordingsBtn = document.getElementById('open-recordings-btn');
 
-        // VVV ИЗМЕНЕНИЕ: Параллельный опрос статусов VVV
-        // Эта функция теперь опрашивает все камеры одновременно, а не по очереди.
-        // Это предотвращает задержки в обновлении UI, если одна из камер медленно отвечает.
         async function pollCameraStatuses() {
             const cameras = stateManager.state.cameras;
             const statusPromises = cameras.map(async (camera) => {
@@ -18,18 +15,14 @@
                 if (statusIcon) {
                     try {
                         const pulse = await window.api.getCameraPulse(camera);
-                        // Обновляем иконку сразу, как только получаем ответ от конкретной камеры
                         statusIcon.classList.toggle('online', pulse.success);
                     } catch (e) {
                         statusIcon.classList.remove('online');
                     }
                 }
             });
-
-            // Ждём, пока все запросы не будут выполнены, чтобы функция завершилась корректно
             await Promise.all(statusPromises);
         }
-        // ^^^ КОНЕЦ ИЗМЕНЕНИЯ ^^^
 
         async function deleteCamera(cameraId) {
             const confirmation = await App.modalHandler.showPrompt({
@@ -52,7 +45,6 @@
             }
         }
 
-        // VVVVVV --- НОВЫЕ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ ГРУППАМИ --- VVVVVV
         async function renameGroup(groupId) {
             const group = stateManager.state.groups.find(g => g.id === groupId);
             if (!group) return;
@@ -86,11 +78,11 @@
                 stateManager.deleteGroup(groupId);
             }
         }
-        // ^^^^^^ --- КОНЕЦ НОВЫХ ФУНКЦИЙ --- ^^^^^^
 
         function render() {
             cameraListContainer.innerHTML = '';
             const { cameras, groups, recordingStates } = stateManager.state;
+            const currentUser = stateManager.state.currentUser;
         
             const createGroupHTML = (group, camerasInGroup) => {
                 const groupContainer = document.createElement('div');
@@ -100,17 +92,12 @@
                 groupHeader.className = 'group-header';
                 groupHeader.innerHTML = `<i class="material-icons toggle-icon">arrow_drop_down</i><span class="group-name">${group.name}</span>`;
         
-                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
-                // Добавляем обработчик правого клика только для реальных групп (не для "Камеры без группы")
                 if (group.id !== null) {
                     groupHeader.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
-                        
-                        const currentUser = App.stateManager.state.currentUser;
-                        if (currentUser?.role !== 'admin' && !currentUser.permissions?.edit_cameras) {
+                        if (currentUser?.role !== 'admin' && !currentUser?.permissions?.edit_cameras) {
                             return;
                         }
-
                         window.api.showGroupContextMenu({
                             groupId: group.id,
                             labels: {
@@ -120,7 +107,6 @@
                         });
                     });
                 }
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                 const groupCamerasList = document.createElement('div');
                 groupCamerasList.className = 'group-cameras';
@@ -129,7 +115,8 @@
                     const cameraItem = document.createElement('div');
                     cameraItem.className = 'camera-item';
                     cameraItem.dataset.cameraId = camera.id;
-                    cameraItem.draggable = App.stateManager.state.currentUser?.role === 'admin';
+                    
+                    cameraItem.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
                     
                     cameraItem.innerHTML = `
                         <i class="status-icon" id="status-icon-${camera.id}"></i>
@@ -143,14 +130,31 @@
                     if (recordingStates[camera.id]) {
                         cameraItem.classList.add('recording');
                     }
-                    cameraItem.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', camera.id.toString()); });
+
+                    // ================================================================
+                    // VVVVVV --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+                    // ================================================================
+                    // Проблема: grid-manager ожидает данные с типом 'application/x-camera-id', 
+                    // а не 'text/plain'. Это несоответствие приводило к тому, что 
+                    // событие drop в сетке не могло распознать перетаскиваемую камеру.
+                    cameraItem.addEventListener('dragstart', (e) => { 
+                        if (cameraItem.draggable) {
+                            // Заменяем 'text/plain' на правильный тип данных.
+                            e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
+                        } else {
+                            e.preventDefault();
+                        }
+                    });
+                    // ================================================================
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+                    // ================================================================
+
                     groupCamerasList.appendChild(cameraItem);
 
                     const analyticsBtn = cameraItem.querySelector('.analytics-btn');
                     if (analyticsBtn) {
                         analyticsBtn.disabled = false;
                         analyticsBtn.title = App.i18n.t('toggle_analytics_tooltip');
-
                         analyticsBtn.addEventListener('click', async (e) => {
                             e.stopPropagation();
                             const btnIcon = analyticsBtn.querySelector('i');
@@ -174,10 +178,14 @@
                      groupHeader.addEventListener('drop', (e) => {
                         e.preventDefault();
                         groupHeader.style.backgroundColor = '';
-                        const cameraId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                        const camera = cameras.find(c => c.id === cameraId);
-                        if (camera && camera.groupId !== group.id) {
-                            stateManager.updateCamera({ ...camera, groupId: group.id });
+                        // Здесь мы ищем 'application/x-camera-id', чтобы правильно обработать 
+                        // перетаскивание камеры в группу.
+                        const cameraId = parseInt(e.dataTransfer.getData('application/x-camera-id'), 10);
+                        if (!isNaN(cameraId)) {
+                            const camera = cameras.find(c => c.id === cameraId);
+                            if (camera && camera.groupId !== group.id) {
+                                stateManager.updateCamera({ ...camera, groupId: group.id });
+                            }
                         }
                     });
                 }
@@ -207,11 +215,8 @@
             openRecordingsBtn.addEventListener('click', () => window.api.openRecordingsFolder());
             
             cameraListContainer.addEventListener('contextmenu', (e) => {
-                const currentUser = App.stateManager.state.currentUser;
-                if (currentUser?.role !== 'admin' && !(currentUser.permissions?.edit_cameras || currentUser.permissions?.delete_cameras || currentUser.permissions?.access_settings || currentUser.permissions?.view_archive)) {
-                    e.preventDefault();
-                    return;
-                }
+                const currentUser = stateManager.state.currentUser;
+                if (!currentUser) return;
 
                 const cameraItem = e.target.closest('.camera-item');
                 if (cameraItem) {
@@ -262,14 +267,12 @@
                     case 'files': window.api.openFileManager(cameraDataForIPC); break;
                     case 'ssh': window.api.openSshTerminal(cameraDataForIPC); break;
                     case 'archive': App.archiveManager.openArchiveForCamera(camera); break;
-                    case 'settings': App.modalHandler.openSettingsModal(cameraId); break;
+                    case 'settings': App.modalHandler.openSettingsModal(camera); break;
                     case 'edit': App.modalHandler.openAddModal(cameraDataForIPC); break;
                     case 'delete': deleteCamera(cameraId); break;
                 }
             });
 
-            // VVVVVV --- НОВЫЙ КОД --- VVVVVV
-            // Слушаем команды от контекстного меню группы
             window.api.onGroupContextMenuCommand(({ command, groupId }) => {
                 switch (command) {
                     case 'rename':
@@ -280,7 +283,6 @@
                         break;
                 }
             });
-            // ^^^^^^ --- КОНЕЦ НОВОГО КОДА --- ^^^^^^
         }
 
         return {

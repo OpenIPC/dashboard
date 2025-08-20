@@ -2,7 +2,9 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:*; img-src 'self' data:;">
+    <!-- VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ MEDIA-SRC BLOB: --- VVVVVV -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:*; img-src 'self' data:; media-src 'self' blob: video-archive:;">
+    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
     <title>DASHBOARD for OpenIPC</title>
     
     <!-- Ссылки на внешние стили -->
@@ -28,15 +30,12 @@
                 <b data-i18n-key="login"></b> <input type="text" id="login-username" autofocus>
                 <b data-i18n-key="password"></b> <input type="password" id="login-password">
                 
-                <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
-                <!-- Пустой <b> удален, чтобы не создавать лишнюю ячейку -->
                 <div class="form-check-inline">
                     <input type="checkbox" id="login-remember-me" class="form-check-input">
                     <label for="login-remember-me" data-i18n-key="remember_me"></label>
                 </div>
             
-            </div> <!-- <-- ВОТ ЭТОТ ЗАКРЫВАЮЩИЙ ТЕГ БЫЛ ПРОПУЩЕН И ТЕПЕРЬ ДОБАВЛЕН -->
-            <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
+            </div>
             
             <p id="login-error" style="color: var(--danger-color); height: 20px; margin-top: 10px;"></p>
             <button id="login-btn" style="width: 100%; padding: 10px; margin-top: 5px;" data-i18n-key="login_btn"></button>
@@ -48,9 +47,7 @@
         <!-- Заголовок -->
         <div class="header">
             <div class="logo" data-i18n-key="app_title"></div>
-            <div class="tabs">
-                <!-- Вкладки будут добавлены сюда динамически -->
-            </div>
+            <div class="tabs"></div>
             <button id="add-layout-btn" class="add-tab-btn" data-i18n-tooltip="add_layout_tooltip">+</button>
             <div class="window-controls">
                 <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
@@ -100,14 +97,10 @@
         </div>
     </div>
 
-    <!-- === НАЧАЛО ИЗМЕНЕНИЙ (ИСПРАВЛЕНА СТРУКТУРА ШАБЛОНА) === -->
     <template id="grid-cell-content-template">
         <div class="video-wrapper">
-            <!-- Видео и оверлей для рамок -->
             <canvas class="video-canvas"></canvas>
             <canvas class="overlay-canvas"></canvas>
-
-            <!-- ВСЕ ОВЕРЛЕИ ПЕРЕМЕЩЕНЫ ВНУТРЬ video-wrapper -->
             <div class="cell-controls">
                 <button class="record-btn" title="Запись"><i class="material-icons">fiber_manual_record</i></button>
                 <button class="audio-btn" title="Звук"><i class="material-icons">volume_off</i></button>
@@ -130,10 +123,11 @@
             <div class="cell-stats"></div>
         </div>
     </template>
-    <!-- === КОНЕЦ ИЗМЕНЕНИЙ === -->
     <div id="app-toast" class="toast-notification"></div>
+
     <!-- Подключение скриптов -->
     <script src="jsmpeg.min.js"></script>
+    <script src="node_modules/hls.js/dist/hls.min.js"></script>
     <script src="node_modules/flatpickr/dist/flatpickr.js"></script>
     <script src="node_modules/flatpickr/dist/l10n/ru.js"></script>
     <script src="./js/i18n.js"></script>

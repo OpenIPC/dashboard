@@ -1,3 +1,4 @@
+// --- START OF FILE src/main/config-manager.js ---
 // --- ФАЙЛ: src/main/config-manager.js ---
 
 const { app, dialog } = require('electron');
@@ -7,6 +8,16 @@ const fsPromises = fs.promises;
 const os = require('os');
 const { exec } = require('child_process');
 const { Mutex } = require('async-mutex');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+// VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ FFPROBE INSTALLER --- VVVVVV
+const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
+// VVVVVV --- ИЗМЕНЕНИЕ: УКАЗЫВАЕМ ОБА ПУТИ ЯВНО И НАДЕЖНО --- VVVVVV
+ffmpeg.setFfmpegPath(ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked'));
+ffmpeg.setFfprobePath(ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked'));
+// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
 // Зависимости от других наших модулей
 const authManager = require('./auth-manager');
@@ -17,7 +28,6 @@ let appSettingsCache = null;
 // --- Управление путями ---
 
 function getDataPath() {
-    // Для portable-версии данные хранятся рядом с exe
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
         return process.env.PORTABLE_EXECUTABLE_DIR;
     }
@@ -30,7 +40,7 @@ const configPath = path.join(dataPathRoot, 'config.json');
 const appSettingsPath = path.join(dataPathRoot, 'app-settings.json');
 const usersPath = path.join(dataPathRoot, 'users.json');
 const eventsPath = path.join(dataPathRoot, 'events.json');
-const oldCamerasPath = path.join(dataPathRoot, 'cameras.json'); // для миграции
+const oldCamerasPath = path.join(dataPathRoot, 'cameras.json');
 
 // --- Настройки приложения ---
 
@@ -40,25 +50,34 @@ async function getAppSettings() {
     }
     try {
         const data = await fsPromises.readFile(appSettingsPath, 'utf-8');
-        appSettingsCache = JSON.parse(data);
+        try {
+            appSettingsCache = JSON.parse(data);
+        } catch (parseError) {
+            console.error('[Config] Failed to parse app-settings.json, using defaults.', parseError);
+            appSettingsCache = {};
+        }
     } catch (e) {
-        // Значения по умолчанию, если файл не найден или поврежден
-        appSettingsCache = { 
-            recordingsPath: path.join(app.getPath('videos'), 'OpenIPC-VMS'),
-            hwAccel: 'auto',
-            language: 'en',
-            qscale: 8,
-            fps: 20,
-            analytics_record_duration: 30,
-            notifications_enabled: true
-        };
+        appSettingsCache = {};
     }
+    
+    const defaults = { 
+        recordingsPath: path.join(app.getPath('videos'), 'OpenIPC-VMS'),
+        hwAccel: 'auto',
+        language: 'en',
+        qscale: 8,
+        fps: 20,
+        analytics_record_duration: 30,
+        notifications_enabled: true,
+        analytics_provider: 'auto'
+    };
+
+    appSettingsCache = { ...defaults, ...appSettingsCache };
     return appSettingsCache;
 }
 
 async function saveAppSettings(settings) {
     try {
-        appSettingsCache = settings; // Обновляем кэш
+        appSettingsCache = settings;
         await fsPromises.writeFile(appSettingsPath, JSON.stringify(settings, null, 2));
         return { success: true };
     } catch (e) {
@@ -72,7 +91,6 @@ async function saveAppSettings(settings) {
 async function loadConfiguration() {
     const defaultConfig = { cameras: [], groups: [], layouts: [], gridState: Array(64).fill(null) };
     
-    // Функция для миграции со старого формата cameras.json
     const migrateOldFile = async () => {
         try {
             await fsPromises.access(oldCamerasPath);
@@ -81,15 +99,21 @@ async function loadConfiguration() {
             const oldCameras = JSON.parse(oldData);
             return { ...defaultConfig, cameras: oldCameras };
         } catch (migrationError) {
-            return null; // Файла для миграции нет
+            return null;
         }
     };
     
     try {
         await fsPromises.access(configPath);
         const data = await fsPromises.readFile(configPath, 'utf-8');
-        let config = { ...defaultConfig, ...JSON.parse(data) };
-        // Убедимся, что сетка всегда имеет правильный размер
+        let config;
+        try {
+            config = { ...defaultConfig, ...JSON.parse(data) };
+        } catch (parseError) {
+            console.error('[Config] Failed to parse config.json, using default config.', parseError);
+            return defaultConfig;
+        }
+        
         if (!config.gridState || config.gridState.length < 64) {
             config.gridState = Array(64).fill(null);
         }
@@ -97,21 +121,19 @@ async function loadConfiguration() {
     } catch (e) {
         const migratedConfig = await migrateOldFile();
         if (migratedConfig) {
-            await saveConfiguration(migratedConfig); // Сохраняем в новом формате
+            await saveConfiguration(migratedConfig);
             await fsPromises.rename(oldCamerasPath, `${oldCamerasPath}.bak`);
             console.log('Migration successful and new config saved.');
             return migratedConfig;
         }
-        // Если ничего нет, возвращаем дефолтный конфиг
         return defaultConfig;
     }
 }
 
 async function saveConfiguration(config) {
     try {
-        const configToSave = JSON.parse(JSON.stringify(config)); // Глубокая копия
+        const configToSave = JSON.parse(JSON.stringify(config));
         
-        // Пароли храним отдельно и безопасно
         for (const camera of configToSave.cameras) {
             if (camera.password) {
                 await authManager.setPasswordForCamera(camera.id.toString(), camera.password);
@@ -167,11 +189,15 @@ async function saveAnalyticsEvent(eventData) {
         if (!allEvents[dateKey]) {
             allEvents[dateKey] = [];
         }
+        
+        const settings = await getAppSettings();
+        const duration = settings.analytics_record_duration || 30;
 
         allEvents[dateKey].push({
             cameraId: eventData.cameraId,
             timestamp: eventData.timestamp,
             objects: [...new Set(eventData.objects.map(obj => obj.label))],
+            duration: duration
         });
 
         await fsPromises.writeFile(eventsPath, JSON.stringify(allEvents, null, 2));
@@ -203,38 +229,46 @@ async function getRecordingsForDate({ cameraName, date }) {
         const saneCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
         const datePrefix = `${saneCameraName}-${date}`;
 
-        return dirents
+        const filePromises = dirents
             .filter(d => d.isFile() && d.name.startsWith(datePrefix) && d.name.endsWith('.mp4'))
-            .map(d => {
-                const match = d.name.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
-                if (!match) return null;
-                
-                // VVVVVV --- ИЗМЕНЕНИЕ: Возвращаем парсинг к первоначальному виду --- VVVVVV
-                const [datePart, timePart] = match[1].split('T');
-                const fixedTimePart = timePart.replace(/-/g, ':');
-                const isoString = `${datePart}T${fixedTimePart}`;
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-                
-                const dateObj = new Date(isoString);
-                if (isNaN(dateObj.getTime())) {
-                    console.warn(`[Archive] Invalid date parsed from filename: ${d.name}`);
-                    return null;
-                }
+            .map(d => new Promise((resolve, reject) => {
+                const filePath = path.join(recordingsPath, d.name);
+                ffmpeg.ffprobe(filePath, (err, metadata) => {
+                    if (err) {
+                        console.error(`ffprobe error for ${d.name}:`, err.message);
+                        return resolve(null);
+                    }
+                    const match = d.name.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+                    if (!match) return resolve(null);
 
-                return { name: d.name, startTimeString: match[1] };
-            })
+                    resolve({
+                        name: d.name,
+                        startTimeString: match[1],
+                        duration: metadata.format.duration || 30
+                    });
+                });
+            }));
+        
+        const results = await Promise.all(filePromises);
+
+        return results
             .filter(Boolean)
             .sort((a, b) => a.startTimeString.localeCompare(b.startTimeString));
+
     } catch (e) {
         console.error('Failed to get recordings for date:', e);
         return [];
     }
 }
 
+
 async function getDatesWithActivity(cameraName) {
     const activeDates = new Set();
     const settings = await getAppSettings();
     const saneCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
+    const { cameras } = await loadConfiguration();
+    const currentCamera = cameras.find(c => c.name === cameraName);
+
 
     try {
         const files = await fsPromises.readdir(settings.recordingsPath);
@@ -248,7 +282,14 @@ async function getDatesWithActivity(cameraName) {
 
     try {
         const eventsData = await fsPromises.readFile(eventsPath, 'utf-8');
-        Object.keys(JSON.parse(eventsData)).forEach(dateKey => activeDates.add(dateKey));
+        const allEventsByDate = JSON.parse(eventsData);
+        if (currentCamera) {
+            for (const dateKey in allEventsByDate) {
+                if (allEventsByDate[dateKey].some(event => event.cameraId === currentCamera.id)) {
+                     activeDates.add(dateKey);
+                }
+            }
+        }
     } catch (e) { /* Игнорируем, если файла нет */ }
     
     return Array.from(activeDates);
@@ -375,3 +416,4 @@ module.exports = {
     listLocalFiles,
     getTranslationFile
 };
+// --- END OF FILE src/main/config-manager.js ---
