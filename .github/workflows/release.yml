@@ -5,19 +5,22 @@ name: Build & Release Cross-Platform
 on:
   push:
     tags:
-      - 'v*.*.*' # Используем более гибкий триггер для тестов
+      - 'v*.*.*'
 
 jobs:
   release:
     strategy:
       matrix:
+        # --- ИЗМЕНЕНИЕ 1: Расширяем матрицу ---
+        # Теперь задание будет запущено 4 раза (2 ОС * 2 типа версии)
         os: [windows-latest, ubuntu-latest]
+        version_type: [lite, intellect]
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # Тоже обновим на всякий случай
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,33 +31,40 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
 
+      # --- ИЗМЕНЕНИЕ 2: Делаем шаги для Python условными ---
+      # Эти шаги будут выполняться ТОЛЬКО для сборки "intellect"
       - name: Setup Python
+        if: matrix.version_type == 'intellect'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.version_type == 'intellect'
         run: |
           sudo apt-get update
           sudo apt-get install -y libfuse2
 
       - name: Build Python analytics executables
+        if: matrix.version_type == 'intellect'
         run: python ./build_analytics.py
       
       - name: List built analytics files (for debugging)
+        if: matrix.version_type == 'intellect'
         run: ls -R extra/analytics
 
+      # --- ИЗМЕНЕНИЕ 3: Вызываем правильный скрипт сборки ---
       - name: Build and package Electron app
-        run: npm run dist -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }}
+        run: npm run dist:${{ matrix.version_type }} -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
+      # --- ИЗМЕНЕНИЕ 4: Используем уникальные имена для артефактов ---
       - name: Upload artifact
-        uses: actions/upload-artifact@v4 # <--- ИСПРАВЛЕНИЕ 1
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build
+          name: ${{ matrix.os }}-${{ matrix.version_type }}-build
           path: dist/
 
   create_release:
@@ -63,18 +73,18 @@ jobs:
 
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4 # <--- ИСПРАВЛЕНИЕ 2
+        uses: actions/download-artifact@v4
         with:
-          path: artifacts/
+          path: artifacts/ # Скачиваем все артефакты в одну папку
 
       - name: List downloaded files (for debugging)
         run: ls -R artifacts/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2 # Также обновим и этот action до последней версии
+        uses: softprops/action-gh-release@v2
         with:
+          # --- ИЗМЕНЕНИЕ 5: Указываем путь ко всем файлам из всех артефактов ---
           files: |
-            artifacts/windows-latest/*
-            artifacts/ubuntu-latest/*
+            artifacts/*/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

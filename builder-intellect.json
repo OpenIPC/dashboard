@@ -1,0 +1,20 @@
+{
+  "appId": "com.vavol.openipcdashboard.intellect",
+  "productName": "DASHBOARD for OpenIPC Intellect",
+  "artifactName": "${productName}-${os}-${arch}-Setup-${version}.${ext}",
+  "directories": { "output": "dist" },
+  "extraResources": [{ "from": "extra/analytics/", "to": "analytics" }],
+  "win": { "target": ["nsis", "portable"] },
+  "linux": { "target": "AppImage" },
+  "files": [
+    "**/*",
+    "!python_src/",
+    "!*.spec",
+    "!builder-*.json",
+    "!scripts/"
+  ],
+  "asarUnpack": [
+    "**/node_modules/@ffmpeg-installer/ffmpeg/**",
+    "**/node_modules/keytar/**"
+  ]
+}

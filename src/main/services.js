@@ -1,11 +1,9 @@
-// --- ФАЙЛ: src/main/services.js (ИСПРАВЛЕННАЯ ВЕРСИЯ) ---
+// --- START OF FILE src/main/services.js ---
+// --- ФАЙЛ: src/main/services.js (ИСПРАВЛЕННАЯ ВЕРСИЯ С CHANGELOG) ---
 
 const { app, Notification, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
-
-// VVV ИЗМЕНЕНИЕ: УДАЛЯЕМ эту строку, чтобы разорвать цикл VVV
-// const { getMainWindow } = require('./window-manager'); 
 
 // Прямой require, так как configManager не зависит от services,
 // и циклической зависимости не возникнет.
@@ -25,7 +23,7 @@ function handleError(error, context = 'Unknown Context') {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Error in ${context}]`, error);
 
-    // VVV ИЗМЕНЕНИЕ: Получаем getMainWindow здесь, а не через import VVV
+    // Получаем getMainWindow здесь, а не через import, чтобы избежать циклических зависимостей
     const { getMainWindow } = require('./window-manager');
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -119,6 +117,19 @@ function checkForUpdates() {
         autoUpdater.checkForUpdates();
     } else {
         console.log('[Updater] Skipping update check in development mode.');
+        // Для отладки можно отправить фейковое событие
+        // const { getMainWindow } = require('./window-manager');
+        // const mainWindow = getMainWindow();
+        // if (mainWindow) {
+        //     mainWindow.webContents.send('update-status', { 
+        //         status: 'available', 
+        //         message: 'Доступна версия 3.0.0',
+        //         info: { 
+        //             version: '3.0.0', 
+        //             releaseNotes: '### ✨ Новое\n- Добавлен список изменений.\n- Улучшен интерфейс.\n\n### 🚀 Исправления\n- Исправлен баг с обновлением.' 
+        //         } 
+        //     });
+        // }
     }
 }
 
@@ -127,12 +138,18 @@ function checkForUpdates() {
  * @param {BrowserWindow} mainWindow - Главное окно приложения для отправки сообщений.
  */
 function registerUpdaterEvents(mainWindow) {
+    // VVVVVV --- ИЗМЕНЕНИЕ: ОТПРАВЛЯЕМ ВЕСЬ ОБЪЕКТ INFO --- VVVVVV
     autoUpdater.on('update-available', (info) => {
         console.log('[Updater] Update available.', info);
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('update-status', { status: 'available', message: `Доступна версия ${info.version}` });
+            mainWindow.webContents.send('update-status', { 
+                status: 'available', 
+                message: `Доступна версия ${info.version}`,
+                info: info // Отправляем весь объект, включая releaseNotes
+            });
         }
     });
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     autoUpdater.on('update-not-available', (info) => {
         console.log('[Updater] No new update available.');

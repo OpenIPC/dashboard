@@ -10,14 +10,10 @@ const { exec } = require('child_process');
 const { Mutex } = require('async-mutex');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-// VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ FFPROBE INSTALLER --- VVVVVV
 const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
-// VVVVVV --- ИЗМЕНЕНИЕ: УКАЗЫВАЕМ ОБА ПУТИ ЯВНО И НАДЕЖНО --- VVVVVV
 ffmpeg.setFfmpegPath(ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked'));
 ffmpeg.setFfprobePath(ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked'));
-// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
 // Зависимости от других наших модулей
 const authManager = require('./auth-manager');
@@ -398,6 +394,30 @@ async function getTranslationFile(lang) {
     }
 }
 
+// VVVVVV --- НОВАЯ ФУНКЦИЯ ДЛЯ ОПРЕДЕЛЕНИЯ КОДЕКА --- VVVVVV
+/**
+ * Получает информацию о видеопотоке из файла с помощью ffprobe.
+ * @param {string} filename Имя файла в папке записей.
+ * @returns {Promise<object|null>} Объект с информацией о потоке или null в случае ошибки.
+ */
+async function getArchiveVideoInfo(filename) {
+    const settings = await getAppSettings();
+    const filePath = path.join(settings.recordingsPath, filename);
+
+    return new Promise((resolve) => {
+        ffmpeg.ffprobe(filePath, (err, metadata) => {
+            if (err) {
+                console.error(`[ffprobe] Error getting info for ${filename}:`, err.message);
+                return resolve(null);
+            }
+            const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+            resolve(videoStream || null);
+        });
+    });
+}
+// ^^^^^^ --- КОНЕЦ НОВОЙ ФУНКЦИИ --- ^^^^^^
+
+
 module.exports = {
     getDataPath,
     getAppSettings,
@@ -414,6 +434,7 @@ module.exports = {
     importConfig,
     getLocalDiskList,
     listLocalFiles,
-    getTranslationFile
+    getTranslationFile,
+    getArchiveVideoInfo // <-- Добавляем новую функцию в экспорт
 };
 // --- END OF FILE src/main/config-manager.js ---

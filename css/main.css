@@ -1612,9 +1612,23 @@ body.role-operator .cell-controls .record-btn {
 .archive-controls .control-button:hover {
     background-color: var(--accent-color);
 }
+.archive-controls .icon-button.active {
+    background-color: var(--danger-color);
+    animation: pulse-rec 1.5s infinite;
+}
 
 .archive-controls .time-display {
     font-family: monospace;
     font-size: 16px;
     color: var(--text-main);
+}
+/* По умолчанию скрываем все "intellect" элементы */
+.intellect-only {
+    display: none !important;
+}
+
+/* Когда у body есть класс version-intellect, показываем их */
+body.version-intellect .intellect-only {
+    /* Используйте display, который подходит для элемента (flex, block, inline-flex и т.д.) */
+    display: flex !important;
 }

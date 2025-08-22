@@ -1,3 +1,4 @@
+<!-- START OF FILE templates.html -->
 <!-- Шаблон для архива -->
 <template id="archive-template">
     <div id="archive-view" class="hidden">
@@ -5,7 +6,6 @@
             <div class="archive-header">
                 <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
                 <h2 id="archive-camera-name"></h2>
-                <button id="archive-export-btn" data-i18n-key="archive_export_clip" disabled></button>
                 <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
             </div>
             <div class="archive-video-container">
@@ -13,13 +13,17 @@
                 <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
             </div>
             
-            <!-- VVVVVV --- НОВЫЙ БЛОК УПРАВЛЕНИЯ ПЛЕЕРОМ --- VVVVVV -->
+            <!-- VVVVVV --- ИЗМЕНЕННЫЙ БЛОК УПРАВЛЕНИЯ ПЛЕЕРОМ --- VVVVVV -->
             <div class="archive-controls">
-                <button id="ac-play-pause-btn" class="icon-button"><i class="material-icons">play_arrow</i></button>
+                <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
                 <button id="ac-speed-btn" class="control-button">1.0x</button>
                 <span id="ac-time-display" class="time-display">00:00:00</span>
+                
+                <!-- Новые кнопки для экспорта -->
+                <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
+                <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
             </div>
-            <!-- ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА --- ^^^^^^ -->
+            <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
             
             <div class="timeline-container">
                 <div class="timeline-wrapper" id="timeline-wrapper">
@@ -83,9 +87,12 @@
                 <div class="tabs">
                     <button class="tab-button" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
                     <button class="tab-button" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
-                    <button class="tab-button" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
-                    <button class="tab-button" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
-                    <button class="tab-button" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
+                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки Модули VVVV -->
+                    <button class="tab-button intellect-only" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
+                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки Аналитика VVVV -->
+                    <button class="tab-button intellect-only" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
+                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки О программе (если есть специфический функционал) VVVV -->
+                    <button class="tab-button intellect-only" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
                     <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
                     <button class="tab-button" data-tab="tab-system" data-i18n-key="settings_tab_system"></button>
                     <button class="tab-button" data-tab="tab-isp" data-i18n-key="settings_tab_isp"></button>
@@ -167,14 +174,16 @@
                         <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
                     </div>
                 </div>
-                <div id="tab-modules" class="tab-content">
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела Модули VVVV -->
+                <div id="tab-modules" class="tab-content intellect-only">
                     <h3 data-i18n-key="modules_management_header"></h3>
                     <p style="color: #6c757d; font-size: 13px;" data-i18n-key="modules_description"></p>
                     <div id="modules-list" style="margin-top: 15px;">
                         <!-- Сюда будет динамически загружен список модулей -->
                     </div>
                 </div>
-                <div id="tab-analytics" class="tab-content">
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела Аналитика VVVV -->
+                <div id="tab-analytics" class="tab-content intellect-only">
                     <div id="global-analytics-settings">
                         <h3 data-i18n-key="global_analytics_settings_header"></h3>
                         <p style="color: #666; font-size: 13px;" data-i18n-key="global_analytics_settings_desc"></p>
@@ -201,7 +210,8 @@
                         <p style="color: #666; font-size: 13px;" data-i18n-key="analytics_roi_desc"></p>
                     </div>
                 </div>
-                <div id="tab-about" class="tab-content">
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела О программе (если содержит специфический функционал) VVVV -->
+                <div id="tab-about" class="tab-content intellect-only">
                     <div class="about-container">
                         <img src="assets/logo.png" alt="App Logo" class="about-logo">
                         <h3 data-i18n-key="app_title"></h3>
@@ -255,9 +265,11 @@
             </div>
             <div class="modal-footer">
                 <button id="save-settings-btn" data-i18n-key="save"></button>
-                <button id="report-issue-btn" style="background-color: #6c757d; margin-left: auto;" data-i18n-key="report_issue_button"></button>
-                <button id="restart-majestic-btn" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
-                <button id="kill-all-btn-modal" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для кнопки отчета о проблеме VVVV -->
+                <button id="report-issue-btn" class="intellect-only" style="background-color: #6c757d; margin-left: auto;" data-i18n-key="report_issue_button"></button>
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для кнопок рестарта/kill-all VVVV -->
+                <button id="restart-majestic-btn" class="intellect-only" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
+                <button id="kill-all-btn-modal" class="intellect-only" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
             </div>
             
         </div>
@@ -266,7 +278,8 @@
 
 <!-- Шаблон для окна отчета о проблеме -->
 <template id="report-issue-modal-template">
-    <div id="report-issue-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна отчета VVVV -->
+    <div id="report-issue-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content">
             <span id="report-issue-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="report_issue_title"></h2>
@@ -286,7 +299,8 @@
 
 <!-- Шаблон для управления пользователями -->
 <template id="user-management-modal-template">
-    <div id="user-management-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна управления пользователями VVVV -->
+    <div id="user-management-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content" style="width: 600px;">
             <span id="user-management-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="user_management_title"></h2>
@@ -304,7 +318,8 @@
 
 <!-- Шаблон для добавления группы -->
 <template id="add-group-modal-template">
-    <div id="add-group-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна добавления группы VVVV -->
+    <div id="add-group-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content">
             <span id="add-group-modal-close-btn" class="modal-close-btn">×</span>
             <h2 id="add-group-modal-title" data-i18n-key="create_group_title"></h2>
@@ -322,7 +337,8 @@
 
 <!-- Шаблон для поиска камер -->
 <template id="discover-modal-template">
-    <div id="discover-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна поиска камер VVVV -->
+    <div id="discover-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content">
             <span id="discover-modal-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="discover_modal_title"></h2>
@@ -339,7 +355,8 @@
 
 <!-- Шаблон для добавления пользователя -->
 <template id="add-user-modal-template">
-    <div id="add-user-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна добавления пользователя VVVV -->
+    <div id="add-user-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content" style="width: 400px;">
             <span id="add-user-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="add_user_title"></h2>
@@ -363,7 +380,8 @@
 
 <!-- Шаблон для редактирования прав -->
 <template id="permissions-modal-template">
-    <div id="permissions-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна редактирования прав VVVV -->
+    <div id="permissions-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content" style="width: 500px;">
             <span id="permissions-modal-close-btn" class="modal-close-btn">×</span>
             <h2 id="permissions-modal-title"></h2>
@@ -380,7 +398,8 @@
 
 <!-- Шаблон для смены пароля -->
 <template id="change-password-modal-template">
-    <div id="change-password-modal" class="modal-backdrop hidden">
+    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна смены пароля VVVV -->
+    <div id="change-password-modal" class="modal-backdrop hidden intellect-only">
         <div class="modal-content" style="width: 400px;">
             <span id="change-pass-close-btn" class="modal-close-btn">×</span>
             <h2 id="change-pass-modal-title"></h2>

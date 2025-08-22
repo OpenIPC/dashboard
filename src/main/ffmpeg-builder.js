@@ -1,5 +1,5 @@
 // --- START OF FILE src/main/ffmpeg-builder.js ---
-// --- ФАЙЛ: src/main/ffmpeg-builder.js (НОВЫЙ) ---
+// --- ФАЙЛ: src/main/ffmpeg-builder.js (ФИНАЛЬНАЯ ОПТИМИЗИРОВАННАЯ ВЕРСИЯ) ---
 
 const path = require('path');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
@@ -89,30 +89,37 @@ class FfmpegCommandBuilder {
      * Формирует аргументы для нарезки архивного файла в HLS.
      * @param {string} sourcePath - Путь к исходному файлу .mp4.
      * @param {string} outputPath - Путь к папке, куда будут складываться .m3u8 и .ts файлы.
+     * @param {number} [startTime=0] - Время в секундах, с которого начать нарезку.
+     * @param {string|null} [sourceCodec=null] - Имя кодека исходного файла ('h24' или 'hevc').
      * @returns {{ command: string, args: string[] }}
      */
-    buildForHls(sourcePath, outputPath) {
+    buildForHls(sourcePath, outputPath, startTime = 0, sourceCodec = null) {
         const playlistPath = path.join(outputPath, 'playlist.m3u8');
+        
+        let videoCodecArgs = [];
+        if (sourceCodec === 'hevc' || sourceCodec === 'h265') {
+            console.log(`[HLS Builder] Source is H.265. Transcoding to H.264...`);
+            videoCodecArgs = ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency'];
+        } else {
+            console.log(`[HLS Builder] Source is H.264 or unknown. Using stream copy.`);
+            videoCodecArgs = ['-c:v', 'copy'];
+        }
+
         const args = [
-            // Входной файл
+            // -ss ДО -i для быстрого поиска по ключевым кадрам
+            '-ss', String(startTime),
             '-i', sourcePath,
 
-            // Параметры видеокодека: перекодируем в h264 с очень быстрым пресетом
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
+            ...videoCodecArgs,
+            '-c:a', 'copy',
 
-            // Параметры аудиокодека: перекодируем в AAC
-            '-c:a', 'aac',
-            '-b:a', '128k',
-
-            // Параметры HLS
+            // Этот набор флагов говорит FFmpeg нарезать ВЕСЬ оставшийся файл
+            // максимально быстро и создать конечный плейлист (VOD - Video on Demand).
+            // Процесс FFmpeg завершится после выполнения задачи, что является правильным поведением.
             '-f', 'hls',
             '-hls_time', '4',
             '-hls_playlist_type', 'vod',
             '-hls_segment_filename', path.join(outputPath, 'segment%03d.ts'),
-            
-            // Выходной файл (плейлист)
             playlistPath
         ];
         return { command: ffmpegPath, args };

@@ -38,10 +38,8 @@ contextBridge.exposeInMainWorld('api', {
     exportConfig: () => ipcRenderer.invoke('export-config'),
     importConfig: () => ipcRenderer.invoke('import-config'),
     
-    // VVVVVV --- НОВЫЕ МЕТОДЫ ДЛЯ ВКЛАДКИ "О ПРОГРАММЕ" --- VVVVVV
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
-    // ^^^^^^ --- КОНЕЦ НОВЫХ МЕТОДОВ --- ^^^^^^
 
     // Camera Actions & Info
     getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
@@ -71,9 +69,7 @@ contextBridge.exposeInMainWorld('api', {
     exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
     getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
     getDatesWithActivity: (cameraName) => ipcRenderer.invoke('get-dates-with-activity', cameraName),
-    // VVVVVV --- ИЗМЕНЕНИЕ: НОВЫЙ МЕТОД ДЛЯ HLS --- VVVVVV
-    prepareArchiveForHls: (filename) => ipcRenderer.invoke('prepare-archive-for-hls', filename),
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+    prepareArchiveForHls: (filename, startTime) => ipcRenderer.invoke('prepare-archive-for-hls', { filename, startTime }),
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
@@ -89,6 +85,10 @@ contextBridge.exposeInMainWorld('api', {
     // Updates
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
+    // VVVVVV --- НОВЫЕ КОМАНДЫ --- VVVVVV
+    downloadUpdate: () => ipcRenderer.invoke('download-update'),
+    quitAndInstallUpdate: () => ipcRenderer.send('quit-and-install-update'),
+    // ^^^^^^ --- КОНЕЦ НОВЫХ КОМАНД --- ^^^^^^
 
     // Discovery
     discoverDevices: () => ipcRenderer.invoke('discover-devices'),
@@ -109,31 +109,19 @@ contextBridge.exposeInMainWorld('api', {
         error: (text) => ipcRenderer.send('log', { level: 'error', text }),
     },
 
-    // ================================================================
-    // VVVVVV --- ФУНКЦИИ ДЛЯ МОДУЛЬНОЙ СИСТЕМЫ --- VVVVVV
-    // ================================================================
+    // Module System
     getAvailableModules: () => ipcRenderer.invoke('get-available-modules'),
     saveEnabledModules: (enabledIds) => ipcRenderer.invoke('save-enabled-modules', enabledIds),
     getRendererModules: () => ipcRenderer.invoke('get-renderer-modules'),
-    
-    // Прослушиватель для динамической загрузки скриптов модулей (оставляем для возможной обратной совместимости)
     onLoadRendererModules: (callback) => ipcRenderer.on('load-renderer-modules', (event, scripts) => callback(scripts)),
-
-    // Универсальный прослушиватель для событий от модулей.
-    // Он обеспечивает безопасность, пропуская только разрешенные каналы.
     on: (channel, callback) => {
         const validChannels = [
             'module-object-counter-update',
             'module-object-counter-cleanup'
-            // Сюда можно будет добавлять каналы от других модулей
         ];
         if (validChannels.includes(channel)) {
-            // Если канал разрешен, создаем для него подписчика
             ipcRenderer.on(channel, (event, ...args) => callback(...args));
         }
     }
-    // ================================================================
-    // ^^^^^^ --- КОНЕЦ НОВЫХ ФУНКЦИЙ --- ^^^^^^
-    // ================================================================
 });
 // --- END OF FILE preload.js ---

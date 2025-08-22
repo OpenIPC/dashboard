@@ -18,10 +18,11 @@
         const timelineLabelsEl = document.getElementById('timeline-labels');
         const eventListEl = document.getElementById('event-list');
         const filtersContainer = document.getElementById('archive-filters');
-        const exportBtn = document.getElementById('archive-export-btn');
         const playPauseBtn = document.getElementById('ac-play-pause-btn');
         const speedBtn = document.getElementById('ac-speed-btn');
         const timeDisplay = document.getElementById('ac-time-display');
+        const clipStartBtn = document.getElementById('ac-clip-start-btn');
+        const clipExportBtn = document.getElementById('ac-clip-export-btn');
 
         // --- Константы и состояние ---
         const DAY_IN_SECONDS = 86400;
@@ -48,6 +49,9 @@
         let activeFilters = new Set();
         
         let hls = null; 
+        let hlsConversionActive = false;
+        let currentHlsSource = null;
+
         let isPlaying = false;
         let currentSpeedIndex = 0;
         let currentTime = 0;
@@ -55,16 +59,16 @@
         
         let isSelecting = false;
         let selectionStartTime = 0;
-        let selectionEndTime = 0;
         let zoomLevel = 1;
         let viewStartSeconds = 0;
         let seekerTime = -1;
         let mouseTime = -1;
         
+        let targetZoomLevel = 1;
+        let targetViewStartSeconds = 0;
+        
         let isDragging = false;
         let lastMouseX = 0;
-        
-        let pendingSeekTime = -1;
 
         // --- Утилиты ---
         const formatTime = (totalSeconds) => {
@@ -132,15 +136,13 @@
         }
 
         async function seek(timeInSeconds, startPlaying = false) {
-            pause();
             currentTime = Math.max(0, Math.min(timeInSeconds, DAY_IN_SECONDS));
             seekerTime = currentTime;
-            
+            // drawUI() больше не нужен здесь, так как он вызывается в главном цикле
+
             const targetBlock = recordingsForDay.find(rec => {
                 const start = (createLocalDateFromString(rec.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
-                // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ЗАГЛУШКУ --- VVVVVV
                 const end = start + rec.duration;
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                 return currentTime >= start && currentTime < end;
             });
         
@@ -149,48 +151,79 @@
                 return;
             }
 
-            placeholder.textContent = 'Подготовка видео...';
-            placeholder.classList.remove('hidden');
-            videoPlayer.classList.add('hidden');
-
             const blockStart = (createLocalDateFromString(targetBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
             const seekInFile = currentTime - blockStart;
-            
-            pendingSeekTime = seekInFile;
 
-            if (hls) {
+            if (!hlsConversionActive || currentHlsSource !== targetBlock.name) {
+                hlsConversionActive = true;
+                currentHlsSource = targetBlock.name;
+                placeholder.textContent = 'Подготовка видео...';
+                placeholder.classList.remove('hidden');
+                videoPlayer.classList.add('hidden');
+                
                 try {
-                    const result = await window.api.prepareArchiveForHls(targetBlock.name);
+                    const result = await window.api.prepareArchiveForHls(targetBlock.name); 
                     if (!result.success) throw new Error(result.error);
                     
                     hls.loadSource(result.url);
                     hls.attachMedia(videoPlayer);
-                    if (startPlaying) {
-                       videoPlayer.addEventListener('canplay', play, { once: true });
-                    }
+                    
+                    hls.once(Hls.Events.LEVEL_LOADED, function() {
+                        videoPlayer.currentTime = seekInFile;
+                        if (startPlaying) {
+                            play();
+                        }
+                    });
                 } catch (error) {
                     console.error('HLS preparation failed:', error);
                     App.modalHandler.showToast(`Ошибка подготовки HLS: ${error.message}`, true);
                     placeholder.textContent = 'Ошибка загрузки HLS';
-                    pendingSeekTime = -1;
+                    hlsConversionActive = false;
+                    currentHlsSource = null;
                 }
             } else {
-                const newSrc = `video-archive://${encodeURIComponent(targetBlock.name)}`;
-                videoPlayer.src = newSrc;
-                videoPlayer.load();
-                if (startPlaying) videoPlayer.play();
+                videoPlayer.currentTime = seekInFile;
+                if (startPlaying) {
+                    play();
+                }
             }
         }
 
+        function updateTimelineAnimation() {
+            const zoomDiff = targetZoomLevel - zoomLevel;
+            const viewDiff = targetViewStartSeconds - viewStartSeconds;
+
+            if (Math.abs(zoomDiff) < 0.001 && Math.abs(viewDiff) < 0.01) {
+                zoomLevel = targetZoomLevel;
+                viewStartSeconds = targetViewStartSeconds;
+                // Анимация завершена, больше не нужно вызывать syncUI отсюда
+                return;
+            }
+
+            zoomLevel += zoomDiff * 0.2;
+            viewStartSeconds += viewDiff * 0.2;
+            
+            // Вызываем syncUI здесь только во время активной анимации
+            syncUI();
+        }
+
+        // VVVVVV --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ ЛОГИКУ В ГЛАВНЫЙ ЦИКЛ --- VVVVVV
         function updateLoop() {
+            // Сначала выполняем шаг анимации, если он нужен
+            updateTimelineAnimation();
+            
+            // Затем ВСЕГДА обновляем UI
             drawUI();
+            
             requestAnimationFrame(updateLoop);
         }
         
         function drawUI() {
+            // Эта функция теперь всегда вызывается, поэтому время будет обновляться
             drawTimeline();
             timeDisplay.textContent = formatTime(seekerTime >= 0 ? seekerTime : currentTime);
         }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function drawTimeline() {
             const rect = timelineWrapper.getBoundingClientRect();
@@ -210,9 +243,7 @@
                 const recDate = createLocalDateFromString(rec.startTimeString);
                 const startOfDay = getStartOfDay();
                 const startTimeInSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
-                // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ЗАГЛУШКУ --- VVVVVV
                 const durationInSeconds = rec.duration;
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                 const endTimeInSeconds = startTimeInSeconds + durationInSeconds;
                 if (endTimeInSeconds < viewStartSeconds || startTimeInSeconds > viewStartSeconds + totalVisibleSeconds) return;
                 const x = ((startTimeInSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
@@ -242,14 +273,15 @@
                 timelineCtx.fillRect(x, 0, Math.max(1, w), canvasHeight);
             });
 
-            if (isSelecting || (selectionEndTime - selectionStartTime > 0)) {
-                const start = Math.min(selectionStartTime, selectionEndTime);
-                const end = Math.max(selectionStartTime, selectionEndTime);
+            if (isSelecting) {
+                const start = Math.min(selectionStartTime, currentTime);
+                const end = Math.max(selectionStartTime, currentTime);
                 const x = ((start - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
                 const w = ((end - start) / totalVisibleSeconds) * canvasWidth;
                 timelineCtx.fillStyle = COLORS.selection;
                 timelineCtx.fillRect(x, 0, w, canvasHeight);
             }
+
             if (seekerTime >= viewStartSeconds && seekerTime < viewStartSeconds + totalVisibleSeconds) {
                 const x = ((seekerTime - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
                 timelineCtx.fillStyle = COLORS.seeker;
@@ -296,37 +328,32 @@
         
         function handleTimelineMouseDown(e) {
             if (e.button === 0) {
-                isSelecting = true;
                 const clickTime = getTimeFromMouseEvent(e);
-                selectionStartTime = clickTime;
-                selectionEndTime = clickTime;
-                exportBtn.disabled = true;
+                seek(clickTime, true);
+                
                 isDragging = true;
                 lastMouseX = e.clientX;
                 timelineWrapper.classList.add('grabbing');
-                drawTimeline();
             }
         }
 
         function handleTimelineMouseMove(e) {
             mouseTime = getTimeFromMouseEvent(e);
             if (isDragging) {
-                if (Math.abs(e.clientX - lastMouseX) > 2) {
-                    isSelecting = false;
-                    selectionStartTime = 0;
-                    selectionEndTime = 0;
-                }
                 const deltaX = e.clientX - lastMouseX;
                 lastMouseX = e.clientX;
-                const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
-                const secondsPerPixel = totalVisibleSeconds / timelineWrapper.clientWidth;
-                viewStartSeconds -= deltaX * secondsPerPixel;
-                const maxViewStart = DAY_IN_SECONDS - totalVisibleSeconds;
-                viewStartSeconds = Math.max(0, Math.min(viewStartSeconds, maxViewStart < 0 ? 0 : maxViewStart));
-                syncUI();
-            } else if (isSelecting) {
-                selectionEndTime = getTimeFromMouseEvent(e);
-                drawTimeline();
+                const totalVisibleSecondsNow = DAY_IN_SECONDS / zoomLevel; // Используем текущий, а не целевой зум
+                const secondsPerPixel = totalVisibleSecondsNow / timelineWrapper.clientWidth;
+                
+                const newViewStart = viewStartSeconds - deltaX * secondsPerPixel;
+                const maxViewStart = DAY_IN_SECONDS - totalVisibleSecondsNow;
+                viewStartSeconds = Math.max(0, Math.min(newViewStart, maxViewStart < 0 ? 0 : maxViewStart));
+                
+                // При перетаскивании мы также обновляем и целевые значения,
+                // чтобы анимация не "дернула" таймлайн назад после отпускания мыши.
+                targetViewStartSeconds = viewStartSeconds;
+                
+                syncUI(); // Принудительно перерисовываем, пока тащим
             } else {
                 drawTimeline();
             }
@@ -337,47 +364,57 @@
                 isDragging = false;
                 timelineWrapper.classList.remove('grabbing');
             }
-            if (isSelecting) {
-                isSelecting = false;
-                if (Math.abs(selectionEndTime - selectionStartTime) < 1) {
-                    seek(selectionStartTime, true);
-                    resetSelection();
-                } else {
-                    exportBtn.disabled = false;
-                }
-            }
-            drawTimeline();
         }
 
         function handleTimelineWheel(e) {
             e.preventDefault();
             const timeAtCursor = getTimeFromMouseEvent(e);
-            const oldZoom = zoomLevel;
+            
             const zoomFactor = e.deltaY < 0 ? 1.5 : 1 / 1.5;
-            zoomLevel = Math.max(MIN_ZOOM, Math.min(zoomLevel * zoomFactor, MAX_ZOOM));
-            if (oldZoom === zoomLevel) return;
 
-            const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
+            targetZoomLevel = Math.max(MIN_ZOOM, Math.min(targetZoomLevel * zoomFactor, MAX_ZOOM));
+            
+            const totalVisibleSecondsAtTarget = DAY_IN_SECONDS / targetZoomLevel;
             const rect = timelineWrapper.getBoundingClientRect();
             const mouseOffsetRatio = (e.clientX - rect.left) / rect.width;
-
-            viewStartSeconds = timeAtCursor - (mouseOffsetRatio * totalVisibleSeconds);
-            const maxViewStart = DAY_IN_SECONDS - totalVisibleSeconds;
-            viewStartSeconds = Math.max(0, Math.min(viewStartSeconds, maxViewStart < 0 ? 0 : maxViewStart));
-            syncUI();
+            
+            const newViewStart = timeAtCursor - (mouseOffsetRatio * totalVisibleSecondsAtTarget);
+            const maxViewStart = DAY_IN_SECONDS - totalVisibleSecondsAtTarget;
+            
+            targetViewStartSeconds = Math.max(0, Math.min(newViewStart, maxViewStart < 0 ? 0 : maxViewStart));
         }
         
         function resetZoom() {
-            zoomLevel = 1;
-            viewStartSeconds = 0;
-            syncUI();
+            targetZoomLevel = 1;
+            targetViewStartSeconds = 0;
         }
 
         function init() {
             backBtn.addEventListener('click', closeArchive);
-            exportBtn.addEventListener('click', handleExport);
             playPauseBtn.addEventListener('click', togglePlayPause);
             speedBtn.addEventListener('click', changeSpeed);
+
+            clipStartBtn.addEventListener('click', () => {
+                isSelecting = !isSelecting;
+                if (isSelecting) {
+                    selectionStartTime = currentTime;
+                    clipStartBtn.classList.add('active');
+                    clipExportBtn.disabled = false;
+                    clipExportBtn.innerHTML = `<i class="material-icons">save</i>`;
+                    clipExportBtn.title = "Закончить выделение и экспортировать";
+                } else {
+                    resetSelection();
+                }
+                drawTimeline();
+            });
+
+            clipExportBtn.addEventListener('click', async () => {
+                if (isSelecting) {
+                    const endTime = currentTime;
+                    await handleExport(selectionStartTime, endTime);
+                    resetSelection();
+                }
+            });
             
             timelineWrapper.addEventListener('mousedown', handleTimelineMouseDown);
             document.addEventListener('mousemove', handleTimelineMouseMove);
@@ -394,16 +431,7 @@
                 placeholder.classList.add('hidden');
                 videoPlayer.classList.remove('hidden');
 
-                if (pendingSeekTime >= 0 && videoPlayer.seekable.length > 0 && videoPlayer.seekable.end(0) > pendingSeekTime) {
-                    videoPlayer.currentTime = pendingSeekTime;
-                    pendingSeekTime = -1;
-                }
-
-                const currentBlock = recordingsForDay.find(rec => {
-                    const blockStart = (createLocalDateFromString(rec.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
-                    const blockEnd = blockStart + rec.duration;
-                    return currentTime >= blockStart && currentTime <= blockEnd;
-                });
+                const currentBlock = recordingsForDay.find(rec => rec.name === currentHlsSource);
 
                 if (currentBlock) {
                     const blockStart = (createLocalDateFromString(currentBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
@@ -429,6 +457,8 @@
                         placeholder.classList.remove('hidden');
                         videoPlayer.classList.add('hidden');
                         hls.destroy();
+                        hlsConversionActive = false;
+                        currentHlsSource = null;
                         setTimeout(() => hls = new Hls(), 1000);
                     }
                 });
@@ -464,18 +494,36 @@
             mainView.classList.remove('hidden');
             currentCamera = null;
             if (calendarInstance) { calendarInstance.destroy(); calendarInstance = null; }
+            
+            if (hlsConversionActive) {
+                window.api.stopVideoStream('hls-conversion'); 
+                hlsConversionActive = false;
+                currentHlsSource = null;
+            }
             resetPlayer();
         }
 
         async function loadDataForSelectedDate() {
             if (!currentCamera) return;
-            resetZoom();
+
+            zoomLevel = 1;
+            viewStartSeconds = 0;
+            targetZoomLevel = 1;
+            targetViewStartSeconds = 0;
+            
             const date = datePickerEl.value;
+
+            if (hlsConversionActive) {
+                window.api.stopVideoStream('hls-conversion');
+                hlsConversionActive = false;
+                currentHlsSource = null;
+            }
+
             recordingsForDay = [];
             allCameraEventsForDay = [];
             eventListEl.innerHTML = `<li>${App.t('loading_text')}</li>`;
             filtersContainer.innerHTML = '';
-            drawTimeline();
+            
             try {
                 const [recordings, events] = await Promise.all([
                     window.api.getRecordingsForDate({ cameraName: currentCamera.name, date }),
@@ -494,8 +542,8 @@
 
         async function resetPlayer() {
             pause();
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
+            hlsConversionActive = false;
+            currentHlsSource = null;
 
             if (hls) {
                 hls.detachMedia();
@@ -508,44 +556,62 @@
             eventListEl.innerHTML = '';
             filtersContainer.innerHTML = '';
             resetSelection();
-            resetZoom();
+            
+            zoomLevel = 1;
+            viewStartSeconds = 0;
+            targetZoomLevel = 1;
+            targetViewStartSeconds = 0;
+
             currentTime = 0;
             seekerTime = -1;
-            pendingSeekTime = -1;
             recordingsForDay = [];
             allCameraEventsForDay = [];
             activeFilters.clear();
             timeDisplay.textContent = formatTime(0);
             speedBtn.textContent = '1.0x';
             currentSpeedIndex = 0;
-
-            if (!animationFrameId) {
-                updateLoop();
-            }
         }
 
-        async function handleExport() {
-            if (exportBtn.disabled) return;
-            exportBtn.disabled = true;
-            exportBtn.textContent = App.t('saving_text');
-            const start = Math.min(selectionStartTime, selectionEndTime);
-            const end = Math.max(selectionStartTime, selectionEndTime);
+        async function handleExport(start, end) {
+            if (start >= end) {
+                App.modalHandler.showToast("Ошибка: время начала клипа должно быть раньше времени окончания.", true);
+                return;
+            }
+
+            clipExportBtn.disabled = true;
+            clipExportBtn.innerHTML = `...`;
+            clipStartBtn.disabled = true;
+
             const sourceBlock = recordingsForDay.find(rec => {
                 const recDate = createLocalDateFromString(rec.startTimeString);
-                const startOfDay = new Date(recDate);
-                startOfDay.setHours(0, 0, 0, 0);
+                const startOfDay = getStartOfDay();
                 const blockStart = (recDate.getTime() - startOfDay.getTime()) / 1000;
-                return start >= blockStart && end < blockStart + rec.duration;
+                return start >= blockStart && end <= blockStart + rec.duration;
             });
-            if (!sourceBlock) { App.modalHandler.showToast(App.t('archive_export_single_file_error'), true); resetSelection(); return; }
+
+            if (!sourceBlock) { 
+                App.modalHandler.showToast(App.t('archive_export_single_file_error'), true); 
+                resetSelection(); 
+                return; 
+            }
+
             const recDate = createLocalDateFromString(sourceBlock.startTimeString);
-            const startOfDay = new Date(recDate);
-            startOfDay.setHours(0, 0, 0, 0);
+            const startOfDay = getStartOfDay();
             const blockStartSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
             const startTimeInFile = start - blockStartSeconds;
             const duration = end - start;
-            const result = await window.api.exportArchiveClip({ sourceFilename: sourceBlock.name, startTime: startTimeInFile, duration: duration });
-            if (result.success) { App.modalHandler.showToast(App.t('archive_export_success')); } else { App.modalHandler.showToast(`${App.t('archive_export_error')}: ${result.error}`, true); }
+            
+            const result = await window.api.exportArchiveClip({ 
+                sourceFilename: sourceBlock.name, 
+                startTime: startTimeInFile, 
+                duration: duration 
+            });
+            
+            if (result.success) { 
+                App.modalHandler.showToast(App.t('archive_export_success')); 
+            } else { 
+                App.modalHandler.showToast(`${App.t('archive_export_error')}: ${result.error}`, true); 
+            }
             resetSelection();
         }
 
@@ -598,10 +664,16 @@
         }
 
         function resetSelection() {
+            isSelecting = false;
             selectionStartTime = 0;
-            selectionEndTime = 0;
-            exportBtn.disabled = true;
-            exportBtn.textContent = App.t('archive_export_clip');
+            
+            clipStartBtn.classList.remove('active');
+            clipStartBtn.disabled = false;
+            
+            clipExportBtn.disabled = true;
+            clipExportBtn.innerHTML = `<i class="material-icons">save</i>`;
+            clipExportBtn.title = "Экспорт клипа";
+            drawTimeline();
         }
         
         return { 

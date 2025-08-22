@@ -2,8 +2,8 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ MEDIA-SRC BLOB: --- VVVVVV -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:*; img-src 'self' data:; media-src 'self' blob: video-archive:;">
+    <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ: ДОБАВЛЯЕМ worker-src 'self' blob:; --- VVVVVV -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:*; img-src 'self' data:; media-src 'self' blob: video-archive:;">
     <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
     <title>DASHBOARD for OpenIPC</title>
     
@@ -48,7 +48,7 @@
         <div class="header">
             <div class="logo" data-i18n-key="app_title"></div>
             <div class="tabs"></div>
-            <button id="add-layout-btn" class="add-tab-btn" data-i18n-tooltip="add_layout_tooltip">+</button>
+            <button id="add-layout-btn" class="add-tab-btn requires-permission" data-i18n-tooltip="add_layout_tooltip">+</button>
             <div class="window-controls">
                 <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
                 <button id="maximize-btn" class="window-control-btn"><i class="material-icons">crop_square</i></button>
@@ -64,12 +64,14 @@
             <div class="sidebar">
                 <div class="sidebar-header">
                     <div class="header-buttons">
-                        <span class="requires-permission" style="display: contents;">
+                        <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для кнопок управления камерами и группами VVVV -->
+                        <span class="requires-permission intellect-only" style="display: contents;">
                             <button id="discover-btn" class="icon-button" data-i18n-tooltip="discover_cameras_tooltip"><i class="material-icons">travel_explore</i></button>
                             <button id="add-group-btn" class="icon-button" data-i18n-tooltip="create_group_tooltip"><i class="material-icons">create_new_folder</i></button>
                             <button id="add-camera-sidebar-btn" class="icon-button" data-i18n-tooltip="add_camera_tooltip"><i class="material-icons">add_circle_outline</i></button>
                         </span>
-                        <button id="user-management-btn" class="icon-button admin-only" data-i18n-tooltip="user_management_tooltip"><i class="material-icons">manage_accounts</i></button>
+                        <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для управления пользователями VVVV -->
+                        <button id="user-management-btn" class="icon-button admin-only intellect-only" data-i18n-tooltip="user_management_tooltip"><i class="material-icons">manage_accounts</i></button>
                         <button id="general-settings-btn" class="icon-button" data-i18n-tooltip="settings_tooltip"><i class="material-icons">settings</i></button>
                         <button id="logout-btn" class="icon-button" data-i18n-tooltip="logout_tooltip"><i class="material-icons">logout</i></button>
                     </div>
@@ -85,14 +87,16 @@
                 <button id="open-recordings-btn" class="icon-button admin-only" data-i18n-tooltip="open_recordings_tooltip"><i class="material-icons" style="font-size: 20px;">folder</i></button>
                 <div class="status-info" id="status-info"></div>
             </div>
-            <div class="toolbar-group requires-permission" id="view-layout-controls">
+            <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для управления раскладками VVVV -->
+            <div class="toolbar-group requires-permission intellect-only" id="view-layout-controls">
                 <button id="save-layout-btn" class="icon-button" data-i18n-tooltip="save_layout_tooltip"><i class="material-icons">save</i></button>
                 <button id="rename-layout-btn" class="icon-button" data-i18n-tooltip="rename_layout_tooltip"><i class="material-icons">edit</i></button>
                 <button id="delete-layout-btn" class="icon-button" data-i18n-tooltip="delete_layout_tooltip"><i class="material-icons">delete_outline</i></button>
             </div>
-            <div class="toolbar-group requires-permission" id="layout-controls"></div>
+            <div class="toolbar-group requires-permission intellect-only" id="layout-controls"></div>
             <div class="toolbar-group">
-                <button id="presentation-mode-btn" class="icon-button requires-permission" data-i18n-tooltip="presentation_mode_tooltip"><i class="material-icons" style="font-size: 20px;">tv</i></button>
+                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для режима презентации VVVV -->
+                <button id="presentation-mode-btn" class="icon-button requires-permission intellect-only" data-i18n-tooltip="presentation_mode_tooltip"><i class="material-icons" style="font-size: 20px;">tv</i></button>
             </div>
         </div>
     </div>

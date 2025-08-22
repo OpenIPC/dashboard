@@ -1,11 +1,13 @@
 {
   "name": "openipc-dashboard",
-  "version": "2.8.2",
+  "version": "2.8.3",
   "description": "App for managing OpenIPC cameras",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
+    "dist:lite": "node scripts/set-version.js lite && electron-builder --config builder-lite.json",
+    "dist:intellect": "node scripts/set-version.js intellect && electron-builder --config builder-intellect.json",
+    "dist": "npm run dist:intellect",
     "rebuild": "electron-rebuild"
   },
   "keywords": [],
@@ -43,62 +45,5 @@
     "ssh2": "^1.15.0",
     "systeminformation": "^5.27.7",
     "ws": "^8.17.1"
-  },
-  "build": {
-    "appId": "com.vavol.openipcdashboard",
-    "productName": "DASHBOARD for OpenIPC",
-    "copyright": "Copyright © 2025 Rinat Ibragimov",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "extraResources": [
-      {
-        "from": "extra/analytics/",
-        "to": "analytics",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "build/icon.ico"
-    },
-    "mac": {
-      "target": "dmg",
-      "icon": "build/icon.icns"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": true
-    },
-    "portable": {
-      "artifactName": "${productName} Portable ${version}.${ext}"
-    },
-    "files": [
-      "**/*",
-      "!dist/",
-      "!*.code-workspace",
-      "!python_src/",
-      "!*.spec"
-    ],
-    "asarUnpack": [
-      "**/node_modules/@ffmpeg-installer/ffmpeg/**",
-      "**/node_modules/keytar/**"
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "Rinibr",
-      "repo": "openipc-dashboard"
-    }
   }
 }

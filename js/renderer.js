@@ -1,4 +1,5 @@
-// js/renderer.js (Полная версия с загрузчиком скриптов для модулей)
+// --- START OF FILE js/renderer.js ---
+// js/renderer.js (Полная версия с разделением на Lite/Intellect)
 
 (function(window) {
     'use strict';
@@ -8,6 +9,34 @@
     async function init() {
         App = {};
         window.App = App;
+
+        // ШАГ 1: ЗАГРУЖАЕМ ШАБЛОНЫ. Это остается первым действием.
+        try {
+            const response = await fetch('./templates.html');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const templatesHTML = await response.text();
+            
+            const templateContainer = document.createElement('div');
+            templateContainer.innerHTML = templatesHTML;
+            
+            templateContainer.querySelectorAll('template').forEach(template => {
+                const content = document.importNode(template.content, true);
+                document.body.appendChild(content);
+            });
+        } catch (error) {
+            console.error('Failed to load UI templates:', error);
+            alert('Критическая ошибка: Не удалось загрузить шаблоны интерфейса. Приложение не будет работать корректно.');
+            return; // Прерываем выполнение, если шаблоны не загрузились
+        }
+
+        // --- ИЗМЕНЕНИЕ: Определение версии приложения (Lite/Intellect) ---
+        // Запрашиваем тип версии у main-процесса. Это самый важный шаг для UI.
+        const versionInfo = await window.api.getAppVersionInfo();
+        App.versionType = versionInfo.type; // 'lite' or 'intellect'
+        // Добавляем класс к body, чтобы CSS мог скрывать/показывать нужные элементы.
+        document.body.classList.add(`version-${App.versionType}`);
+        console.log(`[Renderer] Application running in [${App.versionType.toUpperCase()}] mode.`);
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
         App.USER_ROLES = {
             ADMIN: 'admin',
@@ -186,6 +215,11 @@
         let saveTimeout;
 
         async function saveConfiguration() {
+            // В Lite-версии сохранять раскладки и группы не нужно, так как они скрыты
+            if (App.versionType === 'lite') {
+                return;
+            }
+
             const state = App.stateManager.state;
             if (state.isSaving) return;
 
@@ -273,25 +307,9 @@
             mainAppContainer.classList.add('hidden');
             loginView.classList.remove('hidden');
             document.body.className = '';
+            // Возвращаем класс версии, который был удален
+            document.body.classList.add(`version-${App.versionType}`);
             loginUsername.focus();
-        }
-
-        try {
-            const response = await fetch('./templates.html');
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const templatesHTML = await response.text();
-            
-            const templateContainer = document.createElement('div');
-            templateContainer.innerHTML = templatesHTML;
-            
-            templateContainer.querySelectorAll('template').forEach(template => {
-                const content = document.importNode(template.content, true);
-                document.body.appendChild(content);
-            });
-        } catch (error) {
-            console.error('Failed to load UI templates:', error);
-            alert('Критическая ошибка: Не удалось загрузить шаблоны интерфейса. Приложение не будет работать корректно.');
-            return;
         }
         
         await loadAppSettings();
@@ -370,9 +388,6 @@
             }
         });
         
-        // ================================================================
-        // VVVVVV --- ИЗМЕНЕНИЕ: АКТИВНЫЙ ЗАПРОС СКРИПТОВ МОДУЛЕЙ --- VVVVVV
-        // ================================================================
         async function loadRendererModules() {
             try {
                 const scripts = await window.api.getRendererModules();
@@ -380,23 +395,19 @@
                 
                 scripts.forEach(scriptPath => {
                     const script = document.createElement('script');
-                    // Заменяем обратные слеши на прямые для HTML-совместимости
                     const cleanPath = scriptPath.replace(/\\/g, '/');
                     script.src = cleanPath;
                     
                     script.onload = () => console.log(`[Modules] Script loaded successfully: ${cleanPath}`);
                     script.onerror = (e) => console.error(`[Modules] FAILED to load script: ${cleanPath}`, e);
                     
-                    document.head.appendChild(script); // Добавляем скрипты в <head>
+                    document.head.appendChild(script);
                 });
             } catch (error) {
                 console.error('[Modules] Failed to get renderer modules from main process:', error);
             }
         }
         await loadRendererModules();
-        // ================================================================
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-        // ================================================================
 
 
         App.stateManager.subscribe(() => {
@@ -468,7 +479,12 @@
         const layoutTabsContainer = document.querySelector('.header .tabs');
         const { layouts, activeLayoutId } = App.stateManager.state;
         layoutTabsContainer.innerHTML = '';
-        if (!layouts) return;
+
+        // В Lite-версии вкладки не отображаются
+        if (App.versionType === 'lite' || !layouts) {
+            return;
+        }
+
         layouts.forEach(l => {
             const tab = document.createElement('button');
             tab.className = 'tab';
@@ -494,10 +510,14 @@
 
     function updateUserPermissionsUI() {
         const user = App.stateManager.state.currentUser;
-        document.body.className = document.body.className.replace(/role-\w+|can-\w+/g, '').trim();
+        // Сначала очищаем старые классы, связанные с правами и версией, кроме основного класса версии
+        const bodyClasses = document.body.className.split(' ').filter(c => !c.startsWith('role-') && !c.startsWith('can-'));
+        document.body.className = bodyClasses.join(' ');
+        
         if (user) {
             document.body.classList.add(`role-${user.role}`);
-            if (user.role === App.USER_ROLES.OPERATOR && user.permissions) {
+            // Права применяются только для Intellect версии
+            if (App.versionType === 'intellect' && user.role === App.USER_ROLES.OPERATOR && user.permissions) {
                 Object.keys(user.permissions).forEach(permission => {
                     if (user.permissions[permission]) {
                         document.body.classList.add(`can-${permission.replace(/_/g, '-')}`);
@@ -533,3 +553,4 @@
     })();
 
 })(window);
+// --- END OF FILE js/renderer.js ---

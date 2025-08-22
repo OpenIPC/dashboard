@@ -4,7 +4,7 @@
 const { app, dialog, BrowserWindow, ipcMain } = require('electron');
 const log = require('electron-log');
 const path = require('path');
-const fs = require('fs'); // Добавляем fs
+const fs = require('fs');
 const EventEmitter = require('events');
 
 const { ModuleManager } = require('./module-manager');
@@ -13,9 +13,24 @@ const configManager = require('./config-manager');
 const { initializeApp, onAppWillQuit } = require('./app-lifecycle');
 const { createWindow, getMainWindow } = require('./window-manager');
 const { registerIpcHandlers } = require('./ipc-handlers');
-// VVVVVV --- ИЗМЕНЕНИЕ: Импортируем HLS-сервер --- VVVVVV
 const { startHlsServer, stopHlsServer } = require('./hls-server');
-// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
+// --- ИЗМЕНЕНИЕ: Определение версии приложения при старте ---
+let APP_VERSION = 'intellect'; // Значение по умолчанию для режима разработки
+
+try {
+    // Этот файл создается скриптом сборки (scripts/set-version.js)
+    const versionConfigPath = path.join(__dirname, '..', '..', 'version-config.json');
+    if (fs.existsSync(versionConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(versionConfigPath, 'utf-8'));
+        APP_VERSION = config.version;
+    }
+} catch (e) {
+    console.error('Could not read version config, defaulting to "intellect".', e);
+}
+
+console.log(`--- Application starting in [${APP_VERSION.toUpperCase()}] mode ---`);
+// --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
 // Настройка логов
 log.transports.file.resolvePathFn = () => path.join(app.getPath('userData'), 'logs', 'main.log');
@@ -76,12 +91,15 @@ moduleManager.appAPI = appAPI;
 // Основной жизненный цикл приложения
 app.whenReady().then(async () => {
     const mainWindow = createWindow();
-    registerIpcHandlers(moduleManager); 
 
-    // VVVVVV --- ИЗМЕНЕНИЕ: Запускаем HLS-сервер при старте --- VVVVVV
+    // --- ИЗМЕНЕНИЕ: Передаем APP_VERSION в обработчики IPC ---
+    // Это позволит ipc-handlers.js также знать о текущей версии
+    // и отключать ненужные хендлеры.
+    registerIpcHandlers(moduleManager, APP_VERSION); 
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
     try {
         const hlsTempPath = path.join(app.getPath('temp'), 'hls');
-        // Очищаем папку от старых сегментов при запуске
         if (fs.existsSync(hlsTempPath)) {
             await fs.promises.rm(hlsTempPath, { recursive: true, force: true });
         }
@@ -90,16 +108,29 @@ app.whenReady().then(async () => {
     } catch (error) {
         console.error("Failed to initialize HLS server:", error);
     }
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
+    // --- ИЗМЕНЕНИЕ: Условная инициализация системы модулей ---
     console.log('[Main] Инициализация модульной системы...');
-    moduleManager.discoverModules();
+    if (APP_VERSION === 'intellect') {
+        moduleManager.discoverModules();
+        const currentSettings = await configManager.getAppSettings();
+        moduleManager.loadEnabledModules(currentSettings);
+        console.log('[Main] Module system initialized for Intellect version.');
+    } else {
+        console.log('[Main] Lite version, skipping module system initialization.');
+    }
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
-    const currentSettings = await configManager.getAppSettings();
-    moduleManager.loadEnabledModules(currentSettings);
-    
+    // --- ИЗМЕНЕНИЕ: Обработчик теперь учитывает версию приложения ---
     ipcMain.handle('get-renderer-modules', async (event) => {
         console.log('[Main] Renderer is ready and requesting module scripts.');
+
+        // Для Lite-версии всегда возвращаем пустой массив
+        if (APP_VERSION === 'lite') {
+            console.log('[Modules] Lite version, returning no renderer scripts.');
+            return [];
+        }
+
         const rendererScripts = [];
         const currentSettings = await configManager.getAppSettings();
         const enabledModules = currentSettings.enabledModules || [];
@@ -114,6 +145,7 @@ app.whenReady().then(async () => {
         });
         return rendererScripts;
     });
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 });
 
 app.on('window-all-closed', () => {
@@ -124,9 +156,7 @@ app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) { createWindow(); }
 });
 
-// VVVVVV --- ИЗМЕНЕНИЕ: Останавливаем HLS-сервер при выходе --- VVVVVV
 app.on('will-quit', (event) => {
     stopHlsServer();
     onAppWillQuit(event);
 });
-// ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^

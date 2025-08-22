@@ -31,11 +31,13 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
 
-    mainWindow.once('ready-to-show', () => {
-        if (app.isPackaged) {
-            autoUpdater.checkForUpdates();
-        }
-    });
+    // VVVVVV --- ИЗМЕНЕНИЕ: УБИРАЕМ АВТОПРОВЕРКУ --- VVVVVV
+    // mainWindow.once('ready-to-show', () => {
+    //     if (app.isPackaged) {
+    //         autoUpdater.checkForUpdates();
+    //     }
+    // });
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     // Отправляем события в renderer для обновления иконки максимизации
     mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized'));

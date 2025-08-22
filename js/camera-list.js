@@ -1,4 +1,4 @@
-// js/camera-list.js (Полная версия с исправлением прав доступа)
+// js/camera-list.js (Полная версия с разделением на Lite/Intellect)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -92,7 +92,8 @@
                 groupHeader.className = 'group-header';
                 groupHeader.innerHTML = `<i class="material-icons toggle-icon">arrow_drop_down</i><span class="group-name">${group.name}</span>`;
         
-                if (group.id !== null) {
+                // --- ИЗМЕНЕНИЕ: Контекстное меню для групп доступно только в Intellect ---
+                if (App.versionType === 'intellect' && group.id !== null) {
                     groupHeader.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         if (currentUser?.role !== 'admin' && !currentUser?.permissions?.edit_cameras) {
@@ -116,51 +117,50 @@
                     cameraItem.className = 'camera-item';
                     cameraItem.dataset.cameraId = camera.id;
                     
-                    cameraItem.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
+                    // --- ИЗМЕНЕНИЕ: Перетаскивание доступно только в Intellect ---
+                    cameraItem.draggable = App.versionType === 'intellect' && (currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout);
                     
+                    // --- ИЗМЕНЕНИЕ: Кнопка аналитики добавляется только в Intellect ---
+                    const analyticsButtonHTML = App.versionType === 'intellect' 
+                        ? `<button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
+                               <i class="material-icons" style="font-size: 18px;">insights</i>
+                           </button>`
+                        : '';
+
                     cameraItem.innerHTML = `
                         <i class="status-icon" id="status-icon-${camera.id}"></i>
                         <span style="flex-grow: 1;">${camera.name}</span>
                         <div class="rec-indicator"></div>
-                        <button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
-                            <i class="material-icons" style="font-size: 18px;">insights</i>
-                        </button>
+                        ${analyticsButtonHTML}
                     `;
 
                     if (recordingStates[camera.id]) {
                         cameraItem.classList.add('recording');
                     }
 
-                    // ================================================================
-                    // VVVVVV --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
-                    // ================================================================
-                    // Проблема: grid-manager ожидает данные с типом 'application/x-camera-id', 
-                    // а не 'text/plain'. Это несоответствие приводило к тому, что 
-                    // событие drop в сетке не могло распознать перетаскиваемую камеру.
                     cameraItem.addEventListener('dragstart', (e) => { 
                         if (cameraItem.draggable) {
-                            // Заменяем 'text/plain' на правильный тип данных.
                             e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
                         } else {
                             e.preventDefault();
                         }
                     });
-                    // ================================================================
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-                    // ================================================================
 
                     groupCamerasList.appendChild(cameraItem);
 
-                    const analyticsBtn = cameraItem.querySelector('.analytics-btn');
-                    if (analyticsBtn) {
-                        analyticsBtn.disabled = false;
-                        analyticsBtn.title = App.i18n.t('toggle_analytics_tooltip');
-                        analyticsBtn.addEventListener('click', async (e) => {
-                            e.stopPropagation();
-                            const btnIcon = analyticsBtn.querySelector('i');
-                            btnIcon.style.color = '#ffc107';
-                            await window.api.toggleAnalytics(camera.id);
-                        });
+                    // --- ИЗМЕНЕНИЕ: Обработчик для кнопки аналитики добавляется только в Intellect ---
+                    if (App.versionType === 'intellect') {
+                        const analyticsBtn = cameraItem.querySelector('.analytics-btn');
+                        if (analyticsBtn) {
+                            analyticsBtn.disabled = false;
+                            analyticsBtn.title = App.i18n.t('toggle_analytics_tooltip');
+                            analyticsBtn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const btnIcon = analyticsBtn.querySelector('i');
+                                btnIcon.style.color = '#ffc107';
+                                await window.api.toggleAnalytics(camera.id);
+                            });
+                        }
                     }
                 });
         
@@ -172,14 +172,13 @@
                     groupCamerasList.classList.toggle('collapsed');
                 });
         
-                if (group.id !== null) {
+                // --- ИЗМЕНЕНИЕ: Перетаскивание камер в группы доступно только в Intellect ---
+                if (App.versionType === 'intellect' && group.id !== null) {
                      groupHeader.addEventListener('dragover', (e) => { e.preventDefault(); groupHeader.style.backgroundColor = 'var(--accent-color)'; });
                      groupHeader.addEventListener('dragleave', (e) => { groupHeader.style.backgroundColor = ''; });
                      groupHeader.addEventListener('drop', (e) => {
                         e.preventDefault();
                         groupHeader.style.backgroundColor = '';
-                        // Здесь мы ищем 'application/x-camera-id', чтобы правильно обработать 
-                        // перетаскивание камеры в группу.
                         const cameraId = parseInt(e.dataTransfer.getData('application/x-camera-id'), 10);
                         if (!isNaN(cameraId)) {
                             const camera = cameras.find(c => c.id === cameraId);
@@ -224,21 +223,21 @@
                     const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
                     const menuItems = {};
                     
+                    // Базовые функции, доступные в обеих версиях
                     menuItems.open_in_browser = `🌐  ${App.i18n.t('context_open_in_browser')}`;
                     menuItems.files = `🗂️  ${App.i18n.t('context_file_manager')}`;
                     menuItems.ssh = `💻  ${App.i18n.t('context_ssh')}`;
+                    menuItems.archive = `🗄️  ${App.i18n.t('archive_title')}`;
+                    menuItems.settings = `⚙️  ${App.i18n.t('context_settings')}`;
 
-                    if (currentUser.role === 'admin' || currentUser.permissions?.view_archive) {
-                        menuItems.archive = `🗄️  ${App.i18n.t('archive_title')}`;
-                    }
-                    if (currentUser.role === 'admin' || currentUser.permissions?.access_settings) {
-                        menuItems.settings = `⚙️  ${App.i18n.t('context_settings')}`;
-                    }
-                    if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
-                        menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
-                    }
-                    if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
-                        menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
+                    // --- ИЗМЕНЕНИЕ: Функции управления доступны только в Intellect ---
+                    if (App.versionType === 'intellect') {
+                        if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
+                            menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
+                        }
+                        if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
+                            menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
+                        }
                     }
 
                     window.api.showCameraContextMenu({ cameraId, labels: menuItems });

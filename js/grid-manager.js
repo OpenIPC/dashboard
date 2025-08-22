@@ -1,4 +1,6 @@
-// js/grid-manager.js (Полная версия с исправлением ошибки "неудаляемой" ячейки)
+// --- START OF FILE js/grid-manager.js ---
+
+// js/grid-manager.js (Полная версия с переключением HD/SD)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -124,14 +126,22 @@
             if (!cellState) return;
 
             controls.querySelector('.fullscreen-btn').onclick = (e) => { e.stopPropagation(); toggleFullscreen(cellIndex); };
-            controls.querySelector('.stream-switch-btn').onclick = (e) => {
-                e.stopPropagation();
-                const newGrid = getGridState().map(g => g ? { ...g } : null);
-                if (newGrid[cellIndex]) {
-                    newGrid[cellIndex].streamId = newGrid[cellIndex].streamId === 0 ? 1 : 0;
-                    stateManager.updateGridState(newGrid);
-                }
-            };
+            
+            // VVVVVV --- ИЗМЕНЕНИЕ: УПРОЩАЕМ ЛОГИКУ КНОПКИ HD/SD --- VVVVVV
+            const streamSwitchBtn = controls.querySelector('.stream-switch-btn');
+            if (streamSwitchBtn) {
+                streamSwitchBtn.innerHTML = cellState.streamId === 0 ? '<i class="material-icons">hd</i>' : '<i class="material-icons">sd</i>';
+                streamSwitchBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const newGrid = getGridState().map(g => g ? { ...g } : null);
+                    if (newGrid[cellIndex]) {
+                        newGrid[cellIndex].streamId = newGrid[cellIndex].streamId === 0 ? 1 : 0;
+                        stateManager.updateGridState(newGrid);
+                    }
+                };
+            }
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+            
             controls.querySelector('.close-btn').onclick = (e) => {
                 e.stopPropagation();
                 const newGrid = getGridState().map(g => g ? { ...g } : null);
@@ -214,46 +224,38 @@
 
                     const uniqueStreamIdentifier = `stream-${camera.id}_${cellState.streamId}_${i}`;
 
-                    // ================================================================
-                    // VVVVVV --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ДЛЯ РЕШЕНИЯ ПРОБЛЕМЫ --- VVVVVV
-                    // ================================================================
-                    // Логика переписана: сначала всегда создаем UI, потом подключаемся.
                     if (!localPlayers[uniqueStreamIdentifier]) {
-                        
-                        // 1. Создаем объект-плейсхолдер, чтобы избежать повторных попыток подключения
                         localPlayers[uniqueStreamIdentifier] = { player: null, cell: cellElement };
 
-                        // 2. Всегда вставляем полный HTML-шаблон в ячейку.
-                        //    Это гарантирует, что кнопки управления (.cell-controls) будут на месте.
                         const template = document.getElementById('grid-cell-content-template');
                         const content = template.content.cloneNode(true);
                         
                         const nameDiv = content.querySelector('.cell-name');
                         const statsDiv = content.querySelector('.cell-stats');
+                        
+                        // VVVVVV --- ИЗМЕНЕНИЕ: ОБНОВЛЯЕМ НАЗВАНИЕ В ЯЧЕЙКЕ --- VVVVVV
                         const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
                         nameDiv.textContent = `${camera.name} (${qualityLabel})`;
+                        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+                        
                         statsDiv.id = `stats-${uniqueStreamIdentifier}`;
 
                         cellElement.innerHTML = '';
                         cellElement.appendChild(content);
                         cellElement.querySelector('.video-wrapper').innerHTML += `<span>${App.i18n.t('connecting')}</span>`;
 
-                        // 3. Пытаемся запустить видеопоток
                         const result = await window.api.startVideoStream({ 
                             credentials: camera, 
                             streamId: cellState.streamId,
                             uniqueStreamIdentifier: uniqueStreamIdentifier 
                         });
 
-                        // 4. Проверяем, не была ли ячейка очищена, пока мы подключались
                         if (!localPlayers[uniqueStreamIdentifier]) {
                             await window.api.stopVideoStream(uniqueStreamIdentifier);
                             continue;
                         }
 
-                        // 5. Обрабатываем результат
                         if (result.success) {
-                            // Успех: создаем плеер и удаляем текст "Подключение..."
                             if (restartAttempts[uniqueStreamIdentifier]) {
                                 delete restartAttempts[uniqueStreamIdentifier];
                             }
@@ -270,20 +272,14 @@
                             });
                             localPlayers[uniqueStreamIdentifier].player = player;
                         } else {
-                            // Ошибка: показываем сообщение об ошибке, но кнопки остаются!
                             const videoWrapper = cellElement.querySelector('.video-wrapper');
                             if (videoWrapper) {
                                 videoWrapper.innerHTML = `<span>${App.i18n.t('error')}: ${result.error || App.i18n.t('unknown_error')}</span>`;
                             }
-                            // Удаляем плейсхолдер, чтобы можно было попробовать снова
                             delete localPlayers[uniqueStreamIdentifier];
                         }
                     }
-                    // ================================================================
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-                    // ================================================================
 
-                    // Эта функция теперь всегда будет находить кнопки, т.к. шаблон вставлен
                     attachControlEvents(cellElement, i);
                     
                     const recordBtn = cellElement.querySelector('.record-btn');
@@ -313,32 +309,49 @@
             });
         }
 
+        // VVVVVV --- ИЗМЕНЕНИЕ: ГЛАВНАЯ ЛОГИКА ПЕРЕКЛЮЧЕНИЯ ПОТОКА --- VVVVVV
         function toggleFullscreen(cellIndex) {
             const cell = gridCells[cellIndex];
             if (!cell) return;
+
+            const newGrid = getGridState().map(g => g ? { ...g } : null);
+            const cellState = newGrid[cellIndex];
+            if (!cellState) return;
+
             const isCurrentlyFullscreen = cell.classList.contains('fullscreen');
             const fsBtnIcon = cell.querySelector('.fullscreen-btn i');
 
             if (isCurrentlyFullscreen) {
+                // Выходим из полноэкранного режима, возвращаем SD поток
+                cellState.streamId = 1; // SD поток
                 gridContainer.classList.remove('fullscreen-mode');
                 cell.classList.remove('fullscreen');
                 if (fsBtnIcon) fsBtnIcon.textContent = 'fullscreen';
                 fullscreenCellIndex = null;
             } else {
+                // Входим в полноэкранный режим, включаем HD поток
                 if (fullscreenCellIndex !== null) {
+                    // Если другая ячейка была в fullscreen, сворачиваем ее и возвращаем в SD
                     const oldFullscreenCell = gridCells[fullscreenCellIndex];
-                    if (oldFullscreenCell) {
+                    if (oldFullscreenCell && newGrid[fullscreenCellIndex]) {
+                        newGrid[fullscreenCellIndex].streamId = 1; // SD поток
                         oldFullscreenCell.classList.remove('fullscreen');
                         const oldFsBtnIcon = oldFullscreenCell.querySelector('.fullscreen-btn i');
                         if (oldFsBtnIcon) oldFsBtnIcon.textContent = 'fullscreen';
                     }
                 }
+                
+                cellState.streamId = 0; // HD поток
                 fullscreenCellIndex = cellIndex;
                 gridContainer.classList.add('fullscreen-mode');
                 cell.classList.add('fullscreen');
                 if (fsBtnIcon) fsBtnIcon.textContent = 'fullscreen_exit';
             }
+
+            // Сохраняем новое состояние сетки. Это вызовет перерисовку.
+            stateManager.updateGridState(newGrid);
         }
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function init() {
             for (let i = 0; i < MAX_GRID_SIZE; i++) {
@@ -371,7 +384,9 @@
                     if (cameraIdStr) {
                         const cameraId = parseInt(cameraIdStr, 10);
                         if (!isNaN(cameraId)) {
-                            newGrid[targetIndex] = { camera: { id: cameraId }, streamId: 0 };
+                            // VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ КАМЕРУ СРАЗУ В SD --- VVVVVV
+                            newGrid[targetIndex] = { camera: { id: cameraId }, streamId: 1 }; // По умолчанию SD поток
+                            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                             stateManager.updateGridState(newGrid);
                         }
                         return;
@@ -525,3 +540,5 @@ const label = `${translatedLabel} (${Math.round(obj.confidence * 100)}%)`;
         };
     };
 })(window);
+
+// --- END OF FILE js/grid-manager.js ---

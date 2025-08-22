@@ -259,5 +259,9 @@
   "about_description": "DASHBOARD for OpenIPC is a desktop application for managing and monitoring your OpenIPC cameras.",
   "about_author": "Developed by Rinibr.",
   "about_donation_prompt": "If you enjoy this application, please consider supporting its future development.",
-  "about_donation_button": "Support the Project"
+  "about_donation_button": "Support the Project",
+  "update_version_title": "What's new in version {{version}}",
+  "update_no_changelog": "No changelog provided.",
+  "update_download_button": "Download and Install",
+  "update_downloaded_prompt": "Update downloaded. Restart the application now to install?"
 }

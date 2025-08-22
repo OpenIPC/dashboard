@@ -1,0 +1,21 @@
+{
+  "appId": "com.vavol.openipcdashboard.lite",
+  "productName": "DASHBOARD for OpenIPC Lite",
+  "artifactName": "${productName}-${os}-${arch}-Setup-${version}.${ext}",
+  "directories": { "output": "dist" },
+  "win": { "target": ["nsis", "portable"] },
+  "linux": { "target": "AppImage" },
+  "files": [
+    "**/*",
+    "!modules/",
+    "!extra/",
+    "!python_src/",
+    "!*.spec",
+    "!builder-*.json",
+    "!scripts/"
+  ],
+  "asarUnpack": [
+    "**/node_modules/@ffmpeg-installer/ffmpeg/**",
+    "**/node_modules/keytar/**"
+  ]
+}
