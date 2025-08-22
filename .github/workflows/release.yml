@@ -8,8 +8,8 @@ on:
       - 'v*.*.*'
 
 jobs:
-  # --- ЭТАП 1: СБОРКА АРТЕФАКТОВ ---
-  build: # Переименовали 'release' в 'build' для ясности
+  # ЭТАП 1: СБОРКА АРТЕФАКТОВ
+  build:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
@@ -54,11 +54,9 @@ jobs:
         if: matrix.version_type == 'intellect'
         run: ls -R extra/analytics
 
-      # --- ИЗМЕНЕНИЕ: Убираем публикацию и добавляем флаг --publish never ---
       - name: Build and package Electron app
         run: npm run dist:${{ matrix.version_type }} -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }} --publish never
         env:
-          # Токен больше не нужен на этом этапе, но оставим на всякий случай
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} 
 
       - name: Upload artifact
@@ -67,9 +65,8 @@ jobs:
           name: ${{ matrix.os }}-${{ matrix.version_type }}-build
           path: dist/
 
-  # --- ЭТАП 2: СОЗДАНИЕ РЕЛИЗА ---
+  # ЭТАП 2: СОЗДАНИЕ РЕЛИЗА
   create_release:
-    # Зависит от успешного завершения ВСЕХ сборок
     needs: build 
     runs-on: ubuntu-latest
 
@@ -79,13 +76,33 @@ jobs:
         with:
           path: artifacts/
 
-      - name: List downloaded files (for debugging)
+      - name: List downloaded files (before cleanup)
         run: ls -R artifacts/
+
+      - name: Clean up artifacts
+        run: |
+          # 1. Удаляем все ненужные .blockmap и debug файлы
+          find artifacts -name "*.blockmap" -type f -delete
+          find artifacts -name "builder-debug.yml" -type f -delete
+
+          # 2. Обрабатываем файлы для автообновления
+          # Нам нужен только один latest.yml для Windows и один latest-linux.yml для Linux.
+          # Берем их из Intellect-версии, так как она основная.
+          # Сначала удаляем все, кроме тех, что от Intellect
+          find artifacts -name "latest.yml" ! -path "*intellect*" -type f -delete
+          find artifacts -name "latest-linux.yml" ! -path "*intellect*" -type f -delete
+          
+          # 3. Перемещаем все оставшиеся файлы в одну общую папку для удобства
+          mkdir release_files
+          find artifacts -type f -print -exec mv {} release_files/ \;
+      
+      - name: List cleaned files (after cleanup)
+        run: ls -R release_files/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/*/*
+            release_files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
