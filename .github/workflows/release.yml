@@ -81,12 +81,8 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          # 1. Создаем чистую папку для файлов релиза
           mkdir release_assets
-
-          # 2. Копируем ТОЛЬКО нужные файлы (установщики, портативные версии, AppImage и latest*.yml)
-          # Эта команда рекурсивно найдет нужные файлы во всех подпапках artifacts и скопирует их в release_assets
-          find artifacts \( -name "*.exe" -o -name "*.AppImage" -o -name "latest*.yml" \) -exec cp {} release_assets/ \;
+          find artifacts \( -name '*Setup*.exe' -o -name '*Portable*.exe' -o -name '*.AppImage' -o -name 'latest*.yml' \) -exec cp {} release_assets/ \;
       
       - name: List final release assets (after cleanup)
         run: ls -R release_assets/

@@ -1,10 +1,25 @@
 {
   "appId": "com.vavol.openipcdashboard.lite",
   "productName": "DASHBOARD for OpenIPC Lite",
-  "artifactName": "${productName}-${os}-${arch}-Setup-${version}.${ext}",
-  "directories": { "output": "dist" },
-  "win": { "target": ["nsis", "portable"] },
-  "linux": { "target": "AppImage" },
+  "directories": {
+    "output": "dist"
+  },
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ]
+  },
+  "nsis": {
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
+  },
+  "linux": {
+    "target": "AppImage",
+    "artifactName": "${productName}-${version}.${ext}"
+  },
   "files": [
     "**/*",
     "!modules/",
