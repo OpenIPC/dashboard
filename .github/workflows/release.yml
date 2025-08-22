@@ -79,30 +79,22 @@ jobs:
       - name: List downloaded files (before cleanup)
         run: ls -R artifacts/
 
-      - name: Clean up artifacts
+      - name: Prepare release assets
         run: |
-          # 1. Удаляем все ненужные .blockmap и debug файлы
-          find artifacts -name "*.blockmap" -type f -delete
-          find artifacts -name "builder-debug.yml" -type f -delete
+          # 1. Создаем чистую папку для файлов релиза
+          mkdir release_assets
 
-          # 2. Обрабатываем файлы для автообновления
-          # Нам нужен только один latest.yml для Windows и один latest-linux.yml для Linux.
-          # Берем их из Intellect-версии, так как она основная.
-          # Сначала удаляем все, кроме тех, что от Intellect
-          find artifacts -name "latest.yml" ! -path "*intellect*" -type f -delete
-          find artifacts -name "latest-linux.yml" ! -path "*intellect*" -type f -delete
-          
-          # 3. Перемещаем все оставшиеся файлы в одну общую папку для удобства
-          mkdir release_files
-          find artifacts -type f -print -exec mv {} release_files/ \;
+          # 2. Копируем ТОЛЬКО нужные файлы (установщики, портативные версии, AppImage и latest*.yml)
+          # Эта команда рекурсивно найдет нужные файлы во всех подпапках artifacts и скопирует их в release_assets
+          find artifacts \( -name "*.exe" -o -name "*.AppImage" -o -name "latest*.yml" \) -exec cp {} release_assets/ \;
       
-      - name: List cleaned files (after cleanup)
-        run: ls -R release_files/
+      - name: List final release assets (after cleanup)
+        run: ls -R release_assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release_files/*
+            release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
