@@ -92,8 +92,7 @@
                 groupHeader.className = 'group-header';
                 groupHeader.innerHTML = `<i class="material-icons toggle-icon">arrow_drop_down</i><span class="group-name">${group.name}</span>`;
         
-                // --- ИЗМЕНЕНИЕ: Контекстное меню для групп доступно только в Intellect ---
-                if (App.versionType === 'intellect' && group.id !== null) {
+                if (group.id !== null) {
                     groupHeader.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         if (currentUser?.role !== 'admin' && !currentUser?.permissions?.edit_cameras) {
@@ -117,10 +116,8 @@
                     cameraItem.className = 'camera-item';
                     cameraItem.dataset.cameraId = camera.id;
                     
-                    // --- ИЗМЕНЕНИЕ: Перетаскивание доступно только в Intellect ---
-                    cameraItem.draggable = App.versionType === 'intellect' && (currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout);
+                    cameraItem.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
                     
-                    // --- ИЗМЕНЕНИЕ: Кнопка аналитики добавляется только в Intellect ---
                     const analyticsButtonHTML = App.versionType === 'intellect' 
                         ? `<button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
                                <i class="material-icons" style="font-size: 18px;">insights</i>
@@ -148,7 +145,6 @@
 
                     groupCamerasList.appendChild(cameraItem);
 
-                    // --- ИЗМЕНЕНИЕ: Обработчик для кнопки аналитики добавляется только в Intellect ---
                     if (App.versionType === 'intellect') {
                         const analyticsBtn = cameraItem.querySelector('.analytics-btn');
                         if (analyticsBtn) {
@@ -172,8 +168,7 @@
                     groupCamerasList.classList.toggle('collapsed');
                 });
         
-                // --- ИЗМЕНЕНИЕ: Перетаскивание камер в группы доступно только в Intellect ---
-                if (App.versionType === 'intellect' && group.id !== null) {
+                if (group.id !== null) {
                      groupHeader.addEventListener('dragover', (e) => { e.preventDefault(); groupHeader.style.backgroundColor = 'var(--accent-color)'; });
                      groupHeader.addEventListener('dragleave', (e) => { groupHeader.style.backgroundColor = ''; });
                      groupHeader.addEventListener('drop', (e) => {
@@ -223,22 +218,19 @@
                     const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
                     const menuItems = {};
                     
-                    // Базовые функции, доступные в обеих версиях
+                    // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ПУНКТ "НАСТРОЙКИ" --- VVVVVV
                     menuItems.open_in_browser = `🌐  ${App.i18n.t('context_open_in_browser')}`;
                     menuItems.files = `🗂️  ${App.i18n.t('context_file_manager')}`;
                     menuItems.ssh = `💻  ${App.i18n.t('context_ssh')}`;
                     menuItems.archive = `🗄️  ${App.i18n.t('archive_title')}`;
-                    menuItems.settings = `⚙️  ${App.i18n.t('context_settings')}`;
 
-                    // --- ИЗМЕНЕНИЕ: Функции управления доступны только в Intellect ---
-                    if (App.versionType === 'intellect') {
-                        if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
-                            menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
-                        }
-                        if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
-                            menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
-                        }
+                    if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
+                        menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
                     }
+                    if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
+                        menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
+                    }
+                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                     window.api.showCameraContextMenu({ cameraId, labels: menuItems });
                 }
@@ -259,6 +251,7 @@
                     groupId: camera.groupId
                 };
 
+                // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ОБРАБОТЧИК ДЛЯ 'settings' --- VVVVVV
                 switch(command) {
                     case 'open_in_browser': 
                         window.api.openInBrowser(cameraDataForIPC.ip); 
@@ -266,10 +259,10 @@
                     case 'files': window.api.openFileManager(cameraDataForIPC); break;
                     case 'ssh': window.api.openSshTerminal(cameraDataForIPC); break;
                     case 'archive': App.archiveManager.openArchiveForCamera(camera); break;
-                    case 'settings': App.modalHandler.openSettingsModal(camera); break;
                     case 'edit': App.modalHandler.openAddModal(cameraDataForIPC); break;
                     case 'delete': deleteCamera(cameraId); break;
                 }
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             });
 
             window.api.onGroupContextMenuCommand(({ command, groupId }) => {

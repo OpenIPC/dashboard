@@ -13,17 +13,14 @@
                 <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
             </div>
             
-            <!-- VVVVVV --- ИЗМЕНЕННЫЙ БЛОК УПРАВЛЕНИЯ ПЛЕЕРОМ --- VVVVVV -->
             <div class="archive-controls">
                 <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
                 <button id="ac-speed-btn" class="control-button">1.0x</button>
                 <span id="ac-time-display" class="time-display">00:00:00</span>
                 
-                <!-- Новые кнопки для экспорта -->
                 <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
                 <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
             </div>
-            <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
             
             <div class="timeline-container">
                 <div class="timeline-wrapper" id="timeline-wrapper">
@@ -85,35 +82,12 @@
             <h2 id="settings-modal-title"></h2>
             <div class="modal-body">
                 <div class="tabs">
-                    <button class="tab-button" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
-                    <button class="tab-button" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
-                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки Модули VVVV -->
-                    <button class="tab-button intellect-only" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
-                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки Аналитика VVVV -->
-                    <button class="tab-button intellect-only" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
-                    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для вкладки О программе (если есть специфический функционал) VVVV -->
-                    <button class="tab-button intellect-only" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
-                    <button class="tab-button" data-tab="tab-netip" data-i18n-key="settings_tab_netip"></button>
-                    <button class="tab-button" data-tab="tab-system" data-i18n-key="settings_tab_system"></button>
-                    <button class="tab-button" data-tab="tab-isp" data-i18n-key="settings_tab_isp"></button>
-                    <button class="tab-button" data-tab="tab-image" data-i18n-key="settings_tab_image"></button>
-                    <button class="tab-button" data-tab="tab-video0" data-i18n-key="settings_tab_video0"></button>
-                    <button class="tab-button" data-tab="tab-video1" data-i18n-key="settings_tab_video1"></button>
-                    <button class="tab-button" data-tab="tab-jpeg" data-i18n-key="settings_tab_jpeg"></button>
-                    <button class="tab-button" data-tab="tab-osd" data-i18n-key="settings_tab_osd"></button>
-                    <button class="tab-button" data-tab="tab-audio" data-i18n-key="settings_tab_audio"></button>
-                    <button class="tab-button" data-tab="tab-rtsp" data-i18n-key="settings_tab_rtsp"></button>
-                    <button class="tab-button" data-tab="tab-nightMode" data-i18n-key="settings_tab_night"></button>
-                    <button class="tab-button" data-tab="tab-motionDetect" data-i18n-key="settings_tab_motion"></button>
-                    <button class="tab-button" data-tab="tab-records" data-i18n-key="settings_tab_record"></button>
-                    <button class="tab-button" data-tab="tab-outgoing" data-i18n-key="settings_tab_outgoing"></button>
-                    <button class="tab-button" data-tab="tab-watchdog" data-i18n-key="settings_tab_watchdog"></button>
-                    <button class="tab-button" data-tab="tab-hls" data-i18n-key="settings_tab_hls"></button>
-                    <button class="tab-button" data-tab="tab-onvif" data-i18n-key="settings_tab_onvif"></button>
-                    <button class="tab-button" data-tab="tab-ipeye" data-i18n-key="settings_tab_ipeye"></button>
+                    <button class="tab-button general-tab" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
+                    <button class="tab-button general-tab" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
+                    <button class="tab-button general-tab intellect-only" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
+                    <button class="tab-button general-tab intellect-only" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
                 </div>
 
-                <!-- Статические вкладки -->
                 <div id="tab-general" class="tab-content">
                     <h3 data-i18n-key="settings_app_header"></h3>
                     <div class="form-grid simple with-button">
@@ -134,24 +108,30 @@
                             <option value="intel" data-i18n-key="settings_hw_accel_intel"></option>
                             <option value="none" data-i18n-key="settings_hw_accel_none"></option>
                         </select>
-                        <span data-i18n-key="settings_analytics_provider"></span>
-                        <select id="app-settings-analytics-provider">
-                            <option value="auto" data-i18n-key="analytics_provider_auto"></option>
-                            <option value="dml" data-i18n-key="analytics_provider_dml"></option>
-                            <option value="cpu" data-i18n-key="analytics_provider_cpu"></option>
-                        </select>
+                    </div>
+                    <div class="intellect-only">
+                         <div class="form-grid simple with-button">
+                             <span data-i18n-key="settings_analytics_provider"></span>
+                             <select id="app-settings-analytics-provider">
+                                <option value="auto" data-i18n-key="analytics_provider_auto"></option>
+                                <option value="dml" data-i18n-key="analytics_provider_dml"></option>
+                                <option value="cpu" data-i18n-key="analytics_provider_cpu"></option>
+                             </select>
+                        </div>
+                    </div>
+                     <div class="form-grid simple with-button">
                         <span data-i18n-key="settings_notifications_label"></span>
                         <div class="form-check-inline">
                             <input type="checkbox" id="app-settings-notifications-enabled" class="form-check-input">
                             <label for="app-settings-notifications-enabled" data-i18n-key="settings_notifications_enable_label"></label>
                         </div>
                     </div>
-                    <h3 data-i18n-key="settings_config_management_header"></h3>
-                    <div class="form-grid simple">
-                        <span data-i18n-key="settings_config_export_label"></span>
-                        <button id="export-config-btn" style="width: 200px; justify-self: start;" data-i18n-key="settings_config_export_btn"></button>
-                        <span data-i18n-key="settings_config_import_label"></span>
-                        <button id="import-config-btn" style="width: 200px; justify-self: start; background-color: var(--danger-color);" data-i18n-key="settings_config_import_btn"></button>
+                    <div>
+                        <h3 data-i18n-key="settings_config_management_header"></h3>
+                        <div class="config-buttons-container">
+                            <button id="export-config-btn" data-i18n-key="settings_config_export_label"></button>
+                            <button id="import-config-btn" style="background-color: var(--danger-color);" data-i18n-key="settings_config_import_label"></button>
+                        </div>
                     </div>
                     <h3 data-i18n-key="update_header"></h3>
                     <div class="form-grid simple">
@@ -159,6 +139,11 @@
                         <span id="update-status-text" style="font-style: italic;" data-i18n-key="update_check_prompt"></span>
                         <span data-i18n-key="update_action_label"></span>
                         <button id="check-for-updates-btn" style="width: 200px; justify-self: start;" data-i18n-key="update_check_button"></button>
+                    </div>
+                    <div id="update-info-container" class="hidden" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                        <h4 id="update-version-title"></h4>
+                        <pre id="update-changelog" style="white-space: pre-wrap; font-family: inherit; max-height: 150px; overflow-y: auto; background: #f0f0f0; padding: 10px; border-radius: 4px;"></pre>
+                        <button id="download-update-btn" style="margin-top: 10px;" data-i18n-key="update_download_button"></button>
                     </div>
                 </div>
                 <div id="tab-streaming" class="tab-content">
@@ -174,43 +159,12 @@
                         <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
                     </div>
                 </div>
-                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела Модули VVVV -->
+                <!-- VVVVVV --- ИЗМЕНЕНИЕ: ИСПРАВЛЕНА ВЛОЖЕННОСТЬ --- VVVVVV -->
                 <div id="tab-modules" class="tab-content intellect-only">
                     <h3 data-i18n-key="modules_management_header"></h3>
                     <p style="color: #6c757d; font-size: 13px;" data-i18n-key="modules_description"></p>
-                    <div id="modules-list" style="margin-top: 15px;">
-                        <!-- Сюда будет динамически загружен список модулей -->
-                    </div>
+                    <div id="modules-list" style="margin-top: 15px;"></div>
                 </div>
-                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела Аналитика VVVV -->
-                <div id="tab-analytics" class="tab-content intellect-only">
-                    <div id="global-analytics-settings">
-                        <h3 data-i18n-key="global_analytics_settings_header"></h3>
-                        <p style="color: #666; font-size: 13px;" data-i18n-key="global_analytics_settings_desc"></p>
-                        <div class="form-grid simple">
-                            <label for="app-settings-analytics-resize-width" data-i18n-key="analytics_resize_width_label"></label>
-                            <input type="number" id="app-settings-analytics-resize-width" value="416" min="0" step="16">
-                            <label for="app-settings-analytics-frame-skip" data-i18n-key="analytics_frame_skip_label"></label>
-                            <input type="number" id="app-settings-analytics-frame-skip" value="10" min="1">
-                            <label for="app-settings-analytics-record-duration" data-i18n-key="analytics_record_duration_label"></label>
-                            <input type="number" id="app-settings-analytics-record-duration" value="30" min="5">
-                        </div>
-                    </div>
-                    <div id="camera-specific-analytics-settings">
-                        <h3 data-i18n-key="camera_analytics_settings_header"></h3>
-                        <div class="form-grid simple">
-                            <label for="analytics.enabled" data-i18n-key="analytics_enable_label"></label>
-                            <div class="form-check form-switch">
-                                <input type="checkbox" id="analytics.enabled" class="form-check-input">
-                            </div>
-                        </div>
-                        <h4 data-i18n-key="analytics_objects_header"></h4>
-                        <div id="analytics-objects-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;"></div>
-                        <h4 style="margin-top: 20px;" data-i18n-key="analytics_roi_header"></h4>
-                        <p style="color: #666; font-size: 13px;" data-i18n-key="analytics_roi_desc"></p>
-                    </div>
-                </div>
-                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для раздела О программе (если содержит специфический функционал) VVVV -->
                 <div id="tab-about" class="tab-content intellect-only">
                     <div class="about-container">
                         <img src="assets/logo.png" alt="App Logo" class="about-logo">
@@ -218,68 +172,29 @@
                         <p><span data-i18n-key="about_version"></span>: <span id="app-version"></span></p>
                         <p data-i18n-key="about_description"></p>
                         <p data-i18n-key="about_author"></p>
-                        
                         <div class="donation-section">
                             <p data-i18n-key="about_donation_prompt"></p>
-                            <button id="donate-btn" class="donation-button">
-                                <i class="material-icons">volunteer_activism</i>
-                                <span data-i18n-key="about_donation_button"></span>
-                            </button>
+                            <button id="donate-btn" class="donation-button"><i class="material-icons">volunteer_activism</i><span data-i18n-key="about_donation_button"></span></button>
                         </div>
                     </div>
                 </div>
-                <div id="tab-netip" class="tab-content">
-                    <h3>Настройки видео</h3>
-                    <p style="color: #666; font-size: 13px;">Сохранение настроек для NETIP-камер находится в разработке.</p>
-                    <div class="form-grid simple">
-                        <label for="netip.video.resolution">Разрешение</label><input type="text" id="netip.video.resolution" readonly>
-                        <label for="netip.video.bitrate">Битрейт (kbps)</label><input type="number" id="netip.video.bitrate" readonly>
-                    </div>
-                    <h3>Информация о системе</h3>
-                    <div class="form-grid simple">
-                        <label for="netip.system.devicename">Имя устройства</label><input type="text" id="netip.system.devicename" readonly>
-                        <label for="netip.system.hardware">Аппаратная вер.</label><input type="text" id="netip.system.hardware" readonly>
-                        <label for="netip.system.software">Версия ПО</label><input type="text" id="netip.system.software" readonly>
-                    </div>
-                </div>
-                
-                <!-- Пустые контейнеры для динамической генерации -->
-                <div id="tab-system" class="tab-content"></div>
-                <div id="tab-isp" class="tab-content"></div>
-                <div id="tab-image" class="tab-content"></div>
-                <div id="tab-video0" class="tab-content"></div>
-                <div id="tab-video1" class="tab-content"></div>
-                <div id="tab-jpeg" class="tab-content"></div>
-                <div id="tab-osd" class="tab-content"></div>
-                <div id="tab-audio" class="tab-content"></div>
-                <div id="tab-rtsp" class="tab-content"></div>
-                <div id="tab-nightMode" class="tab-content"></div>
-                <div id="tab-motionDetect" class="tab-content"></div>
-                <div id="tab-records" class="tab-content"></div>
-                <div id="tab-outgoing" class="tab-content"></div>
-                <div id="tab-watchdog" class="tab-content"></div>
-                <div id="tab-hls" class="tab-content"></div>
-                <div id="tab-onvif" class="tab-content"></div>
-                <div id="tab-ipeye" class="tab-content"></div>
-
+                <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
             </div>
             <div class="modal-footer">
                 <button id="save-settings-btn" data-i18n-key="save"></button>
-                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для кнопки отчета о проблеме VVVV -->
-                <button id="report-issue-btn" class="intellect-only" style="background-color: #6c757d; margin-left: auto;" data-i18n-key="report_issue_button"></button>
-                <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для кнопок рестарта/kill-all VVVV -->
-                <button id="restart-majestic-btn" class="intellect-only" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
-                <button id="kill-all-btn-modal" class="intellect-only" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
+                <button id="report-issue-btn" style="background-color: #6c757d; margin-left: auto;" data-i18n-key="report_issue_button"></button>
+                <div id="general-tab-actions" style="display: flex; gap: 10px;">
+                    <button id="restart-majestic-btn" class="intellect-only" style="background-color: #ffc107; color: black;" data-i18n-key="settings_restart_majestic"></button>
+                    <button id="kill-all-btn-modal" class="intellect-only" style="background-color: var(--danger-color); color: white;" data-i18n-key="settings_kill_all"></button>
+                </div>
             </div>
-            
         </div>
     </div>
 </template>
 
-<!-- Шаблон для окна отчета о проблеме -->
+<!-- ... (остальные шаблоны без изменений) ... -->
 <template id="report-issue-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна отчета VVVV -->
-    <div id="report-issue-modal" class="modal-backdrop hidden intellect-only">
+    <div id="report-issue-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <span id="report-issue-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="report_issue_title"></h2>
@@ -296,11 +211,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для управления пользователями -->
 <template id="user-management-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна управления пользователями VVVV -->
-    <div id="user-management-modal" class="modal-backdrop hidden intellect-only">
+    <div id="user-management-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 600px;">
             <span id="user-management-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="user_management_title"></h2>
@@ -315,11 +227,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для добавления группы -->
 <template id="add-group-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна добавления группы VVVV -->
-    <div id="add-group-modal" class="modal-backdrop hidden intellect-only">
+    <div id="add-group-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <span id="add-group-modal-close-btn" class="modal-close-btn">×</span>
             <h2 id="add-group-modal-title" data-i18n-key="create_group_title"></h2>
@@ -334,11 +243,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для поиска камер -->
 <template id="discover-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна поиска камер VVVV -->
-    <div id="discover-modal" class="modal-backdrop hidden intellect-only">
+    <div id="discover-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <span id="discover-modal-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="discover_modal_title"></h2>
@@ -352,11 +258,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для добавления пользователя -->
 <template id="add-user-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна добавления пользователя VVVV -->
-    <div id="add-user-modal" class="modal-backdrop hidden intellect-only">
+    <div id="add-user-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">
             <span id="add-user-close-btn" class="modal-close-btn">×</span>
             <h2 data-i18n-key="add_user_title"></h2>
@@ -377,11 +280,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для редактирования прав -->
 <template id="permissions-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна редактирования прав VVVV -->
-    <div id="permissions-modal" class="modal-backdrop hidden intellect-only">
+    <div id="permissions-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 500px;">
             <span id="permissions-modal-close-btn" class="modal-close-btn">×</span>
             <h2 id="permissions-modal-title"></h2>
@@ -395,11 +295,8 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для смены пароля -->
 <template id="change-password-modal-template">
-    <!-- VVVV ИЗМЕНЕНИЕ: intellect-only для всего модального окна смены пароля VVVV -->
-    <div id="change-password-modal" class="modal-backdrop hidden intellect-only">
+    <div id="change-password-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">
             <span id="change-pass-close-btn" class="modal-close-btn">×</span>
             <h2 id="change-pass-modal-title"></h2>
@@ -414,8 +311,6 @@
         </div>
     </div>
 </template>
-
-<!-- Шаблон для кастомного prompt -->
 <template id="prompt-modal-template">
     <div id="prompt-modal" class="modal-backdrop hidden">
         <div class="modal-content" style="width: 400px;">

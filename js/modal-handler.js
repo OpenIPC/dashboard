@@ -1,19 +1,31 @@
-// --- ФАЙЛ: js/modal-handler.js (Оригинальная версия до Svelte) ---
+// --- ФАЙЛ: js/modal-handler.js (Версия с отладкой) ---
 
 (function(window) {
     window.AppModules = window.AppModules || {};
 
     window.AppModules.createModalHandler = function(App) {
-        // --- Общие утилиты для всех модальных окон ---
         let toastTimeout;
         const appToast = document.getElementById('app-toast');
 
         const utils = {
             openModal: (modalElement) => {
-                if (modalElement) modalElement.classList.remove('hidden');
+                if (modalElement) {
+                    console.log(`%c[DEBUG] OPEN MODAL CALLED for: #${modalElement.id}`, 'color: #28a745; font-weight: bold;');
+                    console.trace();
+                    modalElement.classList.remove('hidden');
+                } else {
+                    console.error('[DEBUG] openModal called with a NULL element!');
+                    console.trace();
+                }
             },
             closeModal: (modalElement) => {
-                if (modalElement) modalElement.classList.add('hidden');
+                if (modalElement) {
+                    console.log(`%c[DEBUG] CLOSE MODAL CALLED for: #${modalElement.id}`, 'color: #dc3545; font-weight: bold;');
+                    modalElement.classList.add('hidden');
+                } else {
+                    console.error('[DEBUG] closeModal called with a NULL element!');
+                    console.trace();
+                }
             },
             showToast: (message, isError = false, duration = 3000) => {
                 if (toastTimeout) clearTimeout(toastTimeout);
@@ -25,12 +37,10 @@
             }
         };
 
-        // --- Создание дочерних обработчиков ---
         const cameraHandler = AppModules.createCameraModalHandler(App, utils);
         const settingsHandler = AppModules.createSettingsModalHandler(App, utils);
         const userHandler = AppModules.createUserModalHandler(App, utils);
 
-        // --- Элементы для кастомного prompt-окна ---
         const promptModal = document.getElementById('prompt-modal');
         const promptModalTitle = document.getElementById('prompt-modal-title');
         const promptModalLabel = document.getElementById('prompt-modal-label');
@@ -39,7 +49,6 @@
         const promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
         const promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
 
-        // --- Элементы для окна отправки отчета ---
         const reportModal = document.getElementById('report-issue-modal');
         const sendReportBtn = document.getElementById('send-report-btn');
         const cancelReportBtn = document.getElementById('cancel-report-btn');
@@ -48,7 +57,7 @@
         const addScreenshotBtn = document.getElementById('add-screenshot-btn');
         const screenshotsPreview = document.getElementById('screenshots-preview');
         
-        let attachedScreenshots = []; // Массив для хранения Base64 скриншотов
+        let attachedScreenshots = [];
 
         function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel'), inputType = 'text' }) {
             return new Promise((resolve) => {
@@ -108,7 +117,6 @@
         
         function showReportModal() {
             if (issueDescription) issueDescription.value = '';
-            // Очищаем предыдущие скриншоты при открытии
             attachedScreenshots = [];
             if(screenshotsPreview) screenshotsPreview.innerHTML = '';
             utils.openModal(reportModal);
@@ -124,10 +132,8 @@
             `;
             
             thumb.querySelector('.remove-screenshot-btn').onclick = () => {
-                // Удаляем из массива и из DOM
                 attachedScreenshots.splice(index, 1);
                 thumb.remove();
-                // Перерисовываем превью, чтобы индексы были правильными
                 redrawScreenshotsPreview();
             };
             screenshotsPreview.appendChild(thumb);
@@ -144,29 +150,29 @@
         }
 
         function init() {
-            // --- Инициализация всех дочерних обработчиков ---
+            console.log('%c[DEBUG] Initializing ModalHandler...', 'color: #ffc107;');
+
             cameraHandler.init();
             settingsHandler.init();
             userHandler.init();
             
-            // --- Глобальные обработчики, управляющие всеми модальными окнами ---
+            // VVVVVV --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ ЛОГИКУ ДЛЯ КНОПКИ ОБЩИХ НАСТРОЕК --- VVVVVV
             const generalSettingsBtn = document.getElementById('general-settings-btn');
+            if(generalSettingsBtn) generalSettingsBtn.addEventListener('click', () => settingsHandler.openSettingsModal(null));
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
             const userManagementBtn = document.getElementById('user-management-btn');
+            if(userManagementBtn) userManagementBtn.addEventListener('click', () => userHandler.openUserManagementModal());
             
-            generalSettingsBtn.addEventListener('click', () => settingsHandler.openSettingsModal(null));
-            userManagementBtn.addEventListener('click', () => userHandler.openUserManagementModal());
-            
-            // --- Обработчики для кастомного prompt ---
-            promptModalCloseBtn.addEventListener('click', () => {
-                promptModalCancelBtn.click();
+            if(promptModalCloseBtn) promptModalCloseBtn.addEventListener('click', () => {
+                if(promptModalCancelBtn) promptModalCancelBtn.click();
             });
-            promptModal.addEventListener('click', (e) => { 
-                if (e.target === promptModal) {
+            if(promptModal) promptModal.addEventListener('click', (e) => { 
+                if (e.target === promptModal && promptModalCancelBtn) {
                     promptModalCancelBtn.click();
                 }
             });
 
-            // --- Обработчики для окна отчета об ошибке ---
             if (sendReportBtn) {
                 sendReportBtn.addEventListener('click', async () => {
                     const description = issueDescription.value.trim();
@@ -223,11 +229,10 @@
                 if (e.target === reportModal) utils.closeModal(reportModal);
             });
 
-            // Закрытие любого открытого модального окна по клавише Escape
             window.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
-                    if (!promptModal.classList.contains('hidden')) {
-                        promptModalCancelBtn.click();
+                    if (promptModal && !promptModal.classList.contains('hidden')) {
+                        if(promptModalCancelBtn) promptModalCancelBtn.click();
                         return; 
                     }
                     if (reportModal && !reportModal.classList.contains('hidden')) {
@@ -241,7 +246,6 @@
             });
         }
 
-        // --- Публичный API модуля ---
         return { 
             init,
             openAddModal: cameraHandler.openAddModal,

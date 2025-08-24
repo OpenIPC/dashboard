@@ -246,15 +246,14 @@ body {
     transform: scale(1.02);
 }
 
-/* === ИЗМЕНЕНИЕ 1: КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ДЛЯ FLEXBOX === */
 .video-wrapper {
     position: relative;
     width: 100%;
-    flex: 1; /* <-- ЗАМЕНА height: 100% */
-    min-height: 0; /* <-- ДОБАВЛЕНО для правильной работы flex-сжатия */
-    display: flex; /* <-- Добавлено для внутреннего выравнивания */
-    align-items: center; /* <-- Добавлено */
-    justify-content: center; /* <-- Добавлено */
+    flex: 1; 
+    min-height: 0; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
 }
 
 .grid-cell .video-canvas, 
@@ -269,12 +268,12 @@ body {
 }
 
 .grid-cell .overlay-canvas {
-    pointer-events: none; /* Обязательно, чтобы клики проходили на видео */
-    z-index: 2; /* Поверх видео */
+    pointer-events: none; 
+    z-index: 2; 
 }
 
 .grid-cell .video-canvas {
-    z-index: 1; /* Базовый слой внутри обертки */
+    z-index: 1; 
 }
 
 
@@ -320,7 +319,7 @@ body {
     position: absolute;
     box-sizing: border-box;
     pointer-events: none;
-    z-index: 2; /* Поверх canvas */
+    z-index: 2;
     border: 2px solid red;
     background-color: rgba(255, 0, 0, 0.2);
 }
@@ -329,7 +328,7 @@ body {
     position: absolute;
     box-sizing: border-box;
     pointer-events: none;
-    z-index: 2; /* Поверх canvas */
+    z-index: 2;
     border: 2px solid transparent;
     background-color: rgba(255, 255, 255, 0.1);
 }
@@ -362,9 +361,8 @@ body {
     transition: opacity 0.2s ease-in-out;
 }
 
-/* === ИЗМЕНЕНИЕ 2: СТАТИСТИКА БОЛЬШЕ НЕ СКРЫВАЕТСЯ ПРИ НАВЕДЕНИИ === */
 .grid-cell:hover .cell-controls,
-.grid-cell:hover .cell-name { /* <-- Убран .grid-cell:hover .cell-stats */
+.grid-cell:hover .cell-name { 
     opacity: 1;
 }
 
@@ -415,7 +413,6 @@ body {
     transition: opacity 0.2s ease-in-out;
 }
 
-/* === ИЗМЕНЕНИЕ 3: СТАТИСТИКА СТАЛА ВИДИМОЙ ПО УМОЛЧАНИЮ === */
 .cell-stats {
     position: absolute;
     bottom: 5px;
@@ -427,7 +424,7 @@ body {
     font-size: 13px;
     font-family: monospace;
     pointer-events: none;
-    opacity: 1; /* <-- ИЗМЕНЕНО с 0 на 1 */
+    opacity: 1; 
     transition: opacity 0.2s ease-in-out;
     z-index: 10;
 }
@@ -677,6 +674,10 @@ body {
     z-index: 1000;
 }
 
+.modal-backdrop.hidden {
+    display: none !important;
+}
+
 .modal-content {
     position: relative;
     background: white;
@@ -869,8 +870,8 @@ h3:first-child {
 
 
 #login-view .form-check-inline {
-    grid-column: 2 / -1;  /* Занять место со второй колонки до конца */
-    justify-self: start;  /* Прижаться к левому краю этой области */
+    grid-column: 2 / -1;
+    justify-self: start;
     margin-top: 10px;
     color: #6c757d;
 }
@@ -1020,8 +1021,8 @@ h3:first-child {
     border-radius: 4px;
     position: relative;
     border: 1px solid var(--border-color);
-    cursor: grab; /* Меняем курсор на "руку" для перетаскивания */
-    overflow-x: hidden; /* Убираем нативный скроллбар */
+    cursor: grab;
+    overflow-x: hidden;
 }
 .timeline-wrapper.grabbing {
     cursor: grabbing;
@@ -1046,7 +1047,7 @@ h3:first-child {
     font-size: 12px;
     pointer-events: none;
     user-select: none;
-    z-index: 2; /* Поверх canvas */
+    z-index: 2;
 }
 
 .timeline-labels span {
@@ -1111,36 +1112,6 @@ body.can-manage-layout #presentation-mode-btn,
 body.can-manage-layout #view-layout-controls {
     display: flex !important;
 }
-
-/* VVVVVV --- ИЗМЕНЕНИЕ: Это правило было удалено --- VVVVVV */
-/* 
-    Это правило меняло курсор на стандартный, создавая ощущение, 
-    что перетаскивание не работает. Его удаление возвращает курсор 'grab'.
-*/
-/*
-body.role-operator .camera-item,
-body.role-operator .grid-cell.active {
-    cursor: default;
-}
-*/
-/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */
-
-
-/* VVVVVV --- ИЗМЕНЕНИЕ: Это правило было удалено --- VVVVVV */
-/* 
-    Это правило скрывало кнопку "закрыть" и другие в ячейке. 
-    Его удаление делает элементы управления снова видимыми для всех,
-    а JS-логика прав доступа будет решать, можно ли ими пользоваться.
-*/
-/*
-body.role-operator .cell-controls .close-btn,
-body.role-operator .cell-controls .stream-switch-btn,
-body.role-operator .cell-controls .record-btn {
-    display: none !important;
-}
-*/
-/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */
-
 
 #user-list button {
     background: none;
@@ -1285,10 +1256,9 @@ body.role-operator .cell-controls .record-btn {
     transform: translateY(-50%);
 }
 
-/* === ИЗМЕНЕНИЕ 4: РЕШЕНИЕ ПРОБЛЕМЫ ПЕРЕКРЫТИЯ === */
 .ptz-zoom-controls {
     position: absolute;
-    bottom: 35px; /* <-- ИЗМЕНЕНО с 10px, чтобы не перекрывать статистику */
+    bottom: 35px;
     left: 10px;
     display: flex;
     gap: 5px;
@@ -1329,34 +1299,28 @@ body.role-operator .cell-controls .record-btn {
     background-color: var(--accent-color);
 }
 
-/* VVVVVV --- НОВЫЕ СТИЛИ ДЛЯ ПОЛЕЙ НАСТРОЕК --- VVVVVV */
-
-/* Общий контейнер для одного поля настройки (label + input) */
 .modal-body .p-setting, .modal-body .p-boolean {
     display: grid;
-    grid-template-columns: 150px 1fr; /* Колонка для лейбла и колонка для инпута */
+    grid-template-columns: 150px 1fr;
     gap: 15px;
     align-items: center;
     margin-bottom: 15px;
 }
 
 .modal-body .p-boolean {
-    grid-template-columns: 1fr 1fr; /* Для переключателей делаем колонки равными */
+    grid-template-columns: 1fr 1fr;
 }
 
-/* Стили для label */
 .modal-body .form-label {
     font-weight: 500;
     text-align: left;
     white-space: nowrap;
 }
 
-/* Общий контейнер для input/select */
 .modal-body .input-group {
     display: flex;
 }
 
-/* Стили для текстовых и числовых полей */
 .modal-body .form-control {
     width: 100%;
     padding: 8px 12px;
@@ -1370,7 +1334,6 @@ body.role-operator .cell-controls .record-btn {
     text-align: right;
 }
 
-/* Стили для селекторов */
 .modal-body .form-select {
     width: 100%;
     padding: 8px 12px;
@@ -1380,7 +1343,6 @@ body.role-operator .cell-controls .record-btn {
     background-color: white;
 }
 
-/* Стили для переключателей (boolean) */
 .modal-body .form-switch {
     display: flex;
     align-items: center;
@@ -1411,7 +1373,6 @@ body.role-operator .cell-controls .record-btn {
     background-repeat: no-repeat;
 }
 
-/* VVVVVV --- НОВЫЕ СТИЛИ ДЛЯ СЛАЙДЕРОВ --- VVVVVV */
 .modal-body .range-slider-wrapper {
     display: flex;
     align-items: center;
@@ -1463,11 +1424,7 @@ body.role-operator .cell-controls .record-btn {
     border-radius: 4px;
     font-size: 13px;
 }
-/* ^^^^^^ --- КОНЕЦ НОВЫХ СТИЛЕЙ --- ^^^^^^ */
 
-/* VVVVVV --- НОВЫЕ СТИЛИ ДЛЯ БАГРЕПОРТОВ --- VVVVVV */
-
-/* Стили для превью скриншотов */
 #screenshots-preview .screenshot-thumb {
     position: relative;
     width: 100px;
@@ -1507,7 +1464,6 @@ body.role-operator .cell-controls .record-btn {
     opacity: 1;
     
 }
-/* --- Стили для модуля счётчика объектов --- */
 .object-counter-display {
     position: absolute;
     top: 40px;
@@ -1520,14 +1476,12 @@ body.role-operator .cell-controls .record-btn {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     z-index: 15;
     pointer-events: none;
-    /* Убрали opacity и transition, чтобы счётчик был виден всегда */
-    
 }
-/* --- Стили для вкладки "О программе" --- */
+
 .about-container {
     text-align: center;
     padding: 20px;
-    color: #333; /* В модальном окне текст темный */
+    color: #333;
 }
 
 .about-logo {
@@ -1553,7 +1507,7 @@ body.role-operator .cell-controls .record-btn {
 }
 
 .donation-button {
-    background-color: #ffc107; /* Яркий, привлекающий внимание цвет */
+    background-color: #ffc107;
     color: #212529;
     border: none;
     padding: 10px 20px;
@@ -1570,7 +1524,6 @@ body.role-operator .cell-controls .record-btn {
 .donation-button:hover {
     background-color: #ffca2c;
 }
-/* --- Стили для управления плеером архива --- */
 .archive-controls {
     display: flex;
     align-items: center;
@@ -1622,13 +1575,53 @@ body.role-operator .cell-controls .record-btn {
     font-size: 16px;
     color: var(--text-main);
 }
-/* По умолчанию скрываем все "intellect" элементы */
+
 .intellect-only {
     display: none !important;
 }
 
-/* Когда у body есть класс version-intellect, показываем их */
 body.version-intellect .intellect-only {
-    /* Используйте display, который подходит для элемента (flex, block, inline-flex и т.д.) */
     display: flex !important;
 }
+
+#settings-modal.camera-mode .general-tab {
+    display: none;
+}
+
+#settings-modal:not(.camera-mode) .camera-web-tab {
+    display: none;
+}
+
+.config-buttons-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+    padding-left: 20px;
+}
+
+.config-buttons-container button {
+    padding: 10px 15px;
+    font-size: 14px;
+    max-width: 300px;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #f0f0f0;
+}
+
+.config-buttons-container button:hover {
+    background-color: #e0e0e0;
+}
+
+/* VVVVVV --- ИЗМЕНЕНИЕ: ИСПРАВЛЕНИЕ ДЛЯ ОТОБРАЖЕНИЯ ВКЛАДОК INTELLECT --- VVVVVV */
+/* Это правило будет скрывать контент вкладок по умолчанию, даже если основное правило .intellect-only пытается их показать */
+body.version-intellect .tab-content.intellect-only {
+    display: none !important;
+}
+/* Это правило будет принудительно показывать контент, только когда он и в версии intellect, и активен */
+body.version-intellect .tab-content.intellect-only.active {
+    display: block !important;
+}
+/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */

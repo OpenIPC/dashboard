@@ -6,26 +6,11 @@
     AppModules.createCameraModalHandler = function(App, utils) {
         const stateManager = App.stateManager;
 
-        // Элементы модальных окон, за которые отвечает этот модуль
-        const addModal = document.getElementById('add-camera-modal');
-        const saveCameraBtn = document.getElementById('save-camera-btn');
-        const cancelAddBtn = document.getElementById('cancel-camera-btn');
-        const addModalCloseBtn = document.getElementById('add-modal-close-btn');
-
-        const addGroupModal = document.getElementById('add-group-modal');
-        const newGroupNameInput = document.getElementById('new-group-name');
-        const saveGroupBtn = document.getElementById('save-group-btn');
-        const cancelGroupBtn = document.getElementById('cancel-group-btn');
-        const addGroupModalCloseBtn = document.getElementById('add-group-modal-close-btn');
-        
-        const discoverBtn = document.getElementById('discover-btn');
-        const discoverModal = document.getElementById('discover-modal');
-        const discoverModalCloseBtn = document.getElementById('discover-modal-close-btn');
-        const discoverList = document.getElementById('discover-list');
-        const addDiscoveredBtn = document.getElementById('add-discovered-btn');
-        const rediscoverBtn = document.getElementById('rediscover-btn');
-                
-        const newCamProtocolSelect = document.getElementById('new-cam-protocol');
+        // --- ИЗМЕНЕНИЕ: Объявляем переменные здесь, но не ищем элементы ---
+        let addModal, saveCameraBtn, cancelAddBtn, addModalCloseBtn,
+            addGroupModal, newGroupNameInput, saveGroupBtn, cancelGroupBtn, addGroupModalCloseBtn,
+            discoverBtn, discoverModal, discoverModalCloseBtn, discoverList, addDiscoveredBtn, rediscoverBtn,
+            newCamProtocolSelect;
 
         let editingCameraId = null;
         let selectedDiscoveredDevice = null;
@@ -46,10 +31,8 @@
             document.getElementById('new-cam-pass').value = '';
             document.getElementById('new-cam-onvif-auth').checked = camera.onvifAuth !== false;
 
-            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (Значения по умолчанию) --- VVVVVV
             document.getElementById('new-cam-stream-path0').value = camera.streamPath0 !== undefined ? camera.streamPath0 : '/stream=0';
             document.getElementById('new-cam-stream-path1').value = camera.streamPath1 !== undefined ? camera.streamPath1 : '/stream=1';
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             utils.openModal(addModal);
             document.getElementById('new-cam-name').focus();
@@ -97,6 +80,7 @@
         }
 
         function openAddGroupModal() {
+            if (!addGroupModal) return;
             newGroupNameInput.value = '';
             utils.openModal(addGroupModal);
             newGroupNameInput.focus();
@@ -109,9 +93,8 @@
             utils.closeModal(addGroupModal);
         }
 
-        // VVVVVV --- ИЗМЕНЕНИЕ: Упрощенная логика запуска комплексного поиска --- VVVVVV
         async function startDiscovery() {
-            if (isDiscovering) return;
+            if (isDiscovering || !discoverModal) return;
             isDiscovering = true;
             utils.openModal(discoverModal);
             discoverList.innerHTML = `<li style="padding: 10px; color: #666;">${App.i18n.t('searching_for_cameras')}</li>`;
@@ -119,29 +102,23 @@
             rediscoverBtn.disabled = true;
             selectedDiscoveredDevice = null;
             
-            // Запускаем единый комплексный поиск в main-процессе
             await window.api.discoverDevices();
 
-            // Через 20 секунд проверяем, нашлось ли что-то. Если нет, сообщаем об этом.
             setTimeout(() => {
                 isDiscovering = false;
-                rediscoverBtn.disabled = false;
+                if(rediscoverBtn) rediscoverBtn.disabled = false;
                 
                 const initialSearchMessage = App.i18n.t('searching_for_cameras');
-                const listContent = discoverList.innerHTML;
-                
-                if (listContent.includes(initialSearchMessage)) {
+                if (discoverList && discoverList.innerHTML.includes(initialSearchMessage)) {
                     discoverList.innerHTML = `<li style="padding: 10px; color: #666;">${App.i18n.t('no_cameras_found')}</li>`;
                 }
-            }, 20000); // Увеличиваем таймаут для более надежного глубокого сканирования
+            }, 20000);
         }
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function addDiscoveredCamera() {
             if (!selectedDiscoveredDevice) return;
             const { ip, name, protocol } = selectedDiscoveredDevice;
             
-            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ (Значения для найденных камер) --- VVVVVV
             const cameraToEdit = { 
                 name: protocol === 'rtsp' ? `RTSP Camera ${ip}` : name,
                 ip: ip, 
@@ -149,7 +126,6 @@
                 streamPath0: '/stream=0', 
                 streamPath1: '/stream=1' 
             };
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             
             if (protocol === 'rtsp' || protocol === 'onvif') {
                 cameraToEdit.protocol = 'openipc';
@@ -160,13 +136,32 @@
         }
         
         function init() {
+            // --- ИЗМЕНЕНИЕ: Ищем элементы DOM только здесь, внутри init() ---
+            addModal = document.getElementById('add-camera-modal');
+            saveCameraBtn = document.getElementById('save-camera-btn');
+            cancelAddBtn = document.getElementById('cancel-camera-btn');
+            addModalCloseBtn = document.getElementById('add-modal-close-btn');
+            newCamProtocolSelect = document.getElementById('new-cam-protocol');
+
+            addGroupModal = document.getElementById('add-group-modal');
+            newGroupNameInput = document.getElementById('new-group-name');
+            saveGroupBtn = document.getElementById('save-group-btn');
+            cancelGroupBtn = document.getElementById('cancel-group-btn');
+            addGroupModalCloseBtn = document.getElementById('add-group-modal-close-btn');
+            
+            discoverBtn = document.getElementById('discover-btn');
+            discoverModal = document.getElementById('discover-modal');
+            discoverModalCloseBtn = document.getElementById('discover-modal-close-btn');
+            discoverList = document.getElementById('discover-list');
+            addDiscoveredBtn = document.getElementById('add-discovered-btn');
+            rediscoverBtn = document.getElementById('rediscover-btn');
+            
             window.api.onDeviceFound((device) => {
-                // VVVVVV --- ИЗМЕНЕНИЕ: Очищаем "Поиск..." при первом найденном устройстве --- VVVVVV
+                if (!discoverList) return;
                 const placeholderMessage = App.i18n.t('searching_for_cameras');
                 if (discoverList.children.length > 0 && discoverList.children[0].textContent.includes(placeholderMessage)) {
                     discoverList.innerHTML = '';
                 }
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                 const existingItem = Array.from(discoverList.children).find(li => li.dataset.ip === device.ip);
                 if (existingItem) return;
@@ -182,39 +177,41 @@
                     discoverList.querySelectorAll('li').forEach(el => el.style.backgroundColor = '');
                     li.style.backgroundColor = '#d4e6f1';
                     selectedDiscoveredDevice = device;
-                    addDiscoveredBtn.disabled = false;
+                    if(addDiscoveredBtn) addDiscoveredBtn.disabled = false;
                 });
                 discoverList.appendChild(li);
             });
 
-            document.getElementById('add-camera-sidebar-btn').addEventListener('click', () => openAddModal());
-            saveCameraBtn.addEventListener('click', saveCamera);
-            addModalCloseBtn.addEventListener('click', () => utils.closeModal(addModal));
-            cancelAddBtn.addEventListener('click', () => utils.closeModal(addModal));
-            addModal.addEventListener('click', (e) => { if (e.target === addModal) utils.closeModal(addModal); });
+            const addCameraSidebarBtn = document.getElementById('add-camera-sidebar-btn');
+            if (addCameraSidebarBtn) addCameraSidebarBtn.addEventListener('click', () => openAddModal());
 
-            document.getElementById('add-group-btn').addEventListener('click', openAddGroupModal);
-            saveGroupBtn.addEventListener('click', saveNewGroup);
-            cancelGroupBtn.addEventListener('click', () => utils.closeModal(addGroupModal));
-            addGroupModalCloseBtn.addEventListener('click', () => utils.closeModal(addGroupModal));
-            addGroupModal.addEventListener('click', (e) => { if (e.target === addGroupModal) utils.closeModal(addGroupModal); });
+            if (saveCameraBtn) saveCameraBtn.addEventListener('click', saveCamera);
+            if (addModalCloseBtn) addModalCloseBtn.addEventListener('click', () => utils.closeModal(addModal));
+            if (cancelAddBtn) cancelAddBtn.addEventListener('click', () => utils.closeModal(addModal));
+            if (addModal) addModal.addEventListener('click', (e) => { if (e.target === addModal) utils.closeModal(addModal); });
+
+            const addGroupBtn = document.getElementById('add-group-btn');
+            if (addGroupBtn) addGroupBtn.addEventListener('click', openAddGroupModal);
+            if (saveGroupBtn) saveGroupBtn.addEventListener('click', saveNewGroup);
+            if (cancelGroupBtn) cancelGroupBtn.addEventListener('click', () => utils.closeModal(addGroupModal));
+            if (addGroupModalCloseBtn) addGroupModalCloseBtn.addEventListener('click', () => utils.closeModal(addGroupModal));
+            if (addGroupModal) addGroupModal.addEventListener('click', (e) => { if (e.target === addGroupModal) utils.closeModal(addGroupModal); });
             
-            discoverBtn.addEventListener('click', startDiscovery);
-            rediscoverBtn.addEventListener('click', startDiscovery);
-            discoverModalCloseBtn.addEventListener('click', () => utils.closeModal(discoverModal));
-            discoverModal.addEventListener('click', (e) => { if (e.target === discoverModal) utils.closeModal(discoverModal); });
-            addDiscoveredBtn.addEventListener('click', addDiscoveredCamera);
+            if (discoverBtn) discoverBtn.addEventListener('click', startDiscovery);
+            if (rediscoverBtn) rediscoverBtn.addEventListener('click', startDiscovery);
+            if (discoverModalCloseBtn) discoverModalCloseBtn.addEventListener('click', () => utils.closeModal(discoverModal));
+            if (discoverModal) discoverModal.addEventListener('click', (e) => { if (e.target === discoverModal) utils.closeModal(discoverModal); });
+            if (addDiscoveredBtn) addDiscoveredBtn.addEventListener('click', addDiscoveredCamera);
             
             window.addEventListener('language-changed', () => {
-                // Refresh open modals on language change
-                if (!addModal.classList.contains('hidden')) {
+                if (addModal && !addModal.classList.contains('hidden')) {
                     const cam = editingCameraId ? stateManager.state.cameras.find(c => c.id === editingCameraId) : null;
                     openAddModal(cam);
                 }
-                if (!addGroupModal.classList.contains('hidden')) {
+                if (addGroupModal && !addGroupModal.classList.contains('hidden')) {
                     document.getElementById('add-group-modal-title').textContent = App.i18n.t('create_group_title');
                 }
-                if (!discoverModal.classList.contains('hidden')) {
+                if (discoverModal && !discoverModal.classList.contains('hidden')) {
                      document.querySelector('#discover-modal h2').textContent = App.i18n.t('discover_modal_title');
                 }
             });
@@ -224,9 +221,9 @@
             init,
             openAddModal,
             closeAll: () => {
-                utils.closeModal(addModal);
-                utils.closeModal(addGroupModal);
-                utils.closeModal(discoverModal);
+                if (addModal) utils.closeModal(addModal);
+                if (addGroupModal) utils.closeModal(addGroupModal);
+                if (discoverModal) utils.closeModal(discoverModal);
             }
         };
     };

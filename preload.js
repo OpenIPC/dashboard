@@ -38,7 +38,10 @@ contextBridge.exposeInMainWorld('api', {
     exportConfig: () => ipcRenderer.invoke('export-config'),
     importConfig: () => ipcRenderer.invoke('import-config'),
     
-    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    // --- ИЗМЕНЕНИЕ: Заменяем старую функцию на новую ---
+    getAppVersionInfo: () => ipcRenderer.invoke('get-app-version-info'),
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+    
     openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
 
     // Camera Actions & Info
@@ -85,10 +88,8 @@ contextBridge.exposeInMainWorld('api', {
     // Updates
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
-    // VVVVVV --- НОВЫЕ КОМАНДЫ --- VVVVVV
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
     quitAndInstallUpdate: () => ipcRenderer.send('quit-and-install-update'),
-    // ^^^^^^ --- КОНЕЦ НОВЫХ КОМАНД --- ^^^^^^
 
     // Discovery
     discoverDevices: () => ipcRenderer.invoke('discover-devices'),
@@ -96,7 +97,7 @@ contextBridge.exposeInMainWorld('api', {
     
     // NETIP
     getNetipSettings: (camera) => ipcRenderer.invoke('get-netip-settings', camera),
-    setNetipSettings: (data) => ipcRenderer.invoke('set-netip-settings', data),
+    setNetipSettings: (data) => ipcRenderer.invoke('set-net-ip-settings', data),
     
     // Reporting
     openImageFiles: () => ipcRenderer.invoke('open-and-read-image-files'),

@@ -315,12 +315,10 @@ async function prepareArchiveForHls(sourceFilename) {
     });
 
     return new Promise((resolve) => {
-        // VVVVVV --- ИЗМЕНЕНИЕ: УВЕЛИЧИВАЕМ ТАЙМАУТ --- VVVVVV
         const timeout = setTimeout(() => {
             stopProcess(HLS_PROCESS_KEY);
             resolve({ success: false, error: 'HLS conversion timed out.' });
-        }, 60000); // 60 секунд таймаут
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        }, 60000);
 
         const checkFile = () => {
             if (fs.existsSync(playlistPath)) {

@@ -138,7 +138,6 @@
         async function seek(timeInSeconds, startPlaying = false) {
             currentTime = Math.max(0, Math.min(timeInSeconds, DAY_IN_SECONDS));
             seekerTime = currentTime;
-            // drawUI() больше не нужен здесь, так как он вызывается в главном цикле
 
             const targetBlock = recordingsForDay.find(rec => {
                 const start = (createLocalDateFromString(rec.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
@@ -196,34 +195,25 @@
             if (Math.abs(zoomDiff) < 0.001 && Math.abs(viewDiff) < 0.01) {
                 zoomLevel = targetZoomLevel;
                 viewStartSeconds = targetViewStartSeconds;
-                // Анимация завершена, больше не нужно вызывать syncUI отсюда
                 return;
             }
 
             zoomLevel += zoomDiff * 0.2;
             viewStartSeconds += viewDiff * 0.2;
             
-            // Вызываем syncUI здесь только во время активной анимации
             syncUI();
         }
 
-        // VVVVVV --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ ЛОГИКУ В ГЛАВНЫЙ ЦИКЛ --- VVVVVV
         function updateLoop() {
-            // Сначала выполняем шаг анимации, если он нужен
             updateTimelineAnimation();
-            
-            // Затем ВСЕГДА обновляем UI
             drawUI();
-            
             requestAnimationFrame(updateLoop);
         }
         
         function drawUI() {
-            // Эта функция теперь всегда вызывается, поэтому время будет обновляться
             drawTimeline();
             timeDisplay.textContent = formatTime(seekerTime >= 0 ? seekerTime : currentTime);
         }
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         function drawTimeline() {
             const rect = timelineWrapper.getBoundingClientRect();
@@ -342,18 +332,16 @@
             if (isDragging) {
                 const deltaX = e.clientX - lastMouseX;
                 lastMouseX = e.clientX;
-                const totalVisibleSecondsNow = DAY_IN_SECONDS / zoomLevel; // Используем текущий, а не целевой зум
+                const totalVisibleSecondsNow = DAY_IN_SECONDS / zoomLevel;
                 const secondsPerPixel = totalVisibleSecondsNow / timelineWrapper.clientWidth;
                 
                 const newViewStart = viewStartSeconds - deltaX * secondsPerPixel;
                 const maxViewStart = DAY_IN_SECONDS - totalVisibleSecondsNow;
                 viewStartSeconds = Math.max(0, Math.min(newViewStart, maxViewStart < 0 ? 0 : maxViewStart));
                 
-                // При перетаскивании мы также обновляем и целевые значения,
-                // чтобы анимация не "дернула" таймлайн назад после отпускания мыши.
                 targetViewStartSeconds = viewStartSeconds;
                 
-                syncUI(); // Принудительно перерисовываем, пока тащим
+                syncUI();
             } else {
                 drawTimeline();
             }

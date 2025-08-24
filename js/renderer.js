@@ -1,5 +1,5 @@
 // --- START OF FILE js/renderer.js ---
-// js/renderer.js (Полная версия с разделением на Lite/Intellect)
+// js/renderer.js (Полная версия с добавленным логированием для отладки)
 
 (function(window) {
     'use strict';
@@ -7,11 +7,13 @@
     let App;
 
     async function init() {
+        console.log('[DEBUG] Renderer: init() started.');
         App = {};
         window.App = App;
 
-        // ШАГ 1: ЗАГРУЖАЕМ ШАБЛОНЫ. Это остается первым действием.
+        // ШАГ 1: ЗАГРУЖАЕМ ШАБЛОНЫ.
         try {
+            console.log('[DEBUG] Renderer: Fetching templates.html...');
             const response = await fetch('./templates.html');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const templatesHTML = await response.text();
@@ -23,21 +25,18 @@
                 const content = document.importNode(template.content, true);
                 document.body.appendChild(content);
             });
+            console.log('[DEBUG] Renderer: Templates appended to body.');
         } catch (error) {
             console.error('Failed to load UI templates:', error);
             alert('Критическая ошибка: Не удалось загрузить шаблоны интерфейса. Приложение не будет работать корректно.');
-            return; // Прерываем выполнение, если шаблоны не загрузились
+            return;
         }
 
-        // --- ИЗМЕНЕНИЕ: Определение версии приложения (Lite/Intellect) ---
-        // Запрашиваем тип версии у main-процесса. Это самый важный шаг для UI.
         const versionInfo = await window.api.getAppVersionInfo();
-        App.versionType = versionInfo.type; // 'lite' or 'intellect'
-        // Добавляем класс к body, чтобы CSS мог скрывать/показывать нужные элементы.
+        App.versionType = versionInfo.type;
         document.body.classList.add(`version-${App.versionType}`);
-        console.log(`[Renderer] Application running in [${App.versionType.toUpperCase()}] mode.`);
-        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
+        console.log(`[DEBUG] Renderer: Application version set to [${App.versionType.toUpperCase()}].`);
+        
         App.USER_ROLES = {
             ADMIN: 'admin',
             OPERATOR: 'operator'
@@ -215,31 +214,45 @@
         let saveTimeout;
 
         async function saveConfiguration() {
-            // В Lite-версии сохранять раскладки и группы не нужно, так как они скрыты
             if (App.versionType === 'lite') {
-                return;
+                const state = App.stateManager.state;
+                if (state.isSaving) return;
+                clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(async () => {
+                    state.isSaving = true;
+                    console.log('[Config] Debounced save triggered for Lite version.');
+                    const config = {
+                        cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
+                        groups: state.groups,
+                        layouts: state.layouts,
+                        activeLayoutId: state.activeLayoutId,
+                    };
+                    try { 
+                        await window.api.saveConfiguration(config); 
+                    } finally { 
+                        setTimeout(() => { state.isSaving = false; }, 100); 
+                    }
+                }, 500);
+            } else {
+                 const state = App.stateManager.state;
+                if (state.isSaving) return;
+                clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(async () => {
+                    state.isSaving = true;
+                    console.log('[Config] Debounced save triggered. Writing to disk...');
+                    const config = {
+                        cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
+                        groups: state.groups,
+                        layouts: state.layouts,
+                        activeLayoutId: state.activeLayoutId,
+                    };
+                    try { 
+                        await window.api.saveConfiguration(config); 
+                    } finally { 
+                        setTimeout(() => { state.isSaving = false; }, 100); 
+                    }
+                }, 500);
             }
-
-            const state = App.stateManager.state;
-            if (state.isSaving) return;
-
-            clearTimeout(saveTimeout);
-
-            saveTimeout = setTimeout(async () => {
-                state.isSaving = true;
-                console.log('[Config] Debounced save triggered. Writing to disk...');
-                const config = {
-                    cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
-                    groups: state.groups,
-                    layouts: state.layouts,
-                    activeLayoutId: state.activeLayoutId,
-                };
-                try { 
-                    await window.api.saveConfiguration(config); 
-                } finally { 
-                    setTimeout(() => { state.isSaving = false; }, 100); 
-                }
-            }, 500);
         }
         App.saveConfiguration = saveConfiguration;
 
@@ -263,7 +276,7 @@
 
         function initPresentationMode() {
             const presentationBtn = document.getElementById('presentation-mode-btn');
-            presentationBtn.addEventListener('click', () => {
+            if(presentationBtn) presentationBtn.addEventListener('click', () => {
                 document.body.classList.toggle('presentation-mode');
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 50); 
             });
@@ -307,7 +320,6 @@
             mainAppContainer.classList.add('hidden');
             loginView.classList.remove('hidden');
             document.body.className = '';
-            // Возвращаем класс версии, который был удален
             document.body.classList.add(`version-${App.versionType}`);
             loginUsername.focus();
         }
@@ -316,12 +328,14 @@
         await App.i18n.init();
         App.t = App.i18n.t;
 
+        console.log('[DEBUG] Renderer: Creating module handlers...');
         App.modalHandler = AppModules.createModalHandler(App);
         App.cameraList = AppModules.createCameraList(App);
         App.gridManager = AppModules.createGridManager(App);
         App.archiveManager = AppModules.createArchiveManager(App);
         App.windowControls = AppModules.createWindowControls(App);
 
+        console.log('[DEBUG] Renderer: Finding main DOM elements...');
         loginView = document.getElementById('login-view');
         mainAppContainer = document.getElementById('main-app-container');
         loginBtn = document.getElementById('login-btn');
@@ -333,12 +347,14 @@
         statusInfo = document.getElementById('status-info');
         loginCloseBtn = document.getElementById('login-close-btn');
 
+        console.log('[DEBUG] Renderer: Initializing module handlers (calling .init())...');
         App.modalHandler.init();
         App.cameraList.init();
         App.gridManager.init();
         App.archiveManager.init();
-        App.windowControls.init();
+        App.windowControls.init(); // <-- ИЗМЕНЕНИЕ: Добавлен вызов init
         initPresentationMode();
+        console.log('[DEBUG] Renderer: All module handlers initialized.');
 
         loginBtn.addEventListener('click', handleLogin);
         loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
@@ -436,11 +452,18 @@
         setInterval(() => App.cameraList.pollCameraStatuses(), 10000);
         updateSystemStats();
 
+        console.log('[DEBUG] Renderer: Sending rendererReady signal to main process...');
         window.api.rendererReady();
+        console.log('[DEBUG] Renderer: init() finished.');
     }
 
     function initLayoutControls() {
-        document.getElementById('add-layout-btn').addEventListener('click', async () => {
+        const addLayoutBtn = document.getElementById('add-layout-btn');
+        const saveLayoutBtn = document.getElementById('save-layout-btn');
+        const renameLayoutBtn = document.getElementById('rename-layout-btn');
+        const deleteLayoutBtn = document.getElementById('delete-layout-btn');
+
+        if (addLayoutBtn) addLayoutBtn.addEventListener('click', async () => {
             const name = await App.modalHandler.showPrompt({
                 title: App.t('add_layout_tooltip'),
                 label: App.t('enter_layout_name_prompt'),
@@ -448,7 +471,7 @@
             });
             if (name?.trim()) App.stateManager.addLayout({ name: name.trim() });
         });
-        document.getElementById('save-layout-btn').addEventListener('click', async () => {
+        if (saveLayoutBtn) saveLayoutBtn.addEventListener('click', async () => {
             const name = await App.modalHandler.showPrompt({
                 title: App.t('save_layout_tooltip'),
                 label: App.t('enter_layout_name_prompt'),
@@ -456,7 +479,7 @@
             });
             if (name?.trim()) App.stateManager.saveLayout({ name: name.trim() });
         });
-        document.getElementById('rename-layout-btn').addEventListener('click', async () => {
+        if (renameLayoutBtn) renameLayoutBtn.addEventListener('click', async () => {
             const activeLayout = App.stateManager.state.layouts.find(l => l.id === App.stateManager.state.activeLayoutId);
             if (!activeLayout) return;
             const newName = await App.modalHandler.showPrompt({
@@ -468,7 +491,7 @@
                 App.stateManager.renameLayout({ id: activeLayout.id, newName: newName.trim() });
             }
         });
-        document.getElementById('delete-layout-btn').addEventListener('click', () => {
+        if (deleteLayoutBtn) deleteLayoutBtn.addEventListener('click', () => {
             if (confirm(App.t('confirm_delete_layout'))) {
                 App.stateManager.deleteLayout(App.stateManager.state.activeLayoutId);
             }
@@ -477,10 +500,10 @@
 
     function renderLayoutTabs() {
         const layoutTabsContainer = document.querySelector('.header .tabs');
+        if (!layoutTabsContainer) return;
         const { layouts, activeLayoutId } = App.stateManager.state;
         layoutTabsContainer.innerHTML = '';
 
-        // В Lite-версии вкладки не отображаются
         if (App.versionType === 'lite' || !layouts) {
             return;
         }
@@ -510,14 +533,13 @@
 
     function updateUserPermissionsUI() {
         const user = App.stateManager.state.currentUser;
-        // Сначала очищаем старые классы, связанные с правами и версией, кроме основного класса версии
-        const bodyClasses = document.body.className.split(' ').filter(c => !c.startsWith('role-') && !c.startsWith('can-'));
+        const bodyClasses = document.body.className.split(' ').filter(c => !c.startsWith('role-') && !c.startsWith('can-') && c !== `version-${App.versionType}`);
         document.body.className = bodyClasses.join(' ');
+        document.body.classList.add(`version-${App.versionType}`);
         
         if (user) {
             document.body.classList.add(`role-${user.role}`);
-            // Права применяются только для Intellect версии
-            if (App.versionType === 'intellect' && user.role === App.USER_ROLES.OPERATOR && user.permissions) {
+            if (user.role === App.USER_ROLES.OPERATOR && user.permissions) {
                 Object.keys(user.permissions).forEach(permission => {
                     if (user.permissions[permission]) {
                         document.body.classList.add(`can-${permission.replace(/_/g, '-')}`);
