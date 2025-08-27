@@ -2,51 +2,44 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- VVVVVV --- ИЗМЕНЕНИЕ: ДОБАВЛЯЕМ http:* В connect-src И frame-src --- VVVVVV -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:* http:; img-src 'self' data:; media-src 'self' blob: video-archive:; frame-src http:;">
-    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
-    <title>DASHBOARD for OpenIPC</title>
+    <title data-brand="appName">DASHBOARD for OpenIPC</title>
     
-    <!-- Ссылки на внешние стили -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="node_modules/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/components/header.css">
+    <link rel="stylesheet" href="css/components/sidebar.css">
+    <link rel="stylesheet" href="css/components/grid.css">
+    <link rel="stylesheet" href="css/components/toolbar.css">
+    <link rel="stylesheet" href="css/components/modal.css">
+    <link rel="stylesheet" href="css/components/archive.css">
+    <link rel="stylesheet" href="css/components/utility.css">
 </head>
 <body>
-    <!-- 
-        Основная разметка приложения.
-        Все модальные окна и архив будут загружены динамически из templates.html
-    -->
+    <script src="./js/template-loader.js"></script>
 
-    <!-- Экран входа -->
     <div id="login-view" class="modal-backdrop">
         <div class="modal-content" style="width: 400px; text-align: center;">
-            
             <span id="login-close-btn" class="modal-close-btn">&times;</span>
-
-            <h2 data-i18n-key="app_title"></h2>
+            <h2 data-brand="appName" data-i18n-key="app_title"></h2>
             <p data-i18n-key="login_prompt" style="color: #6c757d;"></p>
             <div class="form-grid simple" style="grid-template-columns: 100px 1fr; padding-top: 10px;">
                 <b data-i18n-key="login"></b> <input type="text" id="login-username" autofocus>
                 <b data-i18n-key="password"></b> <input type="password" id="login-password">
-                
                 <div class="form-check-inline">
                     <input type="checkbox" id="login-remember-me" class="form-check-input">
                     <label for="login-remember-me" data-i18n-key="remember_me"></label>
                 </div>
-            
             </div>
-            
             <p id="login-error" style="color: var(--danger-color); height: 20px; margin-top: 10px;"></p>
             <button id="login-btn" style="width: 100%; padding: 10px; margin-top: 5px;" data-i18n-key="login_btn"></button>
         </div>
     </div>
 
-    <!-- Основной контейнер приложения -->
-    <div id="main-app-container" class="hidden" style="display: flex; flex-direction: column; height: 100vh;">
-        <!-- Заголовок -->
+    <div id="main-app-container" class="hidden">
         <div class="header">
-            <div class="logo" data-i18n-key="app_title"></div>
+            <div class="logo" data-brand="appName" data-i18n-key="app_title"></div>
             <div class="tabs"></div>
             <button id="add-layout-btn" class="add-tab-btn requires-permission" data-i18n-tooltip="add_layout_tooltip">+</button>
             <div class="window-controls">
@@ -56,30 +49,62 @@
             </div>
         </div>
 
-        <!-- Главное содержимое (сетка и боковая панель) -->
-        <div id="main-view" class="main-container">
-            <div class="view-container">
-                <div id="grid-container"></div>
-            </div>
-            <div class="sidebar">
-                <div class="sidebar-header">
-                    <div class="header-buttons">
-                        <span class="requires-permission" style="display: contents;">
-                            <button id="discover-btn" class="icon-button" data-i18n-tooltip="discover_cameras_tooltip"><i class="material-icons">travel_explore</i></button>
-                            <button id="add-group-btn" class="icon-button" data-i18n-tooltip="create_group_tooltip"><i class="material-icons">create_new_folder</i></button>
-                            <button id="add-camera-sidebar-btn" class="icon-button" data-i18n-tooltip="add_camera_tooltip"><i class="material-icons">add_circle_outline</i></button>
-                        </span>
-                        <button id="user-management-btn" class="icon-button admin-only" data-i18n-tooltip="user_management_tooltip"><i class="material-icons">manage_accounts</i></button>
-                        <button id="general-settings-btn" class="icon-button" data-i18n-tooltip="settings_tooltip"><i class="material-icons">settings</i></button>
-                        <button id="logout-btn" class="icon-button" data-i18n-tooltip="logout_tooltip"><i class="material-icons">logout</i></button>
-                    </div>
-                    <h3 data-i18n-key="devices"></h3>
+        <div class="main-container">
+            <div id="main-view">
+                <div class="view-container">
+                    <div id="grid-container"></div>
                 </div>
-                <div id="camera-list-container"></div>
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <div class="header-buttons">
+                            <span class="requires-permission" style="display: contents;">
+                                <button id="discover-btn" class="icon-button" data-i18n-tooltip="discover_cameras_tooltip"><i class="material-icons">travel_explore</i></button>
+                                <button id="add-group-btn" class="icon-button" data-i18n-tooltip="create_group_tooltip"><i class="material-icons">create_new_folder</i></button>
+                                <button id="add-camera-sidebar-btn" class="icon-button" data-i18n-tooltip="add_camera_tooltip"><i class="material-icons">add_circle_outline</i></button>
+                            </span>
+                            <button id="user-management-btn" class="icon-button admin-only" data-i18n-tooltip="user_management_tooltip"><i class="material-icons">manage_accounts</i></button>
+                            <button id="general-settings-btn" class="icon-button" data-i18n-tooltip="settings_tooltip"><i class="material-icons">settings</i></button>
+                            <button id="logout-btn" class="icon-button" data-i18n-tooltip="logout_tooltip"><i class="material-icons">logout</i></button>
+                        </div>
+                        <h3 data-i18n-key="devices"></h3>
+                    </div>
+                    <div id="camera-list-container"></div>
+                </div>
+            </div>
+            
+            <div id="archive-view" class="hidden">
+                <div class="archive-main-content">
+                    <div class="archive-header">
+                        <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
+                        <h2 id="archive-camera-name"></h2>
+                        <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
+                    </div>
+                    <div class="archive-video-container">
+                        <video id="archive-video-player"  class="hidden"></video>
+                        <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
+                    </div>
+                    <div class="archive-controls">
+                        <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
+                        <button id="ac-speed-btn" class="control-button">1.0x</button>
+                        <span id="ac-time-display" class="time-display">00:00:00</span>
+                        <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
+                        <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
+                    </div>
+                    <div class="timeline-container">
+                        <div class="timeline-wrapper" id="timeline-wrapper">
+                            <canvas id="timeline-canvas"></canvas>
+                            <div id="timeline-labels" class="timeline-labels"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="archive-sidebar">
+                    <h3>События</h3>
+                    <div id="archive-filters"></div>
+                    <ul id="event-list"></ul>
+                </div>
             </div>
         </div>
         
-        <!-- Нижняя панель инструментов -->
         <div class="bottom-toolbar">
             <div class="toolbar-group">
                 <button id="open-recordings-btn" class="icon-button admin-only" data-i18n-tooltip="open_recordings_tooltip"><i class="material-icons" style="font-size: 20px;">folder</i></button>
@@ -96,36 +121,40 @@
             </div>
         </div>
     </div>
-
+    
+    <!-- START: ИСПРАВЛЕНИЕ - ВОЗВРАЩАЕМ ШАБЛОН ЯЧЕЙКИ СЮДА -->
     <template id="grid-cell-content-template">
-        <div class="video-wrapper">
-            <canvas class="video-canvas"></canvas>
-            <canvas class="overlay-canvas"></canvas>
-            <div class="cell-controls">
-                <button class="record-btn" title="Запись"><i class="material-icons">fiber_manual_record</i></button>
-                <button class="audio-btn" title="Звук"><i class="material-icons">volume_off</i></button>
-                <button class="stream-switch-btn" title="Переключить поток (HD/SD)"><i class="material-icons">hd</i></button>
-                <button class="fullscreen-btn" title="На весь экран"><i class="material-icons">fullscreen</i></button>
-                <button class="close-btn" title="Закрыть"><i class="material-icons">close</i></button>
+        <canvas class="video-canvas"></canvas>
+        <canvas class="overlay-canvas"></canvas>
+        <div class="cell-header">
+            <span class="cell-name"></span>
+            <span class="cell-stats"></span>
+        </div>
+        <div class="cell-controls">
+            <button class="icon-button stream-switch-btn" title="Переключить качество"><i class="material-icons">hd</i></button>
+            <button class="icon-button audio-btn" title="Включить звук"><i class="material-icons">volume_off</i></button>
+            <button class="icon-button record-btn intellect-only" title="Запись"><i class="material-icons">fiber_manual_record</i></button>
+            <button class="icon-button fullscreen-btn" title="На весь экран"><i class="material-icons">fullscreen</i></button>
+            <button class="icon-button close-btn" title="Закрыть"><i class="material-icons">close</i></button>
+        </div>
+        <div class="loading-overlay">
+            <div class="spinner"></div>
+        </div>
+        <div class="error-overlay hidden">
+            <div class="error-content">
+                <i class="material-icons error-icon">error_outline</i>
+                <p class="error-message"></p>
+                <div class="error-buttons">
+                    <button class="retry-button"></button>
+                    <button class="close-on-error-btn"></button>
+                </div>
             </div>
-            <div class="ptz-overlay">
-                <div class="ptz-btn ptz-up" data-command="tilt_up" title="Вверх"><i class="material-icons">keyboard_arrow_up</i></div>
-                <div class="ptz-btn ptz-down" data-command="tilt_down" title="Вниз"><i class="material-icons">keyboard_arrow_down</i></div>
-                <div class="ptz-btn ptz-left" data-command="pan_left" title="Влево"><i class="material-icons">keyboard_arrow_left</i></div>
-                <div class="ptz-btn ptz-right" data-command="pan_right" title="Вправо"><i class="material-icons">keyboard_arrow_right</i></div>
-            </div>
-            <div class="ptz-zoom-controls">
-                <div class="ptz-btn ptz-zoom-in" data-command="zoom_in" title="Приблизить"><i class="material-icons">add</i></div>
-                <div class="ptz-btn ptz-home" data-command="go_home" title="Домой"><i class="material-icons">home</i></div>
-                <div class="ptz-btn ptz-zoom-out" data-command="zoom_out" title="Отдалить"><i class="material-icons">remove</i></div>
-            </div>
-            <div class="cell-name"></div>
-            <div class="cell-stats"></div>
         </div>
     </template>
+    <!-- END: ИСПРАВЛЕНИЕ -->
+
     <div id="app-toast" class="toast-notification"></div>
 
-    <!-- Подключение скриптов -->
     <script src="jsmpeg.min.js"></script>
     <script src="node_modules/hls.js/dist/hls.min.js"></script>
     <script src="node_modules/flatpickr/dist/flatpickr.js"></script>

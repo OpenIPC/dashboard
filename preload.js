@@ -3,118 +3,124 @@
 // Этот скрипт служит безопасным мостом между рендер-процессом (UI) и main-процессом (бэкенд).
 
 const { contextBridge, ipcRenderer } = require('electron');
+const path = require('path'); // <-- 1. ДОБАВЛЯЕМ МОДУЛЬ PATH
+
+// <-- 2. ИСПОЛЬЗУЕМ АБСОЛЮТНЫЙ ПУТЬ С ПОМОЩЬЮ __dirname
+const CHANNELS = require(path.join(__dirname, 'src', 'common', 'ipc-channels.js'));
 
 contextBridge.exposeInMainWorld('api', {
     // Window controls
-    minimizeWindow: () => ipcRenderer.send('minimize-window'),
-    maximizeWindow: () => ipcRenderer.send('maximize-window'),
-    closeWindow: () => ipcRenderer.send('close-window'),
-    onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', callback),
-    onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', callback),
+    minimizeWindow: () => ipcRenderer.send(CHANNELS.MINIMIZE_WINDOW),
+    maximizeWindow: () => ipcRenderer.send(CHANNELS.MAXIMIZE_WINDOW),
+    closeWindow: () => ipcRenderer.send(CHANNELS.CLOSE_WINDOW),
+    onWindowMaximized: (callback) => ipcRenderer.on(CHANNELS.ON_WINDOW_MAXIMIZED, callback),
+    onWindowUnmaximized: (callback) => ipcRenderer.on(CHANNELS.ON_WINDOW_UNMAXIMIZED, callback),
 
     // Clipboard
-    clipboardRead: () => ipcRenderer.invoke('clipboardRead'),
-    clipboardWrite: (text) => ipcRenderer.invoke('clipboardWrite', text),
+    clipboardRead: () => ipcRenderer.invoke(CHANNELS.CLIPBOARD_READ),
+    clipboardWrite: (text) => ipcRenderer.invoke(CHANNELS.CLIPBOARD_WRITE, text),
 
     // Authentication & Users
-    login: (credentials) => ipcRenderer.invoke('login', credentials),
-    getUsers: () => ipcRenderer.invoke('get-users'),
-    addUser: (userData) => ipcRenderer.invoke('add-user', userData),
-    updateUserPassword: (userData) => ipcRenderer.invoke('update-user-password', userData),
-    updateUserRole: (userData) => ipcRenderer.invoke('update-user-role', userData),
-    updateUserPermissions: (userData) => ipcRenderer.invoke('update-user-permissions', userData),
-    deleteUser: (userData) => ipcRenderer.invoke('delete-user', userData),
-    onAutoLoginSuccess: (callback) => ipcRenderer.on('auto-login-success', (event, user) => callback(user)),
-    logoutClearCredentials: () => ipcRenderer.send('logout-clear-credentials'),
-    rendererReady: () => ipcRenderer.send('renderer-ready-for-autologin'),
+    login: (credentials) => ipcRenderer.invoke(CHANNELS.LOGIN, credentials),
+    getUsers: () => ipcRenderer.invoke(CHANNELS.GET_USERS),
+    addUser: (userData) => ipcRenderer.invoke(CHANNELS.ADD_USER, userData),
+    updateUserPassword: (userData) => ipcRenderer.invoke(CHANNELS.UPDATE_USER_PASSWORD, userData),
+    updateUserRole: (userData) => ipcRenderer.invoke(CHANNELS.UPDATE_USER_ROLE, userData),
+    updateUserPermissions: (userData) => ipcRenderer.invoke(CHANNELS.UPDATE_USER_PERMISSIONS, userData),
+    deleteUser: (userData) => ipcRenderer.invoke(CHANNELS.DELETE_USER, userData),
+    onAutoLoginSuccess: (callback) => ipcRenderer.on(CHANNELS.ON_AUTO_LOGIN_SUCCESS, (event, user) => callback(user)),
+    logoutClearCredentials: () => ipcRenderer.send(CHANNELS.LOGOUT_CLEAR_CREDS),
+    rendererReady: () => ipcRenderer.send(CHANNELS.RENDERER_READY),
 
     // App Settings & Config
-    loadAppSettings: () => ipcRenderer.invoke('load-app-settings'),
-    saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
-    loadConfiguration: () => ipcRenderer.invoke('load-configuration'),
-    saveConfiguration: (config) => ipcRenderer.invoke('save-configuration', config),
-    selectDirectory: () => ipcRenderer.invoke('select-directory'),
-    getTranslationFile: (lang) => ipcRenderer.invoke('get-translation-file', lang),
-    exportConfig: () => ipcRenderer.invoke('export-config'),
-    importConfig: () => ipcRenderer.invoke('import-config'),
+    loadAppSettings: () => ipcRenderer.invoke(CHANNELS.LOAD_APP_SETTINGS),
+    saveAppSettings: (settings) => ipcRenderer.invoke(CHANNELS.SAVE_APP_SETTINGS, settings),
+    loadConfiguration: () => ipcRenderer.invoke(CHANNELS.LOAD_CONFIG),
+    saveConfiguration: (config) => ipcRenderer.invoke(CHANNELS.SAVE_CONFIG, config),
+    selectDirectory: () => ipcRenderer.invoke(CHANNELS.SELECT_DIRECTORY),
+    getTranslationFile: (lang) => ipcRenderer.invoke(CHANNELS.GET_TRANSLATION, lang),
+    exportConfig: () => ipcRenderer.invoke(CHANNELS.EXPORT_CONFIG),
+    importConfig: () => ipcRenderer.invoke(CHANNELS.IMPORT_CONFIG),
     
-    // --- ИЗМЕНЕНИЕ: Заменяем старую функцию на новую ---
-    getAppVersionInfo: () => ipcRenderer.invoke('get-app-version-info'),
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+    getAppVersionInfo: () => ipcRenderer.invoke(CHANNELS.GET_APP_VERSION_INFO),
+    getBrandingConfig: () => ipcRenderer.invoke(CHANNELS.GET_BRANDING_CONFIG),
     
-    openExternalLink: (url) => ipcRenderer.send('open-external-link', url),
+    openExternalLink: (url) => ipcRenderer.send(CHANNELS.OPEN_EXTERNAL_LINK, url),
 
     // Camera Actions & Info
-    getCameraPulse: (camera) => ipcRenderer.invoke('get-camera-pulse', camera),
-    ptzControl: (data) => ipcRenderer.invoke('ptz-control', data),
-    getCameraTime: (camera) => ipcRenderer.invoke('get-camera-time', camera),
-    getCameraSettings: (camera) => ipcRenderer.invoke('get-camera-settings', camera),
-    setCameraSettings: (data) => ipcRenderer.invoke('set-camera-settings', data),
-    restartMajestic: (camera) => ipcRenderer.invoke('restart-majestic', camera),
-    startVideoStream: (streamData) => ipcRenderer.invoke('start-video-stream', streamData),
-    stopVideoStream: (streamId) => ipcRenderer.invoke('stop-video-stream', streamId),
-    openInBrowser: (ip) => ipcRenderer.invoke('open-in-browser', ip),
-    openFileManager: (camera) => ipcRenderer.invoke('open-file-manager', camera),
-    openSshTerminal: (camera) => ipcRenderer.invoke('open-ssh-terminal', camera),
+    getCameraPulse: (camera) => ipcRenderer.invoke(CHANNELS.GET_CAMERA_PULSE, camera),
+    ptzControl: (data) => ipcRenderer.invoke(CHANNELS.PTZ_CONTROL, data),
+    getCameraTime: (camera) => ipcRenderer.invoke(CHANNELS.GET_CAMERA_TIME, camera),
+    getCameraSettings: (camera) => ipcRenderer.invoke(CHANNELS.GET_CAMERA_SETTINGS, camera),
+    setCameraSettings: (data) => ipcRenderer.invoke(CHANNELS.SET_CAMERA_SETTINGS, data),
+    restartMajestic: (camera) => ipcRenderer.invoke(CHANNELS.RESTART_MAJESTIC, camera),
+    startVideoStream: (streamData) => ipcRenderer.invoke(CHANNELS.START_VIDEO_STREAM, streamData),
+    stopVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.STOP_VIDEO_STREAM, streamId),
+    pauseVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.PAUSE_VIDEO_STREAM, streamId),
+    resumeVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.RESUME_VIDEO_STREAM, streamId),
+    openInBrowser: (ip) => ipcRenderer.invoke(CHANNELS.OPEN_IN_BROWSER, ip),
+    openFileManager: (camera) => ipcRenderer.invoke(CHANNELS.OPEN_FILE_MANAGER, camera),
+    openSshTerminal: (camera) => ipcRenderer.invoke(CHANNELS.OPEN_SSH_TERMINAL, camera),
 
     // Video Analytics
-    toggleAnalytics: (cameraId) => ipcRenderer.invoke('toggle-analytics', cameraId),
-    onAnalyticsUpdate: (callback) => ipcRenderer.on('analytics-update', (event, data) => callback(data)),
-    onAnalyticsStatusChange: (callback) => ipcRenderer.on('analytics-status-change', (event, data) => callback(data)),
-    onAnalyticsProviderInfo: (callback) => ipcRenderer.on('analytics-provider-info', (event, data) => callback(data)),
+    toggleAnalytics: (cameraId) => ipcRenderer.invoke(CHANNELS.TOGGLE_ANALYTICS, cameraId),
+    onAnalyticsUpdate: (callback) => ipcRenderer.on(CHANNELS.ON_ANALYTICS_UPDATE, (event, data) => callback(data)),
+    onAnalyticsStatusChange: (callback) => ipcRenderer.on(CHANNELS.ON_ANALYTICS_STATUS_CHANGE, (event, data) => callback(data)),
+    onAnalyticsProviderInfo: (callback) => ipcRenderer.on(CHANNELS.ON_ANALYTICS_PROVIDER_INFO, (event, data) => callback(data)),
 
     // Recording & Archive
-    startRecording: (camera) => ipcRenderer.invoke('start-recording', camera),
-    stopRecording: (cameraId) => ipcRenderer.invoke('stop-recording', cameraId),
-    onRecordingStateChange: (callback) => ipcRenderer.on('recording-state-change', (event, data) => callback(data)),
-    openRecordingsFolder: () => ipcRenderer.invoke('open-recordings-folder'),
-    getRecordingsForDate: (data) => ipcRenderer.invoke('get-recordings-for-date', data),
-    exportArchiveClip: (data) => ipcRenderer.invoke('export-archive-clip', data),
-    getEventsForDate: (data) => ipcRenderer.invoke('get-events-for-date', data),
-    getDatesWithActivity: (cameraName) => ipcRenderer.invoke('get-dates-with-activity', cameraName),
-    prepareArchiveForHls: (filename, startTime) => ipcRenderer.invoke('prepare-archive-for-hls', { filename, startTime }),
+    toggleRecording: (camera) => ipcRenderer.invoke(CHANNELS.TOGGLE_RECORDING, camera),
+    onRecordingStateChange: (callback) => ipcRenderer.on(CHANNELS.ON_RECORDING_STATE_CHANGE, (event, data) => callback(data)),
+    openRecordingsFolder: () => ipcRenderer.invoke(CHANNELS.OPEN_RECORDINGS_FOLDER),
+    getRecordingsForDate: (data) => ipcRenderer.invoke(CHANNELS.GET_RECORDINGS_FOR_DATE, data),
+    exportArchiveClip: (data) => ipcRenderer.invoke(CHANNELS.EXPORT_ARCHIVE_CLIP, data),
+    getEventsForDate: (data) => ipcRenderer.invoke(CHANNELS.GET_EVENTS_FOR_DATE, data),
+    getDatesWithActivity: (cameraName) => ipcRenderer.invoke(CHANNELS.GET_DATES_WITH_ACTIVITY, cameraName),
+    prepareArchiveForHls: (filename, startTime) => ipcRenderer.invoke(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, { filename, startTime }),
 
     // System & Events
-    getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
-    onStreamDied: (callback) => ipcRenderer.on('stream-died', (event, streamId) => callback(streamId)),
-    onStreamStats: (callback) => ipcRenderer.on('stream-stats', (event, data) => callback(data)),
-    onMainError: (callback) => ipcRenderer.on('on-main-error', (event, data) => callback(data)),
-    showCameraContextMenu: (data) => ipcRenderer.send('show-camera-context-menu', data),
-    onContextMenuCommand: (callback) => ipcRenderer.on('context-menu-command', (event, data) => callback(data)),
-    showGroupContextMenu: (data) => ipcRenderer.send('show-group-context-menu', data),
-    onGroupContextMenuCommand: (callback) => ipcRenderer.on('group-context-menu-command', (event, data) => callback(data)),
-    killAllFfmpeg: () => ipcRenderer.invoke('kill-all-ffmpeg'),
+    getSystemStats: () => ipcRenderer.invoke(CHANNELS.GET_SYSTEM_STATS),
+    onStreamInfoUpdate: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_INFO_UPDATE, (event, data) => callback(data)),
+    onStreamDied: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_DIED, (event, data) => callback(data)),
+    onStreamStats: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_STATS, (event, data) => callback(data)),
+    onMainError: (callback) => ipcRenderer.on(CHANNELS.ON_MAIN_ERROR, (event, data) => callback(data)),
+    showCameraContextMenu: (data) => ipcRenderer.send(CHANNELS.SHOW_CAMERA_CONTEXT_MENU, data),
+    onContextMenuCommand: (callback) => ipcRenderer.on(CHANNELS.ON_CONTEXT_MENU_COMMAND, (event, data) => callback(data)),
+    showGroupContextMenu: (data) => ipcRenderer.send(CHANNELS.SHOW_GROUP_CONTEXT_MENU, data),
+    onGroupContextMenuCommand: (callback) => ipcRenderer.on(CHANNELS.ON_GROUP_CONTEXT_MENU_COMMAND, (event, data) => callback(data)),
+    killAllFfmpeg: () => ipcRenderer.invoke(CHANNELS.KILL_ALL_FFMPEG),
     
     // Updates
-    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-    onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
-    downloadUpdate: () => ipcRenderer.invoke('download-update'),
-    quitAndInstallUpdate: () => ipcRenderer.send('quit-and-install-update'),
+    checkForUpdates: () => ipcRenderer.invoke(CHANNELS.CHECK_FOR_UPDATES),
+    onUpdateStatus: (callback) => ipcRenderer.on(CHANNELS.ON_UPDATE_STATUS, (event, data) => callback(data)),
+    downloadUpdate: () => ipcRenderer.invoke(CHANNELS.DOWNLOAD_UPDATE),
+    quitAndInstallUpdate: () => ipcRenderer.send(CHANNELS.QUIT_AND_INSTALL_UPDATE),
 
     // Discovery
-    discoverDevices: () => ipcRenderer.invoke('discover-devices'),
-    onDeviceFound: (callback) => ipcRenderer.on('device-found', (event, data) => callback(data)),
+    discoverDevices: () => ipcRenderer.invoke(CHANNELS.DISCOVER_DEVICES),
+    onDeviceFound: (callback) => ipcRenderer.on(CHANNELS.ON_DEVICE_FOUND, (event, data) => callback(data)),
     
     // NETIP
-    getNetipSettings: (camera) => ipcRenderer.invoke('get-netip-settings', camera),
-    setNetipSettings: (data) => ipcRenderer.invoke('set-net-ip-settings', data),
+    getNetipSettings: (camera) => ipcRenderer.invoke(CHANNELS.GET_NETIP_SETTINGS, camera),
+    setNetipSettings: (data) => ipcRenderer.invoke(CHANNELS.SET_NETIP_SETTINGS, data),
     
     // Reporting
-    openImageFiles: () => ipcRenderer.invoke('open-and-read-image-files'),
-    submitReport: (data) => ipcRenderer.invoke('submit-report', data),
+    openImageFiles: () => ipcRenderer.invoke(CHANNELS.OPEN_IMAGE_FILES),
+    submitReport: (data) => ipcRenderer.invoke(CHANNELS.SUBMIT_REPORT, data),
 
     // Logging from renderer
     log: {
-        info: (text) => ipcRenderer.send('log', { level: 'info', text }),
-        warn: (text) => ipcRenderer.send('log', { level: 'warn', text }),
-        error: (text) => ipcRenderer.send('log', { level: 'error', text }),
+        info: (text) => ipcRenderer.send(CHANNELS.LOG_FROM_RENDERER, { level: 'info', text }),
+        warn: (text) => ipcRenderer.send(CHANNELS.LOG_FROM_RENDERER, { level: 'warn', text }),
+        error: (text) => ipcRenderer.send(CHANNELS.LOG_FROM_RENDERER, { level: 'error', text }),
     },
 
     // Module System
-    getAvailableModules: () => ipcRenderer.invoke('get-available-modules'),
-    saveEnabledModules: (enabledIds) => ipcRenderer.invoke('save-enabled-modules', enabledIds),
-    getRendererModules: () => ipcRenderer.invoke('get-renderer-modules'),
-    onLoadRendererModules: (callback) => ipcRenderer.on('load-renderer-modules', (event, scripts) => callback(scripts)),
+    getAvailableModules: () => ipcRenderer.invoke(CHANNELS.GET_AVAILABLE_MODULES),
+    saveEnabledModules: (enabledIds) => ipcRenderer.invoke(CHANNELS.SAVE_ENABLED_MODULES, enabledIds),
+    getRendererModules: () => ipcRenderer.invoke(CHANNELS.GET_RENDERER_MODULES),
+    
+    // Подписка на события от модулей
     on: (channel, callback) => {
         const validChannels = [
             'module-object-counter-update',
@@ -125,4 +131,3 @@ contextBridge.exposeInMainWorld('api', {
         }
     }
 });
-// --- END OF FILE preload.js ---

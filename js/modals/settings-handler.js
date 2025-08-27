@@ -1,5 +1,4 @@
-// --- START OF FILE js/settings-handler.js ---
-
+// --- START OF FILE js/modals/settings-handler.js ---
 (function(window) {
     window.AppModules = window.AppModules || {};
 
@@ -9,6 +8,9 @@
         let settingsModal, settingsModalCloseBtn, saveSettingsBtn,
             languageSelect, selectRecPathBtn, checkForUpdatesBtn,
             settingsModalTitle, settingsIframe;
+
+        let updateStatusText, updateInfoContainer, updateVersionTitle, 
+            updateChangelog, downloadUpdateBtn, quitAndInstallBtn;
         
         function openSettingsModal(camera = null) {
             if (!settingsModal) return;
@@ -19,10 +21,12 @@
             
             if (isCameraSettings) {
                 settingsModalTitle.textContent = `${App.t('context_settings')}: ${camera.name}`;
-                settingsIframe.src = 'about:blank';
-                setTimeout(() => {
-                    settingsIframe.src = `http://${camera.ip}`;
-                }, 50);
+                if (settingsIframe) {
+                    settingsIframe.src = 'about:blank';
+                    setTimeout(() => {
+                        settingsIframe.src = `http://${camera.ip}`;
+                    }, 50);
+                }
             } else {
                 settingsModalTitle.textContent = App.t('general_settings_title');
                 const { appSettings } = stateManager.state;
@@ -31,12 +35,20 @@
                 if(recordingsPathInput) recordingsPathInput.value = appSettings.recordingsPath || '';
                 const hwAccelSelect = document.getElementById('app-settings-hw-accel');
                 if(hwAccelSelect) hwAccelSelect.value = appSettings.hwAccel || 'auto';
+                const notificationsCheckbox = document.getElementById('app-settings-notifications-enabled');
+                if(notificationsCheckbox) notificationsCheckbox.checked = appSettings.notifications_enabled !== false;
+                const qscaleSlider = document.getElementById('app-settings-qscale');
+                const qscaleValue = document.getElementById('app-settings-qscale-value');
+                if(qscaleSlider) qscaleSlider.value = appSettings.qscale || 8;
+                if(qscaleValue) qscaleValue.textContent = appSettings.qscale || 8;
+                const fpsInput = document.getElementById('app-settings-fps');
+                if(fpsInput) fpsInput.value = appSettings.fps || 20;
 
-                // VVVVVV --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ ВЫЗОВ РЕНДЕРА МОДУЛЕЙ --- VVVVVV
                 if (App.versionType === 'intellect') {
+                    const analyticsProviderSelect = document.getElementById('app-settings-analytics-provider');
+                    if (analyticsProviderSelect) analyticsProviderSelect.value = appSettings.analytics_provider || 'auto';
                     renderModulesTab();
                 }
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             }
 
             const firstVisibleTab = settingsModal.querySelector('.tab-button:not(.hidden)');
@@ -56,11 +68,20 @@
                 qscale: document.getElementById('app-settings-qscale').value,
                 fps: document.getElementById('app-settings-fps').value,
             };
-             if (App.versionType === 'intellect') {
+
+            if (App.versionType === 'intellect') {
                 appSettingsToSave.analytics_provider = document.getElementById('app-settings-analytics-provider').value;
+
                 const enabledModuleIds = Array.from(document.querySelectorAll('.module-checkbox:checked')).map(cb => cb.dataset.id);
-                await window.api.saveEnabledModules(enabledModuleIds);
+                appSettingsToSave.enabledModules = enabledModuleIds;
+                
+                const modulesWereChanged = JSON.stringify(enabledModuleIds) !== JSON.stringify(stateManager.state.appSettings.enabledModules || []);
+
+                if (modulesWereChanged) {
+                    await window.api.saveEnabledModules(enabledModuleIds);
+                }
             }
+
             stateManager.setAppSettings(appSettingsToSave);
             utils.showToast(App.t('app_settings_saved_success'));
             utils.closeModal(settingsModal);
@@ -111,6 +132,63 @@
             }
         }
 
+        function handleUpdateStatus(status, info) {
+            if (!updateStatusText) return;
+
+            updateInfoContainer.classList.add('hidden');
+            downloadUpdateBtn.classList.add('hidden');
+            if (quitAndInstallBtn) quitAndInstallBtn.classList.add('hidden');
+
+            switch(status) {
+                case 'checking':
+                    updateStatusText.textContent = App.t('update_checking');
+                    checkForUpdatesBtn.disabled = true;
+                    break;
+                case 'available':
+                    updateStatusText.textContent = App.t('update_available', { version: info.version });
+                    updateInfoContainer.classList.remove('hidden');
+                    updateVersionTitle.textContent = App.t('update_version_title', { version: info.version });
+                    updateChangelog.textContent = info.releaseNotes || App.t('update_no_changelog');
+                    downloadUpdateBtn.classList.remove('hidden');
+                    downloadUpdateBtn.disabled = false;
+                    checkForUpdatesBtn.disabled = false;
+                    break;
+                case 'downloading':
+                    updateStatusText.textContent = App.t('update_downloading', { percent: info.percent.toFixed(0) });
+                    updateInfoContainer.classList.remove('hidden'); // Показываем, чтобы видеть прогресс
+                    downloadUpdateBtn.classList.remove('hidden');
+                    downloadUpdateBtn.disabled = true;
+                    checkForUpdatesBtn.disabled = true;
+                    break;
+                case 'downloaded':
+                    updateStatusText.textContent = App.t('update_downloaded');
+                    updateInfoContainer.classList.remove('hidden');
+                    checkForUpdatesBtn.disabled = true;
+                    downloadUpdateBtn.classList.add('hidden');
+                    if (!quitAndInstallBtn) {
+                        quitAndInstallBtn = document.createElement('button');
+                        quitAndInstallBtn.id = 'quit-and-install-btn';
+                        quitAndInstallBtn.textContent = 'Перезапустить и установить';
+                        quitAndInstallBtn.style.marginTop = '10px';
+                        quitAndInstallBtn.onclick = () => window.api.quitAndInstallUpdate();
+                        updateInfoContainer.appendChild(quitAndInstallBtn);
+                    }
+                    quitAndInstallBtn.classList.remove('hidden');
+                    break;
+                case 'error':
+                    updateStatusText.textContent = App.t('update_error', { message: info.message });
+                    checkForUpdatesBtn.disabled = false;
+                    break;
+                case 'latest':
+                    updateStatusText.textContent = App.t('update_latest');
+                    checkForUpdatesBtn.disabled = false;
+                    break;
+                default:
+                    updateStatusText.textContent = App.t('update_check_prompt');
+                    checkForUpdatesBtn.disabled = false;
+            }
+        }
+
         function init() {
             settingsModal = document.getElementById('settings-modal');
             settingsModalCloseBtn = document.getElementById('settings-modal-close-btn');
@@ -121,6 +199,12 @@
             selectRecPathBtn = document.getElementById('select-rec-path-btn');
             checkForUpdatesBtn = document.getElementById('check-for-updates-btn');
 
+            updateStatusText = document.getElementById('update-status-text');
+            updateInfoContainer = document.getElementById('update-info-container');
+            updateVersionTitle = document.getElementById('update-version-title');
+            updateChangelog = document.getElementById('update-changelog');
+            downloadUpdateBtn = document.getElementById('download-update-btn');
+            
             if (settingsModalCloseBtn) {
                 settingsModalCloseBtn.addEventListener('click', () => {
                     if (settingsIframe) settingsIframe.src = 'about:blank';
@@ -132,25 +216,29 @@
                 saveSettingsBtn.addEventListener('click', saveGeneralSettings);
             }
 
+            if (languageSelect) {
+                languageSelect.addEventListener('change', () => {
+                    App.i18n.setLanguage(languageSelect.value);
+                });
+            }
+
             if (settingsModal) {
                 const modalFooter = settingsModal.querySelector('.modal-footer');
+                const saveButton = modalFooter.querySelector('#save-settings-btn');
+                const reportButton = modalFooter.querySelector('#report-issue-btn');
+
                 settingsModal.querySelectorAll('.tab-button').forEach(button => { 
                     button.addEventListener('click', () => { 
                         settingsModal.querySelectorAll('.tab-button, .tab-content').forEach(el => el.classList.remove('active')); 
                         button.classList.add('active'); 
                         const content = document.getElementById(button.dataset.tab);
                         if (content) content.classList.add('active'); 
-                        
                         if (modalFooter) {
                             const isAboutTab = button.dataset.tab === 'tab-about';
                             const isGeneralTab = button.dataset.tab === 'tab-general';
                             modalFooter.style.display = isAboutTab ? 'none' : 'flex';
-                            
-                            const generalActions = modalFooter.querySelector('#general-tab-actions');
-                            const reportBtn = modalFooter.querySelector('#report-issue-btn');
-
-                            if (reportBtn) reportBtn.style.display = isGeneralTab ? 'flex' : 'none';
-                            if (generalActions) generalActions.style.display = isGeneralTab ? 'flex' : 'none';
+                            if (saveButton) saveButton.style.display = 'flex';
+                            if (reportButton) reportButton.style.display = isGeneralTab ? 'flex' : 'none';
                         }
                     }); 
                 });
@@ -164,6 +252,34 @@
                     }
                 });
             }
+
+            if (checkForUpdatesBtn) {
+                checkForUpdatesBtn.addEventListener('click', () => {
+                    handleUpdateStatus('checking');
+                    window.api.checkForUpdates();
+                });
+            }
+
+            if (downloadUpdateBtn) {
+                downloadUpdateBtn.addEventListener('click', () => {
+                    downloadUpdateBtn.disabled = true;
+                    window.api.downloadUpdate();
+                });
+            }
+            
+            window.api.onUpdateStatus((data) => {
+                if (settingsModal && !settingsModal.classList.contains('hidden')) {
+                    handleUpdateStatus(data.status, data.info || data);
+                }
+            });
+
+            const qscaleSlider = document.getElementById('app-settings-qscale');
+            const qscaleValue = document.getElementById('app-settings-qscale-value');
+            if (qscaleSlider && qscaleValue) {
+                qscaleSlider.addEventListener('input', () => {
+                    qscaleValue.textContent = qscaleSlider.value;
+                });
+            }
         }
         
         return {
@@ -175,3 +291,4 @@
         };
     };
 })(window);
+// --- END OF FILE js/modals/settings-handler.js ---

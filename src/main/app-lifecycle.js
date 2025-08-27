@@ -1,8 +1,10 @@
-// --- ФАЙЛ: src/main/app-lifecycle.js ---
+// --- START OF FILE src/main/app-lifecycle.js ---
 
 const { app } = require('electron');
 const { initializeUsers } = require('./config-manager');
-const { stopAllProcesses, getAllProcessesOfType } = require('./process-manager');
+// START: ИСПРАВЛЕНИЕ ИМПОРТА
+const processManager = require('./process-manager');
+// END: ИСПРАВЛЕНИЕ
 const { onvifConnectionManager, netipConnectionManager } = require('./camera-api');
 
 let isShuttingDown = false;
@@ -22,7 +24,9 @@ async function onAppWillQuit(event) {
     onvifConnectionManager.closeAll();
     netipConnectionManager.closeAll();
 
-    const recordingProcs = getAllProcessesOfType('recording');
+    // START: ИСПРАВЛЕНИЕ ВЫЗОВА ФУНКЦИИ
+    const recordingProcs = processManager.getAllProcessesOfType('recording');
+    // END: ИСПРАВЛЕНИЕ
 
     if (recordingProcs.length > 0) {
         event.preventDefault();
@@ -59,7 +63,9 @@ async function onAppWillQuit(event) {
         app.quit();
     } else {
         console.log('[Shutdown] No active recordings. Stopping all other processes.');
-        stopAllProcesses();
+        // START: ИСПРАВЛЕНИЕ ВЫЗОВА ФУНКЦИИ
+        processManager.stopAllProcesses();
+        // END: ИСПРАВЛЕНИЕ
     }
 }
 
@@ -67,3 +73,4 @@ module.exports = {
     initializeApp,
     onAppWillQuit,
 };
+// --- END OF FILE src/main/app-lifecycle.js ---

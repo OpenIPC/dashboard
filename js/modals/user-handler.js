@@ -1,11 +1,9 @@
-// js/modals/user-handler.js
-
+// --- START OF FILE js/modals/user-handler.js ---
 (function(window) {
     window.AppModules = window.AppModules || {};
 
     AppModules.createUserModalHandler = function(App, utils) {
         
-        // --- ИЗМЕНЕНИЕ: Объявляем переменные здесь, но не ищем элементы ---
         let userManagementModal, userManagementCloseBtn, userListEl, openAddUserModalBtn,
             addUserModal, addUserCloseBtn, saveUserBtn, cancelUserBtn,
             permissionsModal, permissionsModalCloseBtn, permissionsModalTitle, permissionsListEl, savePermissionsBtn, cancelPermissionsBtn,
@@ -34,26 +32,16 @@
             userListEl.innerHTML = `<li>${App.t('loading_text')}</li>`;
             const result = await window.api.getUsers();
             userListEl.innerHTML = '';
-
             if (result.success) {
                 result.users.forEach(user => {
                     const li = document.createElement('li');
                     const isCurrentUser = user.username === App.stateManager.state.currentUser?.username;
                     li.innerHTML = `<div style="flex-grow: 1;"><strong>${user.username}</strong> <small>(${App.t('role_' + user.role)})</small></div><div style="display: flex; gap: 10px;">${user.role === App.USER_ROLES.OPERATOR ? `<button class="permissions-btn" data-username="${user.username}">${App.t('permissions_btn')}</button>` : ''}<button class="change-pass-btn">${App.t('change_password')}</button><button class="delete-user-btn" ${isCurrentUser ? 'disabled' : ''}>${App.t('context_delete')}</button></div>`;
                     li.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee;";
-                    
                     li.querySelector('.permissions-btn')?.addEventListener('click', () => openPermissionsModal(user));
                     li.querySelector('.change-pass-btn').addEventListener('click', () => openChangePasswordModal(user));
-
                     li.querySelector('.delete-user-btn').addEventListener('click', async () => {
-                        const confirmation = await App.modalHandler.showPrompt({
-                            title: App.t('context_delete'),
-                            label: App.t('confirm_delete_user', { username: user.username }),
-                            okText: App.t('context_delete'),
-                            cancelText: App.t('cancel'),
-                            inputType: 'none'
-                        });
-
+                        const confirmation = await App.modalHandler.showPrompt({ title: App.t('context_delete'), label: App.t('confirm_delete_user', { username: user.username }), okText: App.t('context_delete'), cancelText: App.t('cancel'), inputType: 'none' });
                         if (confirmation !== null) {
                             const deleteResult = await window.api.deleteUser({ username: user.username });
                             if (deleteResult.success) {
@@ -63,7 +51,6 @@
                             }
                         }
                     });
-                    
                     userListEl.appendChild(li);
                 });
             } else {
@@ -84,7 +71,6 @@
             const username = document.getElementById('add-user-username').value.trim();
             const password = document.getElementById('add-user-password').value;
             const role = document.getElementById('add-user-role').value;
-
             if (!username || !password) {
                 App.modalHandler.showToast(App.t('username_and_password_required'), true);
                 return;
@@ -111,7 +97,6 @@
             if (!editingPasswordForUser) return;
             const newPassword = document.getElementById('change-user-password').value;
             if (!newPassword.trim()) return;
-
             const updateResult = await window.api.updateUserPassword({ username: editingPasswordForUser.username, password: newPassword });
             if (updateResult.success) {
                 utils.showToast(App.t('password_changed_success'));
@@ -150,24 +135,20 @@
         }
 
         function init() {
-            // --- ИЗМЕНЕНИЕ: Ищем элементы DOM только здесь, внутри init() ---
             userManagementModal = document.getElementById('user-management-modal');
             userManagementCloseBtn = document.getElementById('user-management-close-btn');
             userListEl = document.getElementById('user-list');
             openAddUserModalBtn = document.getElementById('open-add-user-modal-btn');
-            
             addUserModal = document.getElementById('add-user-modal');
             addUserCloseBtn = document.getElementById('add-user-close-btn');
             saveUserBtn = document.getElementById('save-user-btn');
             cancelUserBtn = document.getElementById('cancel-user-btn');
-            
             permissionsModal = document.getElementById('permissions-modal');
             permissionsModalCloseBtn = document.getElementById('permissions-modal-close-btn');
             permissionsModalTitle = document.getElementById('permissions-modal-title');
             permissionsListEl = document.getElementById('permissions-list');
             savePermissionsBtn = document.getElementById('save-permissions-btn');
             cancelPermissionsBtn = document.getElementById('cancel-permissions-btn');
-
             changePasswordModal = document.getElementById('change-password-modal');
             changePassCloseBtn = document.getElementById('change-pass-close-btn');
             changePassModalTitle = document.getElementById('change-pass-modal-title');
@@ -177,17 +158,14 @@
             if (userManagementCloseBtn) userManagementCloseBtn.addEventListener('click', () => utils.closeModal(userManagementModal));
             if (userManagementModal) userManagementModal.addEventListener('click', (e) => { if (e.target === userManagementModal) utils.closeModal(userManagementModal); });
             if (openAddUserModalBtn) openAddUserModalBtn.addEventListener('click', openAddUserModal);
-            
             if (addUserCloseBtn) addUserCloseBtn.addEventListener('click', () => utils.closeModal(addUserModal));
             if (addUserModal) addUserModal.addEventListener('click', (e) => { if (e.target === addUserModal) utils.closeModal(addUserModal); });
             if (saveUserBtn) saveUserBtn.addEventListener('click', saveNewUser);
             if (cancelUserBtn) cancelUserBtn.addEventListener('click', () => utils.closeModal(addUserModal));
-
             if (changePassCloseBtn) changePassCloseBtn.addEventListener('click', () => utils.closeModal(changePasswordModal));
             if (changePasswordModal) changePasswordModal.addEventListener('click', (e) => { if (e.target === changePasswordModal) utils.closeModal(changePasswordModal); });
             if (saveNewPasswordBtn) saveNewPasswordBtn.addEventListener('click', saveNewPassword);
             if (cancelChangePasswordBtn) cancelChangePasswordBtn.addEventListener('click', () => utils.closeModal(changePasswordModal));
-
             if (savePermissionsBtn) savePermissionsBtn.addEventListener('click', savePermissions);
             if (cancelPermissionsBtn) cancelPermissionsBtn.addEventListener('click', () => utils.closeModal(permissionsModal));
             if (permissionsModalCloseBtn) permissionsModalCloseBtn.addEventListener('click', () => utils.closeModal(permissionsModal));
@@ -216,3 +194,4 @@
         };
     };
 })(window);
+// --- END OF FILE js/modals/user-handler.js ---

@@ -1,0 +1,95 @@
+/* --- Вспомогательные, глобальные и специфичные для версий стили --- */
+.toast-notification {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #28a745;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    z-index: 2000;
+    opacity: 0;
+    transition: opacity 0.5s;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.toast-notification.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.toast-notification.error {
+    background-color: var(--danger-color);
+}
+
+.hidden {
+    display: none !important;
+}
+
+body.presentation-mode .header,
+body.presentation-mode .sidebar,
+body.presentation-mode .bottom-toolbar {
+    display: none;
+}
+
+body.presentation-mode .main-container {
+    width: 100vw;
+    height: 100vh;
+}
+
+body.presentation-mode .view-container {
+    padding: 0;
+}
+
+.admin-only {
+    display: none !important;
+}
+
+body.role-admin .admin-only {
+    display: flex !important;
+}
+
+.cell-controls button.audio-btn.active {
+    color: var(--accent-color);
+}
+
+body.role-operator .requires-permission {
+    display: none !important;
+}
+
+body.role-admin .requires-permission {
+    display: flex !important;
+}
+
+body.can-edit-cameras #discover-btn,
+body.can-edit-cameras #add-group-btn,
+body.can-edit-cameras #add-camera-sidebar-btn {
+    display: flex !important;
+}
+
+body.can-manage-layout #layout-controls,
+body.can-manage-layout #presentation-mode-btn,
+body.can-manage-layout #view-layout-controls {
+    display: flex !important;
+}
+
+.intellect-only {
+    display: none !important;
+}
+
+body.version-intellect .intellect-only {
+    display: flex !important;
+}
+
+/* VVVVVV --- ИЗМЕНЕНИЕ: ИСПРАВЛЕНИЕ ДЛЯ ОТОБРАЖЕНИЯ ВКЛАДОК INTELLECT --- VVVVVV */
+/* Это правило будет скрывать контент вкладок по умолчанию, даже если основное правило .intellect-only пытается их показать */
+body.version-intellect .tab-content.intellect-only {
+    display: none !important;
+}
+/* Это правило будет принудительно показывать контент, только когда он и в версии intellect, и активен */
+body.version-intellect .tab-content.intellect-only.active {
+    display: block !important;
+}
+/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */

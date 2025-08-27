@@ -276,6 +276,7 @@
   "update_version_title": "Что нового в версии {{version}}",
   "update_no_changelog": "Описание изменений не предоставлено.",
   "update_download_button": "Скачать и установить",
-  "update_downloaded_prompt": "Обновление загружено. Перезапустить приложение сейчас для установки?"
-
+  "update_downloaded_prompt": "Обновление загружено. Перезапустить приложение сейчас для установки?",
+  "retry_button": "Повторить",
+  "close_button": "Закрыть"
 }

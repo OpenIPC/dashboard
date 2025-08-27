@@ -263,5 +263,7 @@
   "update_version_title": "What's new in version {{version}}",
   "update_no_changelog": "No changelog provided.",
   "update_download_button": "Download and Install",
-  "update_downloaded_prompt": "Update downloaded. Restart the application now to install?"
+  "update_downloaded_prompt": "Update downloaded. Restart the application now to install?",
+  "retry_button": "Retry",
+  "close_button": "Close"
 }

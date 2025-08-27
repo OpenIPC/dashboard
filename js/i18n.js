@@ -43,7 +43,8 @@
             return translation;
         }
         
-        // VVVVVV --- ИЗМЕНЕННАЯ ФУНКЦИЯ --- VVVVVV
+        // --- ИЗМЕНЕННАЯ ФУНКЦИЯ ---
+        // Теперь ищет 3 разных data-атрибута для полного перевода
         function applyTranslationsToDOM(scopeElement = document) {
             // Ищем элементы с ключом для основного текста/HTML
             scopeElement.querySelectorAll('[data-i18n-key]').forEach(element => {
@@ -62,7 +63,7 @@
                 element.placeholder = t(key);
             });
         }
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
         
         async function setLanguage(lang) {
             if (!supportedLangs.includes(lang) || lang === currentLang) {

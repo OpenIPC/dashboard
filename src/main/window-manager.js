@@ -24,20 +24,17 @@ function createWindow() {
         titleBarStyle: 'hidden',
         icon: path.join(__dirname, '../../build/icon.png'),
         webPreferences: {
-            // Подключаем основной preload-скрипт, который предоставляет API в renderer-процесс
-            preload: path.join(__dirname, '../../preload.js')
+            // Подключаем основной preload-скрипт
+            preload: path.join(__dirname, '../../preload.js'),
+            
+            // --- ВОТ ИСПРАВЛЕНИЕ ---
+            // Отключаем песочницу, чтобы в preload-скрипте
+            // были доступны модули Node.js, такие как 'path'.
+            sandbox: false
         }
     });
 
     mainWindow.loadFile('index.html');
-
-    // VVVVVV --- ИЗМЕНЕНИЕ: УБИРАЕМ АВТОПРОВЕРКУ --- VVVVVV
-    // mainWindow.once('ready-to-show', () => {
-    //     if (app.isPackaged) {
-    //         autoUpdater.checkForUpdates();
-    //     }
-    // });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     // Отправляем события в renderer для обновления иконки максимизации
     mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized'));
@@ -67,6 +64,8 @@ function createFileManagerWindow(camera, fileManagerConnections) {
             preload: path.join(__dirname, '../../fm-preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
+            // Для этого окна тоже отключаем песочницу, если понадобятся модули Node
+            sandbox: false
         }
     });
 
@@ -106,7 +105,9 @@ function createSshTerminalWindow(cameraData, sshConnections) {
         parent: mainWindow,
         webPreferences: {
             // Подключаем preload-скрипт специально для SSH терминала
-            preload: path.join(__dirname, '../../terminal-preload.js')
+            preload: path.join(__dirname, '../../terminal-preload.js'),
+            // И здесь тоже на всякий случай
+            sandbox: false
         }
     });
 

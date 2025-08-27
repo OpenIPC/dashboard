@@ -1,10 +1,10 @@
 {
   "name": "openipc-dashboard",
-  "version": "2.8.3",
+  "version": "2.8.4",
   "description": "App for managing OpenIPC cameras",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "chcp 65001 | electron .",
     "dist:lite": "node scripts/set-version.js lite && electron-builder --config builder-lite.json",
     "dist:intellect": "node scripts/set-version.js intellect && electron-builder --config builder-intellect.json",
     "dist": "npm run dist:intellect",

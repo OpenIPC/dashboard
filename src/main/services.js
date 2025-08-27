@@ -1,29 +1,15 @@
 // --- START OF FILE src/main/services.js ---
-// --- ФАЙЛ: src/main/services.js (ИСПРАВЛЕННАЯ ВЕРСИЯ С CHANGELOG) ---
-
 const { app, Notification, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
-
-// Прямой require, так как configManager не зависит от services,
-// и циклической зависимости не возникнет.
 const { getAppSettings } = require('./config-manager');
 
 const notificationTimestamps = {};
-const NOTIFICATION_COOLDOWN = 30000; // 30 секунд
+const NOTIFICATION_COOLDOWN = 30000; 
 
-/**
- * Централизованный обработчик ошибок.
- * Логирует полную ошибку в консоль main-процесса и отправляет
- * упрощенное сообщение в renderer для показа пользователю.
- * @param {Error} error - Объект ошибки.
- * @param {string} context - Контекст, в котором произошла ошибка (например, 'login-handler').
- */
 function handleError(error, context = 'Unknown Context') {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Error in ${context}]`, error);
-
-    // Получаем getMainWindow здесь, а не через import, чтобы избежать циклических зависимостей
     const { getMainWindow } = require('./window-manager');
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -34,19 +20,10 @@ function handleError(error, context = 'Unknown Context') {
     }
 }
 
-
-/**
- * Показывает системное уведомление.
- * @param {object} param0
- * @param {string} param0.title - Заголовок уведомления.
- * @param {string} param0.body - Текст уведомления.
- */
 async function showSystemNotification({ title, body }) {
     if (!Notification.isSupported()) return;
-
     const settings = await getAppSettings();
     if (!settings.notifications_enabled) return;
-
     new Notification({
         title,
         body,
@@ -54,102 +31,62 @@ async function showSystemNotification({ title, body }) {
     }).show();
 }
 
-/**
- * Показывает уведомление о событии видеоаналитики с защитой от спама.
- * @param {string} cameraName - Имя камеры.
- * @param {number} cameraId - ID камеры.
- * @param {string[]} objects - Массив с названиями обнаруженных объектов.
- */
 async function showAnalyticsNotification(cameraName, cameraId, objects) {
     if (!Notification.isSupported()) return;
-
     const settings = await getAppSettings();
     if (!settings.notifications_enabled) return;
-
     const now = Date.now();
     const lastTime = notificationTimestamps[cameraId];
-
     if (lastTime && (now - lastTime < NOTIFICATION_COOLDOWN)) {
-        return; // Слишком часто, пропускаем
+        return;
     }
-
     notificationTimestamps[cameraId] = now;
-    
     console.log(`[Notification] Showing notification for camera: ${cameraName}`);
-
     const notification = new Notification({
         title: `Обнаружение на камере: ${cameraName}`,
         body: `Обнаружены объекты: ${objects.join(', ')}`,
         icon: path.join(__dirname, '../../build/icon.png'),
-        silent: true // Не проигрывать системный звук для частых событий
+        silent: true
     });
-
     notification.show();
 }
 
-/**
- * Собирает и возвращает статистику по использованию CPU и RAM.
- * @returns {{cpu: string, ram: string}}
- */
 function getSystemStats() {
     const metrics = app.getAppMetrics();
     let totalCpuUsage = 0;
     let totalRamUsage = 0;
-
     metrics.forEach(metric => {
         totalCpuUsage += metric.cpu.percentCPUUsage;
-        totalRamUsage += metric.memory.workingSetSize; // в килобайтах
+        totalRamUsage += metric.memory.workingSetSize;
     });
-
     return {
         cpu: totalCpuUsage.toFixed(0),
-        ram: (totalRamUsage / 1024).toFixed(0), // в мегабайтах
+        ram: (totalRamUsage / 1024).toFixed(0),
     };
 }
 
-/**
- * Запускает проверку обновлений.
- */
 function checkForUpdates() {
-    // Проверяем только для упакованного приложения
     if (app.isPackaged) {
         console.log('[Updater] Manually checking for updates...');
         autoUpdater.checkForUpdates();
     } else {
         console.log('[Updater] Skipping update check in development mode.');
-        // Для отладки можно отправить фейковое событие
-        // const { getMainWindow } = require('./window-manager');
-        // const mainWindow = getMainWindow();
-        // if (mainWindow) {
-        //     mainWindow.webContents.send('update-status', { 
-        //         status: 'available', 
-        //         message: 'Доступна версия 3.0.0',
-        //         info: { 
-        //             version: '3.0.0', 
-        //             releaseNotes: '### ✨ Новое\n- Добавлен список изменений.\n- Улучшен интерфейс.\n\n### 🚀 Исправления\n- Исправлен баг с обновлением.' 
-        //         } 
-        //     });
-        // }
+        // В режиме разработки ничего не делаем.
+        // Блок с фейковым событием удален/закомментирован.
     }
 }
 
-/**
- * Регистрирует обработчики событий для autoUpdater.
- * @param {BrowserWindow} mainWindow - Главное окно приложения для отправки сообщений.
- */
 function registerUpdaterEvents(mainWindow) {
-    // VVVVVV --- ИЗМЕНЕНИЕ: ОТПРАВЛЯЕМ ВЕСЬ ОБЪЕКТ INFO --- VVVVVV
     autoUpdater.on('update-available', (info) => {
         console.log('[Updater] Update available.', info);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('update-status', { 
                 status: 'available', 
                 message: `Доступна версия ${info.version}`,
-                info: info // Отправляем весь объект, включая releaseNotes
+                info: info
             });
         }
     });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
     autoUpdater.on('update-not-available', (info) => {
         console.log('[Updater] No new update available.');
@@ -171,7 +108,8 @@ function registerUpdaterEvents(mainWindow) {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('update-status', {
                 status: 'downloading',
-                message: `Загрузка... ${progressObj.percent.toFixed(0)}%`
+                message: `Загрузка... ${progressObj.percent.toFixed(0)}%`,
+                info: progressObj
             });
         }
     });
@@ -180,7 +118,6 @@ function registerUpdaterEvents(mainWindow) {
         console.log('[Updater] Update downloaded.', info);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('update-status', { status: 'downloaded', message: `Версия ${info.version} загружена. Перезапустите для установки.` });
-            
             dialog.showMessageBox(mainWindow, {
                 type: 'info',
                 title: 'Обновление готово',
@@ -205,3 +142,4 @@ module.exports = {
     checkForUpdates,
     registerUpdaterEvents,
 };
+// --- END OF FILE src/main/services.js ---

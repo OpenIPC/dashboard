@@ -1,7 +1,4 @@
 // --- START OF FILE src/main/process-manager.js ---
-// Файл: src/main/process-manager.js
-// Управляет дочерними процессами, такими как FFmpeg и скрипты аналитики.
-
 const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -19,10 +16,8 @@ const FfmpegCommandBuilder = require('./ffmpeg-builder');
 function getLocalTimestampForFilename() {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
-    
     const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const time = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-    
     return `${date}T${time}`;
 }
 
@@ -64,10 +59,6 @@ function stopProcess(key) {
         return true;
     }
     return false;
-}
-
-function getProcess(key) {
-    return processes.get(key);
 }
 
 function getAllProcessesOfType(type) {
@@ -130,31 +121,23 @@ async function startVideoStream({ credentials, streamId, uniqueStreamIdentifier 
     if (!uniqueStreamIdentifier) {
         return { success: false, error: 'uniqueStreamIdentifier is required' };
     }
-    if (getProcess(uniqueStreamIdentifier) || streamManager[uniqueStreamIdentifier]) {
+    if (processes.has(uniqueStreamIdentifier) || streamManager[uniqueStreamIdentifier]) {
         return { success: true, wsPort: streamManager[uniqueStreamIdentifier].port };
     }
-    
     const cameraConfig = await configManager.getCameraConfig(credentials.id);
     if (!cameraConfig) return { success: false, error: `Camera with ID ${credentials.id} not found.` };
-    
     const password = await authManager.getPasswordForCamera(credentials.id);
     const fullCredentials = { ...cameraConfig, password };
-    
     const wsPort = await getAndReserveFreePort();
     if (wsPort === null) return { success: false, error: 'Failed to find a free port.' };
-
     const wss = new WebSocket.Server({ port: wsPort });
     wss.on('connection', (ws) => console.log(`[WSS] Client connected to port ${wsPort}`));
-    
     const settings = await configManager.getAppSettings();
     const builder = new FfmpegCommandBuilder(settings);
     const { command, args: ffmpegArgs } = builder.buildForStream(fullCredentials, streamId);
-
     console.log(`[FFMPEG] Starting stream ${uniqueStreamIdentifier} with command:`, command, ffmpegArgs.join(' '));
     const ffmpegProcess = spawn(command, ffmpegArgs, { detached: false, windowsHide: true });
-    
     addProcess(uniqueStreamIdentifier, ffmpegProcess, PROCESS_TYPES.STREAM);
-    
     ffmpegProcess.on('error', (err) => {
         console.error(`[FFMPEG] Failed to start process for ${uniqueStreamIdentifier}:`, err);
         services.handleError(err, `ffmpeg-spawn-${uniqueStreamIdentifier}`);
@@ -163,14 +146,24 @@ async function startVideoStream({ credentials, streamId, uniqueStreamIdentifier 
         delete streamManager[uniqueStreamIdentifier];
         stopProcess(uniqueStreamIdentifier);
     });
-    
     ffmpegProcess.stdout.on('data', (data) => wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(data)));
-    
-    let statsBuffer = '', lastErrorOutput = '';
+    let statsBuffer = '', lastErrorOutput = '', streamInfoSent = false;
     ffmpegProcess.stderr.on('data', (data) => {
-        const errorString = data.toString();
-        if (errorString.trim()) { lastErrorOutput = errorString.trim(); }
-        statsBuffer += errorString;
+        const stderrString = data.toString();
+        if (!streamInfoSent) {
+            const infoMatch = stderrString.match(/Stream #\d:\d.*: Video: (\w+)(?:\s\([^)]+\))?,.*?\s(\d{3,4}x\d{3,4})/);
+            if (infoMatch && infoMatch[1] && infoMatch[2]) {
+                const [_, codec, resolution] = infoMatch;
+                console.log(`[FFMPEG] Parsed Stream Info for ${uniqueStreamIdentifier}: ${codec}, ${resolution}`);
+                const mainWindow = require('./window-manager').getMainWindow();
+                if (mainWindow) {
+                    mainWindow.webContents.send('stream-info-update', { uniqueStreamIdentifier, codec, resolution });
+                }
+                streamInfoSent = true;
+            }
+        }
+        if (stderrString.trim()) { lastErrorOutput = stderrString.trim(); }
+        statsBuffer += stderrString;
         const statsBlocks = statsBuffer.split('progress=');
         if (statsBlocks.length > 1) {
             statsBlocks.slice(0, -1).forEach(block => {
@@ -178,34 +171,28 @@ async function startVideoStream({ credentials, streamId, uniqueStreamIdentifier 
                 const stats = Object.fromEntries(block.trim().split('\n').map(line => line.split('=').map(s => s.trim())));
                 const mainWindow = require('./window-manager').getMainWindow();
                 if (mainWindow && (stats.fps || stats.bitrate)) {
-                    mainWindow.webContents.send('stream-stats', { 
-                        uniqueStreamIdentifier, 
-                        fps: parseFloat(stats.fps) || 0, 
-                        bitrate: parseFloat(stats.bitrate) || 0 
-                    });
+                    mainWindow.webContents.send('stream-stats', { uniqueStreamIdentifier, fps: parseFloat(stats.fps) || 0, bitrate: parseFloat(stats.bitrate) || 0 });
                 }
             });
             statsBuffer = statsBlocks.pop();
         }
     });
-
     ffmpegProcess.on('close', (code, signal) => {
         console.warn(`[FFMPEG] Process ${uniqueStreamIdentifier} exited. Code: ${code}, Signal: ${signal}.`);
         if (code !== 0 && code !== null) {
             console.error(`[FFMPEG Last Stderr] ${uniqueStreamIdentifier}: ${lastErrorOutput}`);
         }
-        
         if (streamManager[uniqueStreamIdentifier]) { 
             streamManager[uniqueStreamIdentifier].wss.close(); 
             releasePort(wsPort); 
             delete streamManager[uniqueStreamIdentifier]; 
         }
-        
         stopProcess(uniqueStreamIdentifier);
         const mainWindow = require('./window-manager').getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stream-died', uniqueStreamIdentifier);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('stream-died', { uniqueStreamIdentifier: uniqueStreamIdentifier, error: lastErrorOutput || `Process exited with code ${code}` });
+        }
     });
-    
     streamManager[uniqueStreamIdentifier] = { wss, port: wsPort };
     return { success: true, wsPort };
 }
@@ -223,113 +210,140 @@ async function stopVideoStream(uniqueStreamIdentifier) {
     return { success: false, error: "Stream not found" };
 }
 
-async function startRecording(camera, mainWindow) {
+async function startRecording(camera, type = 'manual') {
+    const mainWindow = require('./window-manager').getMainWindow();
     if (!camera || !camera.id) return { success: false, error: 'Invalid camera data' };
-    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, camera.id);
-    if (getProcess(recordingId) || recordingManager[camera.id]) {
+    const recordingId = `recording-${camera.id}`;
+    if (recordingManager[camera.id]) {
+        console.log(`[REC] Recording for camera ${camera.id} is already active.`);
         return { success: true, message: 'Recording already in progress' };
     }
-    
     const password = await authManager.getPasswordForCamera(camera.id);
     const fullCameraInfo = { ...camera, password };
     const settings = await configManager.getAppSettings();
-    
     await fsPromises.mkdir(settings.recordingsPath, { recursive: true });
-    
     const saneCameraName = fullCameraInfo.name.replace(/[<>:"/\\|?*]/g, '_');
     const timestamp = getLocalTimestampForFilename();
     const outputPath = path.join(settings.recordingsPath, `${saneCameraName}-${timestamp}.mp4`);
-    
     const builder = new FfmpegCommandBuilder(settings);
     const { command, args: ffmpegArgs } = builder.buildForRecording(fullCameraInfo, outputPath);
-    
+    console.log(`[REC] Starting ${type} recording for camera ${camera.id}`);
     const ffmpegProcess = spawn(command, ffmpegArgs, { detached: false, windowsHide: true });
-    addProcess(recordingId, ffmpegProcess, PROCESS_TYPES.RECORDING);
-    recordingManager[camera.id] = { path: outputPath };
-    
-    services.showSystemNotification({ title: 'Запись начата', body: `Камера: "${fullCameraInfo.name}"` });
-    
+    let ffmpegErrorOutput = '';
+    ffmpegProcess.stderr.on('data', (data) => {
+        const errorLine = data.toString();
+        ffmpegErrorOutput += errorLine;
+        console.error(`[FFMPEG REC ERROR] ${errorLine.trim()}`);
+    });
+    processes.set(recordingId, { process: ffmpegProcess, type: 'recording' });
+    recordingManager[camera.id] = { path: outputPath, process: ffmpegProcess, type: type };
+    if (type === 'manual') {
+        services.showSystemNotification({ title: 'Запись начата', body: `Камера: "${fullCameraInfo.name}"` });
+    }
     ffmpegProcess.on('close', (code) => {
-        delete recordingManager[camera.id];
-        stopProcess(recordingId);
-        if (recordingStopTimers[camera.id]) clearTimeout(recordingStopTimers[camera.id]);
-        
-        if (code !== 0) {
-            services.showSystemNotification({ title: 'Ошибка записи', body: `Камера: "${fullCameraInfo.name}"` });
-        } else {
+        console.log(`[REC] FFmpeg process for camera ${camera.id} closed with code ${code}.`);
+        const wasStoppedIntentionally = !recordingManager[camera.id];
+        if (wasStoppedIntentionally) {
+            console.log(`[REC] Recording for ${camera.id} was stopped intentionally.`);
             services.showSystemNotification({ title: 'Запись завершена', body: `Файл сохранен для камеры "${fullCameraInfo.name}"` });
-        }
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('recording-state-change', { cameraId: camera.id, recording: false });
+        } else {
+            console.error(`[REC] Recording process for ${camera.id} exited unexpectedly.`);
+            if (ffmpegErrorOutput) {
+                console.error(`[REC] Full FFmpeg stderr output:\n${ffmpegErrorOutput}`);
+            }
+            services.showSystemNotification({ title: 'Ошибка записи', body: `Камера: "${fullCameraInfo.name}"` });
+            stopRecording(camera.id);
         }
     });
-
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('recording-state-change', { cameraId: camera.id, recording: true });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('recording-state-change', { cameraId: camera.id, recording: true });
+    }
     return { success: true };
 }
 
 function stopRecording(cameraId) {
+    const recordingId = `recording-${cameraId}`;
     if (recordingStopTimers[cameraId]) {
         clearTimeout(recordingStopTimers[cameraId]);
         delete recordingStopTimers[cameraId];
     }
-    const recordingId = buildProcessId(PROCESS_TYPES.RECORDING, cameraId);
-    if (stopProcess(recordingId)) return { success: true };
+    if (recordingManager[cameraId]) {
+        delete recordingManager[cameraId];
+    }
+    if (stopProcess(recordingId)) {
+        const mainWindow = require('./window-manager').getMainWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('recording-state-change', { cameraId, recording: false });
+        }
+        return { success: true };
+    }
     return { success: false, error: 'Recording not found' };
 }
 
-async function prepareArchiveForHls(sourceFilename) {
-    const HLS_PROCESS_KEY = buildProcessId(PROCESS_TYPES.HLS, 'conversion');
-    
-    if (getProcess(HLS_PROCESS_KEY)) {
-        console.log('[HLS] Stopping previous conversion process.');
+async function toggleRecording(camera) {
+    const isCurrentlyRecording = !!recordingManager[camera.id];
+    if (isCurrentlyRecording) {
+        return stopRecording(camera.id);
+    } else {
+        return startRecording(camera, 'manual');
+    }
+}
+
+async function handleAnalyticsDetection(cameraId, camera) {
+    const settings = await configManager.getAppSettings();
+    const autoStopDelay = (settings.analytics_record_duration || 30) * 1000;
+    if (recordingManager[cameraId]?.type === 'manual') {
+        return;
+    }
+    if (!recordingManager[cameraId]) {
+        await startRecording(camera, 'auto');
+    }
+    if (recordingStopTimers[cameraId]) {
+        clearTimeout(recordingStopTimers[cameraId]);
+    }
+    recordingStopTimers[cameraId] = setTimeout(() => {
+        if (recordingManager[cameraId]?.type === 'auto') {
+            console.log(`[REC] Auto-stopping recording for camera ${cameraId} due to inactivity.`);
+            stopRecording(cameraId);
+        }
+    }, autoStopDelay);
+}
+
+async function prepareArchiveForHls({ filename }) {
+    const HLS_PROCESS_KEY = 'hls-conversion';
+    if (processes.has(HLS_PROCESS_KEY)) {
         stopProcess(HLS_PROCESS_KEY);
     }
-
     const settings = await configManager.getAppSettings();
-    const sourcePath = path.join(settings.recordingsPath, sourceFilename);
+    const sourcePath = path.join(settings.recordingsPath, filename);
     const hlsTempPath = path.join(app.getPath('temp'), 'hls');
-    const playlistPath = path.join(hlsTempPath, 'playlist.m3u8');
-    
     try {
         await fsPromises.rm(hlsTempPath, { recursive: true, force: true });
         await fsPromises.mkdir(hlsTempPath, { recursive: true });
     } catch (e) {
         return { success: false, error: `Failed to clean HLS temp directory: ${e.message}` };
     }
-
+    const videoInfo = await configManager.getArchiveVideoInfo(filename);
+    const sourceCodec = videoInfo ? videoInfo.codec_name : null;
     const builder = new FfmpegCommandBuilder(settings);
-    const { command, args } = builder.buildForHls(sourcePath, hlsTempPath);
-    console.log(`[HLS] Starting FFmpeg: ${command} ${args.join(' ')}`);
-
+    const { command, args } = builder.buildForHls(sourcePath, hlsTempPath, 0, sourceCodec);
     const ffmpegProcess = spawn(command, args, { windowsHide: true });
-    addProcess(HLS_PROCESS_KEY, ffmpegProcess, PROCESS_TYPES.HLS);
-
-    ffmpegProcess.stderr.on('data', (data) => {
-        // console.log(`[HLS FFmpeg]: ${data.toString()}`);
-    });
-
-    ffmpegProcess.on('close', (code) => {
-        console.log(`[HLS] FFmpeg process exited with code ${code}`);
-        stopProcess(HLS_PROCESS_KEY);
-    });
-
+    processes.set(HLS_PROCESS_KEY, { process: ffmpegProcess, type: 'hls' });
     return new Promise((resolve) => {
+        const playlistPath = path.join(hlsTempPath, 'playlist.m3u8');
         const timeout = setTimeout(() => {
             stopProcess(HLS_PROCESS_KEY);
             resolve({ success: false, error: 'HLS conversion timed out.' });
         }, 60000);
-
         const checkFile = () => {
             if (fs.existsSync(playlistPath)) {
                 clearTimeout(timeout);
                 const hlsServer = require('./hls-server');
-                if (!hlsServer.serverPort || !hlsServer.serverPort.port) {
-                    resolve({ success: false, error: 'HLS server is not running or has no port.' });
+                if (!hlsServer.serverPort?.port) {
+                    resolve({ success: false, error: 'HLS server is not running.' });
                     return;
                 }
-                const { port } = hlsServer.serverPort;
-                resolve({ success: true, url: `http://localhost:${port}/hls/playlist.m3u8` });
+                resolve({ success: true, url: `http://localhost:${hlsServer.serverPort.port}/hls/playlist.m3u8` });
             } else {
                 setTimeout(checkFile, 200);
             }
@@ -349,25 +363,15 @@ function getRecordingStates() {
 async function exportArchiveClip({ sourceFilename, startTime, duration }, mainWindow) {
     const settings = await configManager.getAppSettings();
     const sourcePath = path.join(settings.recordingsPath, sourceFilename);
-
-    try {
-        await fsPromises.access(sourcePath);
-    } catch (e) {
-        return { success: false, error: `Source file not found: ${sourceFilename}` };
-    }
-
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: 'Сохранить клип', defaultPath: path.join(app.getPath('videos'), `clip-${sourceFilename}`),
         filters: [{ name: 'MP4 Videos', extensions: ['mp4'] }]
     });
     if (canceled || !filePath) return { success: false, error: 'Export cancelled' };
-
     return new Promise((resolve) => {
         const builder = new FfmpegCommandBuilder(settings);
         const { command, args: ffmpegArgs } = builder.buildForExport(sourcePath, startTime, duration, filePath);
-        
         const exportProcess = spawn(command, ffmpegArgs);
-        
         exportProcess.on('close', code => {
             if (code === 0) resolve({ success: true, path: filePath });
             else resolve({ success: false, error: `FFmpeg failed with code ${code}` });
@@ -375,158 +379,61 @@ async function exportArchiveClip({ sourceFilename, startTime, duration }, mainWi
     });
 }
 
-async function handleAnalyticsDetection(cameraId, camera) {
-    const settings = await configManager.getAppSettings();
-    const autoStopDelay = (settings.analytics_record_duration || 30) * 1000;
-
-    if (recordingStopTimers[cameraId]) clearTimeout(recordingStopTimers[cameraId]);
-
-    if (!recordingManager[cameraId]) {
-        console.log(`[Analytics] Object detected on camera ${cameraId}, starting recording.`);
-        await startRecording(camera, require('./window-manager').getMainWindow());
-    }
-
-    recordingStopTimers[cameraId] = setTimeout(() => {
-        console.log(`[REC] Auto-stopping recording for camera ${cameraId} due to inactivity.`);
-        stopRecording(cameraId);
-    }, autoStopDelay);
-}
-
-function getAnalyticsExecutablePath() {
-    const platform = process.platform;
-    let exeName = 'analytics_cpu';
-
-    if (platform === 'win32') {
-        exeName = 'analytics_dml';
-        console.log('[Analytics] Windows system detected. Selecting DirectML executable.');
-    } else {
-        console.log(`[Analytics] ${platform} system detected. Selecting CPU executable.`);
-    }
-
-    if (platform === 'win32') {
-        exeName += '.exe';
-    }
-    
-    return app.isPackaged
-        ? path.join(process.resourcesPath, 'analytics', exeName)
-        : path.join(__dirname, '../../extra/analytics', exeName);
-}
-
 async function toggleAnalytics(cameraId, mainWindow, moduleManager) {
-    const analyticsId = buildProcessId(PROCESS_TYPES.ANALYTICS, cameraId);
-    if (getProcess(analyticsId)) {
+    const analyticsId = `analytics-${cameraId}`;
+    if (processes.has(analyticsId)) {
         stopProcess(analyticsId);
         if (recordingStopTimers[cameraId]) stopRecording(cameraId);
         return { success: true, status: 'stopped' };
     }
-    
     const settings = await configManager.getAppSettings();
     const camera = await configManager.getCameraConfig(cameraId);
     if (!camera) return { success: false, error: 'Camera not found' };
-
-    let translations = {};
-    try {
-        const lang = settings.language || 'en';
-        translations = await configManager.getTranslationFile(lang);
-    } catch (e) {
-        console.error('Could not load translation file for analytics notifications.', e);
-    }
-    
     const password = await authManager.getPasswordForCamera(camera.id);
     const fullCameraInfo = { ...camera, password };
     const builder = new FfmpegCommandBuilder(settings);
     const rtspUrl = builder.buildRtspUrl(fullCameraInfo, fullCameraInfo.streamPath0 || '/stream0');
-    
-    const analyticsPath = getAnalyticsExecutablePath();
-    
+    const analyticsPath = path.join(app.isPackaged ? process.resourcesPath : 'extra', 'analytics', process.platform === 'win32' ? 'analytics_dml.exe' : 'analytics_cpu');
     if (!fs.existsSync(analyticsPath)) {
         const errorMsg = `Analytics executable not found: ${analyticsPath}`;
         dialog.showErrorBox('Ошибка аналитики', errorMsg);
         return { success: false, error: errorMsg };
     }
-    
     const configForScript = {
-        objects: camera.analyticsConfig?.objects || [],
-        resize_width: settings.analytics_resize_width || 416,
-        frame_skip: settings.analytics_frame_skip || 10,
+        objects: camera.analyticsConfig?.objects || ['person'],
+        confidence: camera.analyticsConfig?.confidence || 0.5,
+        frame_skip: settings.analytics_frame_skip || 5,
     };
     const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
-    
     const providerChoice = settings.analytics_provider || 'auto';
-    console.log(`[Analytics] Starting with provider choice: ${providerChoice}`);
     const analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg, providerChoice], { windowsHide: true });
-    
-    addProcess(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
-
-    analyticsProcess.on('error', (err) => {
-        console.error(`[Analytics] Failed to start process for camera ${cameraId}:`, err);
-        services.handleError(err, `analytics-spawn-cam-${cameraId}`);
-        stopProcess(analyticsId);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
-        }
-    });
-
+    processes.set(analyticsId, { process: analyticsProcess, type: 'analytics' });
     analyticsProcess.stdout.on('data', async (data) => {
-        const rawData = data.toString();
-        console.log(`[ProcessManager DEBUG] Raw data from analytics script: ${rawData.trim()}`);
-
-        rawData.split('\n').filter(Boolean).forEach(async line => {
+        data.toString().split('\n').filter(Boolean).forEach(async line => {
             let result;
-            try {
-                result = JSON.parse(line);
-            } catch (e) {
-                console.warn(`[Analytics] Non-JSON output from script for camera ${cameraId}:`, line);
-                return;
-            }
-            
-            console.log(`[ProcessManager DEBUG] Parsed result:`, result);
-            
+            try { result = JSON.parse(line); } catch (e) { return; }
             const listeners = moduleManager.getListeners('analytics-update');
-
-            console.log(`[ProcessManager DEBUG] Found ${listeners.length} listeners for 'analytics-update'.`);
-
             for (const listener of listeners) {
-                try {
-                    console.log('[ProcessManager DEBUG] Executing listener...');
-                    await listener({ cameraId, result });
-                } catch (e) {
-                    console.error(`[ProcessManager DEBUG] Error executing module listener:`, e);
-                }
+                try { await listener({ cameraId, result }); } catch (e) { console.error(e) }
             }
-            
             if (mainWindow && !mainWindow.isDestroyed()) {
                 const channel = result.status === 'info' ? 'analytics-provider-info' : 'analytics-update';
-                const payload = { cameraId, result: { ...result, frame_width: 1920, frame_height: 1080 } };
-                mainWindow.webContents.send(channel, payload);
+                mainWindow.webContents.send(channel, { cameraId, result });
             }
-            
             if (result.status === 'objects_detected' && result.objects.length > 0) {
-                const t = (key) => (translations[key] || null);
-                await configManager.saveAnalyticsEvent({cameraId, ...result});
-                const labels = [...new Set(result.objects.map(o => t('object_' + o.label) || o.label))];
+                await configManager.saveAnalyticsEvent({ cameraId, ...result });
+                const labels = [...new Set(result.objects.map(o => o.label))];
                 services.showAnalyticsNotification(camera.name, cameraId, labels);
                 await handleAnalyticsDetection(cameraId, camera);
             }
         });
     });
-
-    analyticsProcess.stderr.on('data', (data) => {
-        const errorMessage = data.toString();
-        console.error(`[Analytics STDERR] for camera ${cameraId}: ${errorMessage}`);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-             services.handleError(new Error(errorMessage), `Analytics Script (camId: ${cameraId})`);
-        }
-    });
-
     analyticsProcess.on('close', (code, signal) => {
-        console.warn(`[Analytics] Process for camera ${cameraId} exited. Code: ${code}, Signal: ${signal}.`);
         stopProcess(analyticsId);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('analytics-status-change', { cameraId, active: false });
         }
     });
-
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('analytics-status-change', { cameraId, active: true });
     }
@@ -536,29 +443,25 @@ async function toggleAnalytics(cameraId, mainWindow, moduleManager) {
 async function killAllFfmpeg() {
     console.log('[ProcessManager] Received kill-all command. Stopping all tracked processes.');
     stopAllProcesses(); 
-    
     Object.values(streamManager).forEach(s => s.wss?.close());
     usedPorts.clear();
     Object.keys(streamManager).forEach(k => delete streamManager[k]);
     Object.keys(recordingManager).forEach(k => delete recordingManager[k]);
-    
     return { success: true, message: "Все потоки и процессы сброшены." };
 }
 
 module.exports = {
     addProcess,
     stopProcess,
-    getProcess,
     getAllProcessesOfType,
     stopAllProcesses,
     startVideoStream,
     stopVideoStream,
-    startRecording,
-    stopRecording,
+    toggleRecording,
     exportArchiveClip,
     toggleAnalytics,
     killAllFfmpeg,
-    getRecordingStates,
     prepareArchiveForHls,
+    getRecordingStates,
 };
 // --- END OF FILE src/main/process-manager.js ---

@@ -1,30 +1,31 @@
-// --- ФАЙЛ: js/modal-handler.js (Версия с отладкой) ---
-
+// --- START OF FILE js/modal-handler.js ---
 (function(window) {
     window.AppModules = window.AppModules || {};
 
     window.AppModules.createModalHandler = function(App) {
         let toastTimeout;
-        const appToast = document.getElementById('app-toast');
+        let appToast;
+        let cameraHandler;
+        let settingsHandler;
+        let userHandler;
+        
+        let promptModal, promptModalTitle, promptModalLabel, promptModalInput,
+            promptModalOkBtn, promptModalCancelBtn, promptModalCloseBtn;
+
+        let reportModal, sendReportBtn, cancelReportBtn, reportIssueCloseBtn,
+            issueDescription, addScreenshotBtn, screenshotsPreview;
+        
+        let attachedScreenshots = [];
 
         const utils = {
             openModal: (modalElement) => {
                 if (modalElement) {
-                    console.log(`%c[DEBUG] OPEN MODAL CALLED for: #${modalElement.id}`, 'color: #28a745; font-weight: bold;');
-                    console.trace();
                     modalElement.classList.remove('hidden');
-                } else {
-                    console.error('[DEBUG] openModal called with a NULL element!');
-                    console.trace();
                 }
             },
             closeModal: (modalElement) => {
                 if (modalElement) {
-                    console.log(`%c[DEBUG] CLOSE MODAL CALLED for: #${modalElement.id}`, 'color: #dc3545; font-weight: bold;');
                     modalElement.classList.add('hidden');
-                } else {
-                    console.error('[DEBUG] closeModal called with a NULL element!');
-                    console.trace();
                 }
             },
             showToast: (message, isError = false, duration = 3000) => {
@@ -33,31 +34,11 @@
                 appToast.className = 'toast-notification';
                 if (isError) appToast.classList.add('error');
                 appToast.classList.add('show');
-                toastTimeout = setTimeout(() => { appToast.classList.remove('show'); }, duration);
+                toastTimeout = setTimeout(() => {
+                    appToast.classList.remove('show');
+                }, duration);
             }
         };
-
-        const cameraHandler = AppModules.createCameraModalHandler(App, utils);
-        const settingsHandler = AppModules.createSettingsModalHandler(App, utils);
-        const userHandler = AppModules.createUserModalHandler(App, utils);
-
-        const promptModal = document.getElementById('prompt-modal');
-        const promptModalTitle = document.getElementById('prompt-modal-title');
-        const promptModalLabel = document.getElementById('prompt-modal-label');
-        const promptModalInput = document.getElementById('prompt-modal-input');
-        const promptModalOkBtn = document.getElementById('prompt-modal-ok-btn');
-        const promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
-        const promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
-
-        const reportModal = document.getElementById('report-issue-modal');
-        const sendReportBtn = document.getElementById('send-report-btn');
-        const cancelReportBtn = document.getElementById('cancel-report-btn');
-        const reportIssueCloseBtn = document.getElementById('report-issue-close-btn');
-        const issueDescription = document.getElementById('issue-description');
-        const addScreenshotBtn = document.getElementById('add-screenshot-btn');
-        const screenshotsPreview = document.getElementById('screenshots-preview');
-        
-        let attachedScreenshots = [];
 
         function showPrompt({ title, label, defaultValue = '', okText = App.t('save'), cancelText = App.t('cancel'), inputType = 'text' }) {
             return new Promise((resolve) => {
@@ -150,16 +131,33 @@
         }
 
         function init() {
-            console.log('%c[DEBUG] Initializing ModalHandler...', 'color: #ffc107;');
+            appToast = document.getElementById('app-toast');
+            promptModal = document.getElementById('prompt-modal');
+            promptModalTitle = document.getElementById('prompt-modal-title');
+            promptModalLabel = document.getElementById('prompt-modal-label');
+            promptModalInput = document.getElementById('prompt-modal-input');
+            promptModalOkBtn = document.getElementById('prompt-modal-ok-btn');
+            promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
+            promptModalCloseBtn = document.getElementById('prompt-modal-close-btn');
 
+            reportModal = document.getElementById('report-issue-modal');
+            sendReportBtn = document.getElementById('send-report-btn');
+            cancelReportBtn = document.getElementById('cancel-report-btn');
+            reportIssueCloseBtn = document.getElementById('report-issue-close-btn');
+            issueDescription = document.getElementById('issue-description');
+            addScreenshotBtn = document.getElementById('add-screenshot-btn');
+            screenshotsPreview = document.getElementById('screenshots-preview');
+
+            cameraHandler = AppModules.createCameraModalHandler(App, utils);
+            settingsHandler = AppModules.createSettingsModalHandler(App, utils);
+            userHandler = AppModules.createUserModalHandler(App, utils);
+            
             cameraHandler.init();
             settingsHandler.init();
             userHandler.init();
             
-            // VVVVVV --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ ЛОГИКУ ДЛЯ КНОПКИ ОБЩИХ НАСТРОЕК --- VVVVVV
             const generalSettingsBtn = document.getElementById('general-settings-btn');
             if(generalSettingsBtn) generalSettingsBtn.addEventListener('click', () => settingsHandler.openSettingsModal(null));
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             const userManagementBtn = document.getElementById('user-management-btn');
             if(userManagementBtn) userManagementBtn.addEventListener('click', () => userHandler.openUserManagementModal());
@@ -248,11 +246,12 @@
 
         return { 
             init,
-            openAddModal: cameraHandler.openAddModal,
-            openSettingsModal: settingsHandler.openSettingsModal,
+            openAddModal: () => cameraHandler.openAddModal(),
+            openSettingsModal: () => settingsHandler.openSettingsModal(),
             showPrompt,
             showToast: utils.showToast,
             showReportModal,
         };
     };
 })(window);
+// --- END OF FILE js/modal-handler.js ---

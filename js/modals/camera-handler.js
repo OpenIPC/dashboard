@@ -1,12 +1,10 @@
-// --- ФАЙЛ: camera-handler.js ---
-
+// --- START OF FILE js/modals/camera-handler.js ---
 (function(window) {
     window.AppModules = window.AppModules || {};
 
     AppModules.createCameraModalHandler = function(App, utils) {
         const stateManager = App.stateManager;
 
-        // --- ИЗМЕНЕНИЕ: Объявляем переменные здесь, но не ищем элементы ---
         let addModal, saveCameraBtn, cancelAddBtn, addModalCloseBtn,
             addGroupModal, newGroupNameInput, saveGroupBtn, cancelGroupBtn, addGroupModalCloseBtn,
             discoverBtn, discoverModal, discoverModalCloseBtn, discoverList, addDiscoveredBtn, rediscoverBtn,
@@ -30,10 +28,8 @@
             document.getElementById('new-cam-user').value = camera.username || 'root';
             document.getElementById('new-cam-pass').value = '';
             document.getElementById('new-cam-onvif-auth').checked = camera.onvifAuth !== false;
-
             document.getElementById('new-cam-stream-path0').value = camera.streamPath0 !== undefined ? camera.streamPath0 : '/stream=0';
             document.getElementById('new-cam-stream-path1').value = camera.streamPath1 !== undefined ? camera.streamPath1 : '/stream=1';
-
             utils.openModal(addModal);
             document.getElementById('new-cam-name').focus();
         }
@@ -61,14 +57,7 @@
             
             if (editingCameraId) {
                 const oldCam = stateManager.state.cameras.find(c => c.id === editingCameraId);
-                const needsRestart = oldCam.ip !== cameraDataToUpdate.ip || 
-                                     oldCam.port !== cameraDataToUpdate.port || 
-                                     oldCam.username !== cameraDataToUpdate.username || 
-                                     (cameraDataToUpdate.password) || 
-                                     oldCam.streamPath0 !== cameraDataToUpdate.streamPath0 || 
-                                     oldCam.streamPath1 !== cameraDataToUpdate.streamPath1 ||
-                                     oldCam.protocol !== cameraDataToUpdate.protocol ||
-                                     oldCam.onvifAuth !== cameraDataToUpdate.onvifAuth;
+                const needsRestart = oldCam.ip !== cameraDataToUpdate.ip || oldCam.port !== cameraDataToUpdate.port || oldCam.username !== cameraDataToUpdate.username || (cameraDataToUpdate.password) || oldCam.streamPath0 !== cameraDataToUpdate.streamPath0 || oldCam.streamPath1 !== cameraDataToUpdate.streamPath1 || oldCam.protocol !== cameraDataToUpdate.protocol || oldCam.onvifAuth !== cameraDataToUpdate.onvifAuth;
                 stateManager.updateCamera({ id: editingCameraId, ...cameraDataToUpdate });
                 if (needsRestart) {
                     setTimeout(() => App.gridManager.restartStreamsForCamera(editingCameraId), 100);
@@ -107,7 +96,6 @@
             setTimeout(() => {
                 isDiscovering = false;
                 if(rediscoverBtn) rediscoverBtn.disabled = false;
-                
                 const initialSearchMessage = App.i18n.t('searching_for_cameras');
                 if (discoverList && discoverList.innerHTML.includes(initialSearchMessage)) {
                     discoverList.innerHTML = `<li style="padding: 10px; color: #666;">${App.i18n.t('no_cameras_found')}</li>`;
@@ -118,25 +106,15 @@
         function addDiscoveredCamera() {
             if (!selectedDiscoveredDevice) return;
             const { ip, name, protocol } = selectedDiscoveredDevice;
-            
-            const cameraToEdit = { 
-                name: protocol === 'rtsp' ? `RTSP Camera ${ip}` : name,
-                ip: ip, 
-                protocol: protocol,
-                streamPath0: '/stream=0', 
-                streamPath1: '/stream=1' 
-            };
-            
+            const cameraToEdit = { name: protocol === 'rtsp' ? `RTSP Camera ${ip}` : name, ip: ip, protocol: protocol, streamPath0: '/stream=0', streamPath1: '/stream=1' };
             if (protocol === 'rtsp' || protocol === 'onvif') {
                 cameraToEdit.protocol = 'openipc';
             }
-
             utils.closeModal(discoverModal);
             openAddModal(cameraToEdit);
         }
         
         function init() {
-            // --- ИЗМЕНЕНИЕ: Ищем элементы DOM только здесь, внутри init() ---
             addModal = document.getElementById('add-camera-modal');
             saveCameraBtn = document.getElementById('save-camera-btn');
             cancelAddBtn = document.getElementById('cancel-camera-btn');
@@ -162,17 +140,13 @@
                 if (discoverList.children.length > 0 && discoverList.children[0].textContent.includes(placeholderMessage)) {
                     discoverList.innerHTML = '';
                 }
-
                 const existingItem = Array.from(discoverList.children).find(li => li.dataset.ip === device.ip);
                 if (existingItem) return;
-
                 const li = document.createElement('li');
                 li.style.cssText = "padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;";
                 li.dataset.ip = device.ip;
-                
                 const protocolTag = `[${device.protocol.toUpperCase()}]`;
                 li.innerHTML = `<strong>${device.name}</strong> ${protocolTag}<br><small>${device.ip}</small>`;
-                
                 li.addEventListener('click', () => {
                     discoverList.querySelectorAll('li').forEach(el => el.style.backgroundColor = '');
                     li.style.backgroundColor = '#d4e6f1';
@@ -228,3 +202,4 @@
         };
     };
 })(window);
+// --- END OF FILE js/modals/camera-handler.js ---

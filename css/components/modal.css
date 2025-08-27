@@ -1,0 +1,466 @@
+/* --- Стили для модальных окон и их содержимого --- */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-backdrop.hidden {
+    display: none !important;
+}
+
+.modal-content {
+    position: relative;
+    background: white;
+    padding: 20px 30px 30px 30px;
+    border-radius: 8px;
+    width: 500px;
+    color: #333;
+}
+
+.modal-content.large {
+    width: 700px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-body {
+    overflow-y: auto;
+    flex-grow: 1;
+    padding-right: 10px;
+}
+
+.modal-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 1;
+    user-select: none;
+    z-index: 10;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    align-items: center;
+    padding-top: 15px;
+}
+
+.form-grid.simple {
+    grid-template-columns: 120px 1fr;
+}
+
+.form-grid.with-button .form-input-wrapper {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.form-grid.with-button .form-input-wrapper input {
+    flex-grow: 1;
+}
+
+.form-grid label,
+.form-grid span,
+.form-grid b {
+    font-weight: 500;
+}
+
+.form-grid .full-width {
+    grid-column: 1 / -1;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid button {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-buttons {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.tabs {
+    border-bottom: 2px solid #dee2e6;
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.tab-button {
+    background: none;
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #6c757d;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+}
+
+.tab-button.active {
+    color: #007bff;
+    border-color: #007bff;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+h3 {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+h3:first-child {
+    margin-top: 0;
+}
+
+.form-check-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 15px;
+}
+
+.form-check-input {
+    width: auto;
+}
+
+#prompt-modal .form-grid.simple {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    text-align: left;
+}
+
+#prompt-modal .form-grid .form-buttons {
+    grid-column: 1 / -1;
+}
+
+#prompt-modal .form-grid b {
+    margin-bottom: -5px;
+}
+
+#login-view .form-check-inline {
+    grid-column: 2 / -1;
+    justify-self: start;
+    margin-top: 10px;
+    color: #6c757d;
+}
+
+#user-list button {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+#user-list button:hover {
+    background-color: #f0f0f0;
+}
+
+#user-list .delete-user-btn {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+#user-list .delete-user-btn:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+#user-list .change-pass-btn {
+    color: #007bff;
+    border-color: #007bff;
+}
+
+#user-list .change-pass-btn:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+#user-list button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-body .p-setting, .modal-body .p-boolean {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.modal-body .p-boolean {
+    grid-template-columns: 1fr 1fr;
+}
+
+.modal-body .form-label {
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.modal-body .input-group {
+    display: flex;
+}
+
+.modal-body .form-control {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.modal-body .form-control.text-end {
+    text-align: right;
+}
+
+.modal-body .form-select {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: white;
+}
+
+.modal-body .form-switch {
+    display: flex;
+    align-items: center;
+    padding-left: 0;
+}
+
+.modal-body .form-switch .form-check-input {
+    width: 2.5em;
+    height: 1.25em;
+    margin-left: 0;
+    margin-right: 10px;
+    cursor: pointer;
+    position: relative;
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #dee2e6;
+    border-radius: 1.25em;
+    transition: background-position .15s ease-in-out;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+    background-position: left center;
+    background-repeat: no-repeat;
+}
+
+.modal-body .form-switch .form-check-input:checked {
+    background-color: var(--accent-color);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+    background-position: right center;
+    background-repeat: no-repeat;
+}
+
+.modal-body .range-slider-wrapper {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 15px;
+}
+
+.modal-body .form-range {
+    flex-grow: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #ddd;
+    border-radius: 3px;
+    outline: none;
+    opacity: 0.7;
+    transition: opacity .2s;
+}
+
+.modal-body .form-range:hover {
+    opacity: 1;
+}
+
+.modal-body .form-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.modal-body .form-range::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.modal-body .range-value {
+    min-width: 30px;
+    text-align: center;
+    background-color: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+#screenshots-preview .screenshot-thumb {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#screenshots-preview .screenshot-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#screenshots-preview .screenshot-thumb .remove-screenshot-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    line-height: 1;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#screenshots-preview .screenshot-thumb:hover .remove-screenshot-btn {
+    opacity: 1;
+}
+
+.about-container {
+    text-align: center;
+    padding: 20px;
+    color: #333;
+}
+
+.about-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 15px;
+}
+
+.about-container h3 {
+    margin-top: 0;
+    font-size: 1.5em;
+}
+
+.about-container p {
+    color: #666;
+    line-height: 1.6;
+}
+
+.donation-section {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.donation-button {
+    background-color: #ffc107;
+    color: #212529;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.donation-button:hover {
+    background-color: #ffca2c;
+}
+
+#settings-modal.camera-mode .general-tab {
+    display: none;
+}
+
+#settings-modal:not(.camera-mode) .camera-web-tab {
+    display: none;
+}
+
+.config-buttons-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+    padding-left: 20px;
+}
+
+.config-buttons-container button {
+    padding: 10px 15px;
+    font-size: 14px;
+    max-width: 300px;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #f0f0f0;
+}
+
+.config-buttons-container button:hover {
+    background-color: #e0e0e0;
+}

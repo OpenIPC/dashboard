@@ -4,32 +4,15 @@
     window.AppModules = window.AppModules || {};
 
     window.AppModules.createArchiveManager = function(App) {
-        // --- DOM Элементы ---
-        const archiveView = document.getElementById('archive-view');
-        const mainView = document.getElementById('main-view');
-        const backBtn = document.getElementById('archive-back-btn');
-        const cameraNameEl = document.getElementById('archive-camera-name');
-        const datePickerEl = document.getElementById('archive-date-picker');
-        const videoPlayer = document.getElementById('archive-video-player');
-        const placeholder = document.getElementById('archive-video-placeholder');
-        const timelineWrapper = document.getElementById('timeline-wrapper');
-        const timelineCanvas = document.getElementById('timeline-canvas');
-        const timelineCtx = timelineCanvas.getContext('2d');
-        const timelineLabelsEl = document.getElementById('timeline-labels');
-        const eventListEl = document.getElementById('event-list');
-        const filtersContainer = document.getElementById('archive-filters');
-        const playPauseBtn = document.getElementById('ac-play-pause-btn');
-        const speedBtn = document.getElementById('ac-speed-btn');
-        const timeDisplay = document.getElementById('ac-time-display');
-        const clipStartBtn = document.getElementById('ac-clip-start-btn');
-        const clipExportBtn = document.getElementById('ac-clip-export-btn');
+        let archiveView, mainView, backBtn, cameraNameEl, datePickerEl, videoPlayer,
+            placeholder, timelineWrapper, timelineCanvas, timelineCtx, timelineLabelsEl,
+            eventListEl, filtersContainer, playPauseBtn, speedBtn, timeDisplay,
+            clipStartBtn, clipExportBtn;
 
-        // --- Константы и состояние ---
         const DAY_IN_SECONDS = 86400;
         const PLAYBACK_SPEEDS = [1, 2, 4, 8, 16];
         const MIN_ZOOM = 1;
         const MAX_ZOOM = 24 * 12;
-
         const COLORS = {
             background: '#2d333b',
             label: 'rgba(173, 181, 189, 0.7)',
@@ -41,36 +24,13 @@
             eventCar: '#ffc107',
             eventDefault: '#6c757d'
         };
+        let currentCamera = null, calendarInstance = null, recordingsForDay = [], allCameraEventsForDay = [], activeFilters = new Set();
+        let hls = null, hlsConversionActive = false, currentHlsSource = null;
+        let isPlaying = false, currentSpeedIndex = 0, currentTime = 0, animationFrameId = null;
+        let isSelecting = false, selectionStartTime = 0, zoomLevel = 1, viewStartSeconds = 0, seekerTime = -1, mouseTime = -1;
+        let targetZoomLevel = 1, targetViewStartSeconds = 0;
+        let isDragging = false, lastMouseX = 0;
 
-        let currentCamera = null;
-        let calendarInstance = null;
-        let recordingsForDay = [];
-        let allCameraEventsForDay = [];
-        let activeFilters = new Set();
-        
-        let hls = null; 
-        let hlsConversionActive = false;
-        let currentHlsSource = null;
-
-        let isPlaying = false;
-        let currentSpeedIndex = 0;
-        let currentTime = 0;
-        let animationFrameId = null;
-        
-        let isSelecting = false;
-        let selectionStartTime = 0;
-        let zoomLevel = 1;
-        let viewStartSeconds = 0;
-        let seekerTime = -1;
-        let mouseTime = -1;
-        
-        let targetZoomLevel = 1;
-        let targetViewStartSeconds = 0;
-        
-        let isDragging = false;
-        let lastMouseX = 0;
-
-        // --- Утилиты ---
         const formatTime = (totalSeconds) => {
             const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
             const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
@@ -85,7 +45,6 @@
             return new Date(year, month - 1, day, hour, minute, second);
         };
         
-        // --- Логика плеера ---
         function play() {
             if (isPlaying) return;
             isPlaying = true;
@@ -138,35 +97,28 @@
         async function seek(timeInSeconds, startPlaying = false) {
             currentTime = Math.max(0, Math.min(timeInSeconds, DAY_IN_SECONDS));
             seekerTime = currentTime;
-
             const targetBlock = recordingsForDay.find(rec => {
                 const start = (createLocalDateFromString(rec.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
                 const end = start + rec.duration;
                 return currentTime >= start && currentTime < end;
             });
-        
             if (!targetBlock) {
                 App.modalHandler.showToast(App.t('archive_no_recordings_for_time'), true);
                 return;
             }
-
             const blockStart = (createLocalDateFromString(targetBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
             const seekInFile = currentTime - blockStart;
-
             if (!hlsConversionActive || currentHlsSource !== targetBlock.name) {
                 hlsConversionActive = true;
                 currentHlsSource = targetBlock.name;
                 placeholder.textContent = 'Подготовка видео...';
                 placeholder.classList.remove('hidden');
                 videoPlayer.classList.add('hidden');
-                
                 try {
-                    const result = await window.api.prepareArchiveForHls(targetBlock.name); 
+                    const result = await window.api.prepareArchiveForHls({ filename: targetBlock.name });
                     if (!result.success) throw new Error(result.error);
-                    
                     hls.loadSource(result.url);
                     hls.attachMedia(videoPlayer);
-                    
                     hls.once(Hls.Events.LEVEL_LOADED, function() {
                         videoPlayer.currentTime = seekInFile;
                         if (startPlaying) {
@@ -191,16 +143,13 @@
         function updateTimelineAnimation() {
             const zoomDiff = targetZoomLevel - zoomLevel;
             const viewDiff = targetViewStartSeconds - viewStartSeconds;
-
             if (Math.abs(zoomDiff) < 0.001 && Math.abs(viewDiff) < 0.01) {
                 zoomLevel = targetZoomLevel;
                 viewStartSeconds = targetViewStartSeconds;
                 return;
             }
-
             zoomLevel += zoomDiff * 0.2;
             viewStartSeconds += viewDiff * 0.2;
-            
             syncUI();
         }
 
@@ -228,7 +177,6 @@
             timelineCtx.fillStyle = COLORS.background;
             timelineCtx.fillRect(0, 0, canvasWidth, canvasHeight);
             const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
-            
             recordingsForDay.forEach(rec => {
                 const recDate = createLocalDateFromString(rec.startTimeString);
                 const startOfDay = getStartOfDay();
@@ -242,27 +190,20 @@
                 timelineCtx.fillStyle = isHovered ? COLORS.recordingHover : COLORS.recording;
                 timelineCtx.fillRect(x, canvasHeight * 0.25, Math.max(1, w), canvasHeight * 0.5);
             });
-            
             allCameraEventsForDay.forEach(event => {
                 const eventDate = new Date(event.timestamp * 1000);
                 const startOfDay = getStartOfDay();
                 const startTimeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
                 const durationInSeconds = event.duration || 30;
                 const endTimeInSeconds = startTimeInSeconds + durationInSeconds;
-
                 if (endTimeInSeconds < viewStartSeconds || startTimeInSeconds > viewStartSeconds + totalVisibleSeconds) return;
-                
                 if (activeFilters.size > 0 && !event.objects.some(obj => activeFilters.has(obj))) return;
-
                 const mainObjectType = event.objects?.[0];
                 timelineCtx.fillStyle = (mainObjectType === 'person') ? COLORS.eventPerson : (mainObjectType === 'car' ? COLORS.eventCar : COLORS.eventDefault);
-                
                 const x = ((startTimeInSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
                 const w = (durationInSeconds / totalVisibleSeconds) * canvasWidth;
-
                 timelineCtx.fillRect(x, 0, Math.max(1, w), canvasHeight);
             });
-
             if (isSelecting) {
                 const start = Math.min(selectionStartTime, currentTime);
                 const end = Math.max(selectionStartTime, currentTime);
@@ -271,7 +212,6 @@
                 timelineCtx.fillStyle = COLORS.selection;
                 timelineCtx.fillRect(x, 0, w, canvasHeight);
             }
-
             if (seekerTime >= viewStartSeconds && seekerTime < viewStartSeconds + totalVisibleSeconds) {
                 const x = ((seekerTime - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
                 timelineCtx.fillStyle = COLORS.seeker;
@@ -287,22 +227,18 @@
         function renderTimelineLabels() {
             timelineLabelsEl.innerHTML = '';
             const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
-            
             let step;
             if (zoomLevel <= 2) step = 3600 * 2; else if (zoomLevel <= 4) step = 3600; else if (zoomLevel <= 12) step = 1800; else if (zoomLevel <= 24) step = 900; else if (zoomLevel <= 48) step = 300; else if (zoomLevel <= 96) step = 180; else step = 60;
             const totalLabels = DAY_IN_SECONDS / step;
             if (totalLabels > 500) return;
-
             const firstVisibleSecond = Math.floor(viewStartSeconds / step) * step;
             const lastVisibleSecond = viewStartSeconds + totalVisibleSeconds;
-            
             for (let s = firstVisibleSecond; s <= lastVisibleSecond; s += step) {
                  if (s >= DAY_IN_SECONDS) break;
                 const label = document.createElement('span');
                 const hour = Math.floor(s / 3600);
                 const minute = Math.floor((s % 3600) / 60);
                 label.textContent = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-                
                 const pixelPos = ((s - viewStartSeconds) / totalVisibleSeconds) * timelineWrapper.clientWidth;
                 label.style.left = `${pixelPos}px`;
                 timelineLabelsEl.appendChild(label);
@@ -320,7 +256,6 @@
             if (e.button === 0) {
                 const clickTime = getTimeFromMouseEvent(e);
                 seek(clickTime, true);
-                
                 isDragging = true;
                 lastMouseX = e.clientX;
                 timelineWrapper.classList.add('grabbing');
@@ -334,13 +269,10 @@
                 lastMouseX = e.clientX;
                 const totalVisibleSecondsNow = DAY_IN_SECONDS / zoomLevel;
                 const secondsPerPixel = totalVisibleSecondsNow / timelineWrapper.clientWidth;
-                
                 const newViewStart = viewStartSeconds - deltaX * secondsPerPixel;
                 const maxViewStart = DAY_IN_SECONDS - totalVisibleSecondsNow;
                 viewStartSeconds = Math.max(0, Math.min(newViewStart, maxViewStart < 0 ? 0 : maxViewStart));
-                
                 targetViewStartSeconds = viewStartSeconds;
-                
                 syncUI();
             } else {
                 drawTimeline();
@@ -357,31 +289,39 @@
         function handleTimelineWheel(e) {
             e.preventDefault();
             const timeAtCursor = getTimeFromMouseEvent(e);
-            
             const zoomFactor = e.deltaY < 0 ? 1.5 : 1 / 1.5;
-
             targetZoomLevel = Math.max(MIN_ZOOM, Math.min(targetZoomLevel * zoomFactor, MAX_ZOOM));
-            
             const totalVisibleSecondsAtTarget = DAY_IN_SECONDS / targetZoomLevel;
             const rect = timelineWrapper.getBoundingClientRect();
             const mouseOffsetRatio = (e.clientX - rect.left) / rect.width;
-            
             const newViewStart = timeAtCursor - (mouseOffsetRatio * totalVisibleSecondsAtTarget);
             const maxViewStart = DAY_IN_SECONDS - totalVisibleSecondsAtTarget;
-            
             targetViewStartSeconds = Math.max(0, Math.min(newViewStart, maxViewStart < 0 ? 0 : maxViewStart));
         }
         
-        function resetZoom() {
-            targetZoomLevel = 1;
-            targetViewStartSeconds = 0;
-        }
-
         function init() {
+            archiveView = document.getElementById('archive-view');
+            mainView = document.getElementById('main-view');
+            backBtn = document.getElementById('archive-back-btn');
+            cameraNameEl = document.getElementById('archive-camera-name');
+            datePickerEl = document.getElementById('archive-date-picker');
+            videoPlayer = document.getElementById('archive-video-player');
+            placeholder = document.getElementById('archive-video-placeholder');
+            timelineWrapper = document.getElementById('timeline-wrapper');
+            timelineCanvas = document.getElementById('timeline-canvas');
+            timelineCtx = timelineCanvas.getContext('2d');
+            timelineLabelsEl = document.getElementById('timeline-labels');
+            eventListEl = document.getElementById('event-list');
+            filtersContainer = document.getElementById('archive-filters');
+            playPauseBtn = document.getElementById('ac-play-pause-btn');
+            speedBtn = document.getElementById('ac-speed-btn');
+            timeDisplay = document.getElementById('ac-time-display');
+            clipStartBtn = document.getElementById('ac-clip-start-btn');
+            clipExportBtn = document.getElementById('ac-clip-export-btn');
+
             backBtn.addEventListener('click', closeArchive);
             playPauseBtn.addEventListener('click', togglePlayPause);
             speedBtn.addEventListener('click', changeSpeed);
-
             clipStartBtn.addEventListener('click', () => {
                 isSelecting = !isSelecting;
                 if (isSelecting) {
@@ -395,7 +335,6 @@
                 }
                 drawTimeline();
             });
-
             clipExportBtn.addEventListener('click', async () => {
                 if (isSelecting) {
                     const endTime = currentTime;
@@ -403,39 +342,26 @@
                     resetSelection();
                 }
             });
-            
             timelineWrapper.addEventListener('mousedown', handleTimelineMouseDown);
             document.addEventListener('mousemove', handleTimelineMouseMove);
             document.addEventListener('mouseup', handleTimelineMouseUp);
-            
-            timelineWrapper.addEventListener('mouseleave', () => {
-                 if (!isDragging) {
-                    mouseTime = -1;
-                 }
-            });
+            timelineWrapper.addEventListener('mouseleave', () => { if (!isDragging) { mouseTime = -1; } });
             timelineWrapper.addEventListener('wheel', handleTimelineWheel, { passive: false });
-            
             videoPlayer.addEventListener('timeupdate', () => {
                 placeholder.classList.add('hidden');
                 videoPlayer.classList.remove('hidden');
-
                 const currentBlock = recordingsForDay.find(rec => rec.name === currentHlsSource);
-
                 if (currentBlock) {
                     const blockStart = (createLocalDateFromString(currentBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
                     currentTime = blockStart + videoPlayer.currentTime;
                     seekerTime = currentTime;
                 }
             });
-
             videoPlayer.addEventListener('play', () => { isPlaying = true; playPauseBtn.innerHTML = `<i class="material-icons">pause</i>`; });
             videoPlayer.addEventListener('pause', () => { isPlaying = false; playPauseBtn.innerHTML = `<i class="material-icons">play_arrow</i>`; });
             videoPlayer.addEventListener('ended', () => { isPlaying = false; playPauseBtn.innerHTML = `<i class="material-icons">replay</i>`; });
-
             window.addEventListener('resize', syncUI);
-            
             updateLoop();
-
             if (Hls.isSupported()) {
                 hls = new Hls();
                 hls.on(Hls.Events.ERROR, function (event, data) {
@@ -457,6 +383,10 @@
 
         async function openArchiveForCamera(camera) {
             currentCamera = camera;
+            const mainContainer = document.querySelector('.main-container');
+            if (archiveView.parentElement !== mainContainer) {
+                mainContainer.appendChild(archiveView);
+            }
             mainView.classList.add('hidden');
             archiveView.classList.remove('hidden');
             cameraNameEl.textContent = `${App.t('archive_title')}: ${camera.name}`;
@@ -482,7 +412,6 @@
             mainView.classList.remove('hidden');
             currentCamera = null;
             if (calendarInstance) { calendarInstance.destroy(); calendarInstance = null; }
-            
             if (hlsConversionActive) {
                 window.api.stopVideoStream('hls-conversion'); 
                 hlsConversionActive = false;
@@ -493,25 +422,20 @@
 
         async function loadDataForSelectedDate() {
             if (!currentCamera) return;
-
             zoomLevel = 1;
             viewStartSeconds = 0;
             targetZoomLevel = 1;
             targetViewStartSeconds = 0;
-            
             const date = datePickerEl.value;
-
             if (hlsConversionActive) {
                 window.api.stopVideoStream('hls-conversion');
                 hlsConversionActive = false;
                 currentHlsSource = null;
             }
-
             recordingsForDay = [];
             allCameraEventsForDay = [];
             eventListEl.innerHTML = `<li>${App.t('loading_text')}</li>`;
             filtersContainer.innerHTML = '';
-            
             try {
                 const [recordings, events] = await Promise.all([
                     window.api.getRecordingsForDate({ cameraName: currentCamera.name, date }),
@@ -532,7 +456,6 @@
             pause();
             hlsConversionActive = false;
             currentHlsSource = null;
-
             if (hls) {
                 hls.detachMedia();
             }
@@ -544,12 +467,10 @@
             eventListEl.innerHTML = '';
             filtersContainer.innerHTML = '';
             resetSelection();
-            
             zoomLevel = 1;
             viewStartSeconds = 0;
             targetZoomLevel = 1;
             targetViewStartSeconds = 0;
-
             currentTime = 0;
             seekerTime = -1;
             recordingsForDay = [];
@@ -565,36 +486,30 @@
                 App.modalHandler.showToast("Ошибка: время начала клипа должно быть раньше времени окончания.", true);
                 return;
             }
-
             clipExportBtn.disabled = true;
             clipExportBtn.innerHTML = `...`;
             clipStartBtn.disabled = true;
-
             const sourceBlock = recordingsForDay.find(rec => {
                 const recDate = createLocalDateFromString(rec.startTimeString);
                 const startOfDay = getStartOfDay();
                 const blockStart = (recDate.getTime() - startOfDay.getTime()) / 1000;
                 return start >= blockStart && end <= blockStart + rec.duration;
             });
-
             if (!sourceBlock) { 
                 App.modalHandler.showToast(App.t('archive_export_single_file_error'), true); 
                 resetSelection(); 
                 return; 
             }
-
             const recDate = createLocalDateFromString(sourceBlock.startTimeString);
             const startOfDay = getStartOfDay();
             const blockStartSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
             const startTimeInFile = start - blockStartSeconds;
             const duration = end - start;
-            
             const result = await window.api.exportArchiveClip({ 
                 sourceFilename: sourceBlock.name, 
                 startTime: startTimeInFile, 
                 duration: duration 
             });
-            
             if (result.success) { 
                 App.modalHandler.showToast(App.t('archive_export_success')); 
             } else { 
@@ -605,14 +520,19 @@
 
         function applyFiltersAndRender() {
             let filteredEvents = allCameraEventsForDay;
-            if (activeFilters.size > 0) { filteredEvents = allCameraEventsForDay.filter(event => event.objects.some(obj => activeFilters.has(obj))); }
+            if (activeFilters.size > 0) {
+                filteredEvents = allCameraEventsForDay.filter(event => event.objects.some(obj => activeFilters.has(obj)));
+            }
             renderEventList(filteredEvents);
             drawTimeline();
         }
 
         function renderFilters() {
             const allObjectTypes = new Set(allCameraEventsForDay.flatMap(e => e.objects).filter(Boolean));
-            if (allObjectTypes.size === 0) { filtersContainer.innerHTML = ''; return; }
+            if (allObjectTypes.size === 0) {
+                filtersContainer.innerHTML = '';
+                return;
+            }
             let filtersHTML = `<h3>${App.t('filters_title')}:</h3>`;
             allObjectTypes.forEach(type => {
                 const label = App.t(`object_${type}`) || type;
@@ -621,14 +541,21 @@
             filtersContainer.innerHTML = filtersHTML;
             filtersContainer.querySelectorAll('.event-filter-cb').forEach(checkbox => {
                 checkbox.addEventListener('change', () => {
-                    if (checkbox.checked) activeFilters.add(checkbox.dataset.type); else activeFilters.delete(checkbox.dataset.type);
+                    if (checkbox.checked) {
+                        activeFilters.add(checkbox.dataset.type);
+                    } else {
+                        activeFilters.delete(checkbox.dataset.type);
+                    }
                     applyFiltersAndRender();
                 });
             });
         }
 
         function renderEventList(events) {
-            if (events.length === 0) { eventListEl.innerHTML = `<li style="color: var(--text-secondary); cursor: default;">${App.t('events_not_found')}</li>`; return; }
+            if (events.length === 0) {
+                eventListEl.innerHTML = `<li style="color: var(--text-secondary); cursor: default;">${App.t('events_not_found')}</li>`;
+                return;
+            }
             let listHTML = '';
             events.forEach(event => {
                 const eventDate = new Date(event.timestamp * 1000);
@@ -654,10 +581,8 @@
         function resetSelection() {
             isSelecting = false;
             selectionStartTime = 0;
-            
             clipStartBtn.classList.remove('active');
             clipStartBtn.disabled = false;
-            
             clipExportBtn.disabled = true;
             clipExportBtn.innerHTML = `<i class="material-icons">save</i>`;
             clipExportBtn.title = "Экспорт клипа";
