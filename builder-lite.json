@@ -8,17 +8,22 @@
     "target": [
       "nsis",
       "portable"
-    ]
+    ],
+    "icon": "assets/icon.png"
+  },
+  "linux": {
+    "target": "AppImage",
+    "artifactName": "${productName}-${version}.${ext}",
+    "icon": "assets/icon.png"
+  },
+  "mac": {
+    "icon": "assets/icon.png"
   },
   "nsis": {
     "artifactName": "${productName}-Setup-${version}.${ext}"
   },
   "portable": {
     "artifactName": "${productName}-Portable-${version}.${ext}"
-  },
-  "linux": {
-    "target": "AppImage",
-    "artifactName": "${productName}-${version}.${ext}"
   },
   "files": [
     "**/*",

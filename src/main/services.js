@@ -27,7 +27,9 @@ async function showSystemNotification({ title, body }) {
     new Notification({
         title,
         body,
-        icon: path.join(__dirname, '../../build/icon.png')
+        // START: ИСПРАВЛЕНИЕ - Обновляем путь к иконке
+        icon: path.join(__dirname, '../../assets/icon.png')
+        // END: ИСПРАВЛЕНИЕ
     }).show();
 }
 
@@ -45,7 +47,9 @@ async function showAnalyticsNotification(cameraName, cameraId, objects) {
     const notification = new Notification({
         title: `Обнаружение на камере: ${cameraName}`,
         body: `Обнаружены объекты: ${objects.join(', ')}`,
-        icon: path.join(__dirname, '../../build/icon.png'),
+        // START: ИСПРАВЛЕНИЕ - Обновляем путь к иконке
+        icon: path.join(__dirname, '../../assets/icon.png'),
+        // END: ИСПРАВЛЕНИЕ
         silent: true
     });
     notification.show();
@@ -71,8 +75,6 @@ function checkForUpdates() {
         autoUpdater.checkForUpdates();
     } else {
         console.log('[Updater] Skipping update check in development mode.');
-        // В режиме разработки ничего не делаем.
-        // Блок с фейковым событием удален/закомментирован.
     }
 }
 
