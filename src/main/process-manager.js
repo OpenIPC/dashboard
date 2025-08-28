@@ -31,8 +31,6 @@ const streamManager = {};
 const recordingManager = {};
 const recordingStopTimers = {};
 
-const buildProcessId = (type, id) => `${type}-${id}`;
-
 function addProcess(key, process, type) {
     console.log(`[ProcessManager] Adding ${type} process with key: ${key}`);
     processes.set(key, { process, type });
@@ -94,7 +92,7 @@ async function getAndReserveFreePort() {
     const release = await portMutex.acquire();
     try {
         let port = BASE_PORT;
-        const MAX_PORTS_TO_CHECK = 100;
+        const MAX_PORTS_TO_CHECK = 200;
         for (let i = 0; i < MAX_PORTS_TO_CHECK; i++) {
             const currentPort = port + i;
             if (usedPorts.has(currentPort) || await isPortInUse(currentPort)) {
@@ -117,97 +115,124 @@ function releasePort(port) {
     }
 }
 
-async function startVideoStream({ credentials, streamId, uniqueStreamIdentifier }) {
-    if (!uniqueStreamIdentifier) {
-        return { success: false, error: 'uniqueStreamIdentifier is required' };
-    }
-    if (processes.has(uniqueStreamIdentifier) || streamManager[uniqueStreamIdentifier]) {
-        return { success: true, wsPort: streamManager[uniqueStreamIdentifier].port };
-    }
+async function startVideoStream({ credentials, uniqueStreamIdentifier }) {
     const cameraConfig = await configManager.getCameraConfig(credentials.id);
     if (!cameraConfig) return { success: false, error: `Camera with ID ${credentials.id} not found.` };
     const password = await authManager.getPasswordForCamera(credentials.id);
     const fullCredentials = { ...cameraConfig, password };
-    const wsPort = await getAndReserveFreePort();
-    if (wsPort === null) return { success: false, error: 'Failed to find a free port.' };
-    const wss = new WebSocket.Server({ port: wsPort });
-    wss.on('connection', (ws) => console.log(`[WSS] Client connected to port ${wsPort}`));
+    
     const settings = await configManager.getAppSettings();
     const builder = new FfmpegCommandBuilder(settings);
-    const { command, args: ffmpegArgs } = builder.buildForStream(fullCredentials, streamId);
-    console.log(`[FFMPEG] Starting stream ${uniqueStreamIdentifier} with command:`, command, ffmpegArgs.join(' '));
-    const ffmpegProcess = spawn(command, ffmpegArgs, { detached: false, windowsHide: true });
-    addProcess(uniqueStreamIdentifier, ffmpegProcess, PROCESS_TYPES.STREAM);
-    ffmpegProcess.on('error', (err) => {
-        console.error(`[FFMPEG] Failed to start process for ${uniqueStreamIdentifier}:`, err);
-        services.handleError(err, `ffmpeg-spawn-${uniqueStreamIdentifier}`);
-        wss.close(); 
-        releasePort(wsPort); 
-        delete streamManager[uniqueStreamIdentifier];
-        stopProcess(uniqueStreamIdentifier);
-    });
-    ffmpegProcess.stdout.on('data', (data) => wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(data)));
-    let statsBuffer = '', lastErrorOutput = '', streamInfoSent = false;
-    ffmpegProcess.stderr.on('data', (data) => {
-        const stderrString = data.toString();
-        if (!streamInfoSent) {
-            const infoMatch = stderrString.match(/Stream #\d:\d.*: Video: (\w+)(?:\s\([^)]+\))?,.*?\s(\d{3,4}x\d{3,4})/);
-            if (infoMatch && infoMatch[1] && infoMatch[2]) {
-                const [_, codec, resolution] = infoMatch;
-                console.log(`[FFMPEG] Parsed Stream Info for ${uniqueStreamIdentifier}: ${codec}, ${resolution}`);
-                const mainWindow = require('./window-manager').getMainWindow();
-                if (mainWindow) {
-                    mainWindow.webContents.send('stream-info-update', { uniqueStreamIdentifier, codec, resolution });
+
+    const streamsToStart = [
+        { id: 0, quality: 'hd' },
+        { id: 1, quality: 'sd' }
+    ];
+
+    const results = {};
+
+    for (const streamInfo of streamsToStart) {
+        const specificIdentifier = `${uniqueStreamIdentifier}_${streamInfo.id}`;
+        
+        if (streamManager[specificIdentifier]) {
+            results[streamInfo.quality] = { success: true, wsPort: streamManager[specificIdentifier].port };
+            continue;
+        }
+
+        const wsPort = await getAndReserveFreePort();
+        if (wsPort === null) {
+            Object.values(results).forEach(res => { if (res.wsPort) releasePort(res.wsPort); });
+            return { success: false, error: 'Failed to reserve necessary ports.' };
+        }
+
+        const { command, args } = builder.buildForStream(fullCredentials, streamInfo.id);
+        const ffmpegProcess = spawn(command, args, { detached: false, windowsHide: true });
+        addProcess(specificIdentifier, ffmpegProcess, PROCESS_TYPES.STREAM);
+        
+        const wss = new WebSocket.Server({ port: wsPort });
+        wss.on('connection', () => console.log(`[WSS] Client connected to ${streamInfo.quality.toUpperCase()} on port ${wsPort}`));
+        ffmpegProcess.stdout.on('data', (data) => wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(data)));
+        
+        let statsBuffer = '', lastErrorOutput = '', streamInfoSent = false;
+        ffmpegProcess.stderr.on('data', (data) => {
+            const stderrString = data.toString();
+            const mainWindow = require('./window-manager').getMainWindow();
+
+            if (!streamInfoSent) {
+                const infoMatch = stderrString.match(/Stream #\d:\d.*: Video: (\w+)(?:\s\([^)]+\))?,.*?\s(\d{3,4}x\d{3,4})/);
+                if (infoMatch && infoMatch[1] && infoMatch[2]) {
+                    const [_, codec, resolution] = infoMatch;
+                    const payload = { uniqueStreamIdentifier: specificIdentifier, codec, resolution };
+                    console.log(`[DEBUG STATS] Sending stream-info-update:`, payload);
+                    if (mainWindow) {
+                        mainWindow.webContents.send('stream-info-update', payload);
+                    }
+                    streamInfoSent = true;
                 }
-                streamInfoSent = true;
             }
-        }
-        if (stderrString.trim()) { lastErrorOutput = stderrString.trim(); }
-        statsBuffer += stderrString;
-        const statsBlocks = statsBuffer.split('progress=');
-        if (statsBlocks.length > 1) {
-            statsBlocks.slice(0, -1).forEach(block => {
-                if (!block.trim()) return;
-                const stats = Object.fromEntries(block.trim().split('\n').map(line => line.split('=').map(s => s.trim())));
-                const mainWindow = require('./window-manager').getMainWindow();
-                if (mainWindow && (stats.fps || stats.bitrate)) {
-                    mainWindow.webContents.send('stream-stats', { uniqueStreamIdentifier, fps: parseFloat(stats.fps) || 0, bitrate: parseFloat(stats.bitrate) || 0 });
-                }
-            });
-            statsBuffer = statsBlocks.pop();
-        }
-    });
-    ffmpegProcess.on('close', (code, signal) => {
-        console.warn(`[FFMPEG] Process ${uniqueStreamIdentifier} exited. Code: ${code}, Signal: ${signal}.`);
-        if (code !== 0 && code !== null) {
-            console.error(`[FFMPEG Last Stderr] ${uniqueStreamIdentifier}: ${lastErrorOutput}`);
-        }
-        if (streamManager[uniqueStreamIdentifier]) { 
-            streamManager[uniqueStreamIdentifier].wss.close(); 
-            releasePort(wsPort); 
-            delete streamManager[uniqueStreamIdentifier]; 
-        }
-        stopProcess(uniqueStreamIdentifier);
-        const mainWindow = require('./window-manager').getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('stream-died', { uniqueStreamIdentifier: uniqueStreamIdentifier, error: lastErrorOutput || `Process exited with code ${code}` });
-        }
-    });
-    streamManager[uniqueStreamIdentifier] = { wss, port: wsPort };
-    return { success: true, wsPort };
+
+            if (stderrString.trim()) { lastErrorOutput = stderrString.trim(); }
+            statsBuffer += stderrString;
+            const statsBlocks = statsBuffer.split('progress=');
+            if (statsBlocks.length > 1) {
+                statsBlocks.slice(0, -1).forEach(block => {
+                    if (!block.trim()) return;
+                    const stats = Object.fromEntries(block.trim().split('\n').map(line => line.split('=').map(s => s.trim())));
+                    if (mainWindow && (stats.fps || stats.bitrate)) {
+                        const payload = { 
+                            uniqueStreamIdentifier: specificIdentifier, 
+                            fps: parseFloat(stats.fps) || 0, 
+                            bitrate: (parseFloat(stats.bitrate) || 0)
+                        };
+                        console.log(`[DEBUG STATS] Sending stream-stats:`, payload);
+                        mainWindow.webContents.send('stream-stats', payload);
+                    }
+                });
+                statsBuffer = statsBlocks.pop();
+            }
+        });
+
+        ffmpegProcess.on('close', (code, signal) => {
+            console.warn(`[FFMPEG] Process ${specificIdentifier} exited. Code: ${code}. Last error: ${lastErrorOutput}`);
+            if (streamManager[specificIdentifier]) {
+                streamManager[specificIdentifier].wss.close();
+                releasePort(wsPort);
+                delete streamManager[specificIdentifier];
+            }
+            processes.delete(specificIdentifier);
+        });
+
+        streamManager[specificIdentifier] = { wss, port: wsPort };
+        results[streamInfo.quality] = { success: true, wsPort };
+    }
+
+    return { 
+        success: (results.hd?.success && results.sd?.success),
+        hdPort: results.hd?.wsPort,
+        sdPort: results.sd?.wsPort,
+        error: (results.hd?.error) || (results.sd?.error)
+    };
 }
 
 async function stopVideoStream(uniqueStreamIdentifier) {
-    if (stopProcess(uniqueStreamIdentifier)) {
-        const streamData = streamManager[uniqueStreamIdentifier];
-        if (streamData) {
-            streamData.wss.close();
-            releasePort(streamData.port);
-            delete streamManager[uniqueStreamIdentifier];
-        }
-        return { success: true };
+    console.log(`[ProcessManager] Stopping stream set for base ID: ${uniqueStreamIdentifier}`);
+    const hdId = `${uniqueStreamIdentifier}_0`;
+    const sdId = `${uniqueStreamIdentifier}_1`;
+    const hdData = streamManager[hdId];
+    if (hdData) {
+        stopProcess(hdId);
+        hdData.wss.close();
+        releasePort(hdData.port);
+        delete streamManager[hdId];
     }
-    return { success: false, error: "Stream not found" };
+    const sdData = streamManager[sdId];
+    if (sdData) {
+        stopProcess(sdId);
+        sdData.wss.close();
+        releasePort(sdData.port);
+        delete streamManager[sdId];
+    }
+    return { success: true };
 }
 
 async function startRecording(camera, type = 'manual') {
@@ -309,7 +334,7 @@ async function handleAnalyticsDetection(cameraId, camera) {
     }, autoStopDelay);
 }
 
-async function prepareArchiveForHls({ filename }) {
+async function prepareArchiveForHls({ filename, startTime = 0 }) {
     const HLS_PROCESS_KEY = 'hls-conversion';
     if (processes.has(HLS_PROCESS_KEY)) {
         stopProcess(HLS_PROCESS_KEY);
@@ -326,7 +351,7 @@ async function prepareArchiveForHls({ filename }) {
     const videoInfo = await configManager.getArchiveVideoInfo(filename);
     const sourceCodec = videoInfo ? videoInfo.codec_name : null;
     const builder = new FfmpegCommandBuilder(settings);
-    const { command, args } = builder.buildForHls(sourcePath, hlsTempPath, 0, sourceCodec);
+    const { command, args } = builder.buildForHls(sourcePath, hlsTempPath, startTime, sourceCodec);
     const ffmpegProcess = spawn(command, args, { windowsHide: true });
     processes.set(HLS_PROCESS_KEY, { process: ffmpegProcess, type: 'hls' });
     return new Promise((resolve) => {
@@ -464,4 +489,3 @@ module.exports = {
     prepareArchiveForHls,
     getRecordingStates,
 };
-// --- END OF FILE src/main/process-manager.js ---

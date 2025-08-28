@@ -1,5 +1,4 @@
-// js/i18n.js (полная исправленная версия)
-
+// --- START OF FILE js/i18n.js ---
 (function(window) {
     'use strict';
     window.AppModules = window.AppModules || {};
@@ -43,27 +42,21 @@
             return translation;
         }
         
-        // --- ИЗМЕНЕННАЯ ФУНКЦИЯ ---
-        // Теперь ищет 3 разных data-атрибута для полного перевода
         function applyTranslationsToDOM(scopeElement = document) {
-            // Ищем элементы с ключом для основного текста/HTML
             scopeElement.querySelectorAll('[data-i18n-key]').forEach(element => {
                 const key = element.getAttribute('data-i18n-key');
                 const attr = element.hasAttribute('data-i18n-is-html') ? 'innerHTML' : 'textContent';
                 element[attr] = t(key);
             });
-            // Ищем элементы с ключом для всплывающей подсказки (атрибут title)
             scopeElement.querySelectorAll('[data-i18n-tooltip]').forEach(element => {
                 const key = element.getAttribute('data-i18n-tooltip');
                 element.title = t(key);
             });
-            // Ищем элементы с ключом для плейсхолдера (атрибут placeholder)
             scopeElement.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
                 const key = element.getAttribute('data-i18n-placeholder');
                 element.placeholder = t(key);
             });
         }
-        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
         
         async function setLanguage(lang) {
             if (!supportedLangs.includes(lang) || lang === currentLang) {
@@ -76,11 +69,13 @@
             }
         }
 
-        async function init() {
-            const lang = stateManager.state.appSettings.language || getPreferredLanguage();
+        // START: ИСПРАВЛЕНИЕ - init теперь принимает язык
+        async function init(initialLang = null) {
+            const lang = initialLang || stateManager.state.appSettings.language || getPreferredLanguage();
             await loadTranslations(lang);
             applyTranslationsToDOM();
         }
+        // END: ИСПРАВЛЕНИЕ
 
         return {
             init,
@@ -90,3 +85,4 @@
         };
     };
 })(window);
+// --- END OF FILE js/i18n.js ---

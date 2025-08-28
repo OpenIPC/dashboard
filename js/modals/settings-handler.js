@@ -7,12 +7,14 @@
 
         let settingsModal, settingsModalCloseBtn, saveSettingsBtn,
             languageSelect, selectRecPathBtn, checkForUpdatesBtn,
-            settingsModalTitle, settingsIframe;
+            settingsModalTitle, settingsIframe, reportIssueBtn;
 
         let updateStatusText, updateInfoContainer, updateVersionTitle, 
             updateChangelog, downloadUpdateBtn, quitAndInstallBtn;
         
-        function openSettingsModal(camera = null) {
+        // START: ИСПРАВЛЕНИЕ - Делаем функцию асинхронной, чтобы использовать await
+        async function openSettingsModal(camera = null) {
+        // END: ИСПРАВЛЕНИЕ
             if (!settingsModal) return;
 
             const isCameraSettings = !!(camera && camera.ip);
@@ -43,6 +45,18 @@
                 if(qscaleValue) qscaleValue.textContent = appSettings.qscale || 8;
                 const fpsInput = document.getElementById('app-settings-fps');
                 if(fpsInput) fpsInput.value = appSettings.fps || 20;
+
+                // START: ИСПРАВЛЕНИЕ - Получаем и отображаем версию приложения
+                try {
+                    const appVersionSpan = document.getElementById('app-version');
+                    if (appVersionSpan) {
+                        const versionInfo = await window.api.getAppVersionInfo();
+                        appVersionSpan.textContent = versionInfo.version;
+                    }
+                } catch (e) {
+                    console.error("Failed to get app version:", e);
+                }
+                // END: ИСПРАВЛЕНИЕ
 
                 if (App.versionType === 'intellect') {
                     const analyticsProviderSelect = document.getElementById('app-settings-analytics-provider');
@@ -155,7 +169,7 @@
                     break;
                 case 'downloading':
                     updateStatusText.textContent = App.t('update_downloading', { percent: info.percent.toFixed(0) });
-                    updateInfoContainer.classList.remove('hidden'); // Показываем, чтобы видеть прогресс
+                    updateInfoContainer.classList.remove('hidden');
                     downloadUpdateBtn.classList.remove('hidden');
                     downloadUpdateBtn.disabled = true;
                     checkForUpdatesBtn.disabled = true;
@@ -198,6 +212,7 @@
             languageSelect = document.getElementById('app-settings-language');
             selectRecPathBtn = document.getElementById('select-rec-path-btn');
             checkForUpdatesBtn = document.getElementById('check-for-updates-btn');
+            reportIssueBtn = document.getElementById('report-issue-btn');
 
             updateStatusText = document.getElementById('update-status-text');
             updateInfoContainer = document.getElementById('update-info-container');
@@ -218,9 +233,27 @@
 
             if (languageSelect) {
                 languageSelect.addEventListener('change', () => {
-                    App.i18n.setLanguage(languageSelect.value);
+                    const newLang = languageSelect.value;
+                    App.i18n.setLanguage(newLang);
+                    stateManager.setAppSettings({ language: newLang }); 
                 });
             }
+
+            if (reportIssueBtn) {
+                reportIssueBtn.addEventListener('click', () => {
+                    App.modalHandler.showReportModal();
+                });
+            }
+
+            // START: ИСПРАВЛЕНИЕ - Добавляем обработчик для кнопки "Поддержать проект"
+            const donateBtn = document.getElementById('donate-btn');
+            if (donateBtn) {
+                donateBtn.addEventListener('click', () => {
+                    // Замените эту ссылку на свою
+                    window.api.openExternalLink('https://opencollective.com/openipc/projects/openipc-dashboard/donate?interval=oneTime&amount=20&contributeAs=me');
+                });
+            }
+            // END: ИСПРАВЛЕНИЕ
 
             if (settingsModal) {
                 const modalFooter = settingsModal.querySelector('.modal-footer');
@@ -233,10 +266,13 @@
                         button.classList.add('active'); 
                         const content = document.getElementById(button.dataset.tab);
                         if (content) content.classList.add('active'); 
+                        
                         if (modalFooter) {
                             const isAboutTab = button.dataset.tab === 'tab-about';
                             const isGeneralTab = button.dataset.tab === 'tab-general';
+
                             modalFooter.style.display = isAboutTab ? 'none' : 'flex';
+
                             if (saveButton) saveButton.style.display = 'flex';
                             if (reportButton) reportButton.style.display = isGeneralTab ? 'flex' : 'none';
                         }

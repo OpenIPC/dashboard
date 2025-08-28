@@ -76,7 +76,9 @@ contextBridge.exposeInMainWorld('api', {
     exportArchiveClip: (data) => ipcRenderer.invoke(CHANNELS.EXPORT_ARCHIVE_CLIP, data),
     getEventsForDate: (data) => ipcRenderer.invoke(CHANNELS.GET_EVENTS_FOR_DATE, data),
     getDatesWithActivity: (cameraName) => ipcRenderer.invoke(CHANNELS.GET_DATES_WITH_ACTIVITY, cameraName),
-    prepareArchiveForHls: (filename, startTime) => ipcRenderer.invoke(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, { filename, startTime }),
+    // START: ИСПРАВЛЕНИЕ - Принимаем один объект `data` и передаем его целиком
+    prepareArchiveForHls: (data) => ipcRenderer.invoke(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, data),
+    // END: ИСПРАВЛЕНИЕ
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke(CHANNELS.GET_SYSTEM_STATS),

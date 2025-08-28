@@ -4,6 +4,9 @@ const { BrowserWindow, app } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const { registerUpdaterEvents } = require('./services');
+// START: ИСПРАВЛЕНИЕ - Импортируем branding-manager
+const brandingManager = require('./branding-manager');
+// END: ИСПРАВЛЕНИЕ
 
 let mainWindow = null;
 const sshWindows = {};
@@ -13,13 +16,20 @@ function getMainWindow() {
     return mainWindow;
 }
 
-function createWindow() {
+// START: ИСПРАВЛЕНИЕ - Делаем функцию асинхронной
+async function createWindow() {
+    // Получаем конфиг брендинга ДО создания окна
+    const brandingConfig = await brandingManager.getBrandingConfig();
+// END: ИСПРАВЛЕНИЕ
+
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
         minWidth: 1024,
         minHeight: 768,
-        title: "DASHBOARD for OpenIPC",
+        // START: ИСПРАВЛЕНИЕ - Используем appName из конфига
+        title: brandingConfig.appName,
+        // END: ИСПРАВЛЕНИЕ
         frame: false,
         titleBarStyle: 'hidden',
         icon: path.join(__dirname, '../../build/icon.png'),

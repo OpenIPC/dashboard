@@ -89,8 +89,10 @@ const appAPI = {
 moduleManager.appAPI = appAPI;
 
 // Основной жизненный цикл приложения
+// START: ИСПРАВЛЕНИЕ - Делаем колбэк асинхронным
 app.whenReady().then(async () => {
-    const mainWindow = createWindow();
+// END: ИСПРАВЛЕНИЕ
+    const mainWindow = await createWindow(); // Добавляем await
 
     // --- ИЗМЕНЕНИЕ: Передаем APP_VERSION в обработчики IPC ---
     // Это позволит ipc-handlers.js также знать о текущей версии
@@ -152,8 +154,14 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') { app.quit(); }
 });
 
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) { createWindow(); }
+// START: ИСПРАВЛЕНИЕ - Делаем колбэк асинхронным
+app.on('activate', async () => {
+// END: ИСПРАВЛЕНИЕ
+    if (BrowserWindow.getAllWindows().length === 0) { 
+        // START: ИСПРАВЛЕНИЕ - Добавляем await
+        await createWindow();
+        // END: ИСПРАВЛЕНИЕ
+    }
 });
 
 app.on('will-quit', (event) => {

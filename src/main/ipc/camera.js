@@ -1,4 +1,5 @@
-const { ipcMain, Menu, BrowserWindow } = require('electron');
+// --- START OF FILE src/main/ipc/camera.js ---
+const { ipcMain, Menu, BrowserWindow, shell } = require('electron'); // Добавляем shell
 const cameraAPI = require('../camera-api');
 const processManager = require('../process-manager');
 const configManager = require('../config-manager');
@@ -6,7 +7,6 @@ const { discoverDevices } = require('../discovery');
 const { getMainWindow, createFileManagerWindow, createSshTerminalWindow } = require('../window-manager');
 const CHANNELS = require('../../common/ipc-channels');
 
-// --- ВОТ ИСПРАВЛЕНИЕ: Добавляем эту функцию в начало файла ---
 const withErrorHandling = (handler, context) => async (event, ...args) => {
     try {
         const result = await handler(event, ...args);
@@ -16,7 +16,6 @@ const withErrorHandling = (handler, context) => async (event, ...args) => {
         return { success: false, error: error.message };
     }
 };
-// --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
 const sshConnections = {};
 const fileManagerConnections = {};
@@ -24,6 +23,18 @@ const fileManagerConnections = {};
 function registerCameraHandlers(moduleManager, APP_VERSION) {
   const featureNotAvailableHandler = () => Promise.resolve({ success: false, error: 'Feature not available in Lite version' });
   
+  // START: ИСПРАВЛЕНИЕ - Добавляем обработчик для open-in-browser
+  ipcMain.handle(CHANNELS.OPEN_IN_BROWSER, withErrorHandling((event, ip) => {
+      if (!ip) {
+          throw new Error('IP address is required to open in browser.');
+      }
+      // Добавляем http://, если протокол не указан, чтобы shell.openExternal сработал
+      const url = ip.startsWith('http') ? ip : `http://${ip}`;
+      console.log(`[IPC] Opening external URL: ${url}`);
+      return shell.openExternal(url);
+  }, 'openInBrowser'));
+  // END: ИСПРАВЛЕНИЕ
+
   ipcMain.handle(CHANNELS.GET_CAMERA_PULSE, withErrorHandling((event, camera) => cameraAPI.getCameraPulse(camera), 'getCameraPulse'));
   ipcMain.handle(CHANNELS.PTZ_CONTROL, withErrorHandling((event, data) => cameraAPI.ptzControl(data), 'ptzControl'));
   ipcMain.handle(CHANNELS.GET_CAMERA_TIME, withErrorHandling((event, camera) => cameraAPI.getCameraTime(camera), 'getCameraTime'));
@@ -44,7 +55,9 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.EXPORT_ARCHIVE_CLIP, withErrorHandling((event, data) => processManager.exportArchiveClip(data, getMainWindow()), 'exportArchiveClip'));
   ipcMain.handle(CHANNELS.GET_EVENTS_FOR_DATE, withErrorHandling((event, data) => configManager.getEventsForDate(data), 'getEventsForDate'));
   ipcMain.handle(CHANNELS.GET_DATES_WITH_ACTIVITY, withErrorHandling((event, cameraName) => configManager.getDatesWithActivity(cameraName), 'getDatesWithActivity'));
-  ipcMain.handle(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, withErrorHandling((event, { filename }) => processManager.prepareArchiveForHls(filename), 'prepareArchiveForHls'));
+  // START: ИСПРАВЛЕНИЕ - Принимаем весь объект `data` и передаем его дальше
+  ipcMain.handle(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, withErrorHandling((event, data) => processManager.prepareArchiveForHls(data), 'prepareArchiveForHls'));
+  // END: ИСПРАВЛЕНИЕ
 
   ipcMain.handle(CHANNELS.DISCOVER_DEVICES, withErrorHandling(() => discoverDevices(getMainWindow()), 'discoverDevices'));
   
@@ -74,7 +87,6 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
       ]).popup({ window: BrowserWindow.fromWebContents(event.sender) });
   });
 
-  // SCP & SSH
   ipcMain.handle(CHANNELS.OPEN_FILE_MANAGER, (e, camera) => createFileManagerWindow(camera, fileManagerConnections));
   ipcMain.handle(CHANNELS.OPEN_SSH_TERMINAL, (e, camera) => { try { const win = createSshTerminalWindow(camera, sshConnections); if(win) cameraAPI.setupSshConnection(win, camera, sshConnections); } catch(err) { require('../services').handleError(err, 'openSshTerminal'); } });
   ipcMain.handle(CHANNELS.SCP_CONNECT, withErrorHandling((e, camera) => cameraAPI.scp.connect(camera, fileManagerConnections), 'scpConnect'));
@@ -89,3 +101,4 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
 module.exports = {
   registerCameraHandlers
 };
+// --- END OF FILE src/main/ipc/camera.js ---

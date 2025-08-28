@@ -122,10 +122,24 @@
         </div>
     </div>
     
-    <!-- START: ИСПРАВЛЕНИЕ - ВОЗВРАЩАЕМ ШАБЛОН ЯЧЕЙКИ СЮДА -->
     <template id="grid-cell-content-template">
-        <canvas class="video-canvas"></canvas>
+        <canvas class="video-canvas video-canvas-hd"></canvas>
+        <canvas class="video-canvas video-canvas-sd hidden"></canvas>
         <canvas class="overlay-canvas"></canvas>
+
+        <!-- START: ИСПРАВЛЕНИЕ - ДОБАВЛЕН PTZ OVERLAY -->
+        <div class="ptz-overlay">
+            <div class="ptz-btn ptz-up" data-command="tilt_up"><i class="material-icons">arrow_upward</i></div>
+            <div class="ptz-btn ptz-down" data-command="tilt_down"><i class="material-icons">arrow_downward</i></div>
+            <div class="ptz-btn ptz-left" data-command="pan_left"><i class="material-icons">arrow_back</i></div>
+            <div class="ptz-btn ptz-right" data-command="pan_right"><i class="material-icons">arrow_forward</i></div>
+        </div>
+        <div class="ptz-zoom-controls">
+            <div class="ptz-btn ptz-zoom-in" data-command="zoom_in"><i class="material-icons">add</i></div>
+            <div class="ptz-btn ptz-zoom-out" data-command="zoom_out"><i class="material-icons">remove</i></div>
+        </div>
+        <!-- END: ИСПРАВЛЕНИЕ -->
+
         <div class="cell-header">
             <span class="cell-name"></span>
             <span class="cell-stats"></span>
@@ -151,7 +165,6 @@
             </div>
         </div>
     </template>
-    <!-- END: ИСПРАВЛЕНИЕ -->
 
     <div id="app-toast" class="toast-notification"></div>
 

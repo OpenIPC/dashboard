@@ -8,7 +8,7 @@
         const layoutControls = document.getElementById('layout-controls');
         const MAX_GRID_SIZE = 64;
 
-        let localPlayers = {};
+        let localPlayers = {}; // Ключ: uniqueIdBase (stream-cameraId_cellIndex)
         let gridCells = [];
         let fullscreenCellIndex = null;
         let currentAudioPlayer = null;
@@ -48,7 +48,7 @@
                     for (const cellInfo of cellsForCamera) {
                         const cellElement = gridCells[cellInfo.i];
                         if (!cellElement) continue;
-                        const videoCanvas = cellElement.querySelector('.video-canvas');
+                        const videoCanvas = cellElement.querySelector('.video-canvas:not(.hidden)');
                         const overlayCanvas = cellElement.querySelector('.overlay-canvas');
                         if (!videoCanvas || !overlayCanvas) continue;
                         if (overlayCanvas.width !== videoCanvas.clientWidth || overlayCanvas.height !== videoCanvas.clientHeight) {
@@ -149,8 +149,10 @@
                 } else {
                     const cellState = getGridState()[i];
                     if (cellState) {
-                        const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}_${i}`;
-                        if (localPlayers[uniqueId]) destroyPlayer(uniqueId);
+                        const uniqueIdBase = `stream-${cellState.camera.id}_${i}`;
+                        if (localPlayers[uniqueIdBase]) {
+                            destroyPlayerSet(uniqueIdBase);
+                        }
                     }
                     cell.style.display = 'none';
                 }
@@ -158,45 +160,38 @@
             updateActiveLayoutButton();
         }
         
-        async function destroyPlayer(id) {
-            const playerData = localPlayers[id];
+        async function destroyPlayerSet(uniqueIdBase) {
+            const playerData = localPlayers[uniqueIdBase];
             if (!playerData) return;
-            if (currentAudioPlayer && currentAudioPlayer.player === playerData.player) {
+            if (currentAudioPlayer && (currentAudioPlayer.player === playerData.hdPlayer || currentAudioPlayer.player === playerData.sdPlayer)) {
                 currentAudioPlayer = null;
             }
-            console.log(`[Grid] Destroying stream: ${id}`);
+            console.log(`[Grid] Destroying stream set: ${uniqueIdBase}`);
             if (playerData.cell) {
                 playerData.cell.innerHTML = `<span><i class="material-icons placeholder-icon">add_photo_alternate</i><br>${App.i18n.t('drop_camera_here')}</span>`;
-                playerData.cell.classList.remove('active');
+                playerData.cell.classList.remove('active', 'error-state');
                 playerData.cell.draggable = false;
             }
-            await window.api.stopVideoStream(id);
-            if (playerData.player) {
-                 try { playerData.player.destroy(); } catch (e) {}
-            }
-            delete localPlayers[id];
+            await window.api.stopVideoStream(uniqueIdBase);
+            if (playerData.hdPlayer) try { playerData.hdPlayer.destroy(); } catch (e) {}
+            if (playerData.sdPlayer) try { playerData.sdPlayer.destroy(); } catch (e) {}
+            delete localPlayers[uniqueIdBase];
         }
 
         function attachControlEvents(cellElement, cellIndex) {
             const controls = cellElement.querySelector('.cell-controls');
             if (!controls) return;
-            const activeLayout = getActiveLayoutState();
-            if (!activeLayout) return;
-            const cellState = activeLayout.gridState[cellIndex];
+            const cellState = getGridState()[cellIndex];
             if (!cellState) return;
             controls.querySelector('.fullscreen-btn').onclick = (e) => { e.stopPropagation(); toggleFullscreen(cellIndex); };
             const streamSwitchBtn = controls.querySelector('.stream-switch-btn');
             if (streamSwitchBtn) {
-                streamSwitchBtn.innerHTML = cellState.streamId === 0 ? '<i class="material-icons">hd</i>' : '<i class="material-icons">sd</i>';
                 streamSwitchBtn.onclick = (e) => {
                     e.stopPropagation();
-                    const loadingOverlay = cellElement.querySelector('.loading-overlay');
-                    if(loadingOverlay) {
-                        loadingOverlay.classList.remove('hidden');
-                    }
+                    const newStreamId = cellState.streamId === 0 ? 1 : 0;
                     const newGrid = getGridState().map(g => g ? { ...g } : null);
                     if (newGrid[cellIndex]) {
-                        newGrid[cellIndex].streamId = newGrid[cellIndex].streamId === 0 ? 1 : 0;
+                        newGrid[cellIndex].streamId = newStreamId;
                         stateManager.updateGridState(newGrid);
                     }
                 };
@@ -208,13 +203,15 @@
                 stateManager.updateGridState(newGrid);
             };
             const audioBtn = controls.querySelector('.audio-btn');
-            const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}_${cellIndex}`;
-            const player = localPlayers[uniqueId]?.player;
-            if (player) {
+            const uniqueIdBase = `stream-${cellState.camera.id}_${cellIndex}`;
+            const playerData = localPlayers[uniqueIdBase];
+            if (playerData) {
                 audioBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (currentAudioPlayer && currentAudioPlayer.player === player) {
-                        player.volume = 0;
+                    const activePlayer = cellState.streamId === 0 ? playerData.hdPlayer : playerData.sdPlayer;
+                    if (!activePlayer) return;
+                    if (currentAudioPlayer && currentAudioPlayer.player === activePlayer) {
+                        activePlayer.volume = 0;
                         audioBtn.classList.remove('active');
                         audioBtn.innerHTML = '<i class="material-icons">volume_off</i>';
                         currentAudioPlayer = null;
@@ -226,10 +223,10 @@
                                 currentAudioPlayer.button.innerHTML = '<i class="material-icons">volume_off</i>';
                             }
                         }
-                        player.volume = 1;
+                        activePlayer.volume = 1;
                         audioBtn.classList.add('active');
                         audioBtn.innerHTML = '<i class="material-icons">volume_up</i>';
-                        currentAudioPlayer = { player: player, button: audioBtn };
+                        currentAudioPlayer = { player: activePlayer, button: audioBtn };
                     }
                 };
             }
@@ -243,6 +240,42 @@
             }
         }
 
+        function attachPtzEvents(cellElement, cellIndex) {
+            const cellState = getGridState()[cellIndex];
+            if (!cellState || !cellState.camera) return;
+
+            const cameraId = cellState.camera.id;
+            const ptzButtons = cellElement.querySelectorAll('.ptz-btn');
+
+            const sendPtzCommand = (command, action) => {
+                console.log(`[PTZ] Sending command:`, { cameraId, command, action });
+                window.api.ptzControl({ cameraId, command, action });
+            };
+
+            ptzButtons.forEach(btn => {
+                const command = btn.dataset.command;
+                if (!command) return;
+
+                // Начать движение при нажатии
+                btn.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    sendPtzCommand(command, 'start');
+                });
+                // Остановить движение при отпускании кнопки
+                btn.addEventListener('mouseup', (e) => {
+                    e.stopPropagation();
+                    sendPtzCommand('stop', 'stop');
+                });
+                // Остановить движение, если курсор ушел с кнопки
+                btn.addEventListener('mouseleave', (e) => {
+                    // Проверяем, что кнопка мыши больше не зажата
+                    if (e.buttons !== 1) {
+                         sendPtzCommand('stop', 'stop');
+                    }
+                });
+            });
+        }
+
         async function render() {
             if (isRendering) {
                 console.warn('[Grid] Render call skipped, another render is in progress.');
@@ -254,7 +287,8 @@
                 updateGridLayoutView();
                 const activeLayout = getActiveLayoutState();
                 if (!activeLayout) {
-                    for (const id in localPlayers) await destroyPlayer(id);
+                    for (const id in localPlayers) await destroyPlayerSet(id);
+                    isRendering = false;
                     return;
                 }
                 const { gridState } = activeLayout;
@@ -264,71 +298,89 @@
                 if (gridState) {
                     gridState.forEach((cellState, i) => {
                         if (cellState) {
-                            const uniqueId = `stream-${cellState.camera.id}_${cellState.streamId}_${i}`;
-                            desiredStreams.add(uniqueId);
-                            if (!localPlayers[uniqueId]) {
-                                streamsToCreate.push({ cellState, index: i, uniqueId });
+                            const uniqueIdBase = `stream-${cellState.camera.id}_${i}`;
+                            desiredStreams.add(uniqueIdBase);
+                            if (!localPlayers[uniqueIdBase]) {
+                                streamsToCreate.push({ cellState, index: i, uniqueIdBase });
                             }
                         }
                     });
                 }
-                for (const id in localPlayers) {
-                    if (!desiredStreams.has(id)) {
-                        await destroyPlayer(id);
+                for (const idBase in localPlayers) {
+                    if (!desiredStreams.has(idBase)) {
+                        await destroyPlayerSet(idBase);
                     }
                 }
-                for (const { cellState, index, uniqueId } of streamsToCreate) {
+                for (const { cellState, index, uniqueIdBase } of streamsToCreate) {
                     const camera = cameras.find(c => c.id === cellState.camera.id);
                     if (!camera) continue;
                     const cellElement = gridCells[index];
                     const template = document.getElementById('grid-cell-content-template');
-                    if (!template) {
-                        console.error('CRITICAL: grid-cell-content-template not found!');
-                        continue;
-                    }
+                    if (!template) { console.error('CRITICAL: grid-cell-content-template not found!'); continue; }
                     const content = template.content.cloneNode(true);
                     cellElement.innerHTML = '';
                     cellElement.appendChild(content);
                     App.i18n.applyTranslationsToDOM(cellElement);
                     const loadingOverlay = cellElement.querySelector('.loading-overlay');
                     if (loadingOverlay) loadingOverlay.classList.remove('hidden');
-                    const nameDiv = cellElement.querySelector('.cell-name');
-                    const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
-                    if (nameDiv) nameDiv.textContent = `${camera.name} (${qualityLabel}`;
                     const statsDiv = cellElement.querySelector('.cell-stats');
-                    if (statsDiv) statsDiv.id = `stats-${uniqueId}`;
-                    const result = await window.api.startVideoStream({ credentials: camera, streamId: cellState.streamId, uniqueStreamIdentifier: uniqueId });
-                    if (result.success) {
-                        const videoCanvas = cellElement.querySelector('.video-canvas');
-                        const player = new JSMpeg.Player(`ws://localhost:${result.wsPort}`, { canvas: videoCanvas, autoplay: true, audio: true, volume: 0, disableWebAssembly: true, onPlay: () => { if (loadingOverlay) loadingOverlay.classList.add('hidden'); } });
-                        localPlayers[uniqueId] = { player, cell: cellElement };
+                    if (statsDiv) statsDiv.id = `stats-${uniqueIdBase}`;
+                    const result = await window.api.startVideoStream({ credentials: camera, uniqueStreamIdentifier: uniqueIdBase });
+                    if (result.success && result.hdPort && result.sdPort) {
+                        const hdCanvas = cellElement.querySelector('.video-canvas-hd');
+                        const sdCanvas = cellElement.querySelector('.video-canvas-sd');
+                        let loadedStreams = 0;
+                        const onPlay = () => {
+                            loadedStreams++;
+                            if (loadedStreams >= 2 && loadingOverlay) {
+                                loadingOverlay.classList.add('hidden');
+                            }
+                        };
+                        const hdPlayer = new JSMpeg.Player(`ws://localhost:${result.hdPort}`, { canvas: hdCanvas, autoplay: true, audio: true, volume: 0, disableWebAssembly: true, onPlay });
+                        const sdPlayer = new JSMpeg.Player(`ws://localhost:${result.sdPort}`, { canvas: sdCanvas, autoplay: true, audio: true, volume: 0, disableWebAssembly: true, onPlay });
+                        // START: ИСПРАВЛЕНИЕ - Инициализируем раздельную статистику
+                        localPlayers[uniqueIdBase] = { hdPlayer, sdPlayer, cell: cellElement, stats: { hd: {}, sd: {} } };
+                        // END: ИСПРАВЛЕНИЕ
                     } else {
-                        handleStreamDeath({ uniqueStreamIdentifier: uniqueId, error: result.error || App.i18n.t('unknown_error') });
+                        handleStreamDeath({ uniqueStreamIdentifier: uniqueIdBase, error: result.error || App.i18n.t('unknown_error') });
                     }
                     attachControlEvents(cellElement, index);
+                    attachPtzEvents(cellElement, index);
                     cellElement.classList.add('active');
-                    const currentUser = stateManager.state.currentUser;
-                    cellElement.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
-                    if (cellElement._dragStartHandler) cellElement.removeEventListener('dragstart', cellElement._dragStartHandler);
-                    cellElement._dragStartHandler = (e) => { e.dataTransfer.setData("application/x-grid-cell-index", index.toString()); e.dataTransfer.effectAllowed = 'move'; };
-                    cellElement.addEventListener('dragstart', cellElement._dragStartHandler);
                 }
-                for (const id in localPlayers) {
-                    const { cell } = localPlayers[id];
-                    const cameraId = id.split('_')[0].split('-')[1];
-                    if (cell) {
-                        const recordBtn = cell.querySelector('.record-btn');
-                        if (recordBtn) recordBtn.classList.toggle('recording', !!recordingStates[cameraId]);
-                    }
+                if (gridState) {
+                    gridState.forEach((cellState, i) => {
+                        if (cellState) {
+                            const uniqueIdBase = `stream-${cellState.camera.id}_${i}`;
+                            const playerData = localPlayers[uniqueIdBase];
+                            if (!playerData) return;
+                            const cellElement = playerData.cell;
+                            const camera = cameras.find(c => c.id === cellState.camera.id);
+                            const hdCanvas = cellElement.querySelector('.video-canvas-hd');
+                            const sdCanvas = cellElement.querySelector('.video-canvas-sd');
+                            if (hdCanvas && sdCanvas) {
+                                hdCanvas.classList.toggle('hidden', cellState.streamId !== 0);
+                                sdCanvas.classList.toggle('hidden', cellState.streamId !== 1);
+                            }
+                            const nameDiv = cellElement.querySelector('.cell-name');
+                            if (nameDiv && camera) {
+                                const qualityLabel = cellState.streamId === 0 ? 'HD' : 'SD';
+                                nameDiv.textContent = `${camera.name} (${qualityLabel})`;
+                            }
+                            const streamSwitchBtn = cellElement.querySelector('.stream-switch-btn');
+                            if(streamSwitchBtn) streamSwitchBtn.innerHTML = cellState.streamId === 0 ? '<i class="material-icons">hd</i>' : '<i class="material-icons">sd</i>';
+                            const recordBtn = cellElement.querySelector('.record-btn');
+                            if (recordBtn) recordBtn.classList.toggle('recording', !!recordingStates[camera.id]);
+                            
+                            // START: ИСПРАВЛЕНИЕ - Обновляем текст статистики при переключении
+                            updateStatsText(playerData);
+                            // END: ИСПРАВЛЕНИЕ
+                        }
+                    });
                 }
-                const occupiedCellIndexes = new Set(Object.values(localPlayers).map(p => parseInt(p.cell.dataset.cellId, 10)));
-                gridCells.forEach((cell, i) => {
-                    if (!occupiedCellIndexes.has(i) && cell.classList.contains('active')) {
-                        cell.innerHTML = `<span><i class="material-icons placeholder-icon">add_photo_alternate</i><br>${App.i18n.t('drop_camera_here')}</span>`;
-                        cell.classList.remove('active');
-                        cell.draggable = false;
-                    }
-                });
+                const occupiedCellIndexes = new Set();
+                gridState.forEach((cellState, i) => { if (cellState) occupiedCellIndexes.add(i); });
+                gridCells.forEach((cell, i) => { if (!occupiedCellIndexes.has(i)) { const playerKey = Object.keys(localPlayers).find(k => k.endsWith(`_${i}`)); if (playerKey) destroyPlayerSet(playerKey); else if(cell.classList.contains('active')) { cell.innerHTML = `<span><i class="material-icons placeholder-icon">add_photo_alternate</i><br>${App.i18n.t('drop_camera_here')}</span>`; cell.classList.remove('active'); cell.draggable = false; } } });
             } finally {
                 console.log('[Grid] Render finished.');
                 isRendering = false;
@@ -411,83 +463,112 @@
         
         async function handleStreamDeath({ uniqueStreamIdentifier, error }) {
             console.log(`[Grid] Stream ${uniqueStreamIdentifier} died. Error: ${error}`);
-            const playerInfo = localPlayers[uniqueStreamIdentifier];
-            if (playerInfo) {
-                delete localPlayers[uniqueStreamIdentifier]; 
-                if (playerInfo.cell) {
-                    playerInfo.cell.classList.add('error-state');
-                    const loadingOverlay = playerInfo.cell.querySelector('.loading-overlay');
-                    if (loadingOverlay) loadingOverlay.classList.add('hidden');
-                    const errorOverlay = playerInfo.cell.querySelector('.error-overlay');
-                    if (errorOverlay) {
-                        const errorMessageEl = errorOverlay.querySelector('.error-message');
-                        const retryBtn = errorOverlay.querySelector('.retry-button');
-                        const closeBtn = errorOverlay.querySelector('.close-on-error-btn');
-                        if (!retryBtn || !closeBtn) {
-                            console.error("Retry or Close button not found in error overlay template!");
-                            return;
-                        }
-                        retryBtn.textContent = App.t('retry_button') || 'Повторить';
-                        closeBtn.textContent = App.t('close_button') || 'Закрыть';
-                        let simpleError = error;
-                        if (error.includes('Connection refused')) simpleError = 'Connection refused. (Камера не отвечает)';
-                        else if (error.includes('Invalid data')) simpleError = 'Invalid data. (Неверный путь к потоку?)';
-                        else if (error.includes('401 Unauthorized')) simpleError = '401 Unauthorized. (Неверный логин/пароль)';
-                        errorMessageEl.textContent = simpleError;
-                        errorOverlay.classList.remove('hidden');
-                        const newRetryBtn = retryBtn.cloneNode(true);
-                        retryBtn.parentNode.replaceChild(newRetryBtn, retryBtn);
-                        const newCloseBtn = closeBtn.cloneNode(true);
-                        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-                        newRetryBtn.onclick = () => { console.log(`[Grid] Retrying stream ${uniqueStreamIdentifier}...`); render(); };
-                        newCloseBtn.onclick = () => { console.log(`[Grid] Closing errored cell for stream ${uniqueStreamIdentifier}...`); const cellIndex = parseInt(playerInfo.cell.dataset.cellId, 10); const newGrid = getGridState().map(g => g ? { ...g } : null); newGrid[cellIndex] = null; stateManager.updateGridState(newGrid); };
+            const baseId = uniqueStreamIdentifier.substring(0, uniqueStreamIdentifier.lastIndexOf('_'));
+            const playerInfo = localPlayers[baseId];
+
+            if (playerInfo && playerInfo.cell) {
+                // НЕ удаляем плеер, чтобы сохранить статистику второго потока
+                // delete localPlayers[baseId]; 
+                playerInfo.cell.classList.add('error-state');
+                const loadingOverlay = playerInfo.cell.querySelector('.loading-overlay');
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
+                const errorOverlay = playerInfo.cell.querySelector('.error-overlay');
+                if (errorOverlay) {
+                    const errorMessageEl = errorOverlay.querySelector('.error-message');
+                    const retryBtn = errorOverlay.querySelector('.retry-button');
+                    const closeBtn = errorOverlay.querySelector('.close-on-error-btn');
+                    if (!retryBtn || !closeBtn) {
+                        console.error("Retry or Close button not found in error overlay template!");
+                        return;
                     }
+                    retryBtn.textContent = App.t('retry_button') || 'Повторить';
+                    closeBtn.textContent = App.t('close_button') || 'Закрыть';
+                    let simpleError = error;
+                    if (error.includes('Connection refused')) simpleError = 'Connection refused. (Камера не отвечает)';
+                    else if (error.includes('Invalid data')) simpleError = 'Invalid data. (Неверный путь к потоку?)';
+                    else if (error.includes('401 Unauthorized')) simpleError = '401 Unauthorized. (Неверный логин/пароль)';
+                    errorMessageEl.textContent = simpleError;
+                    errorOverlay.classList.remove('hidden');
+                    const newRetryBtn = retryBtn.cloneNode(true);
+                    retryBtn.parentNode.replaceChild(newRetryBtn, retryBtn);
+                    const newCloseBtn = closeBtn.cloneNode(true);
+                    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                    newRetryBtn.onclick = () => { console.log(`[Grid] Retrying stream ${baseId}...`); render(); };
+                    newCloseBtn.onclick = () => { console.log(`[Grid] Closing errored cell for stream ${baseId}...`); const cellIndex = parseInt(playerInfo.cell.dataset.cellId, 10); const newGrid = getGridState().map(g => g ? { ...g } : null); newGrid[cellIndex] = null; stateManager.updateGridState(newGrid); };
                 }
             }
         }
         
         async function restartStreamsForCamera(cameraId) {
             console.log(`[Grid] Restarting all streams for camera ID: ${cameraId}`);
+            const gridState = getGridState();
             const streamsToRestart = [];
-            for (const id in localPlayers) {
-                if (id.startsWith(`stream-${cameraId}_`)) {
-                    streamsToRestart.push(id);
+            gridState.forEach((cellState, i) => {
+                if (cellState && cellState.camera.id === cameraId) {
+                    const uniqueIdBase = `stream-${cellState.camera.id}_${i}`;
+                    if (localPlayers[uniqueIdBase]) {
+                        streamsToRestart.push(uniqueIdBase);
+                    }
                 }
-            }
-            for (const id of streamsToRestart) {
-                await destroyPlayer(id);
+            });
+            for (const idBase of streamsToRestart) {
+                await destroyPlayerSet(idBase);
             }
             setTimeout(() => render(), 100);
         }
 
-        function updateStatsText(statsDiv) {
+        // START: ИСПРАВЛЕНИЕ - Логика отображения статистики
+        function updateStatsText(playerData) {
+            if (!playerData || !playerData.cell || !playerData.stats) return;
+            const statsDiv = playerData.cell.querySelector('.cell-stats');
             if (!statsDiv) return;
-            const codec = statsDiv.dataset.codec || '';
-            const resolution = statsDiv.dataset.resolution || '';
-            const fps = statsDiv.dataset.fps || '0';
-            const bitrate = statsDiv.dataset.bitrate || '0';
-            const staticInfo = [codec, resolution].filter(Boolean).join(', ');
+
+            const cellIndex = parseInt(playerData.cell.dataset.cellId, 10);
+            const cellState = getGridState()[cellIndex];
+            if (!cellState) {
+                statsDiv.textContent = '';
+                return;
+            }
+
+            const activeStreamType = cellState.streamId === 0 ? 'hd' : 'sd';
+            const statsToDisplay = playerData.stats[activeStreamType] || {};
+
+            const { codec = '', resolution = '', fps = 0, bitrate = 0 } = statsToDisplay;
+            const staticInfo = [codec.toUpperCase(), resolution].filter(Boolean).join(', ');
             const dynamicInfo = `${Math.round(fps)}fps, ${Math.round(bitrate)}kbps`;
             statsDiv.textContent = [staticInfo, dynamicInfo].filter(Boolean).join(' | ');
         }
         
         function updateStreamInfo({ uniqueStreamIdentifier, codec, resolution }) {
-            const statsDiv = document.getElementById(`stats-${uniqueStreamIdentifier}`);
-            if (statsDiv) {
-                statsDiv.dataset.codec = codec.toUpperCase();
-                statsDiv.dataset.resolution = resolution;
-                updateStatsText(statsDiv);
+            console.log(`[DEBUG STATS] updateStreamInfo called for ${uniqueStreamIdentifier}`);
+            const baseId = uniqueStreamIdentifier.substring(0, uniqueStreamIdentifier.lastIndexOf('_'));
+            const playerData = localPlayers[baseId];
+            if (playerData) {
+                const streamType = uniqueStreamIdentifier.endsWith('_0') ? 'hd' : 'sd';
+                console.log(`[DEBUG STATS] Found playerData for baseId ${baseId}. Updating ${streamType} stats.`);
+                playerData.stats[streamType].codec = codec;
+                playerData.stats[streamType].resolution = resolution;
+                updateStatsText(playerData);
+            } else {
+                console.log(`[DEBUG STATS] No playerData found for baseId ${baseId}.`);
             }
         }
         
         function updateStreamStats({ uniqueStreamIdentifier, fps, bitrate }) {
-            const statsDiv = document.getElementById(`stats-${uniqueStreamIdentifier}`);
-            if (statsDiv) {
-                statsDiv.dataset.fps = fps;
-                statsDiv.dataset.bitrate = bitrate;
-                updateStatsText(statsDiv);
+            console.log(`[DEBUG STATS] updateStreamStats called for ${uniqueStreamIdentifier}`);
+            const baseId = uniqueStreamIdentifier.substring(0, uniqueStreamIdentifier.lastIndexOf('_'));
+            const playerData = localPlayers[baseId];
+            if (playerData) {
+                const streamType = uniqueStreamIdentifier.endsWith('_0') ? 'hd' : 'sd';
+                console.log(`[DEBUG STATS] Found playerData for baseId ${baseId}. Updating ${streamType} stats.`);
+                playerData.stats[streamType].fps = fps;
+                playerData.stats[streamType].bitrate = bitrate;
+                updateStatsText(playerData);
+            } else {
+                console.log(`[DEBUG STATS] No playerData found for baseId ${baseId}.`);
             }
         }
+        // END: ИСПРАВЛЕНИЕ
 
         function handleAnalyticsUpdate({ cameraId, result }) {
             if (result && result.status === 'objects_detected' && result.objects) {

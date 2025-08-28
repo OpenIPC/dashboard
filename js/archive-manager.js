@@ -10,7 +10,9 @@
             clipStartBtn, clipExportBtn;
 
         const DAY_IN_SECONDS = 86400;
-        const PLAYBACK_SPEEDS = [1, 2, 4, 8, 16];
+        // START: ИСПРАВЛЕНИЕ - Убираем скорости 8x и 16x для стабильности
+        const PLAYBACK_SPEEDS = [1, 2, 4];
+        // END: ИСПРАВЛЕНИЕ
         const MIN_ZOOM = 1;
         const MAX_ZOOM = 24 * 12;
         const COLORS = {
@@ -115,12 +117,11 @@
                 placeholder.classList.remove('hidden');
                 videoPlayer.classList.add('hidden');
                 try {
-                    const result = await window.api.prepareArchiveForHls({ filename: targetBlock.name });
+                    const result = await window.api.prepareArchiveForHls({ filename: targetBlock.name, startTime: seekInFile });
                     if (!result.success) throw new Error(result.error);
                     hls.loadSource(result.url);
                     hls.attachMedia(videoPlayer);
                     hls.once(Hls.Events.LEVEL_LOADED, function() {
-                        videoPlayer.currentTime = seekInFile;
                         if (startPlaying) {
                             play();
                         }
