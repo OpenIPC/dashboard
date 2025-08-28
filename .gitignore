@@ -29,9 +29,6 @@ coverage
 # node-waf configuration
 .lock-wscript
 
-# Compiled binary addons (https://nodejs.org/api/addons.html)
-build/Release
-
 # Dependency directories
 node_modules/
 jspm_packages/
@@ -42,7 +39,7 @@ web_modules/
 # TypeScript cache
 *.tsbuildinfo
 
-# Optional npm cache directory
+# Optional npm cache
 .npm
 
 # Optional eslint cache
@@ -136,12 +133,13 @@ events.json
 cameras.json
 
 ### Build artifacts ###
-# Compiled Python executable
-analytics.exe
-
+# START: ИСПРАВЛЕНИЕ - Заменяем build/Release на build/
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/
 # Electron builder output
 release/
 dist/
+# END: ИСПРАВЛЕНИЕ
 
 ### Operating System Files ###
 .DS_Store
