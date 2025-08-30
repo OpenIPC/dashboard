@@ -58,9 +58,57 @@
             if (editingCameraId) {
                 const oldCam = stateManager.state.cameras.find(c => c.id === editingCameraId);
                 const needsRestart = oldCam.ip !== cameraDataToUpdate.ip || oldCam.port !== cameraDataToUpdate.port || oldCam.username !== cameraDataToUpdate.username || (cameraDataToUpdate.password) || oldCam.streamPath0 !== cameraDataToUpdate.streamPath0 || oldCam.streamPath1 !== cameraDataToUpdate.streamPath1 || oldCam.protocol !== cameraDataToUpdate.protocol || oldCam.onvifAuth !== cameraDataToUpdate.onvifAuth;
+                
+                // Сначала обновляем данные в state
                 stateManager.updateCamera({ id: editingCameraId, ...cameraDataToUpdate });
+                
                 if (needsRestart) {
-                    setTimeout(() => App.gridManager.restartStreamsForCamera(editingCameraId), 100);
+                    console.log(`[Camera Save] Settings changed for camera ${editingCameraId}, initiating restart.`);
+                    
+                    // Закрываем модальное окно сразу
+                    utils.closeModal(addModal);
+
+                    // Показываем уведомление пользователю
+                    App.modalHandler.showToast(`Настройки для камеры "${cameraDataToUpdate.name}" сохранены. Ожидание перезагрузки камеры...`, false, 5000);
+
+                    // Запускаем асинхронную функцию ожидания и перезапуска
+                    (async () => {
+                        const MAX_ATTEMPTS = 20; // 20 попыток * 2 секунды = 40 секунд ожидания
+                        const RETRY_DELAY = 2000; // 2 секунды между попытками
+                        let attempts = 0;
+                        let cameraIsBack = false;
+
+                        // Получаем обновленные данные камеры из state, чтобы использовать новый IP, если он изменился
+                        const updatedCam = stateManager.state.cameras.find(c => c.id === editingCameraId);
+
+                        while (attempts < MAX_ATTEMPTS) {
+                            attempts++;
+                            console.log(`[Camera Restart] Attempt ${attempts} to ping camera ${updatedCam.name} at ${updatedCam.ip}`);
+                            try {
+                                const pulse = await window.api.getCameraPulse(updatedCam);
+                                if (pulse.success) {
+                                    console.log(`[Camera Restart] Camera ${updatedCam.name} is back online!`);
+                                    cameraIsBack = true;
+                                    break;
+                                }
+                            } catch (e) {
+                                // Игнорируем ошибки, это ожидаемо, пока камера перезагружается
+                            }
+                            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                        }
+
+                        if (cameraIsBack) {
+                            App.modalHandler.showToast(`Камера "${updatedCam.name}" снова в сети. Перезапускаем видеопоток...`);
+                            // Небольшая дополнительная пауза, чтобы веб-сервер на камере успел полностью запуститься
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            App.gridManager.restartStreamsForCamera(editingCameraId);
+                        } else {
+                            console.error(`[Camera Restart] Camera ${updatedCam.name} did not come back online after ${MAX_ATTEMPTS} attempts.`);
+                            App.modalHandler.showToast(`Не удалось дождаться перезагрузки камеры "${updatedCam.name}". Пожалуйста, проверьте ее состояние.`, true, 8000);
+                        }
+                    })();
+                    
+                    return; // Выходим из функции, так как модальное окно уже закрыто
                 }
             } else {
                 stateManager.addCamera(cameraDataToUpdate);
@@ -202,4 +250,3 @@
         };
     };
 })(window);
-// --- END OF FILE js/modals/camera-handler.js ---

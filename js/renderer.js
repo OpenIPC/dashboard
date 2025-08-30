@@ -5,6 +5,11 @@
     let App;
 
     function applyBranding(config) {
+        if (!config) {
+            console.warn('[Branding] Branding config is missing. Using defaults.');
+            return;
+        }
+
         console.log('[Branding] Applying branding config to UI:', config);
         
         if (config.appName !== 'DASHBOARD for OpenIPC') {
@@ -45,7 +50,6 @@
         App = {};
         window.App = App;
 
-        // ШАГ 1: Ждем загрузки шаблонов
         await new Promise(resolve => {
             const check = () => {
                 if (window.AppModules && window.AppModules.templatesLoaded) {
@@ -56,12 +60,16 @@
             check();
         });
 
-        // Сначала применяем брендинг, так как он может влиять на отображаемые элементы
         try {
+            if (typeof window.api === 'undefined') {
+                 await new Promise(resolve => window.addEventListener('api-ready', resolve, { once: true }));
+            }
             const brandingConfig = await window.api.getBrandingConfig();
             applyBranding(brandingConfig);
-        } catch (e) { console.error("Failed to apply branding:", e); }
-
+        } catch (e) { 
+            console.error("Failed to apply branding:", e); 
+        }
+        
         const versionInfo = await window.api.getAppVersionInfo();
         App.versionType = versionInfo.type;
         document.body.classList.add(`version-${App.versionType}`);
@@ -95,17 +103,17 @@
         App.t = (key, replacements) => key;
         App.i18n = AppModules.createI18n(App);
 
-        // START: ИСПРАВЛЕНИЕ - ПРАВИЛЬНЫЙ ПОРЯДОК ИНИЦИАЛИЗАЦИИ
         async function loadAppSettings() {
+            if (!window.api) {
+                 await new Promise(resolve => window.addEventListener('api-ready', resolve, { once: true }));
+            }
             const settings = await window.api.loadAppSettings();
-            // Сразу сохраняем настройки в state, чтобы i18n мог их использовать
             App.stateManager.state.appSettings = settings;
             return settings;
         }
         
         const settings = await loadAppSettings();
-        await App.i18n.init(settings.language); // Явно передаем язык
-        // END: ИСПРАВЛЕНИЕ
+        await App.i18n.init(settings.language);
 
         App.t = App.i18n.t;
 
@@ -212,6 +220,12 @@
         });
         window.api.onRecordingStateChange(({ cameraId, recording }) => App.stateManager.setRecordingState({ cameraId, recording }));
         window.api.onStreamDied(data => App.gridManager.handleStreamDeath(data));
+        
+        // VVVVVV --- ИЗМЕНЕНИЕ: ЭТОТ ОБРАБОТЧИК УДАЛЁН/ЗАКОММЕНТИРОВАН --- VVVVVV
+        // window.api.onStreamReconnected(data => App.gridManager.handleStreamReconnect(data));
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
+        window.api.onForceRender(() => App.gridManager.render());
         window.api.onStreamInfoUpdate(data => App.gridManager.updateStreamInfo(data));
         window.api.onStreamStats((data) => {
             if (App.gridManager) {

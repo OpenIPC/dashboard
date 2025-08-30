@@ -9,12 +9,14 @@
             languageSelect, selectRecPathBtn, checkForUpdatesBtn,
             settingsModalTitle, settingsIframe, reportIssueBtn;
 
+        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+        let selectScreenshotsPathBtn;
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
         let updateStatusText, updateInfoContainer, updateVersionTitle, 
             updateChangelog, downloadUpdateBtn, quitAndInstallBtn;
         
-        // START: ИСПРАВЛЕНИЕ - Делаем функцию асинхронной, чтобы использовать await
         async function openSettingsModal(camera = null) {
-        // END: ИСПРАВЛЕНИЕ
             if (!settingsModal) return;
 
             const isCameraSettings = !!(camera && camera.ip);
@@ -35,6 +37,12 @@
                 if(languageSelect) languageSelect.value = appSettings.language || 'en';
                 const recordingsPathInput = document.getElementById('app-settings-recordings-path');
                 if(recordingsPathInput) recordingsPathInput.value = appSettings.recordingsPath || '';
+                
+                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+                const screenshotsPathInput = document.getElementById('app-settings-screenshots-path');
+                if(screenshotsPathInput) screenshotsPathInput.value = appSettings.screenshotsPath || '';
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+
                 const hwAccelSelect = document.getElementById('app-settings-hw-accel');
                 if(hwAccelSelect) hwAccelSelect.value = appSettings.hwAccel || 'auto';
                 const notificationsCheckbox = document.getElementById('app-settings-notifications-enabled');
@@ -46,7 +54,6 @@
                 const fpsInput = document.getElementById('app-settings-fps');
                 if(fpsInput) fpsInput.value = appSettings.fps || 20;
 
-                // START: ИСПРАВЛЕНИЕ - Получаем и отображаем версию приложения
                 try {
                     const appVersionSpan = document.getElementById('app-version');
                     if (appVersionSpan) {
@@ -56,7 +63,6 @@
                 } catch (e) {
                     console.error("Failed to get app version:", e);
                 }
-                // END: ИСПРАВЛЕНИЕ
 
                 if (App.versionType === 'intellect') {
                     const analyticsProviderSelect = document.getElementById('app-settings-analytics-provider');
@@ -74,20 +80,31 @@
         }
         
         async function saveGeneralSettings() {
-            const appSettingsToSave = {
+            const { appSettings } = stateManager.state;
+
+            const newSettings = {
                 language: document.getElementById('app-settings-language').value,
                 recordingsPath: document.getElementById('app-settings-recordings-path').value,
+                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+                screenshotsPath: document.getElementById('app-settings-screenshots-path').value,
+                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                 hwAccel: document.getElementById('app-settings-hw-accel').value,
                 notifications_enabled: document.getElementById('app-settings-notifications-enabled').checked,
                 qscale: document.getElementById('app-settings-qscale').value,
                 fps: document.getElementById('app-settings-fps').value,
             };
 
+            // Определяем, изменились ли "критичные" для стриминга настройки
+            const streamingSettingsChanged = 
+                appSettings.hwAccel !== newSettings.hwAccel ||
+                appSettings.qscale !== newSettings.qscale ||
+                appSettings.fps !== newSettings.fps;
+
             if (App.versionType === 'intellect') {
-                appSettingsToSave.analytics_provider = document.getElementById('app-settings-analytics-provider').value;
+                newSettings.analytics_provider = document.getElementById('app-settings-analytics-provider').value;
 
                 const enabledModuleIds = Array.from(document.querySelectorAll('.module-checkbox:checked')).map(cb => cb.dataset.id);
-                appSettingsToSave.enabledModules = enabledModuleIds;
+                newSettings.enabledModules = enabledModuleIds;
                 
                 const modulesWereChanged = JSON.stringify(enabledModuleIds) !== JSON.stringify(stateManager.state.appSettings.enabledModules || []);
 
@@ -96,9 +113,43 @@
                 }
             }
 
-            stateManager.setAppSettings(appSettingsToSave);
+            // Сохраняем все новые настройки
+            stateManager.setAppSettings(newSettings);
             utils.showToast(App.t('app_settings_saved_success'));
             utils.closeModal(settingsModal);
+
+            // Если изменились настройки стриминга, перезапускаем ВСЕ потоки
+            if (streamingSettingsChanged) {
+                console.log('[Settings] Streaming settings changed. Restarting all streams...');
+                
+                (async () => {
+                    // 1. Получаем состояние ВСЕХ активных аналитик
+                    const activeAnalytics = await window.api.getAnalyticsStates();
+                    const activeAnalyticsIds = Object.keys(activeAnalytics).map(id => parseInt(id, 10));
+                    console.log('[Settings] Active analytics to restart:', activeAnalyticsIds);
+
+                    // 2. Убиваем все FFmpeg процессы
+                    await window.api.killAllFfmpeg();
+
+                    // 3. Небольшая пауза, чтобы процессы успели завершиться
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // 4. Запускаем полный рендер, который пересоздаст все потоки
+                    await App.gridManager.render();
+
+                    // 5. Восстанавливаем аналитику для тех камер, где она была активна
+                    if (activeAnalyticsIds.length > 0) {
+                        console.log('[Settings] Re-enabling analytics...');
+                        // Запускаем с задержкой, чтобы потоки успели инициализироваться
+                        setTimeout(() => {
+                            activeAnalyticsIds.forEach(cameraId => {
+                                console.log(`- Toggling analytics for camera ${cameraId}`);
+                                window.api.toggleAnalytics(cameraId);
+                            });
+                        }, 2000);
+                    }
+                })();
+            }
         }
         
         async function renderModulesTab() {
@@ -211,6 +262,9 @@
             saveSettingsBtn = document.getElementById('save-settings-btn');
             languageSelect = document.getElementById('app-settings-language');
             selectRecPathBtn = document.getElementById('select-rec-path-btn');
+            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+            selectScreenshotsPathBtn = document.getElementById('select-screenshots-path-btn');
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             checkForUpdatesBtn = document.getElementById('check-for-updates-btn');
             reportIssueBtn = document.getElementById('report-issue-btn');
 
@@ -245,15 +299,12 @@
                 });
             }
 
-            // START: ИСПРАВЛЕНИЕ - Добавляем обработчик для кнопки "Поддержать проект"
             const donateBtn = document.getElementById('donate-btn');
             if (donateBtn) {
                 donateBtn.addEventListener('click', () => {
-                    // Замените эту ссылку на свою
                     window.api.openExternalLink('https://opencollective.com/openipc/projects/openipc-dashboard/donate?interval=oneTime&amount=20&contributeAs=me');
                 });
             }
-            // END: ИСПРАВЛЕНИЕ
 
             if (settingsModal) {
                 const modalFooter = settingsModal.querySelector('.modal-footer');
@@ -288,6 +339,17 @@
                     }
                 });
             }
+
+            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+            if (selectScreenshotsPathBtn) {
+                selectScreenshotsPathBtn.addEventListener('click', async () => {
+                    const result = await window.api.selectDirectory();
+                    if (!result.canceled && result.filePaths.length > 0) {
+                        document.getElementById('app-settings-screenshots-path').value = result.filePaths[0];
+                    }
+                });
+            }
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             if (checkForUpdatesBtn) {
                 checkForUpdatesBtn.addEventListener('click', () => {
@@ -327,4 +389,3 @@
         };
     };
 })(window);
-// --- END OF FILE js/modals/settings-handler.js ---

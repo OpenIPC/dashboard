@@ -1,11 +1,6 @@
 // --- START OF FILE preload.js ---
-// Файл: /preload.js
-// Этот скрипт служит безопасным мостом между рендер-процессом (UI) и main-процессом (бэкенд).
-
 const { contextBridge, ipcRenderer } = require('electron');
-const path = require('path'); // <-- 1. ДОБАВЛЯЕМ МОДУЛЬ PATH
-
-// <-- 2. ИСПОЛЬЗУЕМ АБСОЛЮТНЫЙ ПУТЬ С ПОМОЩЬЮ __dirname
+const path = require('path');
 const CHANNELS = require(path.join(__dirname, 'src', 'common', 'ipc-channels.js'));
 
 contextBridge.exposeInMainWorld('api', {
@@ -58,10 +53,15 @@ contextBridge.exposeInMainWorld('api', {
     stopVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.STOP_VIDEO_STREAM, streamId),
     pauseVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.PAUSE_VIDEO_STREAM, streamId),
     resumeVideoStream: (streamId) => ipcRenderer.invoke(CHANNELS.RESUME_VIDEO_STREAM, streamId),
+    saveScreenshot: (streamId) => ipcRenderer.invoke('save-screenshot', streamId),
     openInBrowser: (ip) => ipcRenderer.invoke(CHANNELS.OPEN_IN_BROWSER, ip),
     openFileManager: (camera) => ipcRenderer.invoke(CHANNELS.OPEN_FILE_MANAGER, camera),
     openSshTerminal: (camera) => ipcRenderer.invoke(CHANNELS.OPEN_SSH_TERMINAL, camera),
 
+    // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+    getAnalyticsStates: () => ipcRenderer.invoke('get-analytics-states'),
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+    
     // Video Analytics
     toggleAnalytics: (cameraId) => ipcRenderer.invoke(CHANNELS.TOGGLE_ANALYTICS, cameraId),
     onAnalyticsUpdate: (callback) => ipcRenderer.on(CHANNELS.ON_ANALYTICS_UPDATE, (event, data) => callback(data)),
@@ -76,14 +76,14 @@ contextBridge.exposeInMainWorld('api', {
     exportArchiveClip: (data) => ipcRenderer.invoke(CHANNELS.EXPORT_ARCHIVE_CLIP, data),
     getEventsForDate: (data) => ipcRenderer.invoke(CHANNELS.GET_EVENTS_FOR_DATE, data),
     getDatesWithActivity: (cameraName) => ipcRenderer.invoke(CHANNELS.GET_DATES_WITH_ACTIVITY, cameraName),
-    // START: ИСПРАВЛЕНИЕ - Принимаем один объект `data` и передаем его целиком
     prepareArchiveForHls: (data) => ipcRenderer.invoke(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, data),
-    // END: ИСПРАВЛЕНИЕ
 
     // System & Events
     getSystemStats: () => ipcRenderer.invoke(CHANNELS.GET_SYSTEM_STATS),
     onStreamInfoUpdate: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_INFO_UPDATE, (event, data) => callback(data)),
     onStreamDied: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_DIED, (event, data) => callback(data)),
+    onStreamReconnected: (callback) => ipcRenderer.on('stream-reconnected', (event, data) => callback(data)),
+    onForceRender: (callback) => ipcRenderer.on('force-render', (event, data) => callback(data)),
     onStreamStats: (callback) => ipcRenderer.on(CHANNELS.ON_STREAM_STATS, (event, data) => callback(data)),
     onMainError: (callback) => ipcRenderer.on(CHANNELS.ON_MAIN_ERROR, (event, data) => callback(data)),
     showCameraContextMenu: (data) => ipcRenderer.send(CHANNELS.SHOW_CAMERA_CONTEXT_MENU, data),

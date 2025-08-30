@@ -23,17 +23,14 @@ const fileManagerConnections = {};
 function registerCameraHandlers(moduleManager, APP_VERSION) {
   const featureNotAvailableHandler = () => Promise.resolve({ success: false, error: 'Feature not available in Lite version' });
   
-  // START: ИСПРАВЛЕНИЕ - Добавляем обработчик для open-in-browser
   ipcMain.handle(CHANNELS.OPEN_IN_BROWSER, withErrorHandling((event, ip) => {
       if (!ip) {
           throw new Error('IP address is required to open in browser.');
       }
-      // Добавляем http://, если протокол не указан, чтобы shell.openExternal сработал
       const url = ip.startsWith('http') ? ip : `http://${ip}`;
       console.log(`[IPC] Opening external URL: ${url}`);
       return shell.openExternal(url);
   }, 'openInBrowser'));
-  // END: ИСПРАВЛЕНИЕ
 
   ipcMain.handle(CHANNELS.GET_CAMERA_PULSE, withErrorHandling((event, camera) => cameraAPI.getCameraPulse(camera), 'getCameraPulse'));
   ipcMain.handle(CHANNELS.PTZ_CONTROL, withErrorHandling((event, data) => cameraAPI.ptzControl(data), 'ptzControl'));
@@ -44,8 +41,10 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   
   ipcMain.handle(CHANNELS.START_VIDEO_STREAM, withErrorHandling((event, data) => processManager.startVideoStream(data), 'startVideoStream'));
   ipcMain.handle(CHANNELS.STOP_VIDEO_STREAM, withErrorHandling((event, streamId) => processManager.stopVideoStream(streamId), 'stopVideoStream'));
+  
   ipcMain.handle(CHANNELS.PAUSE_VIDEO_STREAM, withErrorHandling((event, streamId) => processManager.pauseVideoStream(streamId), 'pauseVideoStream'));
   ipcMain.handle(CHANNELS.RESUME_VIDEO_STREAM, withErrorHandling((event, streamId) => processManager.resumeVideoStream(streamId), 'resumeVideoStream'));
+  ipcMain.handle('save-screenshot', withErrorHandling((event, streamId) => processManager.saveScreenshot(streamId), 'saveScreenshot'));
   
   ipcMain.handle(CHANNELS.TOGGLE_ANALYTICS, APP_VERSION === 'intellect' ? withErrorHandling((event, cameraId) => processManager.toggleAnalytics(cameraId, getMainWindow(), moduleManager), 'toggleAnalytics') : featureNotAvailableHandler);
   
@@ -55,9 +54,7 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.EXPORT_ARCHIVE_CLIP, withErrorHandling((event, data) => processManager.exportArchiveClip(data, getMainWindow()), 'exportArchiveClip'));
   ipcMain.handle(CHANNELS.GET_EVENTS_FOR_DATE, withErrorHandling((event, data) => configManager.getEventsForDate(data), 'getEventsForDate'));
   ipcMain.handle(CHANNELS.GET_DATES_WITH_ACTIVITY, withErrorHandling((event, cameraName) => configManager.getDatesWithActivity(cameraName), 'getDatesWithActivity'));
-  // START: ИСПРАВЛЕНИЕ - Принимаем весь объект `data` и передаем его дальше
   ipcMain.handle(CHANNELS.PREPARE_ARCHIVE_FOR_HLS, withErrorHandling((event, data) => processManager.prepareArchiveForHls(data), 'prepareArchiveForHls'));
-  // END: ИСПРАВЛЕНИЕ
 
   ipcMain.handle(CHANNELS.DISCOVER_DEVICES, withErrorHandling(() => discoverDevices(getMainWindow()), 'discoverDevices'));
   
@@ -96,6 +93,10 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.SCP_MKDIR, withErrorHandling((e, data) => cameraAPI.scp.mkdir(data, fileManagerConnections), 'scpMkdir'));
   ipcMain.handle(CHANNELS.SCP_DELETE_FILE, withErrorHandling((e, data) => cameraAPI.scp.deleteFile(data, fileManagerConnections), 'scpDeleteFile'));
   ipcMain.handle(CHANNELS.SCP_DELETE_DIR, withErrorHandling((e, data) => cameraAPI.scp.deleteDir(data, fileManagerConnections), 'scpDeleteDir'));
+
+  // VVVVVV --- ДОБАВЬТЕ ЭТОТ БЛОК В КОНЕЦ ФУНКЦИИ --- VVVVVV
+  ipcMain.handle('get-analytics-states', withErrorHandling(() => processManager.getAnalyticsStates(), 'getAnalyticsStates'));
+  // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 }
 
 module.exports = {

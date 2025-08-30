@@ -2,7 +2,8 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:* http:; img-src 'self' data:; media-src 'self' blob: video-archive:; frame-src http:;">
+    <!-- ИЗМЕНЕНИЕ ЗДЕСЬ: директива connect-src была обновлена -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: http:; img-src 'self' data:; media-src 'self' blob: video-archive:; frame-src http:;">
     <title data-brand="appName">DASHBOARD for OpenIPC</title>
     
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -122,49 +123,9 @@
         </div>
     </div>
     
-    <template id="grid-cell-content-template">
-        <canvas class="video-canvas video-canvas-hd"></canvas>
-        <canvas class="video-canvas video-canvas-sd hidden"></canvas>
-        <canvas class="overlay-canvas"></canvas>
-
-        <!-- START: ИСПРАВЛЕНИЕ - ДОБАВЛЕН PTZ OVERLAY -->
-        <div class="ptz-overlay">
-            <div class="ptz-btn ptz-up" data-command="tilt_up"><i class="material-icons">arrow_upward</i></div>
-            <div class="ptz-btn ptz-down" data-command="tilt_down"><i class="material-icons">arrow_downward</i></div>
-            <div class="ptz-btn ptz-left" data-command="pan_left"><i class="material-icons">arrow_back</i></div>
-            <div class="ptz-btn ptz-right" data-command="pan_right"><i class="material-icons">arrow_forward</i></div>
-        </div>
-        <div class="ptz-zoom-controls">
-            <div class="ptz-btn ptz-zoom-in" data-command="zoom_in"><i class="material-icons">add</i></div>
-            <div class="ptz-btn ptz-zoom-out" data-command="zoom_out"><i class="material-icons">remove</i></div>
-        </div>
-        <!-- END: ИСПРАВЛЕНИЕ -->
-
-        <div class="cell-header">
-            <span class="cell-name"></span>
-            <span class="cell-stats"></span>
-        </div>
-        <div class="cell-controls">
-            <button class="icon-button stream-switch-btn" title="Переключить качество"><i class="material-icons">hd</i></button>
-            <button class="icon-button audio-btn" title="Включить звук"><i class="material-icons">volume_off</i></button>
-            <button class="icon-button record-btn intellect-only" title="Запись"><i class="material-icons">fiber_manual_record</i></button>
-            <button class="icon-button fullscreen-btn" title="На весь экран"><i class="material-icons">fullscreen</i></button>
-            <button class="icon-button close-btn" title="Закрыть"><i class="material-icons">close</i></button>
-        </div>
-        <div class="loading-overlay">
-            <div class="spinner"></div>
-        </div>
-        <div class="error-overlay hidden">
-            <div class="error-content">
-                <i class="material-icons error-icon">error_outline</i>
-                <p class="error-message"></p>
-                <div class="error-buttons">
-                    <button class="retry-button"></button>
-                    <button class="close-on-error-btn"></button>
-                </div>
-            </div>
-        </div>
-    </template>
+    <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ: ВЕСЬ БЛОК <template> БЫЛ УДАЛЕН --- VVVVVV -->
+    <!-- Старый, захардкоженный шаблон был здесь. Теперь его нет. -->
+    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
 
     <div id="app-toast" class="toast-notification"></div>
 
@@ -183,5 +144,15 @@
     <script src="./js/archive-manager.js"></script>
     <script src="./js/window-controls.js"></script>
     <script src="./js/renderer.js"></script>
+
+    <script>
+        // Если window.api не был создан preload-скриптом Electron,
+        // значит, мы в обычном браузере. Подключаем наш веб-адаптер.
+        if (typeof window.api === 'undefined') {
+            const script = document.createElement('script');
+            script.src = './js/web-api.js';
+            document.body.appendChild(script);
+        }
+    </script>
 </body>
 </html>

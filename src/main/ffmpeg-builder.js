@@ -1,6 +1,4 @@
 // --- START OF FILE src/main/ffmpeg-builder.js ---
-// --- ФАЙЛ: src/main/ffmpeg-builder.js (СТАБИЛЬНАЯ ВЕРСИЯ) ---
-
 const path = require('path');
 const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 
@@ -11,7 +9,7 @@ class FfmpegCommandBuilder {
         this.settings = appSettings;
     }
 
-    buildForStream(credentials, streamId) {
+    buildForStream(credentials, streamId, statsPort) { // Добавлен statsPort
         const streamPath = streamId == 0 ? (credentials.streamPath0 || '/stream0') : (credentials.streamPath1 || '/stream1');
         const streamUrl = this.buildRtspUrl(credentials, streamPath);
         
@@ -21,7 +19,7 @@ class FfmpegCommandBuilder {
             ...decoderArgs,
             '-rtsp_transport', 'tcp',
             '-i', streamUrl,
-            '-progress', 'pipe:2',
+            '-progress', `tcp://127.0.0.1:${statsPort}`, // Используем TCP для статистики
             '-f', 'mpegts',
             '-c:v', 'mpeg1video',
             ...vfArgs,

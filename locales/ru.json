@@ -80,6 +80,7 @@
   "settings_app_header": "Общие настройки приложения",
   "settings_language": "Язык",
   "settings_recordings_folder": "Папка для записей",
+  "settings_screenshots_folder": "Папка для скриншотов",
   "settings_hw_accel": "Аппаратное ускорение",
   "settings_hw_accel_auto": "Авто",
   "settings_hw_accel_nvidia": "NVIDIA (CUVID)",
@@ -278,5 +279,9 @@
   "update_download_button": "Скачать и установить",
   "update_downloaded_prompt": "Обновление загружено. Перезапустить приложение сейчас для установки?",
   "retry_button": "Повторить",
-  "close_button": "Закрыть"
+  "close_button": "Закрыть",
+  "stream_lost_reconnecting": "Поток потерян. Попытка восстановления...",
+  "error_connection_refused": "Соединение отклонено. (Камера не отвечает?)",
+  "error_invalid_data": "Неверные данные. (Неверный путь к потоку?)",
+  "error_unauthorized": "401 Unauthorized. (Неверный логин/пароль?)"
 }

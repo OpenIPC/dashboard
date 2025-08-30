@@ -1,6 +1,3 @@
-// --- START OF FILE src/main/config-manager.js ---
-// --- ФАЙЛ: src/main/config-manager.js ---
-
 const { app, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -56,8 +53,12 @@ async function getAppSettings() {
         appSettingsCache = {};
     }
     
+    const recordingsDefaultPath = path.join(app.getPath('videos'), 'OpenIPC-VMS');
     const defaults = { 
-        recordingsPath: path.join(app.getPath('videos'), 'OpenIPC-VMS'),
+        recordingsPath: recordingsDefaultPath,
+        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
+        screenshotsPath: path.join(recordingsDefaultPath, 'Screenshots'),
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         hwAccel: 'auto',
         language: 'en',
         qscale: 8,
@@ -437,4 +438,3 @@ module.exports = {
     getTranslationFile,
     getArchiveVideoInfo // <-- Добавляем новую функцию в экспорт
 };
-// --- END OF FILE src/main/config-manager.js ---

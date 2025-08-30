@@ -1,3 +1,4 @@
+```html
 <!-- START OF FILE templates.html -->
 
 <!-- Модальное окно добавления/редактирования камеры -->
@@ -61,6 +62,13 @@
                        <input type="text" id="app-settings-recordings-path" readonly>
                        <button id="select-rec-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
                     </div>
+                    <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
+                    <span data-i18n-key="settings_screenshots_folder"></span>
+                    <div class="form-input-wrapper">
+                       <input type="text" id="app-settings-screenshots-path" readonly>
+                       <button id="select-screenshots-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
+                    </div>
+                    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
                     <span data-i18n-key="settings_hw_accel"></span>
                     <select id="app-settings-hw-accel">
                         <option value="auto" data-i18n-key="settings_hw_accel_auto"></option>
@@ -127,7 +135,7 @@
             <div id="tab-about" class="tab-content intellect-only" data-brand-feature="aboutTab">
                 <div class="about-container">
                     <div id="about-logo-container">
-                        <img src="assets/logo.png" alt="App Logo" class="about-logo" data-brand="logo">
+                        <img src="" alt="App Logo" class="about-logo" data-brand="logo">
                     </div>
                     <h3 data-brand="appName" data-i18n-key="app_title"></h3>
                     <p><span data-i18n-key="about_version"></span>: <span id="app-version"></span></p>
@@ -273,4 +281,47 @@
     </div>
 </div>
 
+<template id="grid-cell-content-template">
+    <div class="video-wrapper">
+        <canvas class="video-canvas video-canvas-hd"></canvas>
+        <canvas class="video-canvas video-canvas-sd hidden"></canvas>
+        <canvas class="overlay-canvas"></canvas>
+    </div>
+    <div class="ptz-overlay">
+        <div class="ptz-btn ptz-up" data-command="tilt_up"><i class="material-icons">arrow_upward</i></div>
+        <div class="ptz-btn ptz-down" data-command="tilt_down"><i class="material-icons">arrow_downward</i></div>
+        <div class="ptz-btn ptz-left" data-command="pan_left"><i class="material-icons">arrow_back</i></div>
+        <div class="ptz-btn ptz-right" data-command="pan_right"><i class="material-icons">arrow_forward</i></div>
+    </div>
+    <div class="ptz-zoom-controls">
+        <div class="ptz-btn ptz-zoom-in" data-command="zoom_in"><i class="material-icons">add</i></div>
+        <div class="ptz-btn ptz-zoom-out" data-command="zoom_out"><i class="material-icons">remove</i></div>
+    </div>
+    <div class="cell-name"></div>
+    <div class="cell-stats"></div>
+    <div class="cell-controls">
+        <button class="icon-button pause-btn" title="Пауза/Воспр."><i class="material-icons">pause</i></button>
+        <button class="icon-button screenshot-btn" title="Сделать скриншот"><i class="material-icons">photo_camera</i></button>
+        <button class="icon-button stream-switch-btn" title="Переключить качество"><i class="material-icons">hd</i></button>
+        <button class="icon-button audio-btn" title="Включить звук"><i class="material-icons">volume_off</i></button>
+        <button class="icon-button record-btn intellect-only" title="Запись"><i class="material-icons">fiber_manual_record</i></button>
+        <button class="icon-button fullscreen-btn" title="На весь экран"><i class="material-icons">fullscreen</i></button>
+        <button class="icon-button close-btn" title="Закрыть"><i class="material-icons">close</i></button>
+    </div>
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+    <div class="error-overlay hidden">
+        <div class="error-content">
+            <i class="material-icons error-icon">error_outline</i>
+            <p class="error-message"></p>
+            <div class="error-buttons">
+                <button class="retry-button" data-i18n-key="retry_button"></button>
+                <button class="close-on-error-btn" data-i18n-key="close_button"></button>
+            </div>
+        </div>
+    </div>
+</template>
+
 <!-- END OF FILE templates.html -->
+```

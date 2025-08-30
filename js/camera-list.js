@@ -218,7 +218,6 @@
                     const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
                     const menuItems = {};
                     
-                    // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ПУНКТ "НАСТРОЙКИ" --- VVVVVV
                     menuItems.open_in_browser = `🌐  ${App.i18n.t('context_open_in_browser')}`;
                     menuItems.files = `🗂️  ${App.i18n.t('context_file_manager')}`;
                     menuItems.ssh = `💻  ${App.i18n.t('context_ssh')}`;
@@ -230,7 +229,6 @@
                     if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
                         menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
                     }
-                    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                     window.api.showCameraContextMenu({ cameraId, labels: menuItems });
                 }
@@ -251,7 +249,6 @@
                     groupId: camera.groupId
                 };
 
-                // VVVVVV --- ИЗМЕНЕНИЕ: УДАЛЯЕМ ОБРАБОТЧИК ДЛЯ 'settings' --- VVVVVV
                 switch(command) {
                     case 'open_in_browser': 
                         window.api.openInBrowser(cameraDataForIPC.ip); 
@@ -262,7 +259,6 @@
                     case 'edit': App.modalHandler.openAddModal(cameraDataForIPC); break;
                     case 'delete': deleteCamera(cameraId); break;
                 }
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             });
 
             window.api.onGroupContextMenuCommand(({ command, groupId }) => {

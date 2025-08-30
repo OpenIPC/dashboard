@@ -80,6 +80,7 @@
   "settings_app_header": "Application Settings",
   "settings_language": "Language",
   "settings_recordings_folder": "Recordings Folder",
+  "settings_screenshots_folder": "Screenshots Folder",
   "settings_hw_accel": "Hardware Acceleration",
   "settings_hw_accel_auto": "Auto",
   "settings_hw_accel_nvidia": "NVIDIA (CUVID)",
@@ -265,5 +266,9 @@
   "update_download_button": "Download and Install",
   "update_downloaded_prompt": "Update downloaded. Restart the application now to install?",
   "retry_button": "Retry",
-  "close_button": "Close"
+  "close_button": "Close",
+  "stream_lost_reconnecting": "Stream lost. Attempting to reconnect...",
+  "error_connection_refused": "Connection refused. (Camera not responding?)",
+  "error_invalid_data": "Invalid data. (Incorrect stream path?)",
+  "error_unauthorized": "401 Unauthorized. (Incorrect login/password?)"
 }

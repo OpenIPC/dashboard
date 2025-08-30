@@ -42,10 +42,14 @@
     z-index: 1;
 }
 
+/* --- НАЧАЛО ИЗМЕНЕНИЯ --- */
 .grid-cell:hover {
     z-index: 99;
-    transform: scale(1.02);
+    /* transform: scale(1.02);  <-- Эффект увеличения убран */
+    border-color: var(--accent-color); /* Рамка становится ярче */
+    box-shadow: 0 0 8px rgba(var(--accent-color-rgb), 0.5); /* Добавлено мягкое свечение */
 }
+/* --- КОНЕЦ ИЗМЕНЕНИЯ --- */
 
 .video-wrapper {
     position: relative;
@@ -485,7 +489,10 @@
     opacity: 0.7;
 }
 
+/* VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ: ЭТО ПРАВИЛО БЫЛО УДАЛЕНО/ЗАКОММЕНТИРОВАНО --- VVVVVV */
+/*
 .grid-cell.paused-state .cell-controls {
-    /* Можно скрыть контролы на паузе, чтобы не мешали */
     display: none;
 }
+*/
+/* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */

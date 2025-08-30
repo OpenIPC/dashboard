@@ -7,15 +7,22 @@ const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 
+// START: ИСПРАВЛЕНИЕ - Добавляем импорты для веб-сервера
+const express = require('express');
+const http = require('http');
+const os = require('os');
+const { WebSocketServer } = require('ws');
+// END: ИСПРАВЛЕНИЕ
+
 const { ModuleManager } = require('./module-manager');
 const configManager = require('./config-manager'); 
 
 const { initializeApp, onAppWillQuit } = require('./app-lifecycle');
 const { createWindow, getMainWindow } = require('./window-manager');
-const { registerIpcHandlers } = require('./ipc-handlers');
+const { registerIpcHandlers, handlerMap } = require('./ipc-handlers');
 const { startHlsServer, stopHlsServer } = require('./hls-server');
 
-// --- ИЗМЕНЕНИЕ: Определение версии приложения при старте ---
+// --- Определение версии приложения при старте ---
 let APP_VERSION = 'intellect'; // Значение по умолчанию для режима разработки
 
 try {
@@ -57,13 +64,24 @@ initializeApp();
 
 const moduleManager = new ModuleManager();
 
+// Объявляем wss глобально для доступа в appAPI
+let wss = null;
+
 const appAPI = {
     on: (eventName, callback) => moduleManager.registerListener(eventName, callback),
     off: (eventName, callback) => moduleManager.unregisterListener(eventName, callback),
     sendToRenderer: (channel, ...args) => {
         const mainWindow = getMainWindow();
-        if (mainWindow) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(channel, ...args);
+        }
+        // Отправляем события и веб-клиентам
+        if (wss) {
+            wss.clients.forEach(client => {
+                if (client.readyState === require('ws').OPEN) {
+                    client.send(JSON.stringify({ type: 'event', channel, payload: args[0] }));
+                }
+            });
         }
     },
     configManager: configManager,
@@ -89,16 +107,11 @@ const appAPI = {
 moduleManager.appAPI = appAPI;
 
 // Основной жизненный цикл приложения
-// START: ИСПРАВЛЕНИЕ - Делаем колбэк асинхронным
 app.whenReady().then(async () => {
-// END: ИСПРАВЛЕНИЕ
-    const mainWindow = await createWindow(); // Добавляем await
+    const mainWindow = await createWindow();
 
-    // --- ИЗМЕНЕНИЕ: Передаем APP_VERSION в обработчики IPC ---
-    // Это позволит ipc-handlers.js также знать о текущей версии
-    // и отключать ненужные хендлеры.
+    // Эта функция теперь также заполняет нашу handlerMap для WebSocket
     registerIpcHandlers(moduleManager, APP_VERSION); 
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
     try {
         const hlsTempPath = path.join(app.getPath('temp'), 'hls');
@@ -111,7 +124,80 @@ app.whenReady().then(async () => {
         console.error("Failed to initialize HLS server:", error);
     }
 
-    // --- ИЗМЕНЕНИЕ: Условная инициализация системы модулей ---
+    try {
+        const webApp = express();
+        const webServer = http.createServer(webApp);
+        const rootDir = path.join(__dirname, '..', '..');
+        
+        // Явно указываем Express отдавать все необходимые папки
+        webApp.use('/css', express.static(path.join(rootDir, 'css')));
+        webApp.use('/js', express.static(path.join(rootDir, 'js')));
+        webApp.use('/node_modules', express.static(path.join(rootDir, 'node_modules')));
+        webApp.use('/assets', express.static(path.join(rootDir, 'assets')));
+        // VVVVVV --- ИЗМЕНЕНИЕ: Добавляем раздачу папки с модулями --- VVVVVV
+        webApp.use('/modules', express.static(path.join(rootDir, 'modules')));
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
+        
+        // Отдаем файлы из корневой папки (index.html, jsmpeg.min.js и т.д.)
+        webApp.use(express.static(rootDir));
+
+        const PORT = 8080;
+        webServer.listen(PORT, '0.0.0.0', () => {
+            console.log(`[Web Server] HTTP server is running on port ${PORT}`);
+            const interfaces = os.networkInterfaces();
+            console.log('[Web Server] Available at:');
+            Object.keys(interfaces).forEach(ifaceName => {
+                interfaces[ifaceName].forEach(iface => {
+                    if (iface.family === 'IPv4' && !iface.internal) {
+                        console.log(`  - http://${iface.address}:${PORT}`);
+                    }
+                });
+            });
+        });
+
+        wss = new WebSocketServer({ port: 8081 });
+        
+        wss.on('connection', (ws) => {
+            console.log('[WebSocket] Client connected.');
+        
+            ws.on('message', async (message) => {
+                try {
+                    const { type, channel, requestId, payload } = JSON.parse(message);
+        
+                    if (type === 'invoke') {
+                        console.log(`[WebSocket] << INVOKE ${channel}`);
+                        const handler = handlerMap.get(channel);
+
+                        if (handler) {
+                            const fakeEvent = { sender: getMainWindow()?.webContents }; 
+                            const result = await handler(fakeEvent, payload);
+                            console.log(`[WebSocket] >> RESPONSE for ${channel}`);
+                            if (ws.readyState === require('ws').OPEN) {
+                                ws.send(JSON.stringify({ type: 'response', requestId, payload: result }));
+                            }
+                        } else {
+                            const errorMsg = `No handler found on server for invoked channel: ${channel}`;
+                            console.error(`[WebSocket] ${errorMsg}`);
+                            if (ws.readyState === require('ws').OPEN) {
+                                ws.send(JSON.stringify({ type: 'response', requestId, payload: { success: false, error: errorMsg } }));
+                            }
+                        }
+                    } else if (type === 'send') {
+                        console.log(`[WebSocket] << SEND ${channel}`);
+                        ipcMain.emit(channel, null, payload);
+                    }
+                } catch (e) {
+                    console.error('[WebSocket] Error processing message:', e);
+                }
+            });
+        
+            ws.on('close', () => console.log('[WebSocket] Client disconnected.'));
+        });
+
+    } catch(e) {
+        console.error('[Web Server] Failed to start:', e);
+    }
+
     console.log('[Main] Инициализация модульной системы...');
     if (APP_VERSION === 'intellect') {
         moduleManager.discoverModules();
@@ -121,18 +207,17 @@ app.whenReady().then(async () => {
     } else {
         console.log('[Main] Lite version, skipping module system initialization.');
     }
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
-    // --- ИЗМЕНЕНИЕ: Обработчик теперь учитывает версию приложения ---
+    // VVVVVV --- ИЗМЕНЕНИЕ: Отдаем относительный URL вместо полного пути --- VVVVVV
     ipcMain.handle('get-renderer-modules', async (event) => {
         console.log('[Main] Renderer is ready and requesting module scripts.');
 
-        // Для Lite-версии всегда возвращаем пустой массив
         if (APP_VERSION === 'lite') {
             console.log('[Modules] Lite version, returning no renderer scripts.');
             return [];
         }
 
+        const rootDir = path.join(__dirname, '..', '..');
         const rendererScripts = [];
         const currentSettings = await configManager.getAppSettings();
         const enabledModules = currentSettings.enabledModules || [];
@@ -140,27 +225,25 @@ app.whenReady().then(async () => {
         enabledModules.forEach(moduleId => {
             const mod = moduleManager.loadedModules.get(moduleId);
             if (mod && mod.manifest.entryPoints?.renderer) {
-                const scriptPath = path.join(mod.manifest.path, mod.manifest.entryPoints.renderer);
-                console.log(`[Modules] Found renderer script to send: ${scriptPath}`);
-                rendererScripts.push(scriptPath);
+                const fullScriptPath = path.join(mod.manifest.path, mod.manifest.entryPoints.renderer);
+                // Преобразуем полный путь в относительный URL, который браузер сможет запросить
+                const relativeUrl = path.relative(rootDir, fullScriptPath).replace(/\\/g, '/');
+                console.log(`[Modules] Found renderer script, providing URL: /${relativeUrl}`);
+                rendererScripts.push(relativeUrl);
             }
         });
         return rendererScripts;
     });
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 });
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') { app.quit(); }
 });
 
-// START: ИСПРАВЛЕНИЕ - Делаем колбэк асинхронным
 app.on('activate', async () => {
-// END: ИСПРАВЛЕНИЕ
     if (BrowserWindow.getAllWindows().length === 0) { 
-        // START: ИСПРАВЛЕНИЕ - Добавляем await
         await createWindow();
-        // END: ИСПРАВЛЕНИЕ
     }
 });
 
