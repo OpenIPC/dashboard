@@ -4,6 +4,13 @@
   "directories": {
     "output": "dist"
   },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "OpenIPC",
+      "repo": "dashboard"
+    }
+  ],
   "win": {
     "target": [
       "nsis",
