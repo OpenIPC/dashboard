@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Вход в Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #eee; display: flex; align-items: center; justify-content: center; height: 100vh; }
+    .login-box { background: #333; padding: 32px 24px; border-radius: 8px; box-shadow: 0 2px 16px #0008; }
+    input, button { width: 100%; margin: 8px 0; padding: 10px; border-radius: 4px; border: none; }
+    button { background: #0078d7; color: #fff; font-weight: bold; cursor: pointer; }
+    .error { color: #ff4444; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h2>Вход в Dashboard</h2>
+    <input type="text" id="username" placeholder="Имя пользователя" autofocus>
+    <input type="password" id="password" placeholder="Пароль">
+    <button id="loginBtn">Войти</button>
+    <div class="error" id="errorMsg"></div>
+  </div>
+  <script>
+    document.getElementById('loginBtn').onclick = async function() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errorMsg = document.getElementById('errorMsg');
+      errorMsg.textContent = '';
+      if (!username || !password) {
+        errorMsg.textContent = 'Введите имя пользователя и пароль';
+        return;
+      }
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          // Сохраняем имя пользователя и роль в localStorage
+          localStorage.setItem('username', data.username);
+          localStorage.setItem('role', data.role);
+          window.location.href = '/'; // Перенаправляем на главную страницу
+        } else {
+          errorMsg.textContent = data.error || 'Ошибка входа';
+        }
+      } catch (e) {
+        errorMsg.textContent = 'Ошибка соединения с сервером';
+      }
+    };
+  </script>
+</body>
+</html>

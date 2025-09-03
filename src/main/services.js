@@ -71,7 +71,15 @@ function getSystemStats() {
 
 function checkForUpdates() {
     if (app.isPackaged) {
-        console.log('[Updater] Manually checking for updates...');
+        // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЯ --- VVVVVV
+        const { APP_VERSION } = require('./main.js'); // Получаем версию из главного файла
+        
+        // Устанавливаем имя канала в зависимости от версии.
+        // Это заставит updater искать файлы latest-lite.yml или latest-intellect.yml
+        autoUpdater.channel = APP_VERSION; 
+        
+        console.log(`[Updater] Manually checking for updates on channel: ${autoUpdater.channel}...`);
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         autoUpdater.checkForUpdates();
     } else {
         console.log('[Updater] Skipping update check in development mode.');

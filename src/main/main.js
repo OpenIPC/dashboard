@@ -7,12 +7,11 @@ const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 
-// START: ИСПРАВЛЕНИЕ - Добавляем импорты для веб-сервера
 const express = require('express');
 const http = require('http');
 const os = require('os');
 const { WebSocketServer } = require('ws');
-// END: ИСПРАВЛЕНИЕ
+const axios = require('axios');
 
 const { ModuleManager } = require('./module-manager');
 const configManager = require('./config-manager'); 
@@ -21,12 +20,11 @@ const { initializeApp, onAppWillQuit } = require('./app-lifecycle');
 const { createWindow, getMainWindow } = require('./window-manager');
 const { registerIpcHandlers, handlerMap } = require('./ipc-handlers');
 const { startHlsServer, stopHlsServer } = require('./hls-server');
+const processManager = require('./process-manager');
 
-// --- Определение версии приложения при старте ---
-let APP_VERSION = 'intellect'; // Значение по умолчанию для режима разработки
+let APP_VERSION = 'intellect';
 
 try {
-    // Этот файл создается скриптом сборки (scripts/set-version.js)
     const versionConfigPath = path.join(__dirname, '..', '..', 'version-config.json');
     if (fs.existsSync(versionConfigPath)) {
         const config = JSON.parse(fs.readFileSync(versionConfigPath, 'utf-8'));
@@ -36,10 +34,10 @@ try {
     console.error('Could not read version config, defaulting to "intellect".', e);
 }
 
-console.log(`--- Application starting in [${APP_VERSION.toUpperCase()}] mode ---`);
-// --- КОНЕЦ ИЗМЕНЕНИЯ ---
+module.exports = { APP_VERSION };
 
-// Настройка логов
+console.log(`--- Application starting in [${APP_VERSION.toUpperCase()}] mode ---`);
+
 log.transports.file.resolvePathFn = () => path.join(app.getPath('userData'), 'logs', 'main.log');
 log.transports.file.level = 'info';
 log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{l}] [{processType}] {text}';
@@ -56,7 +54,6 @@ log.errorHandler.startCatching({
 Object.assign(console, log.functions);
 console.log('--- Application starting ---');
 
-// Стандартная инициализация Electron
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 if (process.platform === 'linux' || process.env.ELECTRON_FORCE_NO_SANDBOX) { app.commandLine.appendSwitch('--no-sandbox'); }
 app.commandLine.appendSwitch('force_high_performance_gpu');
@@ -64,7 +61,6 @@ initializeApp();
 
 const moduleManager = new ModuleManager();
 
-// Объявляем wss глобально для доступа в appAPI
 let wss = null;
 
 const appAPI = {
@@ -75,7 +71,6 @@ const appAPI = {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(channel, ...args);
         }
-        // Отправляем события и веб-клиентам
         if (wss) {
             wss.clients.forEach(client => {
                 if (client.readyState === require('ws').OPEN) {
@@ -106,12 +101,56 @@ const appAPI = {
 
 moduleManager.appAPI = appAPI;
 
-// Основной жизненный цикл приложения
 app.whenReady().then(async () => {
     const mainWindow = await createWindow();
 
-    // Эта функция теперь также заполняет нашу handlerMap для WebSocket
     registerIpcHandlers(moduleManager, APP_VERSION); 
+
+    await processManager.startMediaMTX();
+
+    // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЙ --- VVVVVV
+    // Возвращаем setInterval для регулярного получения статистики
+    setInterval(() => {
+        const options = {
+            hostname: '127.0.0.1',
+            port: 9997,
+            path: '/v3/paths/list',
+            method: 'GET',
+            timeout: 2000
+        };
+
+        const req = http.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    try {
+                        const statsData = JSON.parse(data);
+                        // Отправляем ПОЛНЫЙ список потоков в рендерер, как и раньше
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('mediamtx-stats-update', statsData);
+                        }
+                    } catch (e) {
+                        console.error('[MediaMTX Stats] Ошибка парсинга JSON:', e.message);
+                    }
+                }
+            });
+        });
+
+        req.on('error', (e) => {
+            if (e.code !== 'ECONNREFUSED') {
+                console.error(`[MediaMTX Stats] Ошибка HTTP-запроса: ${e.message}`);
+            }
+        });
+        
+        req.on('timeout', () => {
+            req.destroy();
+            console.error('[MediaMTX Stats] Запрос статистики превысил таймаут.');
+        });
+
+        req.end();
+    }, 3000);
+    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^^^^
 
     try {
         const hlsTempPath = path.join(app.getPath('temp'), 'hls');
@@ -129,16 +168,39 @@ app.whenReady().then(async () => {
         const webServer = http.createServer(webApp);
         const rootDir = path.join(__dirname, '..', '..');
         
-        // Явно указываем Express отдавать все необходимые папки
+        webApp.use(express.json());
+
+        // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЙ --- VVVVVV
+        // Упрощаем обработчик вебхуков, оставляя только то, что нужно для событий
+        webApp.post('/mediamtx-webhook', async (req, res) => {
+            const event = req.body;
+
+            switch (event.event) {
+                case 'onRecordSegmentCreate':
+                    console.log(`[MediaMTX Webhook] New recording segment created: ${event.path.path}`);
+                    const match = event.path.name.match(/^cam(\d+)_/);
+                    if (match) {
+                        const cameraId = parseInt(match[1], 10);
+                        const camera = await configManager.getCameraConfig(cameraId);
+                        if (camera) {
+                            appAPI.sendToRenderer('mediamtx-archive-update', { cameraName: camera.name });
+                        }
+                    }
+                    break;
+                // Другие события (onReady, onRead и т.д.) нам здесь больше не нужны,
+                // так как статистика получается через опрос.
+            }
+
+            res.sendStatus(200);
+        });
+        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^^^^
+
         webApp.use('/css', express.static(path.join(rootDir, 'css')));
         webApp.use('/js', express.static(path.join(rootDir, 'js')));
         webApp.use('/node_modules', express.static(path.join(rootDir, 'node_modules')));
         webApp.use('/assets', express.static(path.join(rootDir, 'assets')));
-        // VVVVVV --- ИЗМЕНЕНИЕ: Добавляем раздачу папки с модулями --- VVVVVV
         webApp.use('/modules', express.static(path.join(rootDir, 'modules')));
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         
-        // Отдаем файлы из корневой папки (index.html, jsmpeg.min.js и т.д.)
         webApp.use(express.static(rootDir));
 
         const PORT = 8080;
@@ -156,6 +218,7 @@ app.whenReady().then(async () => {
         });
 
         wss = new WebSocketServer({ port: 8081 });
+        processManager.setWebSocketServer(wss);
         
         wss.on('connection', (ws) => {
             console.log('[WebSocket] Client connected.');
@@ -184,7 +247,7 @@ app.whenReady().then(async () => {
                         }
                     } else if (type === 'send') {
                         console.log(`[WebSocket] << SEND ${channel}`);
-                        ipcMain.emit(channel, null, payload);
+                        ipcMain.emit(channel, { sender: getMainWindow()?.webContents }, payload);
                     }
                 } catch (e) {
                     console.error('[WebSocket] Error processing message:', e);
@@ -208,7 +271,6 @@ app.whenReady().then(async () => {
         console.log('[Main] Lite version, skipping module system initialization.');
     }
     
-    // VVVVVV --- ИЗМЕНЕНИЕ: Отдаем относительный URL вместо полного пути --- VVVVVV
     ipcMain.handle('get-renderer-modules', async (event) => {
         console.log('[Main] Renderer is ready and requesting module scripts.');
 
@@ -226,7 +288,6 @@ app.whenReady().then(async () => {
             const mod = moduleManager.loadedModules.get(moduleId);
             if (mod && mod.manifest.entryPoints?.renderer) {
                 const fullScriptPath = path.join(mod.manifest.path, mod.manifest.entryPoints.renderer);
-                // Преобразуем полный путь в относительный URL, который браузер сможет запросить
                 const relativeUrl = path.relative(rootDir, fullScriptPath).replace(/\\/g, '/');
                 console.log(`[Modules] Found renderer script, providing URL: /${relativeUrl}`);
                 rendererScripts.push(relativeUrl);
@@ -234,7 +295,6 @@ app.whenReady().then(async () => {
         });
         return rendererScripts;
     });
-    // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 });
 
 app.on('window-all-closed', () => {
@@ -248,6 +308,7 @@ app.on('activate', async () => {
 });
 
 app.on('will-quit', (event) => {
+    processManager.stopMediaMTX();
     stopHlsServer();
     onAppWillQuit(event);
 });

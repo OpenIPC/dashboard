@@ -26,6 +26,12 @@
   "mac": {
     "icon": "assets/icon.png"
   },
+  "nsis": {
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
+  },
   "extraResources": [
     {
       "from": "extra/analytics/",
@@ -42,5 +48,6 @@
   "asarUnpack": [
     "**/node_modules/@ffmpeg-installer/ffmpeg/**",
     "**/node_modules/keytar/**"
-  ]
+  ],
+  "generateUpdatesFilesForAllChannels": true
 }

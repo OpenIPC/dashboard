@@ -1,4 +1,3 @@
-```html
 <!-- START OF FILE templates.html -->
 
 <!-- Модальное окно добавления/редактирования камеры -->
@@ -45,6 +44,9 @@
             <div class="tabs">
                 <button class="tab-button general-tab" data-tab="tab-general" data-i18n-key="settings_tab_general"></button>
                 <button class="tab-button general-tab" data-tab="tab-streaming" data-i18n-key="settings_tab_streaming"></button>
+                <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
+                <button class="tab-button general-tab intellect-only" data-tab="tab-analytics" data-i18n-key="settings_tab_analytics"></button>
+                <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
                 <button class="tab-button general-tab intellect-only" data-tab="tab-modules" data-i18n-key="modules_tab_title"></button>
                 <button class="tab-button general-tab intellect-only" data-brand-feature="aboutTab" data-tab="tab-about" data-i18n-key="settings_tab_about"></button>
             </div>
@@ -62,13 +64,11 @@
                        <input type="text" id="app-settings-recordings-path" readonly>
                        <button id="select-rec-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
                     </div>
-                    <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
                     <span data-i18n-key="settings_screenshots_folder"></span>
                     <div class="form-input-wrapper">
                        <input type="text" id="app-settings-screenshots-path" readonly>
                        <button id="select-screenshots-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button>
                     </div>
-                    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
                     <span data-i18n-key="settings_hw_accel"></span>
                     <select id="app-settings-hw-accel">
                         <option value="auto" data-i18n-key="settings_hw_accel_auto"></option>
@@ -127,6 +127,22 @@
                     <input type="number" id="app-settings-fps" min="5" max="30" step="1" value="20" style="width: 100px; justify-self: start;">
                 </div>
             </div>
+            <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV -->
+            <div id="tab-analytics" class="tab-content intellect-only">
+                <h3 data-i18n-key="global_analytics_settings_header"></h3>
+                <p style="color: #666; font-size: 13px;" data-i18n-key="global_analytics_settings_desc"></p>
+                <div class="form-grid simple">
+                    <label for="app-settings-analytics-resize-width" data-i18n-key="analytics_resize_width_label"></label>
+                    <input type="number" id="app-settings-analytics-resize-width" min="0" max="1920" step="10" value="640" style="width: 100px; justify-self: start;">
+                    
+                    <label for="app-settings-analytics-frame-skip" data-i18n-key="analytics_frame_skip_label"></label>
+                    <input type="number" id="app-settings-analytics-frame-skip" min="0" max="30" step="1" value="5" style="width: 100px; justify-self: start;">
+
+                    <label for="app-settings-analytics-record-duration" data-i18n-key="analytics_record_duration_label"></label>
+                    <input type="number" id="app-settings-analytics-record-duration" min="5" max="300" step="5" value="30" style="width: 100px; justify-self: start;">
+                </div>
+            </div>
+            <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
             <div id="tab-modules" class="tab-content intellect-only">
                 <h3 data-i18n-key="modules_management_header"></h3>
                 <p style="color: #6c757d; font-size: 13px;" data-i18n-key="modules_description"></p>
@@ -283,20 +299,23 @@
 
 <template id="grid-cell-content-template">
     <div class="video-wrapper">
-        <canvas class="video-canvas video-canvas-hd"></canvas>
-        <canvas class="video-canvas video-canvas-sd hidden"></canvas>
+        <video class="video-player" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: contain;"></video>
         <canvas class="overlay-canvas"></canvas>
     </div>
+    <!-- --- НАЧАЛО ВРЕМЕННО ОТКЛЮЧЕННОГО БЛОКА PTZ ---
     <div class="ptz-overlay">
         <div class="ptz-btn ptz-up" data-command="tilt_up"><i class="material-icons">arrow_upward</i></div>
         <div class="ptz-btn ptz-down" data-command="tilt_down"><i class="material-icons">arrow_downward</i></div>
         <div class="ptz-btn ptz-left" data-command="pan_left"><i class="material-icons">arrow_back</i></div>
         <div class="ptz-btn ptz-right" data-command="pan_right"><i class="material-icons">arrow_forward</i></div>
     </div>
+    --- КОНЕЦ ВРЕМЕННО ОТКЛЮЧЕННОГО БЛОКА PTZ --- -->
+    <!-- --- НАЧАЛО ВРЕМЕННО ОТКЛЮЧЕННОГО БЛОКА PTZ ---
     <div class="ptz-zoom-controls">
         <div class="ptz-btn ptz-zoom-in" data-command="zoom_in"><i class="material-icons">add</i></div>
         <div class="ptz-btn ptz-zoom-out" data-command="zoom_out"><i class="material-icons">remove</i></div>
     </div>
+    --- КОНЕЦ ВРЕМЕННО ОТКЛЮЧЕННОГО БЛОКА PTZ --- -->
     <div class="cell-name"></div>
     <div class="cell-stats"></div>
     <div class="cell-controls">
@@ -324,4 +343,3 @@
 </template>
 
 <!-- END OF FILE templates.html -->
-```

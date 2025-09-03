@@ -73,10 +73,12 @@ module.exports = {
   PREPARE_ARCHIVE_FOR_HLS: 'prepare-archive-for-hls',
 
   // System & Events
+  SAVE_SCREENSHOT: 'save-screenshot',
   GET_SYSTEM_STATS: 'get-system-stats',
   ON_STREAM_INFO_UPDATE: 'stream-info-update',
   ON_STREAM_DIED: 'stream-died',
   ON_STREAM_STATS: 'stream-stats',
+  ON_MEDIAMTX_STATS_UPDATE: 'mediamtx-stats-update',
   ON_MAIN_ERROR: 'on-main-error',
   SHOW_CAMERA_CONTEXT_MENU: 'show-camera-context-menu',
   ON_CONTEXT_MENU_COMMAND: 'context-menu-command',

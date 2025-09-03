@@ -2,7 +2,6 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- ИЗМЕНЕНИЕ ЗДЕСЬ: директива connect-src была обновлена -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: http:; img-src 'self' data:; media-src 'self' blob: video-archive:; frame-src http:;">
     <title data-brand="appName">DASHBOARD for OpenIPC</title>
     
@@ -50,7 +49,9 @@
             </div>
         </div>
 
+        <!-- VVVVVV --- НАЧАЛО ИЗМЕНЕНИЯ СТРУКТУРЫ --- VVVVVV -->
         <div class="main-container">
+            <!-- Основной вид теперь всегда в DOM, но может быть скрыт -->
             <div id="main-view">
                 <div class="view-container">
                     <div id="grid-container"></div>
@@ -72,39 +73,42 @@
                     <div id="camera-list-container"></div>
                 </div>
             </div>
-            
-            <div id="archive-view" class="hidden">
-                <div class="archive-main-content">
-                    <div class="archive-header">
-                        <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
-                        <h2 id="archive-camera-name"></h2>
-                        <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
-                    </div>
-                    <div class="archive-video-container">
-                        <video id="archive-video-player"  class="hidden"></video>
-                        <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
-                    </div>
-                    <div class="archive-controls">
-                        <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
-                        <button id="ac-speed-btn" class="control-button">1.0x</button>
-                        <span id="ac-time-display" class="time-display">00:00:00</span>
-                        <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
-                        <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
-                    </div>
-                    <div class="timeline-container">
-                        <div class="timeline-wrapper" id="timeline-wrapper">
-                            <canvas id="timeline-canvas"></canvas>
-                            <div id="timeline-labels" class="timeline-labels"></div>
-                        </div>
-                    </div>
+            <!-- Архив теперь находится на том же уровне, что и main-view -->
+        </div>
+        
+        <!-- Архив вынесен за пределы .main-container, чтобы не влиять на его компоновку -->
+        <div id="archive-view" class="hidden">
+            <div class="archive-main-content">
+                <div class="archive-header">
+                    <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
+                    <h2 id="archive-camera-name"></h2>
+                    <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
                 </div>
-                <div class="archive-sidebar">
-                    <h3>События</h3>
-                    <div id="archive-filters"></div>
-                    <ul id="event-list"></ul>
+                <div class="archive-video-container">
+                    <video id="archive-video-player"  class="hidden"></video>
+                    <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
+                </div>
+                <div class="archive-controls">
+                    <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
+                    <button id="ac-speed-btn" class="control-button">1.0x</button>
+                    <span id="ac-time-display" class="time-display">00:00:00</span>
+                    <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
+                    <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
+                </div>
+                <div class="timeline-container">
+                    <div class="timeline-wrapper" id="timeline-wrapper">
+                        <canvas id="timeline-canvas"></canvas>
+                        <div id="timeline-labels" class="timeline-labels"></div>
+                    </div>
                 </div>
             </div>
+            <div class="archive-sidebar">
+                <h3>События</h3>
+                <div id="archive-filters"></div>
+                <ul id="event-list"></ul>
+            </div>
         </div>
+        <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ СТРУКТУРЫ --- ^^^^^^ -->
         
         <div class="bottom-toolbar">
             <div class="toolbar-group">
@@ -123,10 +127,6 @@
         </div>
     </div>
     
-    <!-- VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ: ВЕСЬ БЛОК <template> БЫЛ УДАЛЕН --- VVVVVV -->
-    <!-- Старый, захардкоженный шаблон был здесь. Теперь его нет. -->
-    <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ -->
-
     <div id="app-toast" class="toast-notification"></div>
 
     <script src="jsmpeg.min.js"></script>
@@ -146,8 +146,6 @@
     <script src="./js/renderer.js"></script>
 
     <script>
-        // Если window.api не был создан preload-скриптом Electron,
-        // значит, мы в обычном браузере. Подключаем наш веб-адаптер.
         if (typeof window.api === 'undefined') {
             const script = document.createElement('script');
             script.src = './js/web-api.js';

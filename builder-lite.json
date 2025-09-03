@@ -44,5 +44,6 @@
   "asarUnpack": [
     "**/node_modules/@ffmpeg-installer/ffmpeg/**",
     "**/node_modules/keytar/**"
-  ]
+  ],
+  "generateUpdatesFilesForAllChannels": true
 }

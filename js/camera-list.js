@@ -1,4 +1,4 @@
-// js/camera-list.js (Полная версия с разделением на Lite/Intellect)
+// js/camera-list.js (ПОЛНАЯ ВЕРСИЯ)
 
 (function(window) {
     window.AppModules = window.AppModules || {};
@@ -6,7 +6,6 @@
     window.AppModules.createCameraList = function(App) {
         const stateManager = App.stateManager;
         const cameraListContainer = document.getElementById('camera-list-container');
-        const openRecordingsBtn = document.getElementById('open-recordings-btn');
 
         async function pollCameraStatuses() {
             const cameras = stateManager.state.cameras;
@@ -35,7 +34,7 @@
 
             if (confirmation) {
                 if (stateManager.state.recordingStates[cameraId]) {
-                    await window.api.stopRecording(cameraId);
+                    await window.api.toggleRecording({ id: cameraId });
                 }
                 const analyticsBtn = document.getElementById(`analytics-btn-${cameraId}`);
                 if (analyticsBtn && analyticsBtn.classList.contains('active')) {
@@ -87,27 +86,12 @@
             const createGroupHTML = (group, camerasInGroup) => {
                 const groupContainer = document.createElement('div');
                 groupContainer.className = 'group-container';
+                groupContainer.dataset.groupId = group.id;
         
                 const groupHeader = document.createElement('div');
                 groupHeader.className = 'group-header';
                 groupHeader.innerHTML = `<i class="material-icons toggle-icon">arrow_drop_down</i><span class="group-name">${group.name}</span>`;
         
-                if (group.id !== null) {
-                    groupHeader.addEventListener('contextmenu', (e) => {
-                        e.preventDefault();
-                        if (currentUser?.role !== 'admin' && !currentUser?.permissions?.edit_cameras) {
-                            return;
-                        }
-                        window.api.showGroupContextMenu({
-                            groupId: group.id,
-                            labels: {
-                                rename: App.i18n.t('context_rename_group'),
-                                delete: App.i18n.t('context_delete_group')
-                            }
-                        });
-                    });
-                }
-
                 const groupCamerasList = document.createElement('div');
                 groupCamerasList.className = 'group-cameras';
         
@@ -116,10 +100,12 @@
                     cameraItem.className = 'camera-item';
                     cameraItem.dataset.cameraId = camera.id;
                     
-                    cameraItem.draggable = currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout;
+                    if (currentUser?.role === 'admin' || currentUser?.permissions?.manage_layout) {
+                        cameraItem.setAttribute('draggable', 'true');
+                    }
                     
                     const analyticsButtonHTML = App.versionType === 'intellect' 
-                        ? `<button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="Toggle Analytics">
+                        ? `<button class="analytics-btn icon-button" id="analytics-btn-${camera.id}" title="${App.i18n.t('toggle_analytics_tooltip')}">
                                <i class="material-icons" style="font-size: 18px;">insights</i>
                            </button>`
                         : '';
@@ -135,54 +121,15 @@
                         cameraItem.classList.add('recording');
                     }
 
-                    cameraItem.addEventListener('dragstart', (e) => { 
-                        if (cameraItem.draggable) {
-                            e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
-                        } else {
-                            e.preventDefault();
-                        }
+                    cameraItem.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
                     });
 
                     groupCamerasList.appendChild(cameraItem);
-
-                    if (App.versionType === 'intellect') {
-                        const analyticsBtn = cameraItem.querySelector('.analytics-btn');
-                        if (analyticsBtn) {
-                            analyticsBtn.disabled = false;
-                            analyticsBtn.title = App.i18n.t('toggle_analytics_tooltip');
-                            analyticsBtn.addEventListener('click', async (e) => {
-                                e.stopPropagation();
-                                const btnIcon = analyticsBtn.querySelector('i');
-                                btnIcon.style.color = '#ffc107';
-                                await window.api.toggleAnalytics(camera.id);
-                            });
-                        }
-                    }
                 });
         
                 groupContainer.appendChild(groupHeader);
                 groupContainer.appendChild(groupCamerasList);
-        
-                groupHeader.addEventListener('click', () => {
-                    groupHeader.querySelector('.toggle-icon').classList.toggle('collapsed');
-                    groupCamerasList.classList.toggle('collapsed');
-                });
-        
-                if (group.id !== null) {
-                     groupHeader.addEventListener('dragover', (e) => { e.preventDefault(); groupHeader.style.backgroundColor = 'var(--accent-color)'; });
-                     groupHeader.addEventListener('dragleave', (e) => { groupHeader.style.backgroundColor = ''; });
-                     groupHeader.addEventListener('drop', (e) => {
-                        e.preventDefault();
-                        groupHeader.style.backgroundColor = '';
-                        const cameraId = parseInt(e.dataTransfer.getData('application/x-camera-id'), 10);
-                        if (!isNaN(cameraId)) {
-                            const camera = cameras.find(c => c.id === cameraId);
-                            if (camera && camera.groupId !== group.id) {
-                                stateManager.updateCamera({ ...camera, groupId: group.id });
-                            }
-                        }
-                    });
-                }
         
                 return groupContainer;
             };
@@ -206,22 +153,85 @@
         }
 
         function init() {
-            openRecordingsBtn.addEventListener('click', () => window.api.openRecordingsFolder());
+            cameraListContainer.addEventListener('click', async (e) => {
+                const groupHeader = e.target.closest('.group-header');
+                const analyticsBtn = e.target.closest('.analytics-btn');
+
+                if (groupHeader) {
+                    const groupContainer = groupHeader.closest('.group-container');
+                    if (groupContainer) {
+                        groupHeader.querySelector('.toggle-icon').classList.toggle('collapsed');
+                        groupContainer.querySelector('.group-cameras').classList.toggle('collapsed');
+                    }
+                    return;
+                }
+
+                if (analyticsBtn) {
+                    e.stopPropagation();
+                    const cameraItem = analyticsBtn.closest('.camera-item');
+                    if (cameraItem && cameraItem.dataset.cameraId) {
+                        const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
+                        const btnIcon = analyticsBtn.querySelector('i');
+                        if (btnIcon) btnIcon.style.color = '#ffc107';
+                        console.log(`[Analytics] Toggling analytics for camera ID: ${cameraId}`);
+                        
+                        // VVVVVV --- ПРАВИЛЬНЫЙ ВЫЗОВ --- VVVVVV
+                        await window.api.toggleAnalytics(cameraId);
+                        // ^^^^^^ --- КОНЕЦ ПРАВИЛЬНОГО ВЫЗОВА --- ^^^^^^
+                    }
+                    return;
+                }
+            });
+            
+            cameraListContainer.addEventListener('dragover', (e) => {
+                const groupHeader = e.target.closest('.group-header');
+                if (groupHeader) {
+                    e.preventDefault();
+                    groupHeader.style.backgroundColor = 'var(--accent-color)';
+                }
+            });
+
+            cameraListContainer.addEventListener('dragleave', (e) => {
+                const groupHeader = e.target.closest('.group-header');
+                if (groupHeader) {
+                    groupHeader.style.backgroundColor = '';
+                }
+            });
+
+            cameraListContainer.addEventListener('drop', (e) => {
+                const groupHeader = e.target.closest('.group-header');
+                if (groupHeader) {
+                    e.preventDefault();
+                    groupHeader.style.backgroundColor = '';
+                    const groupIdStr = groupHeader.closest('.group-container')?.dataset.groupId;
+                    const groupId = groupIdStr === 'null' ? null : parseInt(groupIdStr, 10);
+
+                    const cameraId = parseInt(e.dataTransfer.getData('application/x-camera-id'), 10);
+                    if (!isNaN(cameraId)) {
+                        const camera = stateManager.state.cameras.find(c => c.id === cameraId);
+                        if (camera && camera.groupId !== groupId) {
+                            stateManager.updateCamera({ ...camera, groupId: groupId });
+                        }
+                    }
+                }
+            });
             
             cameraListContainer.addEventListener('contextmenu', (e) => {
                 const currentUser = stateManager.state.currentUser;
                 if (!currentUser) return;
 
                 const cameraItem = e.target.closest('.camera-item');
+                const groupHeader = e.target.closest('.group-header');
+
                 if (cameraItem) {
                     e.preventDefault();
                     const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
-                    const menuItems = {};
-                    
-                    menuItems.open_in_browser = `🌐  ${App.i18n.t('context_open_in_browser')}`;
-                    menuItems.files = `🗂️  ${App.i18n.t('context_file_manager')}`;
-                    menuItems.ssh = `💻  ${App.i18n.t('context_ssh')}`;
-                    menuItems.archive = `🗄️  ${App.i18n.t('archive_title')}`;
+                    const menuItems = {
+                        open_in_browser: `🌐  ${App.i18n.t('context_open_in_browser')}`,
+                        files: `🗂️  ${App.i18n.t('context_file_manager')}`,
+                        ssh: `💻  ${App.i18n.t('context_ssh')}`,
+                        archive: `🗄️  ${App.i18n.t('archive_title')}`
+                    };
 
                     if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
                         menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
@@ -231,6 +241,21 @@
                     }
 
                     window.api.showCameraContextMenu({ cameraId, labels: menuItems });
+                } else if (groupHeader) {
+                    const groupIdStr = groupHeader.closest('.group-container')?.dataset.groupId;
+                    if (groupIdStr && groupIdStr !== 'null') {
+                        e.preventDefault();
+                        if (currentUser?.role !== 'admin' && !currentUser?.permissions?.edit_cameras) {
+                            return;
+                        }
+                        window.api.showGroupContextMenu({
+                            groupId: parseInt(groupIdStr, 10),
+                            labels: {
+                                rename: App.i18n.t('context_rename_group'),
+                                delete: App.i18n.t('context_delete_group')
+                            }
+                        });
+                    }
                 }
             });
 
@@ -238,26 +263,16 @@
                 const camera = stateManager.state.cameras.find(c => c.id === cameraId);
                 if (!camera) return;
 
-                const cameraDataForIPC = {
-                    id: camera.id,
-                    name: camera.name,
-                    ip: camera.ip,
-                    port: camera.port,
-                    username: camera.username,
-                    streamPath0: camera.streamPath0,
-                    streamPath1: camera.streamPath1,
-                    groupId: camera.groupId
-                };
-
                 switch(command) {
-                    case 'open_in_browser': 
-                        window.api.openInBrowser(cameraDataForIPC.ip); 
+                    case 'archive': 
+                        App.archiveManager.openArchiveForCamera(camera); 
                         break;
-                    case 'files': window.api.openFileManager(cameraDataForIPC); break;
-                    case 'ssh': window.api.openSshTerminal(cameraDataForIPC); break;
-                    case 'archive': App.archiveManager.openArchiveForCamera(camera); break;
-                    case 'edit': App.modalHandler.openAddModal(cameraDataForIPC); break;
-                    case 'delete': deleteCamera(cameraId); break;
+                    case 'edit': 
+                        App.modalHandler.openAddModal(camera); 
+                        break;
+                    case 'delete': 
+                        deleteCamera(cameraId); 
+                        break;
                 }
             });
 

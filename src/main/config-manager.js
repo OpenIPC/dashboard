@@ -1,3 +1,4 @@
+// --- START OF FILE src/main/config-manager.js ---
 const { app, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -12,19 +13,22 @@ const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked'));
 ffmpeg.setFfprobePath(ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked'));
 
-// Зависимости от других наших модулей
 const authManager = require('./auth-manager');
 
 const eventsMutex = new Mutex();
 let appSettingsCache = null;
 
-// --- Управление путями ---
-
 function getDataPath() {
     if (process.env.PORTABLE_EXECUTABLE_DIR) {
         return process.env.PORTABLE_EXECUTABLE_DIR;
     }
-    return app.getPath('userData');
+    // Если Electron app недоступен, используем текущую рабочую директорию
+    try {
+        if (app && typeof app.getPath === 'function') {
+            return app.getPath('userData');
+        }
+    } catch {}
+    return process.cwd();
 }
 
 const dataPathRoot = getDataPath();
@@ -34,8 +38,6 @@ const appSettingsPath = path.join(dataPathRoot, 'app-settings.json');
 const usersPath = path.join(dataPathRoot, 'users.json');
 const eventsPath = path.join(dataPathRoot, 'events.json');
 const oldCamerasPath = path.join(dataPathRoot, 'cameras.json');
-
-// --- Настройки приложения ---
 
 async function getAppSettings() {
     if (appSettingsCache) {
@@ -56,9 +58,7 @@ async function getAppSettings() {
     const recordingsDefaultPath = path.join(app.getPath('videos'), 'OpenIPC-VMS');
     const defaults = { 
         recordingsPath: recordingsDefaultPath,
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
         screenshotsPath: path.join(recordingsDefaultPath, 'Screenshots'),
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         hwAccel: 'auto',
         language: 'en',
         qscale: 8,
@@ -82,8 +82,6 @@ async function saveAppSettings(settings) {
         return { success: false, error: e.message };
     }
 }
-
-// --- Основная конфигурация (камеры, группы, раскладки) ---
 
 async function loadConfiguration() {
     const defaultConfig = { cameras: [], groups: [], layouts: [], gridState: Array(64).fill(null) };
@@ -149,8 +147,6 @@ async function getCameraConfig(cameraId) {
     return config.cameras.find(c => c.id === cameraId);
 }
 
-// --- Пользователи ---
-
 async function initializeUsers() {
     try {
         await fsPromises.access(usersPath);
@@ -166,8 +162,6 @@ async function initializeUsers() {
         await fsPromises.writeFile(usersPath, JSON.stringify(defaultUser, null, 2));
     }
 }
-
-// --- События аналитики и записи ---
 
 async function saveAnalyticsEvent(eventData) {
     const release = await eventsMutex.acquire();
@@ -220,28 +214,44 @@ async function getRecordingsForDate({ cameraName, date }) {
     try {
         const settings = await getAppSettings();
         const recordingsPath = settings.recordingsPath;
-        await fsPromises.mkdir(recordingsPath, { recursive: true });
+        
+        const { cameras } = await loadConfiguration();
+        const camera = cameras.find(c => c.name === cameraName);
+        if (!camera) {
+            console.warn(`[Archive] Camera with name "${cameraName}" not found.`);
+            return [];
+        }
 
-        const dirents = await fsPromises.readdir(recordingsPath, { withFileTypes: true });
-        const saneCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
-        const datePrefix = `${saneCameraName}-${date}`;
+        const streamName = `cam${camera.id}_0`;
+        const cameraRecordingsPath = path.join(recordingsPath, streamName);
+        
+        if (!fs.existsSync(cameraRecordingsPath)) {
+            return [];
+        }
+
+        const dirents = await fsPromises.readdir(cameraRecordingsPath, { withFileTypes: true });
+        
+        const datePrefix = `${date}`;
 
         const filePromises = dirents
             .filter(d => d.isFile() && d.name.startsWith(datePrefix) && d.name.endsWith('.mp4'))
-            .map(d => new Promise((resolve, reject) => {
-                const filePath = path.join(recordingsPath, d.name);
+            .map(d => new Promise((resolve) => {
+                const filePath = path.join(cameraRecordingsPath, d.name);
                 ffmpeg.ffprobe(filePath, (err, metadata) => {
                     if (err) {
                         console.error(`ffprobe error for ${d.name}:`, err.message);
                         return resolve(null);
                     }
-                    const match = d.name.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+                    
+                    const match = d.name.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
                     if (!match) return resolve(null);
+                    
+                    const startTimeString = match[1].replace('_', 'T');
 
                     resolve({
-                        name: d.name,
-                        startTimeString: match[1],
-                        duration: metadata.format.duration || 30
+                        name: path.join(streamName, d.name),
+                        startTimeString: startTimeString,
+                        duration: metadata.format.duration || 0
                     });
                 });
             }));
@@ -262,20 +272,27 @@ async function getRecordingsForDate({ cameraName, date }) {
 async function getDatesWithActivity(cameraName) {
     const activeDates = new Set();
     const settings = await getAppSettings();
-    const saneCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
     const { cameras } = await loadConfiguration();
     const currentCamera = cameras.find(c => c.name === cameraName);
 
+    if (currentCamera) {
+        const streamName = `cam${currentCamera.id}_0`;
+        const cameraRecordingsPath = path.join(settings.recordingsPath, streamName);
 
-    try {
-        const files = await fsPromises.readdir(settings.recordingsPath);
-        files.forEach(file => {
-            if (file.startsWith(saneCameraName) && file.endsWith('.mp4')) {
-                const match = file.match(/\d{4}-\d{2}-\d{2}/);
-                if (match) activeDates.add(match[0]);
+        try {
+            if (fs.existsSync(cameraRecordingsPath)) {
+                const files = await fsPromises.readdir(cameraRecordingsPath);
+                files.forEach(file => {
+                    if (file.endsWith('.mp4')) {
+                        const match = file.match(/^\d{4}-\d{2}-\d{2}/);
+                        if (match) activeDates.add(match[0]);
+                    }
+                });
             }
-        });
-    } catch (e) { /* Игнорируем, если папки нет */ }
+        } catch (e) {
+            console.error(`[Archive] Error reading activity for ${cameraName}:`, e.message);
+        }
+    }
 
     try {
         const eventsData = await fsPromises.readFile(eventsPath, 'utf-8');
@@ -291,8 +308,6 @@ async function getDatesWithActivity(cameraName) {
     
     return Array.from(activeDates);
 }
-
-// --- Экспорт/Импорт ---
 
 async function exportConfig(mainWindow) {
     try {
@@ -350,8 +365,6 @@ async function importConfig(mainWindow) {
     }
 }
 
-// --- Локальная файловая система ---
-
 async function getLocalDiskList() {
     if (process.platform === 'win32') {
         return new Promise(resolve => {
@@ -383,8 +396,6 @@ async function listLocalFiles(dirPath) {
     }
 }
 
-// --- Интернационализация ---
-
 async function getTranslationFile(lang) {
     try {
         const filePath = path.join(app.getAppPath(), 'locales', `${lang}.json`);
@@ -395,12 +406,6 @@ async function getTranslationFile(lang) {
     }
 }
 
-// VVVVVV --- НОВАЯ ФУНКЦИЯ ДЛЯ ОПРЕДЕЛЕНИЯ КОДЕКА --- VVVVVV
-/**
- * Получает информацию о видеопотоке из файла с помощью ffprobe.
- * @param {string} filename Имя файла в папке записей.
- * @returns {Promise<object|null>} Объект с информацией о потоке или null в случае ошибки.
- */
 async function getArchiveVideoInfo(filename) {
     const settings = await getAppSettings();
     const filePath = path.join(settings.recordingsPath, filename);
@@ -416,7 +421,6 @@ async function getArchiveVideoInfo(filename) {
         });
     });
 }
-// ^^^^^^ --- КОНЕЦ НОВОЙ ФУНКЦИИ --- ^^^^^^
 
 
 module.exports = {
@@ -436,5 +440,5 @@ module.exports = {
     getLocalDiskList,
     listLocalFiles,
     getTranslationFile,
-    getArchiveVideoInfo // <-- Добавляем новую функцию в экспорт
+    getArchiveVideoInfo
 };

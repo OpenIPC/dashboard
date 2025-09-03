@@ -33,7 +33,11 @@ async function createWindow() {
         frame: false,
         titleBarStyle: 'hidden',
         // START: ИСПРАВЛЕНИЕ - Обновляем путь к иконке
-        icon: path.join(__dirname, '../../assets/icon.png'),
+        icon: brandingConfig.iconPath
+            ? path.isAbsolute(brandingConfig.iconPath)
+                ? brandingConfig.iconPath
+                : path.join(__dirname, '../../', brandingConfig.iconPath)
+            : path.join(__dirname, '../../assets/icon.ico'),
         // END: ИСПРАВЛЕНИЕ
         webPreferences: {
             // Подключаем основной preload-скрипт

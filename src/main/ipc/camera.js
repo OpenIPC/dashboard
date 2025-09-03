@@ -1,5 +1,8 @@
 // --- START OF FILE src/main/ipc/camera.js ---
-const { ipcMain, Menu, BrowserWindow, shell } = require('electron'); // Добавляем shell
+const { ipcMain, Menu, BrowserWindow, shell, app, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
 const cameraAPI = require('../camera-api');
 const processManager = require('../process-manager');
 const configManager = require('../config-manager');
@@ -44,12 +47,63 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   
   ipcMain.handle(CHANNELS.PAUSE_VIDEO_STREAM, withErrorHandling((event, streamId) => processManager.pauseVideoStream(streamId), 'pauseVideoStream'));
   ipcMain.handle(CHANNELS.RESUME_VIDEO_STREAM, withErrorHandling((event, streamId) => processManager.resumeVideoStream(streamId), 'resumeVideoStream'));
-  ipcMain.handle('save-screenshot', withErrorHandling((event, streamId) => processManager.saveScreenshot(streamId), 'saveScreenshot'));
   
-  ipcMain.handle(CHANNELS.TOGGLE_ANALYTICS, APP_VERSION === 'intellect' ? withErrorHandling((event, cameraId) => processManager.toggleAnalytics(cameraId, getMainWindow(), moduleManager), 'toggleAnalytics') : featureNotAvailableHandler);
+  ipcMain.handle('save-screenshot', withErrorHandling(async (event, { dataUrl, cameraName }) => {
+    const settings = await configManager.getAppSettings();
+    const screenshotsPath = settings.screenshotsPath;
+    await fs.promises.mkdir(screenshotsPath, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeCameraName = cameraName.replace(/[<>:"/\\|?*]/g, '_');
+    const filename = `${safeCameraName}_${timestamp}.jpg`;
+    const filePath = path.join(screenshotsPath, filename);
+    const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+    const buffer = Buffer.from(base64Data, 'base64');
+    await fs.promises.writeFile(filePath, buffer);
+    return { success: true, path: filePath };
+  }, 'saveScreenshot'));
+  
+  // VVVVVV --- НАЧАЛО ИСПРАВЛЕННОГО БЛОКА --- VVVVVV
+  ipcMain.handle(CHANNELS.TOGGLE_ANALYTICS, async (event, cameraId) => {
+      console.log(`[IPC Handler] Received '${CHANNELS.TOGGLE_ANALYTICS}' with cameraId: ${cameraId}`);
+
+      if (APP_VERSION !== 'intellect') {
+          return featureNotAvailableHandler();
+      }
+      
+      try {
+          const result = await processManager.toggleAnalytics(cameraId, getMainWindow(), moduleManager);
+          return result === undefined ? { success: true } : result;
+      } catch (error) {
+          require('../services').handleError(error, 'toggleAnalytics');
+          return { success: false, error: error.message };
+      }
+  });
+  // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕННОГО БЛОКА --- ^^^^^^
   
   ipcMain.handle(CHANNELS.TOGGLE_RECORDING, withErrorHandling((event, camera) => processManager.toggleRecording(camera), 'toggleRecording'));
-  ipcMain.handle(CHANNELS.OPEN_RECORDINGS_FOLDER, withErrorHandling(async () => { const s = await configManager.getAppSettings(); require('electron').shell.openPath(s.recordingsPath); }, 'openRecordingsFolder'));
+  
+  ipcMain.on(CHANNELS.OPEN_RECORDINGS_FOLDER, async () => {
+      try {
+        const settings = await configManager.getAppSettings();
+        const recordingsPath = settings.recordingsPath;
+        
+        console.log(`[IPC ON] Attempting to open recordings folder at: ${recordingsPath}`);
+
+        await fs.promises.mkdir(recordingsPath, { recursive: true });
+        
+        const errorMessage = await shell.openPath(recordingsPath);
+        
+        if (errorMessage) {
+            console.error(`[IPC ON] shell.openPath failed: ${errorMessage}`);
+        } else {
+            console.log(`[IPC ON] shell.openPath command issued successfully.`);
+        }
+      } catch (error) {
+          console.error(`[IPC ON] Error in openRecordingsFolder:`, error);
+          dialog.showErrorBox('Ошибка', `Не удалось открыть папку с записями: ${error.message}`);
+      }
+  });
+
   ipcMain.handle(CHANNELS.GET_RECORDINGS_FOR_DATE, withErrorHandling((event, data) => configManager.getRecordingsForDate(data), 'getRecordingsForDate'));
   ipcMain.handle(CHANNELS.EXPORT_ARCHIVE_CLIP, withErrorHandling((event, data) => processManager.exportArchiveClip(data, getMainWindow()), 'exportArchiveClip'));
   ipcMain.handle(CHANNELS.GET_EVENTS_FOR_DATE, withErrorHandling((event, data) => configManager.getEventsForDate(data), 'getEventsForDate'));
@@ -62,18 +116,51 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.SET_NETIP_SETTINGS, withErrorHandling((event, data) => cameraAPI.setNetipSettings(data), 'setNetipSettings'));
 
   ipcMain.on(CHANNELS.SHOW_CAMERA_CONTEXT_MENU, (event, { cameraId, labels }) => {
+      const mainWindow = getMainWindow();
+      if (!mainWindow) return;
+
       const template = [];
       const commands = ['open_in_browser', 'files', 'ssh', 'archive', 'edit', 'delete'];
+      
+      const clickHandler = async (command) => {
+          try {
+              const camera = await configManager.getCameraConfig(cameraId);
+              if (!camera) throw new Error(`Camera with ID ${cameraId} not found.`);
+
+              switch(command) {
+                  case 'open_in_browser':
+                      const url = camera.ip.startsWith('http') ? camera.ip : `http://${camera.ip}`;
+                      shell.openExternal(url);
+                      break;
+                  case 'files':
+                      createFileManagerWindow(camera, fileManagerConnections);
+                      break;
+                  case 'ssh':
+                      const win = createSshTerminalWindow(camera, sshConnections);
+                      if(win) cameraAPI.setupSshConnection(win, camera, sshConnections);
+                      break;
+                  case 'archive':
+                  case 'edit':
+                  case 'delete':
+                      mainWindow.webContents.send(CHANNELS.ON_CONTEXT_MENU_COMMAND, { command, cameraId });
+                      break;
+              }
+          } catch (error) {
+              require('../services').handleError(error, `contextMenu:${command}`);
+          }
+      };
+
       commands.forEach(command => {
           if ((command === 'files' || command === 'delete') && template.length > 0 && template[template.length - 1].type !== 'separator') {
               template.push({ type: 'separator' });
           }
           if (labels[command]) {
-              template.push({ label: labels[command], click: () => getMainWindow()?.webContents.send(CHANNELS.ON_CONTEXT_MENU_COMMAND, { command, cameraId }) });
+              template.push({ label: labels[command], click: () => clickHandler(command) });
           }
       });
+
       if (template.length > 0) {
-          Menu.buildFromTemplate(template).popup({ window: getMainWindow() });
+          Menu.buildFromTemplate(template).popup({ window: mainWindow });
       }
   });
 
@@ -94,12 +181,9 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.SCP_DELETE_FILE, withErrorHandling((e, data) => cameraAPI.scp.deleteFile(data, fileManagerConnections), 'scpDeleteFile'));
   ipcMain.handle(CHANNELS.SCP_DELETE_DIR, withErrorHandling((e, data) => cameraAPI.scp.deleteDir(data, fileManagerConnections), 'scpDeleteDir'));
 
-  // VVVVVV --- ДОБАВЬТЕ ЭТОТ БЛОК В КОНЕЦ ФУНКЦИИ --- VVVVVV
   ipcMain.handle('get-analytics-states', withErrorHandling(() => processManager.getAnalyticsStates(), 'getAnalyticsStates'));
-  // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 }
 
 module.exports = {
   registerCameraHandlers
 };
-// --- END OF FILE src/main/ipc/camera.js ---

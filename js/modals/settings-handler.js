@@ -9,9 +9,7 @@
             languageSelect, selectRecPathBtn, checkForUpdatesBtn,
             settingsModalTitle, settingsIframe, reportIssueBtn;
 
-        // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
         let selectScreenshotsPathBtn;
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
         let updateStatusText, updateInfoContainer, updateVersionTitle, 
             updateChangelog, downloadUpdateBtn, quitAndInstallBtn;
@@ -38,10 +36,8 @@
                 const recordingsPathInput = document.getElementById('app-settings-recordings-path');
                 if(recordingsPathInput) recordingsPathInput.value = appSettings.recordingsPath || '';
                 
-                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
                 const screenshotsPathInput = document.getElementById('app-settings-screenshots-path');
                 if(screenshotsPathInput) screenshotsPathInput.value = appSettings.screenshotsPath || '';
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
                 const hwAccelSelect = document.getElementById('app-settings-hw-accel');
                 if(hwAccelSelect) hwAccelSelect.value = appSettings.hwAccel || 'auto';
@@ -53,6 +49,17 @@
                 if(qscaleValue) qscaleValue.textContent = appSettings.qscale || 8;
                 const fpsInput = document.getElementById('app-settings-fps');
                 if(fpsInput) fpsInput.value = appSettings.fps || 20;
+
+                // VVVVVV --- НАЧАЛО НОВОГО БЛОКА --- VVVVVV
+                const resizeWidthInput = document.getElementById('app-settings-analytics-resize-width');
+                if(resizeWidthInput) resizeWidthInput.value = appSettings.analytics_resize_width || 640;
+
+                const frameSkipInput = document.getElementById('app-settings-analytics-frame-skip');
+                if(frameSkipInput) frameSkipInput.value = appSettings.analytics_frame_skip || 5;
+
+                const recordDurationInput = document.getElementById('app-settings-analytics-record-duration');
+                if(recordDurationInput) recordDurationInput.value = appSettings.analytics_record_duration || 30;
+                // ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА --- ^^^^^^
 
                 try {
                     const appVersionSpan = document.getElementById('app-version');
@@ -85,13 +92,16 @@
             const newSettings = {
                 language: document.getElementById('app-settings-language').value,
                 recordingsPath: document.getElementById('app-settings-recordings-path').value,
-                // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
                 screenshotsPath: document.getElementById('app-settings-screenshots-path').value,
-                // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
                 hwAccel: document.getElementById('app-settings-hw-accel').value,
                 notifications_enabled: document.getElementById('app-settings-notifications-enabled').checked,
                 qscale: document.getElementById('app-settings-qscale').value,
                 fps: document.getElementById('app-settings-fps').value,
+                // VVVVVV --- НАЧАЛО НОВОГО БЛОКА --- VVVVVV
+                analytics_resize_width: document.getElementById('app-settings-analytics-resize-width').value,
+                analytics_frame_skip: document.getElementById('app-settings-analytics-frame-skip').value,
+                analytics_record_duration: document.getElementById('app-settings-analytics-record-duration').value,
+                // ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА --- ^^^^^^
             };
 
             // Определяем, изменились ли "критичные" для стриминга настройки
@@ -262,9 +272,7 @@
             saveSettingsBtn = document.getElementById('save-settings-btn');
             languageSelect = document.getElementById('app-settings-language');
             selectRecPathBtn = document.getElementById('select-rec-path-btn');
-            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
             selectScreenshotsPathBtn = document.getElementById('select-screenshots-path-btn');
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
             checkForUpdatesBtn = document.getElementById('check-for-updates-btn');
             reportIssueBtn = document.getElementById('report-issue-btn');
 
@@ -340,7 +348,6 @@
                 });
             }
 
-            // VVVVVV --- ИЗМЕНЕНИЕ ЗДЕСЬ --- VVVVVV
             if (selectScreenshotsPathBtn) {
                 selectScreenshotsPathBtn.addEventListener('click', async () => {
                     const result = await window.api.selectDirectory();
@@ -349,7 +356,6 @@
                     }
                 });
             }
-            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
 
             if (checkForUpdatesBtn) {
                 checkForUpdatesBtn.addEventListener('click', () => {
@@ -365,8 +371,15 @@
                 });
             }
             
+            // Улучшенная обработка обновлений с загрузкой changelog из GitHub Releases
             window.api.onUpdateStatus((data) => {
                 if (settingsModal && !settingsModal.classList.contains('hidden')) {
+                    // Если есть releaseNotes, показываем их в updateChangelog
+                    if (data.info && data.info.releaseNotes) {
+                        updateChangelog.textContent = data.info.releaseNotes;
+                    } else {
+                        updateChangelog.textContent = App.t('update_no_changelog');
+                    }
                     handleUpdateStatus(data.status, data.info || data);
                 }
             });

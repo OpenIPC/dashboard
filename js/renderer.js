@@ -134,7 +134,11 @@
         let loginView, mainAppContainer, loginBtn, loginUsername, loginPassword, loginRememberMe, loginError, logoutBtn, statusInfo, loginCloseBtn;
         
         async function loadConfiguration() { const config = await window.api.loadConfiguration(); App.stateManager.setInitialConfig(config); }
-        App.saveAppSettings = async () => { await window.api.saveAppSettings(App.stateManager.state.appSettings); };
+        
+        App.saveAppSettings = async () => { 
+            await window.api.saveAppSettings(App.stateManager.state.appSettings); 
+        };
+        
         let saveTimeout;
         App.saveConfiguration = function() {
             const state = App.stateManager.state;
@@ -152,7 +156,7 @@
                 try { 
                     await window.api.saveConfiguration(config); 
                 } finally { 
-                    setTimeout(() => { state.isSaving = false; }, 100); 
+                    state.isSaving = false; 
                 }
             }, 500);
         };
@@ -214,31 +218,25 @@
         logoutBtn.addEventListener('click', handleLogout);
         loginCloseBtn.addEventListener('click', () => window.api.closeWindow());
         
-        window.api.onMainError(({ context, message }) => {
-            console.error(`[Main Process Error in ${context}]`, message);
-            App.modalHandler.showToast(`${App.t('error')}: ${message}`, true, 5000);
-        });
-        window.api.onRecordingStateChange(({ cameraId, recording }) => App.stateManager.setRecordingState({ cameraId, recording }));
-        window.api.onStreamDied(data => App.gridManager.handleStreamDeath(data));
-        
-        // VVVVVV --- ИЗМЕНЕНИЕ: ЭТОТ ОБРАБОТЧИК УДАЛЁН/ЗАКОММЕНТИРОВАН --- VVVVVV
-        // window.api.onStreamReconnected(data => App.gridManager.handleStreamReconnect(data));
-        // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
-
-        window.api.onForceRender(() => App.gridManager.render());
-        window.api.onStreamInfoUpdate(data => App.gridManager.updateStreamInfo(data));
-        window.api.onStreamStats((data) => {
-            if (App.gridManager) {
-                App.gridManager.updateStreamStats(data);
-            }
-        });
-        window.api.onAutoLoginSuccess((user) => {
-            console.log('[AutoLogin] Received user data. Logging in...');
-            App.stateManager.setCurrentUser(user);
-            loginView.classList.add('hidden');
-            mainAppContainer.classList.remove('hidden');
-            loginPassword.value = '';
-        });
+        // Only register Electron API events if available
+        if (window.api && typeof window.api.onOnMainError === 'function') {
+            window.api.onOnMainError(({ context, message }) => {
+                console.error(`[Main Process Error in ${context}]`, message);
+                App.modalHandler.showToast(`${App.t('error')}: ${message}`, true, 5000);
+            });
+        }
+        if (window.api && typeof window.api.onRecordingStateChange === 'function') {
+            window.api.onRecordingStateChange(({ cameraId, recording }) => App.stateManager.setRecordingState({ cameraId, recording }));
+        }
+        if (window.api && typeof window.api.onAutoLoginSuccess === 'function') {
+            window.api.onAutoLoginSuccess((user) => {
+                console.log('[AutoLogin] Received user data. Logging in...');
+                App.stateManager.setCurrentUser(user);
+                loginView.classList.add('hidden');
+                mainAppContainer.classList.remove('hidden');
+                loginPassword.value = '';
+            });
+        }
         window.api.onAnalyticsUpdate((data) => {
             if (App.gridManager) {
                 App.gridManager.handleAnalyticsUpdate(data);
@@ -285,12 +283,94 @@
             }
         });
         
+        function initializeGlobalClickHandlers() {
+            const mainAppContainer = document.getElementById('main-app-container');
+            if (!mainAppContainer) {
+                console.error('CRITICAL: main-app-container not found!');
+                return;
+            }
+
+            console.log('Attaching global click listener to main-app-container...');
+
+            mainAppContainer.addEventListener('click', async (e) => {
+                const button = e.target.closest('button');
+                if (!button) return;
+
+                console.log(`[Global Click] Button with ID: #${button.id} was clicked.`);
+
+                switch (button.id) {
+                    case 'open-recordings-btn':
+                        window.api.openRecordingsFolder();
+                        break;
+                    
+                    case 'save-layout-btn':
+                        const layoutName = await App.modalHandler.showPrompt({
+                            title: App.t('enter_layout_name_prompt'),
+                            label: App.t('enter_layout_name'),
+                            defaultValue: `${App.t('new_layout_default_name').replace('{{count}}', App.stateManager.state.layouts.length + 1)}`
+                        });
+                        if (layoutName && layoutName.trim()) {
+                            App.stateManager.addLayout({ name: layoutName.trim() });
+                        }
+                        break;
+
+                    case 'rename-layout-btn':
+                        const activeLayoutRename = App.stateManager.state.layouts.find(l => l.id === App.stateManager.state.activeLayoutId);
+                        if (!activeLayoutRename) return;
+                        const newName = await App.modalHandler.showPrompt({
+                            title: App.t('rename_layout_tooltip'),
+                            label: App.t('enter_new_layout_name'),
+                            defaultValue: activeLayoutRename.name
+                        });
+                        if (newName && newName.trim()) {
+                            App.stateManager.renameLayout({ id: activeLayoutRename.id, newName: newName.trim() });
+                        }
+                        break;
+
+                    case 'delete-layout-btn':
+                        const activeLayoutDelete = App.stateManager.state.layouts.find(l => l.id === App.stateManager.state.activeLayoutId);
+                        if (!activeLayoutDelete) return;
+                        const confirmation = await App.modalHandler.showPrompt({
+                            title: App.t('delete_layout_tooltip'),
+                            label: App.t('confirm_delete_layout'),
+                            inputType: 'none',
+                            okText: App.t('context_delete')
+                        });
+                        if (confirmation) {
+                            App.stateManager.deleteLayout(activeLayoutDelete.id);
+                        }
+                        break;
+                    
+                    case 'presentation-mode-btn':
+                        document.body.classList.toggle('presentation-mode');
+                        setTimeout(() => {
+                            window.dispatchEvent(new Event('resize'));
+                        }, 50);
+                        break;
+                }
+            });
+        }
+
+        initializeGlobalClickHandlers();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.body.classList.contains('presentation-mode')) {
+                document.body.classList.remove('presentation-mode');
+                setTimeout(() => {
+                    window.dispatchEvent(new Event('resize'));
+                }, 50);
+            }
+        });
+        
         setInterval(updateSystemStats, 3000);
         setInterval(() => App.cameraList.pollCameraStatuses(), 10000);
         updateSystemStats();
 
         console.log('[DEBUG] Renderer: Sending rendererReady signal...');
-        window.api.rendererReady();
+        // Only call Electron API if available
+        if (window.api && typeof window.api.rendererReadyForAutologin === 'function') {
+            window.api.rendererReadyForAutologin();
+        }
         console.log('[DEBUG] Renderer: init() finished.');
     }
 
@@ -307,7 +387,12 @@
             tab.dataset.layoutId = l.id;
             tab.draggable = true;
             tab.innerHTML = `<span>${l.name}</span><span class="close-tab-btn">×</span>`;
-            tab.querySelector('.close-tab-btn').addEventListener('click', e => { e.stopPropagation(); if (confirm(App.t('confirm_delete_layout'))) App.stateManager.deleteLayout(l.id); });
+            tab.querySelector('.close-tab-btn').addEventListener('click', e => { 
+                e.stopPropagation(); 
+                // VVVVVV --- ИСПРАВЛЕНИЕ ЗДЕСЬ --- VVVVVV
+                if (confirm(App.t('confirm_delete_layout'))) App.stateManager.deleteLayout(l.id); 
+                // ^^^^^^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^^^^^^
+            });
             tab.addEventListener('click', () => App.stateManager.setActiveLayout(l.id));
             tab.addEventListener('dragstart', e => { e.dataTransfer.setData('application/x-layout-id', String(l.id)); tab.classList.add('dragging'); });
             tab.addEventListener('dragend', () => tab.classList.remove('dragging'));

@@ -93,3 +93,21 @@ body.version-intellect .tab-content.intellect-only.active {
     display: block !important;
 }
 /* ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^ */
+
+
+/* VVVVVV --- НАЧАЛО НОВОГО БЛОКА ИСПРАВЛЕНИЙ --- VVVVVV */
+
+/* --- Стили для полноэкранного режима просмотра --- */
+/* Когда на #grid-container есть класс .fullscreen-mode, скрываем все лишнее */
+#grid-container.fullscreen-mode ~ .sidebar,
+#grid-container.fullscreen-mode ~ .bottom-toolbar,
+body:has(#grid-container.fullscreen-mode) .header {
+    display: none !important;
+}
+
+/* Убираем отступы у контейнера, чтобы видео занимало 100% экрана */
+body:has(#grid-container.fullscreen-mode) .view-container {
+    padding: 0 !important;
+}
+
+/* ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА ИСПРАВЛЕНИЙ --- ^^^^^^ */

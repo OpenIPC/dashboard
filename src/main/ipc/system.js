@@ -1,3 +1,4 @@
+// --- START OF FILE src/main/ipc/system.js ---
 const { ipcMain, shell, clipboard, BrowserWindow, dialog, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -107,7 +108,10 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
   ipcMain.on(CHANNELS.LOG_FROM_RENDERER, (event, { level, text }) => { if (log[level]) { log[level](`[Renderer] ${text}`); } });
 
   // Updates
-  ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, withErrorHandling(services.checkForUpdates, 'checkForUpdates'));
+  // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЙ --- VVVVVV
+  // Передаем APP_VERSION в обработчик
+  ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, withErrorHandling(() => services.checkForUpdates(APP_VERSION), 'checkForUpdates'));
+  // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^^^^
   ipcMain.handle(CHANNELS.DOWNLOAD_UPDATE, withErrorHandling(() => autoUpdater.downloadUpdate(), 'downloadUpdate'));
   ipcMain.on(CHANNELS.QUIT_AND_INSTALL_UPDATE, () => autoUpdater.quitAndInstall());
   

@@ -10,9 +10,9 @@
             clipStartBtn, clipExportBtn;
 
         const DAY_IN_SECONDS = 86400;
-        // START: ИСПРАВЛЕНИЕ - Убираем скорости 8x и 16x для стабильности
+        // Убираем нестабильные скорости 8x и 16x для HLS-воспроизведения,
+        // чтобы повысить надежность работы архива.
         const PLAYBACK_SPEEDS = [1, 2, 4];
-        // END: ИСПРАВЛЕНИЕ
         const MIN_ZOOM = 1;
         const MAX_ZOOM = 24 * 12;
         const COLORS = {
@@ -384,10 +384,6 @@
 
         async function openArchiveForCamera(camera) {
             currentCamera = camera;
-            const mainContainer = document.querySelector('.main-container');
-            if (archiveView.parentElement !== mainContainer) {
-                mainContainer.appendChild(archiveView);
-            }
             mainView.classList.add('hidden');
             archiveView.classList.remove('hidden');
             cameraNameEl.textContent = `${App.t('archive_title')}: ${camera.name}`;
@@ -590,9 +586,27 @@
             drawTimeline();
         }
         
+        // VVVVVV --- НАЧАЛО НОВОГО БЛОКА --- VVVVVV
+        /**
+         * Вызывается из renderer.js при получении события о новой записи от MediaMTX.
+         * Проверяет, открыт ли архив для нужной камеры, и если да - обновляет данные.
+         * @param {string} cameraName - Имя камеры, для которой создана новая запись.
+         */
+        function refreshDataIfVisible(cameraName) {
+            if (!archiveView.classList.contains('hidden') && currentCamera && currentCamera.name === cameraName) {
+                console.log(`[Archive] Refreshing data for visible camera: ${cameraName} due to webhook event.`);
+                // Эта функция уже умеет перезагружать все данные для текущей даты и камеры
+                loadDataForSelectedDate();
+            }
+        }
+        // ^^^^^^ --- КОНЕЦ НОВОГО БЛОКА --- ^^^^^^
+
         return { 
             init,
-            openArchiveForCamera
+            openArchiveForCamera,
+            // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЯ --- VVVVVV
+            refreshDataIfVisible // "Экспортируем" новую функцию, чтобы renderer.js мог ее вызвать
+            // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
         };
    };
 })(window);

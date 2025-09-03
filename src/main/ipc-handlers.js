@@ -31,7 +31,10 @@ const { registerSystemHandlers } = require('./ipc/system');
 function registerIpcHandlers(moduleManager, APP_VERSION) {
   registerAuthHandlers();
   registerConfigHandlers();
+  // VVVVVV --- НАЧАЛО ИЗМЕНЕНИЙ --- VVVVVV
+  // Передаем зависимости в registerCameraHandlers
   registerCameraHandlers(moduleManager, APP_VERSION);
+  // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЙ --- ^^^^^^
   registerSystemHandlers(APP_VERSION, moduleManager);
   
   console.log(`[IPC] All handlers registered. Bridge has ${handlerMap.size} handlers ready for WebSocket.`);
