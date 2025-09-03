@@ -36,6 +36,10 @@
     {
       "from": "extra/analytics/",
       "to": "analytics"
+    },
+    {
+      "from": "mediamtx/",
+      "to": "mediamtx"
     }
   ],
   "files": [

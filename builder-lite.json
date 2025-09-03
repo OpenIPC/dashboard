@@ -37,9 +37,13 @@
     "!modules/",
     "!extra/",
     "!python_src/",
-    "!*.spec",
-    "!builder-*.json",
-    "!scripts/"
+    "!*.spec"
+  ],
+  "extraResources": [
+    {
+      "from": "mediamtx/",
+      "to": "mediamtx"
+    }
   ],
   "asarUnpack": [
     "**/node_modules/@ffmpeg-installer/ffmpeg/**",
