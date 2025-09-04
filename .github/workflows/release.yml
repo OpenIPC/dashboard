@@ -84,7 +84,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release_assets
-          find artifacts \( -name '*Setup*.exe' -o -name '*Portable*.exe' -o -name '*.AppImage' -o -name 'latest*.yml' \) -exec cp {} release_assets/ \;
+          find artifacts \( -name '*Setup*.exe' -o -name '*Portable*.exe' -o -name '*.AppImage' -o -name 'latest*.yml' -o -name 'mediamtx*' \) -exec cp {} release_assets/ \;
+          find artifacts \( -name 'mediamtx' \) -exec cp {} release_assets/ \;
       
       - name: List final release assets (after cleanup)
         run: ls -R release_assets/
