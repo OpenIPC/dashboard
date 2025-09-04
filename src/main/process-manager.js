@@ -375,13 +375,20 @@ async function toggleAnalytics(cameraId, mainWindow, moduleManager) {
         return { success: true, status: 'stopped' };
     }
 
-    const isDev = !app.isPackaged;
-    const baseExtraPath = isDev 
-        ? path.join(__dirname, '..', '..', 'extra')
-        : path.join(process.resourcesPath, 'extra');
+    // --- НАЧАЛО ИСПРАВЛЕНИЙ ---
 
-    const analyticsExecutable = process.platform === 'win32' ? 'analytics_dml.exe' : 'analytics_cpu';
-    const analyticsPath = path.join(baseExtraPath, 'analytics', analyticsExecutable);
+    // 1. Определяем базовый путь к папке с файлами аналитики
+    const analyticsBasePath = app.isPackaged
+      // Для УСТАНОВЛЕННОГО приложения: путь будет [папка_приложения]/resources/analytics
+      ? path.join(process.resourcesPath, 'analytics')
+      // Для РАЗРАБОТКИ: путь будет [корень_проекта]/extra/analytics
+      : path.join(app.getAppPath(), 'extra', 'analytics');
+
+    // 2. Формируем полный и корректный путь к нужному файлу
+    const analyticsExecutableName = process.platform === 'win32' ? 'analytics_dml.exe' : 'analytics_cpu';
+    const analyticsPath = path.join(analyticsBasePath, analyticsExecutableName);
+
+    // --- КОНЕЦ ИСПРАВЛЕНИЙ ---
 
     if (!fs.existsSync(analyticsPath)) {
         const errorMsg = `Analytics executable not found at path: ${analyticsPath}`;
