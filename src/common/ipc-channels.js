@@ -72,6 +72,9 @@ module.exports = {
   GET_DATES_WITH_ACTIVITY: 'get-dates-with-activity',
   PREPARE_ARCHIVE_FOR_HLS: 'prepare-archive-for-hls',
 
+  // Archive Thumbnails
+  GET_ARCHIVE_THUMBNAILS: 'get-archive-thumbnails',
+
   // System & Events
   SAVE_SCREENSHOT: 'save-screenshot',
   GET_SYSTEM_STATS: 'get-system-stats',
@@ -79,9 +82,14 @@ module.exports = {
   ON_STREAM_DIED: 'stream-died',
   ON_STREAM_STATS: 'stream-stats',
   ON_MEDIAMTX_STATS_UPDATE: 'mediamtx-stats-update',
+  // MediaMTX update lifecycle / status messages
+  ON_MEDIAMTX_UPDATE: 'mediamtx-update-status',
   ON_MAIN_ERROR: 'on-main-error',
   SHOW_CAMERA_CONTEXT_MENU: 'show-camera-context-menu',
   ON_CONTEXT_MENU_COMMAND: 'context-menu-command',
+  PROBE_CAMERA_INFO: 'probe-camera-info',
+  PROBE_ONVIF_STREAM_URI: 'probe-onvif-stream-uri',
+  TEST_RTSP_URL: 'test-rtsp-url',
   SHOW_GROUP_CONTEXT_MENU: 'show-group-context-menu',
   ON_GROUP_CONTEXT_MENU_COMMAND: 'group-context-menu-command',
   KILL_ALL_FFMPEG: 'kill-all-ffmpeg',
@@ -109,6 +117,7 @@ module.exports = {
   GET_AVAILABLE_MODULES: 'get-available-modules',
   SAVE_ENABLED_MODULES: 'save-enabled-modules',
   GET_RENDERER_MODULES: 'get-renderer-modules',
+  GET_DETECTED_PLATES: 'get-detected-plates',
 
   // SCP (File Manager)
   SCP_CONNECT: 'scp-connect',

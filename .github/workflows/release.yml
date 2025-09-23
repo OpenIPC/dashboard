@@ -52,14 +52,87 @@ jobs:
         if: matrix.version_type == 'intellect'
         run: python ./build_analytics.py
       
-      - name: List built analytics files (for debugging)
-        if: matrix.version_type == 'intellect'
-        run: ls -R extra/analytics
+      - name: Download UPX (Linux only)
+        if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
+        run: |
+          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+          tar -xf upx-4.2.1-amd64_linux.tar.xz
 
-      - name: Build and package Electron app
-        run: npm run dist:${{ matrix.version_type }} -- --${{ matrix.os == 'windows-latest' && 'win' || 'linux' }} --publish never
+      - name: Compress analytics executables with UPX (Linux only)
+        if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
+        run: |
+          ./upx-4.2.1-amd64_linux/upx --best --lzma extra/analytics/analytics_cpu
+          ./upx-4.2.1-amd64_linux/upx --best --lzma extra/analytics/analytics_dml
+      
+      - name: Download UPX (Windows only)
+        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
+        run: |
+          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip
+          powershell -Command "Expand-Archive upx-4.2.1-win64.zip -DestinationPath ."
+
+      - name: Compress analytics executables with UPX (Windows only)
+        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
+        run: |
+          ./upx-4.2.1-win64/upx.exe --best --lzma extra/analytics/analytics_cpu.exe
+          ./upx-4.2.1-win64/upx.exe --best --lzma extra/analytics/analytics_dml.exe
+      
+      - name: List built analytics files (for debugging)
+        if: matrix.version_type == 'intellect' && runner.os == 'Linux'
+        run: ls -R extra/analytics
+      - name: List built analytics files (for debugging, Windows)
+        if: matrix.version_type == 'intellect' && runner.os == 'Windows'
+        run: dir extra\analytics /s
+
+      - name: Build and package Electron app (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run dist:${{ matrix.version_type }} -- --linux --publish never
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      - name: Build and package Electron app (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run dist:${{ matrix.version_type }} -- --win --publish never
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download UPX for installers (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+          tar -xf upx-4.2.1-amd64_linux.tar.xz
+
+      - name: Compress installers with UPX (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "Looking for installers in dist/ to compress with UPX"
+          set -e
+          if [ -d dist ]; then
+            # compress AppImage and any other executables found in dist
+            find dist -type f \( -name '*.AppImage' -o -perm /111 \) -print0 | while IFS= read -r -d $'\0' file; do
+              echo "Compressing: $file"
+              ./upx-4.2.1-amd64_linux/upx --best --lzma "$file" || echo "UPX failed on $file"
+            done
+          else
+            echo "No dist directory found, skipping installer compression"
+          fi
+
+      - name: Download UPX for installers (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip
+          powershell -Command "Expand-Archive upx-4.2.1-win64.zip -DestinationPath ."
+        shell: powershell
+
+      - name: Compress installers with UPX (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Write-Host 'Compressing windows installers in dist\ with upx'
+          if (Test-Path dist) {
+            Get-ChildItem -Path dist -Recurse -File -Include *.exe,*.msi | ForEach-Object {
+              Write-Host "Compressing: $($_.FullName)"
+              try { & .\upx-4.2.1-win64\upx.exe --best --lzma $_.FullName } catch { Write-Warning "UPX failed on $($_.FullName): $_" }
+            }
+          } else { Write-Warning 'No dist folder found; skipping UPX for installers' }
+        shell: powershell
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

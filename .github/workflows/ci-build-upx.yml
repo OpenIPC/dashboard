@@ -1,0 +1,73 @@
+name: CI Build (dist + UPX)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build ${{ matrix.variant }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        variant: [lite, intellect]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json', '**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build variant (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if [ "${{ matrix.variant }}" = "lite" ]; then npm run dist:lite; else npm run dist:intellect; fi
+        shell: bash
+
+      - name: Build variant (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          if ('${{ matrix.variant }}' -eq 'lite') { npm run dist:lite } else { npm run dist:intellect }
+        shell: powershell
+
+      - name: Install UPX on Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y upx
+
+      - name: Install UPX on Windows
+        if: matrix.os == 'windows-latest'
+        run: choco install upx -y
+        shell: powershell
+
+      - name: Compress built artifacts with UPX (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: bash scripts/upx-compress.sh dist
+
+      - name: Compress built artifacts with UPX (Windows)
+        if: matrix.os == 'windows-latest'
+        run: pwsh -File .\scripts\upx-compress.ps1 -DistPath dist
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}-${{ matrix.variant }}
+          path: dist

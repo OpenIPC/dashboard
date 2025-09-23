@@ -6,6 +6,7 @@ import json
 import time
 import tempfile # <-- Импортируем модуль для работы с временными файлами
 import threading
+import base64
 import numpy as np
 
 # Проверяем, запущено ли приложение как .exe (frozen) или как .py скрипт
@@ -62,7 +63,7 @@ class FrameGrabber:
         return self.ret, self.frame
     def stop(self):
         self.stopped = True
-        if self.thread.is_alive():
+        if self.thread.is_alive() and self.thread != threading.current_thread():
             self.thread.join(timeout=1.0)
         self.stream.release()
 
@@ -155,7 +156,14 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
         frame_grabber = None
         
         # Получаем системную папку для временных файлов
-        temp_dir = tempfile.gettempdir()
+        system_temp = tempfile.gettempdir()
+        # Создаём поддиректорию, специфичную для этого процесса/аналитики, чтобы избежать конфликтов
+        temp_dir = os.path.join(system_temp, f'dashboard_analytics_{os.getpid()}')
+        try:
+            os.makedirs(temp_dir, exist_ok=True)
+        except Exception:
+            # fallback to system temp if unable to create subdir
+            temp_dir = system_temp
         
         while True: 
             if frame_grabber is None or frame_grabber.stopped:
@@ -199,7 +207,7 @@ def run_analytics(rtsp_url, config_str, provider_choice='auto'):
                 # VVVVVV --- ИЗМЕНЕНИЕ: СОХРАНЯЕМ КАДР В ФАЙЛ ВМЕСТО BASE64 --- VVVVVV
                 if persons_found:
                     # Создаем уникальное имя для временного файла
-                    temp_filename = f"dashboard_frame_{time.time()}_{os.getpid()}.jpg"
+                    temp_filename = f"analytics_frame_{int(time.time())}_{os.getpid()}.jpg"
                     temp_filepath = os.path.join(temp_dir, temp_filename)
                     
                     # Сохраняем кадр в этот файл с высоким качеством

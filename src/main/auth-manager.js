@@ -14,6 +14,63 @@ function getUsersPath() {
 
 const KEYTAR_SERVICE = 'OpenIPC-VMS';
 const KEYTAR_ACCOUNT_AUTOLOGIN = 'autoLoginCredentials';
+const KEYTAR_MASTER_ACCOUNT = 'master_encryption_key';
+
+// credentials file stores encrypted blobs per camera id
+function getCredentialsPath() {
+    const { getDataPath } = require('./config-manager');
+    return path.join(getDataPath(), 'credentials.json');
+}
+
+async function readCredentialsFile() {
+    try {
+        const p = getCredentialsPath();
+        const data = await fsPromises.readFile(p, 'utf-8');
+        return JSON.parse(data || '{}');
+    } catch (e) {
+        return {};
+    }
+}
+
+async function writeCredentialsFile(obj) {
+    try {
+        const p = getCredentialsPath();
+        await fsPromises.writeFile(p, JSON.stringify(obj, null, 2));
+        try { require('fs').chmodSync(p, 0o600); } catch (e) { /* ignore on windows */ }
+    } catch (e) {
+        console.error('[AuthManager] Failed to write credentials file:', e);
+    }
+}
+
+async function ensureMasterKey() {
+    let key = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_MASTER_ACCOUNT);
+    if (!key) {
+        // generate 32 bytes key and store as base64
+        const buf = crypto.randomBytes(32);
+        key = buf.toString('base64');
+        await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_MASTER_ACCOUNT, key);
+    }
+    return Buffer.from(key, 'base64');
+}
+
+function aesGcmEncrypt(masterKeyBuf, plain) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', masterKeyBuf, iv);
+    const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+
+function aesGcmDecrypt(masterKeyBuf, blob) {
+    const data = Buffer.from(blob, 'base64');
+    const iv = data.slice(0, 12);
+    const tag = data.slice(12, 28);
+    const encrypted = data.slice(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', masterKeyBuf, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return decrypted.toString('utf8');
+}
 
 /**
  * Хеширует пароль с использованием соленого PBKDF2.
@@ -44,17 +101,50 @@ function verifyPassword(password, hash, salt) {
  * @returns {Promise<string|null>} Пароль или null, если не найден.
  */
 async function getPasswordForCamera(cameraId) {
-    return keytar.getPassword(KEYTAR_SERVICE, cameraId.toString());
+    // Try credentials.json first (encrypted storage)
+    try {
+        const creds = await readCredentialsFile();
+        if (creds && creds[cameraId]) {
+            const master = await ensureMasterKey();
+            try {
+                const dec = aesGcmDecrypt(master, creds[cameraId]);
+                return dec;
+            } catch (e) {
+                console.error('[AuthManager] Failed to decrypt camera password:', e);
+                return null;
+            }
+        }
+    } catch (e) { /* ignore */ }
+
+    // Fallback: legacy keytar per-camera. If found, migrate into encrypted store.
+    try {
+        const legacy = await keytar.getPassword(KEYTAR_SERVICE, cameraId.toString());
+        if (legacy) {
+            // migrate
+            await setPasswordForCamera(cameraId, legacy);
+            try { await keytar.deletePassword(KEYTAR_SERVICE, cameraId.toString()); } catch (e) { /* ignore */ }
+            return legacy;
+        }
+    } catch (e) { /* ignore */ }
+
+    return null;
 }
 
 /**
- * Сохраняет пароль для камеры в безопасное хранилище.
- * @param {string|number} cameraId - ID камеры.
- * @param {string} password - Пароль для сохранения.
- * @returns {Promise<void>}
+ * Сохраняет пароль для камеры в зашифрованном виде в credentials.json
  */
 async function setPasswordForCamera(cameraId, password) {
-    return keytar.setPassword(KEYTAR_SERVICE, cameraId.toString(), password);
+    try {
+        const master = await ensureMasterKey();
+        const blob = aesGcmEncrypt(master, password);
+        const creds = await readCredentialsFile();
+        creds[cameraId.toString()] = blob;
+        await writeCredentialsFile(creds);
+        return true;
+    } catch (e) {
+        console.error('[AuthManager] Failed to set encrypted password for camera:', e);
+        return false;
+    }
 }
 
 /**

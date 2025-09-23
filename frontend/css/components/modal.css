@@ -1,0 +1,577 @@
+/* --- Стили для модальных окон и их содержимого --- */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-backdrop.hidden {
+    display: none !important;
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-dark);
+    padding: 28px 36px 32px 36px;
+    border-radius: 14px;
+    width: 500px;
+    max-width: 96vw;
+    min-width: 320px;
+    box-sizing: border-box;
+    color: var(--text-main);
+    font-family: inherit;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    border: 1px solid var(--border-color);
+}
+
+/* --- Единый стиль для input/select/textarea в модалях --- */
+.modal-content input,
+.modal-content select,
+.modal-content textarea {
+    background: var(--bg-medium);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 15px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    transition: border 0.2s;
+}
+.modal-content input:focus,
+.modal-content select:focus,
+.modal-content textarea:focus {
+    outline: none;
+    border: 1.5px solid var(--accent-color);
+    background: var(--bg-light);
+}
+
+/* --- Единый стиль для кнопок в модалях --- */
+.modal-content button,
+.modal-content .form-buttons button {
+    background: #b6b6b6;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 15px;
+    padding: 10px;
+    margin-top: 8px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    font-family: inherit;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.modal-content button:hover,
+.modal-content .form-buttons button:hover {
+    background: #b6b6b6;
+    color: #fff;
+}
+.modal-content button:disabled,
+.modal-content .form-buttons button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Серые кнопки (например, отмена) */
+.modal-content .form-buttons button:last-child,
+.modal-content button.cancel-btn {
+    background: var(--bg-light);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+}
+.modal-content .form-buttons button:last-child:hover,
+.modal-content button.cancel-btn:hover {
+    background: #555b60;
+    color: #fff;
+}
+
+/* Светлая кнопка (например, "Сохранить все настройки в файл") */
+.modal-content .form-buttons .light-btn,
+.modal-content button.light-btn {
+    background: #bfc6d1;
+    color: #23272e;
+    border: 1px solid #a5adb8;
+    font-weight: 500;
+    box-shadow: none;
+}
+.modal-content .form-buttons .light-btn:hover,
+.modal-content button.light-btn:hover {
+    background: #a5adb8;
+    color: #fff;
+}
+.modal-content.large {
+    width: 700px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-body {
+    overflow-y: auto;
+    flex-grow: 1;
+    padding-right: 10px;
+}
+
+.modal-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 1;
+    user-select: none;
+    z-index: 10;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    align-items: center;
+    padding-top: 15px;
+}
+
+.form-grid.simple {
+    grid-template-columns: 120px 1fr;
+    padding-bottom: 20px;
+}
+
+.form-grid.with-button .form-input-wrapper {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.form-grid.with-button .form-input-wrapper input {
+    flex-grow: 1;
+}
+
+.form-grid label,
+.form-grid span,
+.form-grid b {
+    font-weight: 500;
+}
+
+.form-grid .full-width {
+    grid-column: 1 / -1;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid button {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: -6px;
+    font-size: 14px;
+    width: fit-content;
+    box-sizing: border-box;
+}
+
+.form-buttons {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    gap: 16px;
+    background: transparent;
+    padding: 0 8px;
+    position: relative;
+    top: 10px; /* чуть выше линии, не уезжают за край */
+    z-index: 5;
+}
+
+.tab-button {
+    background: #bfc6d1 !important; /* как у кнопки 'Сообщить о проблеме' */
+    border: 1px solid #a5adb8;
+    border-bottom: 2.5px solid transparent;
+    border-radius: 18px 18px 0 0; /* больше скругления */
+    padding: 13px 34px 13px 34px;
+    transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 6px 18px -6px rgba(0,0,0,0.10);
+    color: #23272e;
+    font-weight: 500;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+    min-height: 36px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: -2px;
+    margin-top: 8px;
+    box-sizing: border-box;
+    /* внутренние отступы для текста */
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+.tab-button.active {
+    color: #23272e;
+    background: #bfc6d1 !important;
+    border: 1px solid #a5adb8;
+    border-bottom: 2.5px solid #dee2e6;
+    z-index: 3;
+    box-shadow: 0 8px 24px -8px rgba(13,110,253,0.10);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+h3 {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+h3:first-child {
+    margin-top: 1;
+}
+
+.form-check-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 100px;
+}
+
+.form-check-input {
+    width: auto;
+}
+
+#prompt-modal .form-grid.simple {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    text-align: left;
+}
+
+#prompt-modal .form-grid .form-buttons {
+    grid-column: 1 / -1;
+}
+
+#prompt-modal .form-grid b {
+    margin-bottom: -5px;
+}
+
+#login-view .form-check-inline {
+    grid-column: 2 / -1;
+    justify-self: start;
+    margin-top: 10px;
+    color: #6c757d;
+}
+
+#user-list button {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+#user-list button:hover {
+    background-color: #f0f0f0;
+}
+
+#user-list .delete-user-btn {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+#user-list .delete-user-btn:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+#user-list .change-pass-btn {
+    color: #007bff;
+    border-color: #007bff;
+}
+
+#user-list .change-pass-btn:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+#user-list button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-body .p-setting, .modal-body .p-boolean {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 15px;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.modal-body .p-boolean {
+    grid-template-columns: 1fr 1fr;
+}
+
+.modal-body .form-label {
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.modal-body .input-group {
+    display: flex;
+}
+
+.modal-body .form-control {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.modal-body .form-control.text-end {
+    text-align: right;
+}
+
+.modal-body .form-select {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: white;
+}
+
+.modal-body .form-switch {
+    display: flex;
+    align-items: center;
+    padding-left: 0;
+}
+
+.modal-body .form-switch .form-check-input {
+    width: 2.5em;
+    height: 1.25em;
+    margin-left: 0;
+    margin-right: 10px;
+    cursor: pointer;
+    position: relative;
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #dee2e6;
+    border-radius: 1.25em;
+    transition: background-position .15s ease-in-out;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+    background-position: left center;
+    background-repeat: no-repeat;
+}
+
+.modal-body .form-switch .form-check-input:checked {
+    background-color: var(--accent-color);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+    background-position: right center;
+    background-repeat: no-repeat;
+}
+
+.modal-body .range-slider-wrapper {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 15px;
+}
+
+.modal-body .form-range {
+    flex-grow: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #ddd;
+    border-radius: 3px;
+    outline: none;
+    opacity: 0.7;
+    transition: opacity .2s;
+}
+
+.modal-body .form-range:hover {
+    opacity: 1;
+}
+
+.modal-body .form-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.modal-body .form-range::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.modal-body .range-value {
+    min-width: 30px;
+    text-align: center;
+    background-color: var(--bg-medium);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid;
+    font-size: 13px;
+    top: -11px;
+    position: relative;
+}
+
+#screenshots-preview .screenshot-thumb {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#screenshots-preview .screenshot-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#screenshots-preview .screenshot-thumb .remove-screenshot-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 620px;
+    max-width: 99vw;
+    min-width: 320px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    line-height: 1;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#screenshots-preview .screenshot-thumb:hover .remove-screenshot-btn {
+    opacity: 1;
+}
+
+.about-container {
+    text-align: center;
+    padding: 35px;
+    color: #f4f3f3;
+}
+
+.about-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 15px;
+}
+
+.about-container h3 {
+    margin-top: 0;
+    font-size: 1.5em;
+}
+
+.about-container p {
+    color: #f4f3f3;
+    line-height: 1.6;
+}
+
+.donation-section {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.donation-button {
+    background-color: #ffc107;
+    color: #212529;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.donation-button:hover {
+    background-color: #ffca2c;
+}
+
+#settings-modal.camera-mode .general-tab {
+    display: none;
+}
+
+#settings-modal:not(.camera-mode) .camera-web-tab {
+    display: none;
+}
+
+.config-buttons-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+    padding-left: 20px;
+}
+
+.config-buttons-container button {
+    padding: 10px 15px;
+    font-size: 14px;
+    max-width: 300px;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #b6b6b6;
+}
+
+.config-buttons-container button:hover {
+    background-color: #e0e0e0;
+}

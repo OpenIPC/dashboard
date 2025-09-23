@@ -31,6 +31,9 @@ function getDataPath() {
     return process.cwd();
 }
 
+// allow other modules to get the application data path
+exports.getDataPath = getDataPath;
+
 const dataPathRoot = getDataPath();
 console.log(`[Config] Data path is: ${dataPathRoot}`);
 const configPath = path.join(dataPathRoot, 'config.json');
@@ -128,7 +131,6 @@ async function loadConfiguration() {
 async function saveConfiguration(config) {
     try {
         const configToSave = JSON.parse(JSON.stringify(config));
-        
         for (const camera of configToSave.cameras) {
             if (camera.password) {
                 await authManager.setPasswordForCamera(camera.id.toString(), camera.password);
@@ -136,6 +138,30 @@ async function saveConfiguration(config) {
             }
         }
         await fsPromises.writeFile(configPath, JSON.stringify(configToSave, null, 2));
+
+        // Автоматически обновляем конфиг MediaMTX после сохранения основной конфигурации
+
+        try {
+            const processManager = require('./process-manager');
+            // Если MediaMTX уже запущен — попробуем обновить пути через API (hot-update),
+            // иначе сгенерируем конфиг и перезапустим процесс как раньше.
+            if (processManager.isMediaMTXRunning && processManager.isMediaMTXRunning()) {
+                // update persistent masked config but do not write runtime plaintext file
+                await processManager.generateAndSaveMediaMTXConfig({ writeRuntime: false });
+                // Hot-update running MediaMTX via API
+                await processManager.updateMediaMTXPaths();
+            } else {
+                await processManager.generateAndSaveMediaMTXConfig({ writeRuntime: true });
+                // Перезапуск MediaMTX для применения нового конфига
+                processManager.stopMediaMTX();
+                setTimeout(() => {
+                    processManager.startMediaMTX();
+                }, 1000); // небольшая пауза для корректного завершения
+            }
+        } catch (err) {
+            console.error('[ConfigManager] Не удалось обновить/перезапустить MediaMTX:', err);
+        }
+
         return { success: true };
     } catch (e) {
         return { success: false, error: e.message };
@@ -210,15 +236,19 @@ async function getEventsForDate({ date }) {
     }
 }
 
-async function getRecordingsForDate({ cameraName, date }) {
+async function getRecordingsForDate({ cameraId, cameraName, date }) {
     try {
         const settings = await getAppSettings();
         const recordingsPath = settings.recordingsPath;
-        
         const { cameras } = await loadConfiguration();
-        const camera = cameras.find(c => c.name === cameraName);
+        let camera = null;
+        if (typeof cameraId !== 'undefined' && cameraId !== null) {
+            camera = cameras.find(c => c.id === Number(cameraId));
+        } else if (cameraName) {
+            camera = cameras.find(c => c.name === cameraName);
+        }
         if (!camera) {
-            console.warn(`[Archive] Camera with name "${cameraName}" not found.`);
+            console.warn(`[Archive] Camera not found (cameraId=${cameraId}, cameraName=${cameraName}).`);
             return [];
         }
 
@@ -243,13 +273,19 @@ async function getRecordingsForDate({ cameraName, date }) {
                         return resolve(null);
                     }
                     
-                    const match = d.name.match(/(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+                    const match = d.name.match(/(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})/);
                     if (!match) return resolve(null);
-                    
-                    const startTimeString = match[1].replace('_', 'T');
+                    // Build ISO-like string: YYYY-MM-DDTHH:MM:SS
+                    const datePart = match[1];
+                    const hh = match[2];
+                    const mm = match[3];
+                    const ss = match[4];
+                    const startTimeString = `${datePart}T${hh}:${mm}:${ss}`;
 
+                    // Normalize returned name to use forward slashes so renderer can treat it as a URL-like path
+                    const normalizedName = `${streamName}/${d.name}`.replace(/\\/g, '/');
                     resolve({
-                        name: path.join(streamName, d.name),
+                        name: normalizedName,
                         startTimeString: startTimeString,
                         duration: metadata.format.duration || 0
                     });
@@ -269,11 +305,16 @@ async function getRecordingsForDate({ cameraName, date }) {
 }
 
 
-async function getDatesWithActivity(cameraName) {
+async function getDatesWithActivity(cameraIdOrName) {
     const activeDates = new Set();
     const settings = await getAppSettings();
     const { cameras } = await loadConfiguration();
-    const currentCamera = cameras.find(c => c.name === cameraName);
+    let currentCamera = null;
+    if (typeof cameraIdOrName === 'number' || String(Number(cameraIdOrName)) === String(cameraIdOrName)) {
+        currentCamera = cameras.find(c => c.id === Number(cameraIdOrName));
+    } else {
+        currentCamera = cameras.find(c => c.name === cameraIdOrName);
+    }
 
     if (currentCamera) {
         const streamName = `cam${currentCamera.id}_0`;

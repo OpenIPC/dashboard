@@ -2,3 +2,8 @@ onnxruntime-directml==1.17.1
 opencv-python-headless
 numpy<2.0
 pyinstaller
+easyocr
+pytesseract
+pillow
+paddlepaddle
+paddleocr
