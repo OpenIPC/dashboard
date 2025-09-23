@@ -129,9 +129,17 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
         await dialog.showMessageBox({ type: 'info', title: 'Требуется перезапуск', message: 'Настройки модулей сохранены.', detail: 'Для применения изменений приложение необходимо перезапустить.', buttons: ['Перезапустить сейчас', 'Позже'], defaultId: 0, cancelId: 1 }).then(result => { if (result.response === 0) { app.relaunch(); app.quit(); } }); 
         return { success: true }; 
     }, 'saveEnabledModules'));
+    ipcMain.handle(CHANNELS.GET_DETECTED_PLATES, withErrorHandling(async () => {
+        const licensePlateModule = moduleManager.loadedModules.get('license-plate');
+        if (licensePlateModule && licensePlateModule.code && typeof licensePlateModule.code.getDetectedPlates === 'function') {
+            return await licensePlateModule.code.getDetectedPlates();
+        }
+        return { totalDetections: 0, uniquePlates: [], recentHistory: [] };
+    }, 'getDetectedPlates'));
   } else {
     ipcMain.handle(CHANNELS.GET_AVAILABLE_MODULES, featureNotAvailableHandler);
     ipcMain.handle(CHANNELS.SAVE_ENABLED_MODULES, featureNotAvailableHandler);
+    ipcMain.handle(CHANNELS.GET_DETECTED_PLATES, featureNotAvailableHandler);
   }
 }
 

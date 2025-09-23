@@ -65,8 +65,6 @@ web_modules/
 .env.production.local
 .env.local
 
-# VitePress caching directory
-.vitepress/cache
 
 # Nuxt project build folder and logs
 .nuxt

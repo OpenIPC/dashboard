@@ -10,7 +10,7 @@ class FfmpegCommandBuilder {
     }
 
     buildForStream(credentials, streamId, statsPort) { // Добавлен statsPort
-        const streamPath = streamId == 0 ? (credentials.streamPath0 || '/stream0') : (credentials.streamPath1 || '/stream1');
+    const streamPath = streamId == 0 ? (credentials.streamPath0 || '/stream=0') : (credentials.streamPath1 || '/stream=1');
         const streamUrl = this.buildRtspUrl(credentials, streamPath);
         
         const { decoderArgs, vfArgs } = this.getHwAccelOptions(streamId);
@@ -37,7 +37,7 @@ class FfmpegCommandBuilder {
     }
 
     buildForRecording(credentials, outputPath) {
-        const streamUrl = this.buildRtspUrl(credentials, credentials.streamPath0 || '/stream0');
+    const streamUrl = this.buildRtspUrl(credentials, credentials.streamPath0 || '/stream=0');
         
         const args = [
             '-rtsp_transport', 'tcp',

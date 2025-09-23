@@ -1,3 +1,47 @@
+# Set default behavior, in case users don't have core.autocrlf set.
+* text=auto
+
+# Shell scripts should keep LF endings (POSIX)
+*.sh text eol=lf
+
+# Source code and markup: prefer LF for cross-platform consistency
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# PowerShell and Windows batch files: CRLF is the native format on Windows
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# GitHub Actions workflow files — use LF (Unix-style)
+.github/workflows/* text eol=lf
+
+# Mark common binary formats as binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar.gz binary
+*.tgz binary
+*.7z binary
+
+# Prevent accidental normalization of files which may be sensitive to line endings
+python_src/*.onnx binary
+yolov8n.onnx binary
+license_plate_detection.onnx binary
 * text=auto
 *.exe filter=lfs diff=lfs merge=lfs -text
 *.pkg filter=lfs diff=lfs merge=lfs -text

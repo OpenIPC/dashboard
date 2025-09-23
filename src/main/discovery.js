@@ -84,6 +84,18 @@ async function ipScanDiscoveryTask(mainWindow) {
     const interfaces = os.networkInterfaces();
     const subnets = new Set();
 
+    // Diagnostic: dump interfaces to help troubleshooting when discovery returns no devices
+    try {
+        console.log('[Scanner IP-Scan] Network interfaces:');
+        for (const name of Object.keys(interfaces)) {
+            for (const iface of interfaces[name]) {
+                if (iface.family === 'IPv4') {
+                    console.log(`  - ${name}: ${iface.address} / ${iface.netmask} (${iface.cidr})${iface.internal ? ' [internal]' : ''}`);
+                }
+            }
+        }
+    } catch (e) { /* ignore in best-effort logging */ }
+
     // Собираем все локальные подсети (например, 192.168.1.)
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {

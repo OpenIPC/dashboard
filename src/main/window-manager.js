@@ -36,21 +36,16 @@ async function createWindow() {
         icon: brandingConfig.iconPath
             ? path.isAbsolute(brandingConfig.iconPath)
                 ? brandingConfig.iconPath
-                : path.join(__dirname, '../../', brandingConfig.iconPath)
-            : path.join(__dirname, '../../assets/icon.ico'),
+                : path.join(__dirname, '../../frontend/assets', brandingConfig.iconPath)
+            : path.join(__dirname, '../../frontend/assets/icon.ico'),
         // END: ИСПРАВЛЕНИЕ
         webPreferences: {
-            // Подключаем основной preload-скрипт
-            preload: path.join(__dirname, '../../preload.js'),
-            
-            // --- ВОТ ИСПРАВЛЕНИЕ ---
-            // Отключаем песочницу, чтобы в preload-скрипте
-            // были доступны модули Node.js, такие как 'path'.
+            preload: path.join(__dirname, '../../frontend/preload.js'),
             sandbox: false
         }
     });
 
-    mainWindow.loadFile('index.html');
+    mainWindow.loadFile(path.join(__dirname, '../../frontend/index.html'));
 
     // Отправляем события в renderer для обновления иконки максимизации
     mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximized'));

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+        <!-- Content-Security-Policy temporarily disabled for Tauri dev injection test -->
+        <!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self' video-archive:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: http:; img-src 'self' data:; media-src 'self' blob: video-archive:; frame-src http:;"> -->
+    <title data-brand="appName">DASHBOARD for OpenIPC</title>
+    
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./css/components/header.css">
+    <link rel="stylesheet" href="./css/components/sidebar.css">
+    <link rel="stylesheet" href="./css/components/grid.css">
+    <link rel="stylesheet" href="./css/components/toolbar.css">
+    <link rel="stylesheet" href="./css/components/modal.css">
+    <link rel="stylesheet" href="./css/components/archive.css">
+    <link rel="stylesheet" href="./css/components/utility.css">
+</head>
+<body>
+    <!-- flatpickr JS и локализация -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
+    <!-- Все JS импортируются через main.js (Vite entry) -->
+    <script type="module" src="./main.js"></script>
+
+    <div id="login-view" class="modal-backdrop">
+    <div class="modal-content" style="text-align: center;">
+            <span id="login-close-btn" class="modal-close-btn">&times;</span>
+            <h2 data-brand="appName" data-i18n-key="app_title"></h2>
+            <p data-i18n-key="login_prompt" style="color: #6c757d;"></p>
+            <p data-i18n-key="login_default_hint" style="color: #b0b0b0; font-size: 13px; margin-top: -10px; margin-bottom: 10px;"></p>
+            <div class="form-grid simple" style="grid-template-columns: 100px 1fr; padding-top: 10px;">
+                <b data-i18n-key="login"></b> <input type="text" id="login-username" autofocus>
+                <b data-i18n-key="password"></b> <input type="password" id="login-password-main">
+                <div class="form-check-inline">
+                    <input type="checkbox" id="login-remember-me" class="form-check-input">
+                    <label for="login-remember-me" data-i18n-key="remember_me"></label>
+                </div>
+            </div>
+            <p id="login-error" style="color: var(--danger-color); height: 20px; margin-top: 10px;"></p>
+            <button id="login-btn-main" style="width: fit-content; padding: 10px; margin-top: 5px;" data-i18n-key="login_btn"></button>
+        </div>
+    </div>
+
+    <div id="main-app-container" class="hidden">
+        <div class="header">
+            <div class="logo" data-brand="appName" data-i18n-key="app_title"></div>
+            <div class="tabs"></div>
+            <button id="add-layout-btn" class="add-tab-btn requires-permission" data-i18n-tooltip="add_layout_tooltip">+</button>
+            <div class="window-controls">
+                <button id="minimize-btn" class="window-control-btn"><i class="material-icons">remove</i></button>
+                <button id="maximize-btn" class="window-control-btn"><i class="material-icons">crop_square</i></button>
+                <button id="close-btn" class="window-control-btn close-btn"><i class="material-icons">close</i></button>
+            </div>
+        </div>
+
+        <!-- VVVVVV --- НАЧАЛО ИЗМЕНЕНИЯ СТРУКТУРЫ --- VVVVVV -->
+        <div class="main-container">
+            <!-- Основной вид теперь всегда в DOM, но может быть скрыт -->
+            <div id="main-view">
+                <div class="view-container">
+                    <div id="grid-container"></div>
+                </div>
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <div class="header-buttons">
+                            <span class="requires-permission" style="display: contents;">
+                                <button id="discover-btn" class="icon-button" data-i18n-tooltip="discover_cameras_tooltip"><i class="material-icons">travel_explore</i></button>
+                                <button id="add-group-btn" class="icon-button" data-i18n-tooltip="create_group_tooltip"><i class="material-icons">create_new_folder</i></button>
+                                <button id="add-camera-sidebar-btn" class="icon-button" data-i18n-tooltip="add_camera_tooltip"><i class="material-icons">add_circle_outline</i></button>
+                            </span>
+                            <button id="user-management-btn" class="icon-button admin-only" data-i18n-tooltip="user_management_tooltip"><i class="material-icons">manage_accounts</i></button>
+                            <button id="modules-toggle-btn" class="icon-button" data-i18n-tooltip="modules_panel_tooltip"><i class="material-icons">extension</i></button>
+                            <button id="general-settings-btn" class="icon-button" data-i18n-tooltip="settings_tooltip"><i class="material-icons">settings</i></button>
+                            <button id="logout-btn" class="icon-button" data-i18n-tooltip="logout_tooltip"><i class="material-icons">logout</i></button>
+                        </div>
+                        <h3 data-i18n-key="devices"></h3>
+                    </div>
+                    <div id="camera-list-container"></div>
+                </div>
+                <!-- Modules Panel -->
+                <div id="modules-panel" class="modules-panel">
+                    <div class="modules-panel-header">
+                        <h3>Обнаруженные номера</h3>
+                    </div>
+                    <div class="modules-panel-content">
+                        <div id="detected-plates-list"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Архив теперь находится на том же уровне, что и main-view -->
+        </div>
+        
+        <!-- Архив вынесен за пределы .main-container, чтобы не влиять на его компоновку -->
+        <div id="archive-view" class="hidden">
+            <div class="archive-main-content">
+                <div class="archive-header">
+                    <button id="archive-back-btn" class="icon-button" style="padding: 5px;"><i class="material-icons">arrow_back</i></button>
+                    <h2 id="archive-camera-name"></h2>
+                    <input type="text" id="archive-date-picker" placeholder="Выберите дату..." style="width: 150px; background-color: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-main); padding: 5px; border-radius: 4px;">
+                </div>
+                <div class="archive-video-container">
+                    <video id="archive-video-player"  class="hidden"></video>
+                    <div id="archive-video-placeholder" class="archive-video-placeholder" data-i18n-key="archive_placeholder"></div>
+                </div>
+                <div class="archive-controls">
+                    <button id="ac-play-pause-btn" class="icon-button" title="Воспр./Пауза"><i class="material-icons">play_arrow</i></button>
+                    <button id="ac-speed-btn" class="control-button">1.0x</button>
+                    <span id="ac-time-display" class="time-display">00:00:00</span>
+                    <button id="ac-clip-start-btn" class="icon-button" style="margin-left: auto;" title="Начало клипа"><i class="material-icons">content_cut</i></button>
+                    <button id="ac-clip-export-btn" class="icon-button" title="Экспорт клипа" disabled><i class="material-icons">save</i></button>
+                </div>
+                <div class="timeline-container">
+                    <div class="timeline-wrapper" id="timeline-wrapper" style="position: relative;">
+                        <canvas id="timeline-canvas"></canvas>
+                        <div id="timeline-labels" class="timeline-labels"></div>
+                        <div id="timeline-preview" style="display:none; position:absolute; pointer-events:none; z-index:10;">
+                            <img id="timeline-preview-img" src="" style="width:120px; height:68px; border:1px solid #888; background:#222; object-fit:cover; border-radius:4px; box-shadow:0 2px 8px #000a;">
+                            <div id="timeline-preview-time" style="text-align:center; color:#fff; font-size:12px; margin-top:2px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="archive-sidebar">
+                <h3 data-i18n-key="events_title">События</h3>
+                <div id="archive-filters"></div>
+                <ul id="event-list"></ul>
+            </div>
+        </div>
+        <!-- ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ СТРУКТУРЫ --- ^^^^^^ -->
+        
+        <div class="bottom-toolbar">
+            <div class="toolbar-group">
+                <div class="status-info" id="status-info"></div>
+            </div>
+            <!-- Кнопки управления раскладками убраны, теперь только через контекстное меню вкладки -->
+            <div class="toolbar-group requires-permission intellect-only" id="layout-controls"></div>
+            <div class="toolbar-group">
+                <button id="open-recordings-btn" class="icon-button admin-only" data-i18n-tooltip="open_recordings_tooltip"><i class="material-icons" style="font-size: 20px;">folder</i></button>
+                <button id="presentation-mode-btn" class="icon-button requires-permission intellect-only" data-i18n-tooltip="presentation_mode_tooltip"><i class="material-icons" style="font-size: 20px;">tv</i></button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="app-toast" class="toast-notification"></div>
+
+    <!-- Все JS импортируются через main.js (Vite entry) -->
+
+    <!-- web-api.js не подключается в Tauri-версии -->
+</body>
+</html>

@@ -1,0 +1,266 @@
+/* --- Стили для боковой панели --- */
+.sidebar {
+    width: var(--sidebar-width);
+    background-color: var(--bg-dark);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-header {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    font-size: 1em;
+}
+
+.sidebar-header .header-buttons {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.sidebar-header .icon-button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+}
+
+.sidebar-header .icon-button:hover {
+    color: var(--text-main);
+    background-color: var(--bg-light);
+}
+
+#camera-list-container {
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.modules-panel {
+    padding: 10px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.modules-panel h3 {
+    margin: 0 0 10px 0;
+    font-size: 1em;
+    color: var(--text-main);
+}
+
+#modules-container {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.group-container {
+    margin-bottom: 10px;
+    padding: 0 5px;
+}
+
+.group-header {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.group-header:hover {
+    background-color: var(--bg-light);
+}
+
+.group-header .toggle-icon {
+    font-size: 20px;
+    transition: transform 0.2s;
+    user-select: none;
+}
+
+.group-header .toggle-icon.collapsed {
+    transform: rotate(-90deg);
+}
+
+.group-header .group-name {
+    font-weight: bold;
+    margin-left: 5px;
+    white-space: nowrap;
+}
+
+.group-cameras {
+    padding-left: 10px;
+    overflow: hidden;
+    max-height: 1000px;
+    transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out;
+}
+
+.group-cameras.collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.camera-item {
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 5px;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+
+.camera-item:hover {
+    background-color: var(--bg-light);
+}
+
+.camera-item .rec-indicator {
+    margin-left: auto;
+}
+
+.camera-item .analytics-btn {
+    padding: 2px;
+}
+
+.camera-item span {
+    white-space: nowrap;
+}
+
+.camera-item .icon-button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+}
+
+.camera-item .icon-button:hover {
+    color: var(--text-main);
+    background-color: var(--bg-light);
+}
+
+.camera-item .icon-button.active {
+    color: var(--accent-color);
+}
+
+.status-icon {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #6c757d;
+    flex-shrink: 0;
+}
+
+.status-icon.online {
+    background-color: #28a745;
+}
+
+.camera-item .rec-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--danger-color);
+    display: none;
+    flex-shrink: 0;
+    animation: pulse-rec 1.5s infinite;
+}
+
+.camera-item.recording .rec-indicator {
+    display: block;
+}
+
+/* --- Стили для панели модулей --- */
+.modules-panel {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 400px;
+    height: 100vh;
+    background: #1a1a1a;
+    border-left: 2px solid #00ff88;
+    transition: right 0.3s ease;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+}
+
+.modules-panel.visible {
+    right: 0;
+}
+
+.modules-panel-header {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-light);
+    flex-shrink: 0;
+}
+
+.modules-panel-header h3 {
+    margin: 0;
+    font-size: 1.1em;
+    color: var(--text-main);
+}
+
+.modules-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+#detected-plates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.modules-panel .plate-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #444;
+    background: #2a2a2a;
+    margin-bottom: 4px;
+    border-radius: 4px;
+}
+
+.modules-panel .plate-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.modules-panel .plate-text {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    color: #00ff88;
+    margin-bottom: 4px;
+}
+
+.modules-panel .plate-timestamp {
+    font-size: 11px;
+    color: #888;
+}
+
+.modules-panel .no-plates {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 20px;
+}

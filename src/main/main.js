@@ -12,6 +12,7 @@ const http = require('http');
 const os = require('os');
 const { WebSocketServer } = require('ws');
 const axios = require('axios');
+const { pathToFileURL } = require('url');
 
 const { ModuleManager } = require('./module-manager');
 const configManager = require('./config-manager'); 
@@ -96,6 +97,9 @@ const appAPI = {
         const currentSettings = await configManager.getAppSettings();
         const updatedSettings = { ...currentSettings, ...newSettings };
         return configManager.saveAppSettings(updatedSettings);
+    },
+    registerIpcHandler: (channel, handler) => {
+        ipcMain.handle(channel, handler);
     }
 };
 
@@ -254,7 +258,13 @@ app.whenReady().then(async () => {
                 }
             });
         
-            ws.on('close', () => console.log('[WebSocket] Client disconnected.'));
+            ws.on('close', (code, reason) => {
+                try {
+                    console.log(`[WebSocket] Client disconnected. code=${code}, reason=${reason && reason.toString ? reason.toString() : reason}`);
+                } catch (e) {
+                    console.log('[WebSocket] Client disconnected. (could not read close details)', e);
+                }
+            });
         });
 
     } catch(e) {
@@ -288,9 +298,16 @@ app.whenReady().then(async () => {
             const mod = moduleManager.loadedModules.get(moduleId);
             if (mod && mod.manifest.entryPoints?.renderer) {
                 const fullScriptPath = path.join(mod.manifest.path, mod.manifest.entryPoints.renderer);
-                const relativeUrl = path.relative(rootDir, fullScriptPath).replace(/\\/g, '/');
-                console.log(`[Modules] Found renderer script, providing URL: /${relativeUrl}`);
-                rendererScripts.push(relativeUrl);
+                try {
+                    const fileUrl = pathToFileURL(fullScriptPath).href;
+                    console.log(`[Modules] Found renderer script, providing file URL: ${fileUrl}`);
+                    rendererScripts.push(fileUrl);
+                } catch (e) {
+                    // Fallback to a relative path if conversion fails
+                    const relativeUrl = path.relative(rootDir, fullScriptPath).replace(/\\/g, '/');
+                    console.log(`[Modules] Fallback renderer script URL: /${relativeUrl}`);
+                    rendererScripts.push(relativeUrl);
+                }
             }
         });
         return rendererScripts;

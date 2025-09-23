@@ -128,3 +128,26 @@ npm run dist
 ```
 
 The finished files will appear in the `dist` folder.
+
+## CI / GitHub Actions
+
+This repository includes a GitHub Actions workflow that builds both application variants (`lite` and `intellect`) on Ubuntu and Windows runners and performs UPX compression on produced binaries to reduce final artifact size.
+
+Workflow file: `.github/workflows/ci-build-upx.yml`.
+
+Local testing of UPX compression scripts:
+
+Linux/macOS (bash):
+```bash
+chmod +x scripts/upx-compress.sh
+./scripts/upx-compress.sh dist
+```
+
+Windows (PowerShell):
+```powershell
+pwsh -File .\scripts\upx-compress.ps1 -DistPath dist
+```
+
+Notes:
+- The workflow installs UPX (`apt` on Ubuntu, `choco` on Windows) before running compression.
+- The CI uploads compressed `dist/` as workflow artifacts. If you prefer the original uncompressed artifacts kept separately, adjust the workflow to copy them before compression.
