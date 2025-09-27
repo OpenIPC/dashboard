@@ -154,3 +154,11 @@ Thumbs.db
 *.sw?
 # Generated analytics executables
 /extra/
+tmp_lp/
+null
+frontend/.gitignore
+scripts/
+builder-*.json
+python_src/.venv/
+.analytics_venvs/
+venv/

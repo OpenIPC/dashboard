@@ -24,19 +24,29 @@ if script_dir and script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 from lpd_yunet import LPD_YuNet
 import easyocr
-try:
-    import pytesseract
-    TESSERACT_AVAILABLE = True
-except ImportError:
-    TESSERACT_AVAILABLE = False
-    print("[WARNING] Tesseract not available, using only EasyOCR")
 
-try:
-    from paddleocr import PaddleOCR
-    PADDLE_AVAILABLE = True
-except ImportError:
-    PADDLE_AVAILABLE = False
-    print("[WARNING] PaddleOCR not available, using EasyOCR and Tesseract only")
+# Global placeholders for lazy initialization to avoid heavy startup memory use
+READER = None
+OCR_ENGINE = 'easyocr'  # Only EasyOCR with GPU
+DEBUG_MODE = False
+
+def detect_gpu_availability():
+    """Detect GPU availability for EasyOCR"""
+    gpu_available = False
+    
+    # Check EasyOCR GPU - try to initialize with GPU and see if it works
+    try:
+        # Try to create a small EasyOCR instance to test GPU
+        import easyocr
+        test_reader = easyocr.Reader(['en'], gpu=True)
+        gpu_available = True
+        print('[runner] EasyOCR GPU available', file=sys.stderr)
+        # Clean up
+        del test_reader
+    except Exception as e:
+        print(f'[runner] EasyOCR GPU not available ({e}), using CPU', file=sys.stderr)
+    
+    return gpu_available
 
 
 # Значение по умолчанию, может быть переопределено через аргумент
@@ -76,6 +86,9 @@ def main():
     parser.add_argument('--enable-position-filter', action='store_true', help='Enable y_min position filter (default: off)')
     parser.add_argument('--backend', type=str, default=None, help='Video backend to use (e.g., FFMPEG, DSHOW, MSMF, ANY). Default: FFMPEG for video, ANY for camera')
     parser.add_argument('--max-frames', type=int, default=0, help='Maximum number of frames to process (0 = unlimited)')
+    parser.add_argument('--use-ort', action='store_true', help='Use ONNX Runtime (DirectML if available) for inference')
+    parser.add_argument('--ocr-engine', type=str, default='auto', help="OCR engine to use: 'auto', 'easyocr', 'tesseract', 'paddle'")
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode (write debug files, verbose)')
     args = parser.parse_args()
     print('[runner] Args:', args, file=sys.stderr)
     sys.stderr.flush()
@@ -87,7 +100,8 @@ def main():
     max_aspect = args.max_aspect
     disable_position_filter = not args.enable_position_filter
     global ALLOWLIST
-    ALLOWLIST = args.allowlist
+    # Fix allowlist encoding - use hardcoded Cyrillic allowlist
+    ALLOWLIST = 'АБВЕКМНОРСТУХ0123456789'
     print(f'[runner] Filters: score>={min_score}, area>={min_area}, height>={min_height}, aspect in [{min_aspect}, {max_aspect}], allowlist={ALLOWLIST}, position_filter={not disable_position_filter}', file=sys.stderr)
     sys.stderr.flush()
     sys.stdout.flush()
@@ -116,23 +130,59 @@ def main():
     print('[runner] Loading LPD_YuNet model...')
     sys.stdout.flush()
     try:
-        # Try to use DirectML (GPU) if available, fallback to CPU
-        try:
-            dml_target = cv.dnn.DNN_TARGET_DML
-            print('[runner] Trying DNN_TARGET_DML (DirectML/GPU)', file=sys.stderr)
-        except AttributeError:
-            dml_target = cv.dnn.DNN_TARGET_CPU
-            print('[runner] DNN_TARGET_DML not available, using CPU', file=sys.stderr)
-        model = LPD_YuNet(
-            modelPath=MODEL_PATH_LOCAL,
-            confThreshold=CONF_THRESHOLD,
-            nmsThreshold=NMS_THRESHOLD,
-            topK=TOP_K,
-            keepTopK=KEEP_TOP_K,
-            backendId=cv.dnn.DNN_BACKEND_OPENCV,
-            targetId=dml_target
-        )
-        print('[runner] Model loaded successfully')
+        # If requested, try to use ONNX Runtime wrapper (prefer DirectML provider)
+        if args.use_ort:
+            try:
+                import onnxruntime as _ort
+                try:
+                    print('[runner] onnxruntime available providers:', _ort.get_available_providers(), file=sys.stderr)
+                except Exception:
+                    pass
+                from lpd_yunet_ort import LPD_YuNetORT
+                model = LPD_YuNetORT(
+                    MODEL_PATH_LOCAL,
+                    inputSize=[320, 240],
+                    confThreshold=CONF_THRESHOLD,
+                    nmsThreshold=NMS_THRESHOLD,
+                    topK=TOP_K,
+                    keepTopK=KEEP_TOP_K,
+                    prefer_dml=True
+                )
+                # If the ORT wrapper exposes the session, print the providers actually used by the session
+                try:
+                    sess_providers = None
+                    if hasattr(model, 'session'):
+                        sess_providers = model.session.get_providers()
+                    elif hasattr(model, '_session'):
+                        sess_providers = model._session.get_providers()
+                    if sess_providers is not None:
+                        print('[runner] ORT session providers in use:', sess_providers, file=sys.stderr)
+                except Exception:
+                    pass
+                print('[runner] Loaded ONNX Runtime (ORT) YuNet model')
+            except Exception as e:
+                print('[runner] Failed to load ORT model, falling back to OpenCV DNN:', e, file=sys.stderr)
+                # Fallthrough to OpenCV DNN below
+                args.use_ort = False
+
+        if not args.use_ort:
+            # Try to use DirectML (GPU) if available in OpenCV DNN, fallback to CPU
+            try:
+                dml_target = cv.dnn.DNN_TARGET_DML
+                print('[runner] Trying DNN_TARGET_DML (DirectML/GPU)', file=sys.stderr)
+            except AttributeError:
+                dml_target = cv.dnn.DNN_TARGET_CPU
+                print('[runner] DNN_TARGET_DML not available, using CPU', file=sys.stderr)
+            model = LPD_YuNet(
+                modelPath=MODEL_PATH_LOCAL,
+                confThreshold=CONF_THRESHOLD,
+                nmsThreshold=NMS_THRESHOLD,
+                topK=TOP_K,
+                keepTopK=KEEP_TOP_K,
+                backendId=cv.dnn.DNN_BACKEND_OPENCV,
+                targetId=dml_target
+            )
+            print('[runner] OpenCV DNN model loaded successfully')
     except Exception as e:
         print(f"[FATAL] Failed to load model: {e}")
         import traceback
@@ -141,74 +191,12 @@ def main():
         return
     sys.stdout.flush()
 
-    # Initialize OCR reader
-    print('[runner] Initializing OCR reader...')
-    sys.stdout.flush()
-    try:
-        reader = easyocr.Reader(['en', 'ru'])  # English and Russian for license plates
-        print('[runner] EasyOCR reader initialized')
-    except Exception as e:
-        print(f"[WARNING] Failed to initialize EasyOCR: {e}")
-        reader = None
-    sys.stdout.flush()
-
-    # Initialize PaddleOCR reader
-    paddle_reader = None
-    if PADDLE_AVAILABLE:
-        print('[runner] Initializing PaddleOCR reader...')
-        sys.stdout.flush()
-    # Diagnostics: report paddle reader state before attempting init
-    try:
-        print(f"[DEBUG] Paddle reader present before init: {paddle_reader is not None}", file=sys.stderr)
-        sys.stderr.flush()
-    except Exception:
-        pass
-
-    # Try to initialize PaddleOCR but be robust to differing constructor signatures
-    if PADDLE_AVAILABLE:
-        import inspect, traceback as _traceback
-        try:
-            try:
-                sig = inspect.signature(PaddleOCR)
-                print(f"[DEBUG] PaddleOCR signature: {sig}", file=sys.stderr)
-            except Exception:
-                sig = None
-
-            paddle_kwargs = {}
-            if sig is not None:
-                params = sig.parameters
-                if 'lang' in params:
-                    paddle_kwargs['lang'] = 'en'
-                if 'use_angle_cls' in params:
-                    paddle_kwargs['use_angle_cls'] = True
-                # newer versions may use use_textline_orientation instead
-                if 'use_textline_orientation' in params and 'use_angle_cls' not in params:
-                    paddle_kwargs['use_textline_orientation'] = False
-                if 'show_log' in params:
-                    paddle_kwargs['show_log'] = False
-                if 'use_gpu' in params:
-                    paddle_kwargs['use_gpu'] = False
-            else:
-                # Best-effort defaults if signature introspection isn't available
-                paddle_kwargs = {'lang': 'en', 'use_angle_cls': True, 'show_log': False, 'use_gpu': False}
-
-            paddle_reader = PaddleOCR(**paddle_kwargs)
-            print('[runner] PaddleOCR reader initialized', file=sys.stderr)
-        except Exception as e:
-            print(f"[WARNING] Failed to initialize PaddleOCR: {e}", file=sys.stderr)
-            try:
-                _traceback.print_exc(file=sys.stderr)
-            except Exception:
-                pass
-            paddle_reader = None
-        sys.stderr.flush()
-
-    # Report final paddle reader state and continue
-    try:
-        print(f"[DEBUG] Paddle reader present after init: {paddle_reader is not None}", file=sys.stderr)
-        sys.stderr.flush()
-    except Exception:
-        pass
+    # Set OCR engine and debug mode (affects lazy init and behavior)
+    global OCR_ENGINE, DEBUG_MODE
+    OCR_ENGINE = 'easyocr'  # Only EasyOCR
+    DEBUG_MODE = bool(args.debug)
+    print(f'[runner] OCR engine: {OCR_ENGINE}, debug_mode={DEBUG_MODE}', file=sys.stderr)
+    sys.stderr.flush()
 
     # Write an initialization heartbeat so parent can observe that init completed
     try:
@@ -272,16 +260,22 @@ def main():
             h, w, _ = img.shape
             # For license plate images, skip detection and directly apply OCR
             if os.path.basename(img_path).startswith('plate_yunet_'):
-                # Enhance image for better OCR quality
-                enhanced_img = enhance_plate_image(img, scale_factor=3.0)
-                temp_path = img_path.replace('.jpg', '_enhanced.jpg')
-                cv.imwrite(temp_path, enhanced_img)
-                text = recognize_text(temp_path, reader, paddle_reader)
-                # Clean up temp file
-                try: os.remove(temp_path)
-                except: pass
+                # Enhance image for better OCR quality (use lighter enhancement)
+                enhanced_img = enhance_plate_image(img, scale_factor=1.5)
+                # Run OCR on in-memory image to avoid disk IO
+                text = recognize_text(enhanced_img)
                 print(f"{os.path.basename(img_path)}: OCR text: '{text}'")
-                recognized.append({"path": img_path, "score": 1.0, "text": text})  # score 1.0 for direct OCR
+                # Save only when recognized or when debugging
+                saved_path = None
+                if text and text.strip():
+                    temp_path = img_path.replace('.jpg', '_enhanced.jpg')
+                    cv.imwrite(temp_path, enhanced_img)
+                    saved_path = temp_path
+                elif DEBUG_MODE:
+                    temp_path = img_path.replace('.jpg', '_enhanced.jpg')
+                    cv.imwrite(temp_path, enhanced_img)
+                    saved_path = temp_path
+                recognized.append({"path": saved_path or img_path, "score": 1.0, "text": text})  # score 1.0 for direct OCR
                 continue
             # Set minimum input size for the model
             min_w, min_h = 320, 240
@@ -322,14 +316,33 @@ def main():
                     print(f"Skip {i}: y_min {y_min} < {h // 4} (верх кадра)")
                     continue
                 plate_img = img[y_min:y_max, x_min:x_max]
-                # Enhance plate image for better quality
-                plate_img = enhance_plate_image(plate_img, scale_factor=3.0)
+                # Enhance plate image for better quality (adaptive scale)
+                # Use smaller scale to reduce memory/CPU; increase only for very small crops
+                try:
+                    h_plate = plate_img.shape[0] if plate_img is not None else 0
+                except Exception:
+                    h_plate = 0
+                if h_plate and h_plate < 50:
+                    sf = 2.0
+                else:
+                    sf = 1.5
+                plate_img = enhance_plate_image(plate_img, scale_factor=sf)
                 plate_path = os.path.join(save_dir, f'plate_yunet_{os.path.splitext(os.path.basename(img_path))[0]}_{filtered_count+1}.jpg')
                 try:
-                    cv.imwrite(plate_path, plate_img)
-                    # Recognize text from plate
-                    text = recognize_text(plate_path, reader, paddle_reader)
-                    print(f"Plate saved to: {plate_path} (score={score:.2f}, area={area}, aspect={aspect:.2f}, text='{text}')")
+                    # Run OCR in-memory first to avoid unnecessary IO
+                    text = recognize_text(plate_img)
+                    # Save plate image only if recognized or debugging is enabled
+                    saved = False
+                    if text and text.strip():
+                        cv.imwrite(plate_path, plate_img)
+                        saved = True
+                    elif DEBUG_MODE:
+                        cv.imwrite(plate_path, plate_img)
+                        saved = True
+                    if saved:
+                        print(f"Plate saved to: {plate_path} (score={score:.2f}, area={area}, aspect={aspect:.2f}, text='{text}')")
+                    else:
+                        print(f"Plate (not saved) (score={score:.2f}, area={area}, aspect={aspect:.2f}, text='{text}')")
                 except Exception as e:
                     print(f"Failed to save plate image: {e}")
                     text = ""
@@ -369,15 +382,6 @@ def main():
         if not hd_checked:
             h0, w0 = frame.shape[:2]
             print(f"[runner] Stream resolution: width={w0}, height={h0}", file=sys.stderr)
-            if w0 < 1280:
-                print(f"[FATAL] Stream is not HD (width={w0} < 1280). Skipping capture.", file=sys.stderr)
-                sys.stderr.flush()
-                try:
-                    cap.release()
-                except Exception:
-                    pass
-                # Return instead of exiting so supervisor can decide next steps
-                return
             hd_checked = True
         if frame_count % frame_skip != 0:
             continue
@@ -399,7 +403,33 @@ def main():
         for i, det in enumerate(results):
             bbox = det[:-1].astype(np.int32)
             score = det[-1]
-            pts = np.array([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], dtype=np.int32)
+            # Model returns coordinates in resized input space (input_w x input_h).
+            # Scale them back to original frame coordinates before cropping.
+            pts = np.array([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], dtype=np.float32)
+            # original frame size (w,h) and model input size
+            orig_h, orig_w = frame.shape[:2]
+            # Determine the actual model input size used for inference.
+            # The model object may have a fixed input size (e.g., ORT wrapper)
+            # stored in model.input_size; fall back to the local input_w/input_h.
+            try:
+                m_input = getattr(model, 'input_size', None)
+                if m_input is None:
+                    model_w, model_h = float(input_w), float(input_h)
+                else:
+                    # handle numpy arrays
+                    try:
+                        model_w = float(m_input[0])
+                        model_h = float(m_input[1])
+                    except Exception:
+                        model_w, model_h = float(input_w), float(input_h)
+            except Exception:
+                model_w, model_h = float(input_w), float(input_h)
+
+            scale_x = float(orig_w) / model_w
+            scale_y = float(orig_h) / model_h
+            pts[:, 0] = np.clip(np.round(pts[:, 0] * scale_x), 0, orig_w - 1)
+            pts[:, 1] = np.clip(np.round(pts[:, 1] * scale_y), 0, orig_h - 1)
+            pts = pts.astype(np.int32)
             x_min, y_min = np.min(pts, axis=0)
             x_max, y_max = np.max(pts, axis=0)
             x_min, y_min = max(0, x_min), max(0, y_min)
@@ -424,20 +454,120 @@ def main():
             if not disable_position_filter and y_min < h // 4:
                 print(f"[runner] Skip {i}: y_min {y_min} < {h // 4} (верх кадра)", file=sys.stderr)
                 continue
-            # Увеличим padding для более полного захвата номера
-            pad_x = int(0.20 * width)  # 20% ширины
-            pad_y = int(0.35 * height) # 35% высоты (сверху и снизу)
-            x_min_pad = max(0, x_min - pad_x)
-            x_max_pad = min(w-1, x_max + pad_x)
-            y_min_pad = max(0, y_min - pad_y)
-            y_max_pad = min(h-1, y_max + pad_y)
-            plate_img = frame[y_min_pad:y_max_pad, x_min_pad:x_max_pad]
-            print(f"[runner] Plate crop shape (with increased padding): {plate_img.shape if plate_img is not None else None}", file=sys.stderr)
-            plate_img = enhance_plate_image(plate_img, scale_factor=3.0)
+            # Use perspective transform to extract an upright plate crop from the detected quad.
+            # This yields a more consistent crop for OCR than the axis-aligned bbox.
+            pad_x_ratio = 0.20  # 20% width padding
+            pad_y_ratio = 0.35  # 35% height padding
+            try:
+                # Ensure the quad points are ordered consistently: top-left, top-right, bottom-right, bottom-left
+                def order_quad(quad):
+                    # quad: numpy array shape (4,2)
+                    q = quad.reshape((4,2)).astype(np.float32)
+                    s = q.sum(axis=1)
+                    diff = np.diff(q, axis=1).reshape(4)
+                    rect = np.zeros((4,2), dtype=np.float32)
+                    rect[0] = q[np.argmin(s)]      # top-left has smallest sum
+                    rect[2] = q[np.argmax(s)]      # bottom-right has largest sum
+                    rect[1] = q[np.argmin(diff)]   # top-right has smallest difference (x - y)
+                    rect[3] = q[np.argmax(diff)]   # bottom-left has largest difference
+                    return rect
+
+                src_pts = order_quad(pts.astype(np.float32))
+                # Estimate quad size using ordered points
+                # width: distance between top-left and top-right, and between bottom-left and bottom-right
+                widthA = np.linalg.norm(src_pts[0] - src_pts[1])
+                widthB = np.linalg.norm(src_pts[3] - src_pts[2])
+                maxWidth = int(max(widthA, widthB))
+                # height: distance between top-left and bottom-left, and between top-right and bottom-right
+                heightA = np.linalg.norm(src_pts[0] - src_pts[3])
+                heightB = np.linalg.norm(src_pts[1] - src_pts[2])
+                maxHeight = int(max(heightA, heightB))
+
+                if maxWidth <= 0 or maxHeight <= 0:
+                    raise ValueError('Invalid quad size')
+
+                pad_x_px = int(pad_x_ratio * maxWidth)
+                pad_y_px = int(pad_y_ratio * maxHeight)
+
+                dst_w = maxWidth + 2 * pad_x_px
+                dst_h = maxHeight + 2 * pad_y_px
+
+                dst_pts = np.array([
+                    [pad_x_px, pad_y_px],
+                    [pad_x_px + maxWidth - 1, pad_y_px],
+                    [pad_x_px + maxWidth - 1, pad_y_px + maxHeight - 1],
+                    [pad_x_px, pad_y_px + maxHeight - 1]
+                ], dtype=np.float32)
+
+                M = cv.getPerspectiveTransform(src_pts, dst_pts)
+                plate_img = cv.warpPerspective(frame, M, (dst_w, dst_h), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+                # If the resulting crop is portrait (height > width) but license plates are expected to be landscape,
+                # rotate the image by 90 degrees so text is upright.
+                try:
+                    if plate_img is not None:
+                        ph, pw = plate_img.shape[:2]
+                        # If plate is taller than wide, rotate clockwise to make it landscape
+                        if pw < ph:
+                            plate_img = cv.rotate(plate_img, cv.ROTATE_90_CLOCKWISE)
+                except Exception:
+                    pass
+                print(f"[runner] Plate crop (perspective) shape: {plate_img.shape if plate_img is not None else None}", file=sys.stderr)
+            except Exception as e:
+                # Fallback to axis-aligned crop
+                pad_x = int(0.20 * width)  # 20% width
+                pad_y = int(0.35 * height) # 35% height
+                x_min_pad = max(0, x_min - pad_x)
+                x_max_pad = min(w-1, x_max + pad_x)
+                y_min_pad = max(0, y_min - pad_y)
+                y_max_pad = min(h-1, y_max + pad_y)
+                plate_img = frame[y_min_pad:y_max_pad, x_min_pad:x_max_pad]
+                print(f"[runner] Plate crop shape (fallback axis-aligned): {plate_img.shape if plate_img is not None else None}", file=sys.stderr)
+            # Adaptive enhancement: smaller scale to lower CPU/Memory usage
+            try:
+                h_plate = plate_img.shape[0] if plate_img is not None else 0
+            except Exception:
+                h_plate = 0
+            sf = 2.0 if h_plate and h_plate < 50 else 1.5
+            plate_img = enhance_plate_image(plate_img, scale_factor=sf)
             plate_path = os.path.join(save_dir, f'plate_yunet_frame_{frame_count}_{filtered_count+1}.jpg')
             try:
                 cv.imwrite(plate_path, plate_img)
-                text = recognize_text(plate_path, reader, paddle_reader)
+                # Run OCR in-memory first to avoid disk IO and to allow flip-checks
+                try:
+                    text = recognize_text(plate_img)
+                except Exception:
+                    # Fallback to path-based OCR
+                    text = recognize_text(plate_path)
+
+                # Heuristic: if OCR produced nothing or contains very few allowed characters,
+                # try horizontal flip (mirror) and re-run OCR — sometimes perspective warp or
+                # camera orientation produces mirrored crops.
+                def allowed_fraction(s):
+                    if not s:
+                        return 0.0
+                    cnt = sum(1 for ch in s if ch.upper() in ALLOWLIST)
+                    return cnt / max(1, len(s))
+
+                best_text = text or ""
+                best_score = allowed_fraction(best_text)
+                try:
+                    if best_score < 0.5:
+                        flipped = cv.flip(plate_img, 1)
+                        flipped_text = recognize_text(flipped)
+                        flipped_score = allowed_fraction(flipped_text)
+                        if flipped_score > best_score and flipped_text:
+                            # prefer flipped result
+                            best_text = flipped_text
+                            best_score = flipped_score
+                            # overwrite saved image with corrected (flipped) crop so files shown to user are readable
+                            try:
+                                cv.imwrite(plate_path, flipped)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                text = best_text
                 print(f"[runner] Plate saved to: {plate_path} (score={score:.2f}, area={area}, height={height}, aspect={aspect:.2f}, text='{text}')", file=sys.stderr)
                 # Если распознано хоть что-то, сразу отправить JSON для Node.js
                 if text and text.strip():
@@ -466,15 +596,17 @@ def main():
             except Exception as e:
                 print(f"[runner] Failed to save plate image: {e}", file=sys.stderr)
                 text = ""
-            # Save bbox visualization for diagnostics (старый bbox без padding)
+            # Save bbox visualization for diagnostics only when debug mode is enabled
             try:
-                vis_frame = frame.copy()
-                cv.polylines(vis_frame, [pts], isClosed=True, color=(0,255,0), thickness=2)
-                vis_path = os.path.join(save_dir, f'bbox_yunet_frame_{frame_count}_{filtered_count+1}.jpg')
-                cv.imwrite(vis_path, vis_frame)
-                print(f"[runner] BBox visualization saved to: {vis_path}", file=sys.stderr)
+                if DEBUG_MODE:
+                    vis_frame = frame.copy()
+                    cv.polylines(vis_frame, [pts], isClosed=True, color=(0,255,0), thickness=2)
+                    vis_path = os.path.join(save_dir, f'bbox_yunet_frame_{frame_count}_{filtered_count+1}.jpg')
+                    cv.imwrite(vis_path, vis_frame)
+                    print(f"[runner] BBox visualization saved to: {vis_path}", file=sys.stderr)
             except Exception as e:
-                print(f"[runner] Failed to save bbox visualization: {e}", file=sys.stderr)
+                if DEBUG_MODE:
+                    print(f"[runner] Failed to save bbox visualization: {e}", file=sys.stderr)
             filtered_count += 1
         # Сохраняем только если найден хотя бы один номер
         if filtered_count > 0:
@@ -530,6 +662,11 @@ def visualize(image, dets, line_color=(0, 255, 0)):
 def enhance_plate_image(plate_img, scale_factor=3.0):
     """Enhance plate image with advanced preprocessing for better OCR accuracy."""
     try:
+        # Defensive: if crop failed or is empty, return it unchanged
+        if plate_img is None:
+            return plate_img
+        if hasattr(plate_img, 'size') and plate_img.size == 0:
+            return plate_img
         # Convert to grayscale if needed
         if len(plate_img.shape) == 3:
             gray = cv.cvtColor(plate_img, cv.COLOR_BGR2GRAY)
@@ -566,43 +703,48 @@ def enhance_plate_image(plate_img, scale_factor=3.0):
         print(f"[WARNING] Image enhancement failed: {e}")
         return plate_img
 
-def recognize_text(image_path, reader, paddle_reader=None):
-    """Recognize text from license plate image using multiple OCR engines and advanced techniques."""
+def recognize_text(image_or_path):
+    """Lazy-initialized OCR pipeline using only EasyOCR with GPU.
+
+    Initializes EasyOCR on first call.
+    Returns the recognized text or empty string.
+    """
+    global READER
     results = []
-    # Try EasyOCR first
-    try:
-        easyocr_result = reader.readtext(image_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
-        if easyocr_result:
-            text1 = ' '.join([result[1] for result in easyocr_result if result[2] > 0.2])
-            results.append(text1)
-    except Exception:
-        pass
-    # Try Tesseract if available
-    if 'pytesseract' in globals() and TESSERACT_AVAILABLE:
+
+    def init_easyocr():
+        global READER
+        if READER is None:
+            gpu_available = detect_gpu_availability()
+            try:
+                READER = easyocr.Reader(['en', 'ru'], gpu=gpu_available)
+                if gpu_available:
+                    print('[runner] EasyOCR initialized with GPU support', file=sys.stderr)
+                else:
+                    print('[runner] EasyOCR initialized with CPU', file=sys.stderr)
+            except Exception as e:
+                print(f"[WARNING] easyocr init failed: {e}", file=sys.stderr)
+                READER = None
+
+    # Only use EasyOCR
+    init_easyocr()
+    if READER:
         try:
-            import pytesseract
-            img = cv.imread(image_path)
-            if img is not None:
-                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-                text2 = pytesseract.image_to_string(gray, lang='rus', config=f'--oem 3 --psm 7 -c tessedit_char_whitelist={ALLOWLIST}')
-                if text2.strip():
-                    results.append(text2.strip())
-        except Exception:
-            pass
-    # Try PaddleOCR if available
-    if paddle_reader:
-        try:
-            paddle_result = paddle_reader.ocr(image_path, cls=True)
-            if paddle_result and paddle_result[0]:
-                text3 = ' '.join([line[1][0] for line in paddle_result[0] if line[1][1] > 0.5])
-                if text3:
-                    results.append(text3)
-        except Exception:
-            pass
-    # Select best result
+            # Accept either numpy array (image) or filesystem path
+            is_array = hasattr(image_or_path, 'ndim')
+            if is_array:
+                easyocr_result = READER.readtext(image_or_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
+            else:
+                easyocr_result = READER.readtext(image_or_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
+            if easyocr_result:
+                text1 = ' '.join([result[1] for result in easyocr_result if result[2] > 0.2])
+                if text1:
+                    results.append(text1)
+        except Exception as e:
+            print(f"[WARNING] EasyOCR recognition failed: {e}", file=sys.stderr)
+
     if not results:
         return ""
-    # Prefer the longest result (simple heuristic)
     return max(results, key=len)
 
 
@@ -639,118 +781,3 @@ if __name__ == '__main__':
             sys.exit(1)
         except Exception:
             pass
-
-# --- Proper try_open_capture function ---
-def try_open_capture(source, backend_preference=None):
-    """Try to open a video/camera source with multiple backends for robustness."""
-    import cv2 as cv
-    backends = [cv.CAP_FFMPEG, cv.CAP_MSMF, cv.CAP_DSHOW, cv.CAP_ANY]
-    if backend_preference is not None:
-        backends = [backend_preference] + [b for b in backends if b != backend_preference]
-    for backend in backends:
-        try:
-            cap = cv.VideoCapture(source, backend)
-            if cap is not None and cap.isOpened():
-                print(f"[DEBUG] CAP_PROP_FRAME_WIDTH: {cap.get(cv.CAP_PROP_FRAME_WIDTH)}", file=sys.stderr)
-                print(f"[DEBUG] CAP_PROP_FRAME_HEIGHT: {cap.get(cv.CAP_PROP_FRAME_HEIGHT)}", file=sys.stderr)
-                print(f"[DEBUG] CAP_PROP_FPS: {cap.get(cv.CAP_PROP_FPS)}", file=sys.stderr)
-                sys.stderr.flush()
-                return cap, backend
-            else:
-                print(f"[DEBUG] cap.isOpened() is False for backend {backend}", file=sys.stderr)
-                sys.stderr.flush()
-        except Exception as e:
-            print(f"[DEBUG] Exception with backend {backend}: {e}", file=sys.stderr)
-            sys.stderr.flush()
-    print(f"[DEBUG] All backends failed to open source {source}", file=sys.stderr)
-    sys.stderr.flush()
-    return None, None
-
-def visualize(image, dets, line_color=(0, 255, 0)):
-    output = image.copy()
-    for det in dets:
-        bbox = det[:-1].astype(np.int32)
-        x1, y1, x2, y2, x3, y3, x4, y4 = bbox
-        cv.line(output, (x1, y1), (x2, y2), line_color, 2)
-        cv.line(output, (x2, y2), (x3, y3), line_color, 2)
-        cv.line(output, (x3, y3), (x4, y4), line_color, 2)
-        cv.line(output, (x4, y4), (x1, y1), line_color, 2)
-    return output
-
-def enhance_plate_image(plate_img, scale_factor=3.0):
-    """Enhance plate image with advanced preprocessing for better OCR accuracy."""
-    try:
-        # Convert to grayscale if needed
-        if len(plate_img.shape) == 3:
-            gray = cv.cvtColor(plate_img, cv.COLOR_BGR2GRAY)
-        else:
-            gray = plate_img.copy()
-        # Apply Gaussian blur to reduce noise
-        blurred = cv.GaussianBlur(gray, (3, 3), 0)
-        # Enhance contrast using CLAHE
-        clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(blurred)
-        # Apply bilateral filter to reduce noise while keeping edges
-        filtered = cv.bilateralFilter(enhanced, 9, 75, 75)
-        # Apply morphological operations to clean up
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, (2, 2))
-        morphed = cv.morphologyEx(filtered, cv.MORPH_CLOSE, kernel)
-        # Resize with high-quality interpolation
-        if scale_factor > 1.0:
-            h, w = morphed.shape[:2]
-            new_w = int(w * scale_factor)
-            new_h = int(h * scale_factor)
-            resized = cv.resize(morphed, (new_w, new_h), interpolation=cv.INTER_CUBIC)
-        else:
-            resized = morphed
-        # Apply sharpening filter
-        kernel_sharp = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
-        sharpened = cv.filter2D(resized, -1, kernel_sharp)
-        # Ensure final image is in correct format
-        if len(plate_img.shape) == 3:
-            # Convert back to BGR if original was color
-            sharpened_bgr = cv.cvtColor(sharpened, cv.COLOR_GRAY2BGR)
-            return sharpened_bgr
-        return sharpened
-    except Exception as e:
-        print(f"[WARNING] Image enhancement failed: {e}")
-        return plate_img
-
-def recognize_text(image_path, reader, paddle_reader=None):
-    """Recognize text from license plate image using multiple OCR engines and advanced techniques."""
-    results = []
-    # Try EasyOCR first
-    try:
-        easyocr_result = reader.readtext(image_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
-        if easyocr_result:
-            text1 = ' '.join([result[1] for result in easyocr_result if result[2] > 0.2])
-            results.append(text1)
-    except Exception:
-        pass
-    # Try Tesseract if available
-    if 'pytesseract' in globals() and TESSERACT_AVAILABLE:
-        try:
-            import pytesseract
-            img = cv.imread(image_path)
-            if img is not None:
-                gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-                text2 = pytesseract.image_to_string(gray, lang='rus', config=f'--oem 3 --psm 7 -c tessedit_char_whitelist={ALLOWLIST}')
-                if text2.strip():
-                    results.append(text2.strip())
-        except Exception:
-            pass
-    # Try PaddleOCR if available
-    if paddle_reader:
-        try:
-            paddle_result = paddle_reader.ocr(image_path, cls=True)
-            if paddle_result and paddle_result[0]:
-                text3 = ' '.join([line[1][0] for line in paddle_result[0] if line[1][1] > 0.5])
-                if text3:
-                    results.append(text3)
-        except Exception:
-            pass
-    # Select best result
-    if not results:
-        return ""
-    # Prefer the longest result (simple heuristic)
-    return max(results, key=len)

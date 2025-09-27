@@ -181,28 +181,30 @@
                     if (cameraItem && cameraItem.dataset.cameraId) {
                         const cameraId = parseInt(cameraItem.dataset.cameraId, 10);
                         const camera = stateManager.state.cameras.find(c => c.id === cameraId);
+                        // Временный вывод camera-объекта для отладки RTSP URL
+                        console.log('DEBUG camera object for RTSP:', camera);
                         // Try to derive a working RTSP URL (use stored rtspUrl, build from fields, or probe ONVIF)
                         console.debug('[CameraList] plate button clicked. window.api type:', typeof window.api);
                         try { console.debug('[CameraList] window.api keys:', Object.keys(window.api || {})); } catch(e){}
                         console.debug('[CameraList] window.api.invoke type:', typeof (window.api && window.api.invoke));
                         const rtspUrl = await getRtspUrlForCamera(camera);
-                                        if (rtspUrl) {
-                                            // Start recognition in main process (safe: main has access to stored passwords)
-                                            try {
-                                                // Debug before invoking
-                                                console.debug('[CameraList] invoking module-license-plate-start for cameraId', cameraId);
-                                                const res = await (window.api && typeof window.api.invoke === 'function' ? window.api.invoke('module-license-plate-start', cameraId) : Promise.reject(new Error('window.api.invoke is not a function')));
-                                                if (res && res.success) {
-                                                    App.modalHandler.showToast(App.i18n.t('plate_started') || 'Распознавание запущено', false, 3500);
-                                                } else {
-                                                    App.modalHandler.showToast((res && res.error) ? res.error : App.i18n.t('plate_start_failed') || 'Не удалось запустить распознавание', true, 5000);
-                                                }
-                                            } catch (e) {
-                                                App.modalHandler.showToast((e && e.message) || App.i18n.t('plate_start_failed') || 'Ошибка запуска', true);
-                                            }
-                                        } else {
-                                            App.modalHandler.showToast(App.i18n.t('plate_no_rtsp_url') || 'RTSP URL не найден для камеры', true);
-                                        }
+                        if (rtspUrl) {
+                            // Start recognition in main process (safe: main has access to stored passwords)
+                            try {
+                                // Debug before invoking
+                                console.debug('[CameraList] invoking module-license-plate-start for cameraId', cameraId);
+                                const res = await (window.api && typeof window.api.invoke === 'function' ? window.api.invoke('module-license-plate-start', cameraId) : Promise.reject(new Error('window.api.invoke is not a function')));
+                                if (res && res.success) {
+                                    App.modalHandler.showToast(App.i18n.t('plate_started') || 'Распознавание запущено', false, 3500);
+                                } else {
+                                    App.modalHandler.showToast((res && res.error) ? res.error : App.i18n.t('plate_start_failed') || 'Не удалось запустить распознавание', true, 5000);
+                                }
+                            } catch (e) {
+                                App.modalHandler.showToast((e && e.message) || App.i18n.t('plate_start_failed') || 'Ошибка запуска', true);
+                            }
+                        } else {
+                            App.modalHandler.showToast(App.i18n.t('plate_no_rtsp_url') || 'RTSP URL не найден для камеры', true);
+                        }
                     }
                     return;
                 }
@@ -273,7 +275,14 @@
                 // ignore
             }
 
-            return null;
+            // Final fallback: use local MediaMTX source (the main process generates these paths at startup)
+            try {
+                const mediaMtxUrl = `rtsp://127.0.0.1:8554/cam${camera.id}_0`;
+                console.debug('[CameraList] Falling back to MediaMTX URL for camera', camera.id, mediaMtxUrl);
+                return mediaMtxUrl;
+            } catch (e) {
+                return null;
+            }
         }
 
         async function recognizePlate(rtspUrl, cameraId) {
@@ -354,7 +363,15 @@
                     menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
                 }
 
-                window.api.showCameraContextMenu({ cameraId, labels: menuItems });
+                // Pass only serializable fields of camera object
+                const cameraObjRaw = stateManager.state.cameras.find(c => c.id === cameraId) || null;
+                let cameraObj = null;
+                if (cameraObjRaw) {
+                    const { id, groupId, name, ip, port, username, streamPath, streamPath0, streamPath1, protocol, onvifAuth } = cameraObjRaw;
+                    cameraObj = { id, groupId, name, ip, port, username, streamPath, streamPath0, streamPath1, protocol, onvifAuth };
+                }
+                console.log('[CameraList][ContextMenu] cameraObj:', cameraObj);
+                window.api.showCameraContextMenu({ cameraId, labels: menuItems, camera: cameraObj });
             } else if (groupHeader) {
                 const groupIdStr = groupHeader.closest('.group-container')?.dataset.groupId;
                 if (groupIdStr && groupIdStr !== 'null') {

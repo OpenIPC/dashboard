@@ -1134,7 +1134,7 @@ async function toggleAnalytics(cameraId, streamId, mainWindow, moduleManager) {
         console.log(`[Analytics DEBUG] Config object being sent:`, configForScript);
         console.log(`[Analytics DEBUG] Provider choice: ${providerChoice}`);
         console.log('-------------------------');
-        analyticsProcess = spawn(pythonCmd, [scriptPath, rtspUrl, configArg, providerChoice], { windowsHide: true });
+        analyticsProcess = spawn(pythonCmd, [scriptPath, '--video', rtspUrl, '--ocr-engine', 'auto'], { windowsHide: true });
     } else {
         // --- СТАРЫЙ ВАРИАНТ: exe ---
         const analyticsBasePath = app.isPackaged

@@ -1,0 +1,8 @@
+onnxruntime-directml>=1.13.1
+onnxruntime>=1.13.1
+numpy
+opencv-python-headless
+easyocr
+Pillow
+scipy
+

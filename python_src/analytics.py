@@ -24,6 +24,56 @@ except Exception as e:
     print(json.dumps({"status": "error", "message": error_message}), flush=True)
     sys.exit(1)
 
+# --- GPU/CPU Provider Selection ---
+def select_providers(provider_choice):
+    providers = ort.get_available_providers()
+    chosen_providers = None
+    dml_candidates = ['DmlExecutionProvider', 'DMLExecutionProvider']
+    cuda_candidates = ['CUDAExecutionProvider']
+    selected_dml = None
+    selected_cuda = None
+
+    if provider_choice == 'dml':
+        for c in dml_candidates:
+            if c in providers:
+                selected_dml = c
+                break
+        if selected_dml:
+            chosen_providers = [selected_dml, 'CPUExecutionProvider']
+        else:
+            print(json.dumps({"status": "warning", "message": "DML provider not available, falling back to CPU"}), flush=True)
+            chosen_providers = ['CPUExecutionProvider']
+    elif provider_choice == 'cuda':
+        for c in cuda_candidates:
+            if c in providers:
+                selected_cuda = c
+                break
+        if selected_cuda:
+            chosen_providers = [selected_cuda, 'CPUExecutionProvider']
+        else:
+            print(json.dumps({"status": "warning", "message": "CUDA provider not available, falling back to CPU"}), flush=True)
+            chosen_providers = ['CPUExecutionProvider']
+    else:  # 'auto' or 'cpu'
+        # Try DML first, then CUDA, then CPU
+        for c in dml_candidates:
+            if c in providers:
+                selected_dml = c
+                break
+        if selected_dml:
+            chosen_providers = [selected_dml, 'CPUExecutionProvider']
+        else:
+            for c in cuda_candidates:
+                if c in providers:
+                    selected_cuda = c
+                    break
+            if selected_cuda:
+                chosen_providers = [selected_cuda, 'CPUExecutionProvider']
+            else:
+                chosen_providers = ['CPUExecutionProvider']
+
+    print(json.dumps({"status": "info", "message": f"Selected ONNX providers: {chosen_providers}"}), flush=True)
+    return chosen_providers
+
 # --- Классы и функции-хелперы (без изменений) ---
 COCO_CLASSES = {
     0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus', 6: 'train', 7: 'truck',
@@ -105,51 +155,27 @@ def postprocess(output, ratio, pad, confidence_threshold=0.5, iou_threshold=0.5)
 
 def run_analytics(rtsp_url, config_str, provider_choice='auto'):
     try:
+        # Load YOLO model
         model_path = os.path.join(application_path, 'yolov8n.onnx')
-        session = None
-        available_providers = ort.get_available_providers()
+        if not os.path.exists(model_path):
+            print(json.dumps({"status": "error", "message": f"Model file not found: {model_path}"}), flush=True)
+            sys.exit(1)
         
-        def try_provider(provider_name):
-            nonlocal session
-            if provider_name in available_providers:
-                try:
-                    provider_options = {}
-                    if provider_name == 'DmlExecutionProvider':
-                        provider_options = {'device_id': '0'}
-                    session = ort.InferenceSession(model_path, providers=[(provider_name, provider_options), 'CPUExecutionProvider'])
-                    print(json.dumps({"status": "info", "provider": provider_name}), flush=True)
-                    return True
-                except Exception as e:
-                    print(json.dumps({"status": "info", "provider": provider_name, "error": f"{provider_name} failed: {str(e)}"}), flush=True)
-                    session = None
-            return False
-
-        if provider_choice == 'dml':
-            try_provider('DmlExecutionProvider')
-        elif provider_choice == 'auto':
-            if sys.platform == "win32":
-                if not try_provider('DmlExecutionProvider'):
-                    try_provider('CPUExecutionProvider')
-            else:
-                 try_provider('CPUExecutionProvider')
+        chosen_providers = select_providers(provider_choice)
         
-        if session is None:
-            if not try_provider('CPUExecutionProvider'):
-                 raise RuntimeError("Could not initialize any ONNX Runtime provider.")
-
+        session = ort.InferenceSession(model_path, providers=chosen_providers)
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
-        input_height = session.get_inputs()[0].shape[2]
-        input_width = session.get_inputs()[0].shape[3]
+        input_shape = session.get_inputs()[0].shape
+        input_height, input_width = input_shape[2], input_shape[3]
             
         config = {}
         if config_str:
             try:
                 config_json = base64.b64decode(config_str).decode('utf-8')
                 config = json.loads(config_json)
-            except Exception:
-                pass
-        
+            except Exception as e:
+                print(json.dumps({"status": "warning", "message": f"Failed to parse config: {str(e)}"}), flush=True)
         objects_to_detect = config.get('objects', None)
         confidence_threshold = config.get('confidence', 0.5)
         frame_skip = int(config.get('frame_skip', 5)) or 1
@@ -229,8 +255,8 @@ if __name__ == "__main__":
         if len(sys.argv) > 1:
             rtsp_stream_url = sys.argv[1]
             config_arg = sys.argv[2] if len(sys.argv) > 2 else None
-            provider_arg = sys.argv[3] if len(sys.argv) > 3 else 'auto'
-            run_analytics(rtsp_stream_url, config_arg, provider_arg)
+            provider_choice = sys.argv[3] if len(sys.argv) > 3 else 'auto'
+            run_analytics(rtsp_stream_url, config_arg, provider_choice)
         else:
             print(json.dumps({"status": "error", "message": "RTSP URL not provided"}), flush=True)
             sys.exit(1)

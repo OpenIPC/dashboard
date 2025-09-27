@@ -63,6 +63,9 @@
                 // Сначала обновляем данные в state
                 stateManager.updateCamera({ id: editingCameraId, ...cameraDataToUpdate });
                 
+                // Update MediaMTX paths after updating camera
+                window.api.updateMediaMTXPaths().catch(e => console.error('[CameraHandler] Failed to update MediaMTX paths after updating camera:', e));
+                
                 if (needsRestart) {
                     console.log(`[Camera Save] Settings changed for camera ${editingCameraId}, initiating restart.`);
                     
@@ -113,8 +116,14 @@
                 }
             } else {
                 stateManager.addCamera(cameraDataToUpdate);
+                utils.closeModal(addModal);
+                // Update MediaMTX paths after adding camera
+                try {
+                    await window.api.updateMediaMTXPaths();
+                } catch (e) {
+                    console.error('[CameraHandler] Failed to update MediaMTX paths after adding camera:', e);
+                }
             }
-            utils.closeModal(addModal);
         }
 
         function openAddGroupModal() {

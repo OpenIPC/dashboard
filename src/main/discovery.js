@@ -80,7 +80,8 @@ function checkPort(ip, port, timeout = 1000) {
  */
 async function ipScanDiscoveryTask(mainWindow) {
     console.log('[Scanner IP-Scan] Starting robust TCP port scan...');
-    const COMMON_ONVIF_PORTS = [80, 8899, 8080, 2020];
+    // Common ports to probe for ONVIF/HTTP/RTSP/HTTPS interfaces on cameras
+    const COMMON_ONVIF_PORTS = [80, 443, 554, 8554, 8899, 8000, 8001, 8080, 8443, 2020];
     const interfaces = os.networkInterfaces();
     const subnets = new Set();
 
@@ -96,13 +97,61 @@ async function ipScanDiscoveryTask(mainWindow) {
         }
     } catch (e) { /* ignore in best-effort logging */ }
 
-    // Собираем все локальные подсети (например, 192.168.1.)
+    // Helpers: convert dotted IPv4 <-> int
+    function ipv4ToInt(ip) {
+        return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+    }
+    function intToIpv4(int) {
+        return [(int >>> 24) & 0xFF, (int >>> 16) & 0xFF, (int >>> 8) & 0xFF, int & 0xFF].join('.');
+    }
+    function netmaskToInt(mask) {
+        return mask.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+    }
+
+    // Собираем все локальные подсети (например, 192.168.1.) на основе адреса + маски
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                subnets.add(iface.address.substring(0, iface.address.lastIndexOf('.') + 1));
+                try {
+                    let mask = iface.netmask || (iface.cidr ? iface.cidr.split('/')[1] : null);
+                    let prefix24;
+                    if (typeof mask === 'string' && mask.indexOf('.') !== -1) {
+                        // mask like '255.255.255.0'
+                        const addrInt = ipv4ToInt(iface.address);
+                        const maskInt = netmaskToInt(mask);
+                        const networkInt = addrInt & maskInt;
+                        // Derive the /24 containing this interface (safe default)
+                        const network24Int = networkInt & netmaskToInt('255.255.255.0');
+                        prefix24 = intToIpv4(network24Int).substring(0, intToIpv4(network24Int).lastIndexOf('.') + 1);
+                    } else if (mask !== null) {
+                        // mask is CIDR length like '24'
+                        const cidr = parseInt(mask, 10);
+                        const addrInt = ipv4ToInt(iface.address);
+                        const maskInt = cidr >= 32 ? 0xFFFFFFFF : cidr <= 0 ? 0 : (~((1 << (32 - cidr)) - 1)) >>> 0;
+                        const networkInt = addrInt & maskInt;
+                        const network24Int = networkInt & netmaskToInt('255.255.255.0');
+                        prefix24 = intToIpv4(network24Int).substring(0, intToIpv4(network24Int).lastIndexOf('.') + 1);
+                    } else {
+                        // Fallback: use first three octets of address
+                        prefix24 = iface.address.substring(0, iface.address.lastIndexOf('.') + 1);
+                    }
+
+                    if (prefix24) {
+                        subnets.add(prefix24);
+                    }
+                } catch (e) {
+                    console.warn('[Scanner IP-Scan] Failed to compute subnet for iface', iface.address, iface.netmask, e && e.message);
+                    subnets.add(iface.address.substring(0, iface.address.lastIndexOf('.') + 1));
+                }
             }
         }
+    }
+
+    // If we didn't discover any subnets from interfaces (rare), add a small set of common private subnets as a fallback
+    if (subnets.size === 0) {
+        const fallback = ['192.168.0.', '192.168.1.', '10.0.0.', '172.16.0.'];
+        console.log('[Scanner IP-Scan] No non-internal interfaces found; falling back to common private subnets:', fallback);
+        fallback.forEach(s => subnets.add(s));
     }
 
     const scanPromises = [];
@@ -114,21 +163,33 @@ async function ipScanDiscoveryTask(mainWindow) {
 
             const promise = (async () => {
                 for (const port of COMMON_ONVIF_PORTS) {
-                    if (await checkPort(ip, port, 500)) { 
+                    // Use slightly longer timeout for slower networks/devices
+                    const portOpen = await checkPort(ip, port, 800);
+                    if (portOpen) {
                         try {
-                            const device = new onvif.OnvifDevice({
-                                xaddr: `http://${ip}:${port}/onvif/device_service`,
-                            });
-                            
-                            // Пытаемся инициализировать с таймаутом, чтобы не зависать надолго
-                            const initPromise = device.init();
-                            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
-                            await Promise.race([initPromise, timeoutPromise]);
+                            // Prefer ONVIF init on HTTP/ONVIF ports
+                            const tryOnvif = [80, 8080, 8899, 8000, 8001, 2020, 443, 8443];
+                            if (tryOnvif.includes(port)) {
+                                const device = new onvif.OnvifDevice({ xaddr: `http://${ip}:${port}/onvif/device_service` });
+                                const initPromise = device.init();
+                                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+                                await Promise.race([initPromise, timeoutPromise]);
 
-                            sendDeviceFound(mainWindow, { ip }, 'ONVIF');
-                            break; // Нашли на одном порту, переходим к следующему IP
+                                sendDeviceFound(mainWindow, { ip }, 'ONVIF');
+                                break; // Found and reported
+                            }
+
+                            // If it's an RTSP port (554, 8554) — ONVIF may not be available, but RTSP stream likely is.
+                            if ([554, 8554].includes(port)) {
+                                console.log(`[Scanner IP-Scan] RTSP port open at ${ip}:${port} — reporting as RTSP candidate`);
+                                sendDeviceFound(mainWindow, { ip }, 'RTSP');
+                                break;
+                            }
                         } catch (error) {
-                            // Игнорируем ошибки, это нормально для устройств, не являющихся камерами
+                            // If ONVIF init fails on an ONVIF-capable port, ignore and continue scanning other ports.
+                            // For RTSP ports, we already report above.
+                            // Log at debug level for diagnostics.
+                            console.debug('[Scanner IP-Scan] Probe failed for', ip, port, error && error.message);
                         }
                     }
                 }

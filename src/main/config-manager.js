@@ -68,7 +68,8 @@ async function getAppSettings() {
         fps: 20,
         analytics_record_duration: 30,
         notifications_enabled: true,
-        analytics_provider: 'auto'
+        analytics_provider: 'auto',
+        useWebRTC: false  // New: Enable WebRTC for low-latency streaming
     };
 
     appSettingsCache = { ...defaults, ...appSettingsCache };
@@ -77,12 +78,51 @@ async function getAppSettings() {
 
 async function saveAppSettings(settings) {
     try {
-        appSettingsCache = settings;
-        await fsPromises.writeFile(appSettingsPath, JSON.stringify(settings, null, 2));
+        // Load current settings (from cache or disk) and merge shallowly to avoid accidental overwrites
+        let current = {};
+        try {
+            current = await getAppSettings();
+        } catch (e) {
+            console.warn('[Config] Could not load existing app settings for merge, proceeding with provided settings.', e && e.message);
+            current = {};
+        }
+
+        const merged = { ...current, ...settings };
+
+        // Safe stringify: remove functions, symbols and handle cycles gracefully
+        const safeStringify = (obj) => {
+            const seen = new WeakSet();
+            return JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'function') return undefined;
+                if (typeof value === 'symbol') return undefined;
+                if (typeof value === 'undefined') return null;
+                if (value && typeof value === 'object') {
+                    if (seen.has(value)) return undefined;
+                    seen.add(value);
+                }
+                return value;
+            }, 2);
+        };
+
+        let payload;
+        try {
+            payload = safeStringify(merged);
+        } catch (serr) {
+            console.error('[Config] Failed to serialize merged app settings:', serr);
+            return { success: false, error: 'Serialization error: ' + (serr && serr.message) };
+        }
+
+        // Atomic write: write to temp file then rename
+        const tmpPath = `${appSettingsPath}.tmp`;
+        await fsPromises.writeFile(tmpPath, payload, 'utf-8');
+        await fsPromises.rename(tmpPath, appSettingsPath);
+
+        appSettingsCache = merged;
+        console.log('[Config] app-settings.json saved to', appSettingsPath, 'keys=', Object.keys(merged));
         return { success: true };
     } catch (e) {
         console.error('Failed to save app settings:', e);
-        return { success: false, error: e.message };
+        return { success: false, error: e && e.message };
     }
 }
 
@@ -111,6 +151,21 @@ async function loadConfiguration() {
             console.error('[Config] Failed to parse config.json, using default config.', parseError);
             return defaultConfig;
         }
+
+        // Log loaded config (mask passwords if present)
+        try {
+            const safeConfig = JSON.parse(JSON.stringify(config));
+            if (Array.isArray(safeConfig.cameras)) {
+                safeConfig.cameras = safeConfig.cameras.map(c => {
+                    const copy = { ...c };
+                    if (copy.password) copy.password = '***masked***';
+                    return copy;
+                });
+            }
+            console.log('[ConfigManager][Load] Loaded config from', configPath, JSON.stringify(safeConfig, null, 2));
+        } catch (logErr) {
+            console.error('[ConfigManager][Load] Failed to stringify loaded config for logging:', logErr);
+        }
         
         if (!config.gridState || config.gridState.length < 64) {
             config.gridState = Array(64).fill(null);
@@ -119,7 +174,7 @@ async function loadConfiguration() {
     } catch (e) {
         const migratedConfig = await migrateOldFile();
         if (migratedConfig) {
-            await saveConfiguration(migratedConfig);
+            await saveConfiguration(migratedConfig, { origin: 'migration:oldCameras' });
             await fsPromises.rename(oldCamerasPath, `${oldCamerasPath}.bak`);
             console.log('Migration successful and new config saved.');
             return migratedConfig;
@@ -128,16 +183,33 @@ async function loadConfiguration() {
     }
 }
 
-async function saveConfiguration(config) {
+async function saveConfiguration(config, meta = {}) {
     try {
         const configToSave = JSON.parse(JSON.stringify(config));
+        // Log config being saved (mask passwords)
+        try {
+            const safeConfig = JSON.parse(JSON.stringify(configToSave));
+            if (Array.isArray(safeConfig.cameras)) {
+                safeConfig.cameras = safeConfig.cameras.map(c => {
+                    const copy = { ...c };
+                    if (copy.password) copy.password = '***masked***';
+                    return copy;
+                });
+            }
+            console.log('[ConfigManager][Save] Writing config to', configPath, 'meta=', JSON.stringify(meta || {}), JSON.stringify(safeConfig, null, 2));
+        } catch (logErr) {
+            console.error('[ConfigManager][Save] Failed to stringify config for logging:', logErr);
+        }
         for (const camera of configToSave.cameras) {
             if (camera.password) {
                 await authManager.setPasswordForCamera(camera.id.toString(), camera.password);
                 delete camera.password;
             }
         }
-        await fsPromises.writeFile(configPath, JSON.stringify(configToSave, null, 2));
+        // Atomic write: write to temp file then rename
+        const tmpPath = `${configPath}.tmp`;
+        await fsPromises.writeFile(tmpPath, JSON.stringify(configToSave, null, 2));
+        await fsPromises.rename(tmpPath, configPath);
 
         // Автоматически обновляем конфиг MediaMTX после сохранения основной конфигурации
 

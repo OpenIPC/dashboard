@@ -41,6 +41,8 @@
                 if(hwAccelSelect) hwAccelSelect.value = appSettings.hwAccel || 'auto';
                 const notificationsCheckbox = document.getElementById('app-settings-notifications-enabled');
                 if(notificationsCheckbox) notificationsCheckbox.checked = appSettings.notifications_enabled !== false;
+                const useWebRTCCheckbox = document.getElementById('app-settings-use-webrtc');
+                if(useWebRTCCheckbox) useWebRTCCheckbox.checked = appSettings.useWebRTC === true;
                 const qscaleSlider = document.getElementById('app-settings-qscale');
                 const qscaleValue = document.getElementById('app-settings-qscale-value');
                 if(qscaleSlider) qscaleSlider.value = appSettings.qscale || 8;
@@ -102,6 +104,7 @@
                 screenshotsPath: document.getElementById('app-settings-screenshots-path').value,
                 hwAccel: document.getElementById('app-settings-hw-accel').value,
                 notifications_enabled: document.getElementById('app-settings-notifications-enabled').checked,
+                useWebRTC: document.getElementById('app-settings-use-webrtc').checked,
                 qscale: document.getElementById('app-settings-qscale').value,
                 fps: document.getElementById('app-settings-fps').value,
                 analytics_resize_width: document.getElementById('app-settings-analytics-resize-width').value,
@@ -120,7 +123,8 @@
             const streamingSettingsChanged = 
                 appSettings.hwAccel !== newSettings.hwAccel ||
                 appSettings.qscale !== newSettings.qscale ||
-                appSettings.fps !== newSettings.fps;
+                appSettings.fps !== newSettings.fps ||
+                appSettings.useWebRTC !== newSettings.useWebRTC;
 
             if (App.versionType === 'intellect') {
                 newSettings.analytics_provider = document.getElementById('app-settings-analytics-provider').value;
@@ -145,8 +149,22 @@
             if (lpResizeWidthInput) {
                 newSettings['module_license-plate_resizeWidth'] = parseInt(lpResizeWidthInput.value, 10) || 0;
             }
+            // License Plate: Use ONNX Runtime (DirectML)
+            const lpUseOrtCheckbox = document.getElementById('license-plate-use-ort');
+            if (lpUseOrtCheckbox) {
+                newSettings['module_license-plate_use_ort'] = !!lpUseOrtCheckbox.checked;
+            }
+            // Persist app settings and wait for write to finish before closing modal
             stateManager.setAppSettings(newSettings);
-            utils.showToast(App.t('app_settings_saved_success'));
+            try {
+                if (App && typeof App.saveAppSettings === 'function') {
+                    await App.saveAppSettings();
+                }
+                utils.showToast(App.t('app_settings_saved_success'));
+            } catch (e) {
+                console.error('[Settings] Failed to save app settings:', e);
+                utils.showToast(App.t('app_settings_saved_error') || 'Failed to save settings', true);
+            }
             utils.closeModal(settingsModal);
 
             // Если изменились настройки стриминга, перезапускаем ВСЕ потоки
@@ -218,15 +236,31 @@
                         moduleHtml += `<div class="form-grid simple with-button" style="grid-template-columns: 100px 1fr; padding-bottom: 9px; margin-left: 5px; margin-bottom: 8px; border-bottom: 1px solid #eee;">
                             <span data-i18n-key="module_license-plate_save_path_label"></span>
                             <div class="form-input-wrapper"><input type="text" id="license-plate-path" data-key="${savePathKey}" value="${currentPath}" readonly><button class="select-license-plate-path-btn" style="padding: 0 10px; min-width: 40px; height: 35px; position: relative; top: -7px;"><i class="material-icons" style="font-size: 20px;">folder_open</i></button></div>
-                            <span>Пропуск кадров (frame skip):</span>
+                            <span data-i18n-key="module_license-plate_frame_skip_label"></span>
                             <input type="number" id="license-plate-frame-skip" data-key="${frameSkipKey}" value="${currentFrameSkip}" min="1" max="30" step="1" style="width: 100px;">
-                            <span>Ширина кадра для обработки (px):</span>
+                            <span data-i18n-key="module_license-plate_resize_width_label"></span>
                             <input type="number" id="license-plate-resize-width" data-key="${resizeWidthKey}" value="${currentResizeWidth}" min="0" max="1920" step="10" style="width: 100px;">
+                            <span data-i18n-key="module_license-plate_use_ort"></span>
+                            <label style="display:flex; align-items:center;"><input type="checkbox" id="license-plate-use-ort" data-key="module_license-plate_use_ort" style="margin-right:8px;"> <span style="font-size:12px; color:#888;">${App.t('module_license-plate_use_ort')}</span></label>
                         </div>`;
                     }
                     modulesListEl.innerHTML += moduleHtml;
                 });
                 App.i18n.applyTranslationsToDOM(modulesListEl);
+                // Initialize License Plate "Use ONNX Runtime (DirectML)" checkbox from saved settings
+                try {
+                    const lpUseOrtCheckbox = document.getElementById('license-plate-use-ort');
+                    if (lpUseOrtCheckbox) {
+                        const saved = !!(stateManager.state.appSettings && stateManager.state.appSettings['module_license-plate_use_ort']);
+                        lpUseOrtCheckbox.checked = saved;
+                        lpUseOrtCheckbox.addEventListener('change', () => {
+                            stateManager.setAppSettings({ ['module_license-plate_use_ort']: lpUseOrtCheckbox.checked });
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Failed to initialize license plate ORT checkbox:', e);
+                }
+
                 const selectFacePathBtn = document.querySelector('.select-face-path-btn');
                 if (selectFacePathBtn) {
                     selectFacePathBtn.addEventListener('click', async () => {

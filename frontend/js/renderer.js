@@ -127,26 +127,56 @@
         
         App.stateManager = AppModules.createStateManager({
             initialState: { cameras: [], groups: [], layouts: [], activeLayoutId: null, recordingStates: {}, appSettings: {}, isSaving: false, currentUser: null },
+            // onChange will be called for deep mutations; avoid spamming saves by using debounced save here
+            onChange: () => {
+                try {
+                    // Use debounced save for general state changes
+                    if (App && typeof App.saveConfiguration === 'function') App.saveConfiguration('state-manager:onChange');
+                } catch (e) { /* ignore */ }
+            },
+            ignoreKeys: ['isSaving','player'],
             mutations: {
-                setInitialConfig(state, helpers, config) { state.cameras = config.cameras || []; state.groups = config.groups || []; if (config.layouts && config.layouts.length > 0) { state.layouts = config.layouts; state.activeLayoutId = config.activeLayoutId && config.layouts.some(l => l.id === config.activeLayoutId) ? config.activeLayoutId : config.layouts[0].id; } else if (config.gridState) { const defaultLayout = { id: Date.now(), name: 'Основной вид', gridState: config.gridState, layout: config.layout || { cols: 2, rows: 2 } }; state.layouts = [defaultLayout]; state.activeLayoutId = defaultLayout.id; App.saveConfiguration(); } else { helpers.getActiveLayout(state); } },
+                setInitialConfig(state, helpers, config) {
+                    console.log('[Config][Load] Применяем конфиг:', JSON.stringify(config, null, 2));
+                    state.cameras = config.cameras || [];
+                    state.groups = config.groups || [];
+                    if (config.layouts && config.layouts.length > 0) {
+                        state.layouts = config.layouts;
+                        state.activeLayoutId = config.activeLayoutId && config.layouts.some(l => l.id === config.activeLayoutId) ? config.activeLayoutId : config.layouts[0].id;
+                    } else if (config.gridState) {
+                        const defaultLayout = {
+                            id: Date.now(),
+                            name: 'Основной вид',
+                            gridState: config.gridState,
+                            layout: config.layout || { cols: 2, rows: 2 }
+                        };
+                        state.layouts = [defaultLayout];
+                        state.activeLayoutId = defaultLayout.id;
+                        App.saveConfiguration();
+                    } else {
+                        helpers.getActiveLayout(state);
+                    }
+                    console.log('[Config][Load] Конфиг применён. Камер:', state.cameras.length, 'Макет(ов):', state.layouts.length);
+                },
                 setAppSettings(state, helpers, settings) { state.appSettings = { ...state.appSettings, ...settings }; App.saveAppSettings(); },
-                updateGridState(state, helpers, gridState) { const activeLayout = helpers.getActiveLayout(state); if (activeLayout) { activeLayout.gridState = gridState; App.saveConfiguration(); } },
-                updateGridLayout(state, helpers, layout) { const activeLayout = helpers.getActiveLayout(state); if (activeLayout) { activeLayout.layout = layout; App.saveConfiguration(); } },
-                setActiveLayout(state, helpers, layoutId) { if (state.layouts.some(l => l.id === layoutId)) { state.activeLayoutId = layoutId; App.saveConfiguration(); } },
-                addLayout(state, helpers, { name }) { const newLayout = { id: Date.now(), name: name, gridState: Array(64).fill(null), layout: { cols: 2, rows: 2 } }; state.layouts = [...state.layouts, newLayout]; state.activeLayoutId = newLayout.id; App.saveConfiguration(); },
-                deleteLayout(state, helpers, layoutId) { if (state.layouts.length <= 1) { alert(App.t('cannot_delete_last_layout')); return; } state.layouts = state.layouts.filter(l => l.id !== layoutId); if (state.activeLayoutId === layoutId) { state.activeLayoutId = state.layouts[0].id; } App.saveConfiguration(); },
-                renameLayout(state, helpers, { id, newName }) { const layoutToRename = state.layouts.find(l => l.id === id); if (layoutToRename) { layoutToRename.name = newName; App.saveConfiguration(); } },
-                reorderLayouts(state, helpers, { draggedId, targetId }) { const layouts = state.layouts; const draggedIndex = layouts.findIndex(l => l.id === draggedId); const targetIndex = layouts.findIndex(l => l.id === targetId); if (draggedIndex === -1 || targetIndex === -1) return; const [draggedItem] = layouts.splice(draggedIndex, 1); layouts.splice(targetIndex, 0, draggedItem); state.layouts = [...state.layouts]; App.saveConfiguration(); },
+                updateGridState(state, helpers, gridState) { const activeLayout = helpers.getActiveLayout(state); if (activeLayout) { activeLayout.gridState = gridState; App.saveConfigurationNow('mutation:updateGridState').catch(e => console.error('[Config][SaveNow] updateGridState save failed', e)); } },
+                updateGridLayout(state, helpers, layout) { const activeLayout = helpers.getActiveLayout(state); if (activeLayout) { activeLayout.layout = layout; App.saveConfigurationNow('mutation:updateGridLayout').catch(e => console.error('[Config][SaveNow] updateGridLayout save failed', e)); } },
+                setActiveLayout(state, helpers, layoutId) { if (state.layouts.some(l => l.id === layoutId)) { state.activeLayoutId = layoutId; App.saveConfigurationNow('mutation:setActiveLayout').catch(e => console.error('[Config][SaveNow] setActiveLayout save failed', e)); } },
+                addLayout(state, helpers, { name }) { const newLayout = { id: Date.now(), name: name, gridState: Array(64).fill(null), layout: { cols: 2, rows: 2 } }; state.layouts = [...state.layouts, newLayout]; state.activeLayoutId = newLayout.id; App.saveConfigurationNow('mutation:addLayout').catch(e => console.error('[Config][SaveNow] addLayout save failed', e)); },
+                deleteLayout(state, helpers, layoutId) { if (state.layouts.length <= 1) { alert(App.t('cannot_delete_last_layout')); return; } state.layouts = state.layouts.filter(l => l.id !== layoutId); if (state.activeLayoutId === layoutId) { state.activeLayoutId = state.layouts[0].id; } App.saveConfigurationNow('mutation:deleteLayout').catch(e => console.error('[Config][SaveNow] deleteLayout save failed', e)); },
+                renameLayout(state, helpers, { id, newName }) { const layoutToRename = state.layouts.find(l => l.id === id); if (layoutToRename) { layoutToRename.name = newName; App.saveConfigurationNow('mutation:renameLayout').catch(e => console.error('[Config][SaveNow] renameLayout save failed', e)); } },
+                reorderLayouts(state, helpers, { draggedId, targetId }) { const layouts = state.layouts; const draggedIndex = layouts.findIndex(l => l.id === draggedId); const targetIndex = layouts.findIndex(l => l.id === targetId); if (draggedIndex === -1 || targetIndex === -1) return; const [draggedItem] = layouts.splice(draggedIndex, 1); layouts.splice(targetIndex, 0, draggedItem); state.layouts = [...state.layouts]; App.saveConfigurationNow('mutation:reorderLayouts').catch(e => console.error('[Config][SaveNow] reorderLayouts save failed', e)); },
                 addCamera(state, helpers, camera) {
                     const newCamera = { id: Date.now(), groupId: null, ...camera };
                     state.cameras = [...state.cameras, newCamera];
-                    App.saveConfiguration();
+                    // critical: persist immediately to avoid losing camera additions
+                    if (App && typeof App.saveConfigurationNow === 'function') App.saveConfigurationNow('mutation:addCamera').catch(e => console.error('[Config][SaveNow] addCamera save failed', e)); else App.saveConfiguration('mutation:addCamera');
                 },
-                updateCamera(state, helpers, updatedCamera) { state.cameras = state.cameras.map(c => c.id === updatedCamera.id ? { ...c, ...updatedCamera } : c); App.saveConfiguration(); },
-                deleteCamera(state, helpers, cameraId) { state.layouts.forEach(layout => { layout.gridState = layout.gridState.map(cell => (cell && cell.camera.id === cameraId) ? null : cell); }); state.cameras = state.cameras.filter(c => c.id !== cameraId); App.saveConfiguration(); },
-                addGroup(state, helpers, group) { state.groups = [...state.groups, { id: Date.now(), ...group }]; App.saveConfiguration(); },
-                renameGroup(state, helpers, { id, newName }) { const groupToRename = state.groups.find(g => g.id === id); if (groupToRename) { groupToRename.name = newName; App.saveConfiguration(); } },
-                deleteGroup(state, helpers, groupId) { state.cameras = state.cameras.map(camera => { if (camera.groupId === groupId) { return { ...camera, groupId: null }; } return camera; }); state.groups = state.groups.filter(g => g.id !== groupId); App.saveConfiguration(); },
+                updateCamera(state, helpers, updatedCamera) { state.cameras = state.cameras.map(c => c.id === updatedCamera.id ? { ...c, ...updatedCamera } : c); if (App && typeof App.saveConfigurationNow === 'function') App.saveConfigurationNow('mutation:updateCamera').catch(e => console.error('[Config][SaveNow] updateCamera save failed', e)); else App.saveConfiguration('mutation:updateCamera'); },
+                deleteCamera(state, helpers, cameraId) { state.layouts.forEach(layout => { layout.gridState = layout.gridState.map(cell => (cell && cell.camera.id === cameraId) ? null : cell); }); state.cameras = state.cameras.filter(c => c.id !== cameraId); try { if (typeof App.saveConfigurationNow === 'function') { App.saveConfigurationNow('mutation:deleteCamera').catch(e => console.error('[Config][SaveNow] Error during immediate save:', e)); } else { App.saveConfiguration('mutation:deleteCamera'); } } catch (e) { console.error('[Config][Delete] Error triggering save after delete:', e); } },
+                addGroup(state, helpers, group) { state.groups = [...state.groups, { id: Date.now(), ...group }]; if (App && typeof App.saveConfigurationNow === 'function') App.saveConfigurationNow('mutation:addGroup').catch(e => console.error('[Config][SaveNow] addGroup save failed', e)); else App.saveConfiguration('mutation:addGroup'); },
+                renameGroup(state, helpers, { id, newName }) { const groupToRename = state.groups.find(g => g.id === id); if (groupToRename) { groupToRename.name = newName; App.saveConfigurationNow('mutation:renameGroup').catch(e => console.error('[Config][SaveNow] renameGroup save failed', e)); } },
+                deleteGroup(state, helpers, groupId) { state.cameras = state.cameras.map(camera => { if (camera.groupId === groupId) { return { ...camera, groupId: null }; } return camera; }); state.groups = state.groups.filter(g => g.id !== groupId); App.saveConfigurationNow('mutation:deleteGroup').catch(e => console.error('[Config][SaveNow] deleteGroup save failed', e)); },
                 setRecordingState(state, helpers, { cameraId, recording }) { state.recordingStates = { ...state.recordingStates, [cameraId]: recording }; },
                 setCurrentUser(state, helpers, user) { state.currentUser = user; },
                 logout(state, helpers) { state.currentUser = null; }
@@ -207,32 +237,146 @@
 
         let loginView, mainAppContainer, loginBtn, loginUsername, loginPassword, loginRememberMe, loginError, logoutBtn, statusInfo, loginCloseBtn;
 
-        async function loadConfiguration() { const config = await window.api.loadConfiguration(); App.stateManager.setInitialConfig(config); }
+        async function loadConfiguration() {
+            const config = await window.api.loadConfiguration();
+            console.log('[Config][Load] Загружаем конфиг:', JSON.stringify(config, null, 2));
+            App.stateManager.setInitialConfig(config);
+            // Update MediaMTX paths after loading config
+            try {
+                await window.api.updateMediaMTXPaths();
+            } catch (e) {
+                console.error('[Renderer] Failed to update MediaMTX paths after loading config:', e);
+            }
+        }
 
         App.saveAppSettings = async () => { 
-            await window.api.saveAppSettings(App.stateManager.state.appSettings); 
+            // Safely clone appSettings to ensure only JSON-serializable data is sent over IPC/WS.
+            const safeClone = (obj) => {
+                try {
+                    const seen = new WeakSet();
+                    const str = JSON.stringify(obj, (k, v) => {
+                        if (typeof v === 'function' || typeof v === 'symbol') return undefined;
+                        if (v === undefined) return null;
+                        if (v && typeof v === 'object') {
+                            if (seen.has(v)) return undefined;
+                            seen.add(v);
+                        }
+                        return v;
+                    });
+                    return JSON.parse(str);
+                } catch (e) {
+                    console.error('[App] safeClone failed:', e);
+                    throw e;
+                }
+            };
+
+            try {
+                const payload = safeClone(App.stateManager.state.appSettings || {});
+                const res = await window.api.saveAppSettings(payload);
+                console.log('[App] saveAppSettings result:', res);
+                return res;
+            } catch (e) {
+                console.error('[App] saveAppSettings failed:', e);
+                throw e;
+            }
         };
 
+        // Filter functions for config serialization
+        function filterGridState(gridState) {
+            return Array.isArray(gridState)
+                ? gridState.map(cell => {
+                    if (!cell || typeof cell !== 'object') return null;
+                    // streamId только 0 или 1
+                    let streamId = 0;
+                    if (typeof cell.streamId === 'number' && (cell.streamId === 0 || cell.streamId === 1)) {
+                        streamId = cell.streamId;
+                    }
+                    return {
+                        camera: cell.camera && typeof cell.camera.id === 'number' ? { id: cell.camera.id } : undefined,
+                        streamId,
+                        paused: cell.paused === true ? true : undefined
+                    };
+                })
+                : [];
+        }
+        function filterCamera(cam) {
+            if (!cam || typeof cam !== 'object') return {};
+            const { id, groupId, name, ip, port, username, password, streamPath, streamPath0, streamPath1, protocol, onvifAuth } = cam;
+            return { id, groupId, name, ip, port, username, password, streamPath, streamPath0, streamPath1, protocol, onvifAuth };
+        }
+        function filterLayout(l) {
+            if (!l || typeof l !== 'object') return {};
+            const { id, name, gridState, layout } = l;
+            return {
+                id,
+                name,
+                gridState: filterGridState(gridState),
+                layout: layout && typeof layout === 'object' ? { cols: layout.cols, rows: layout.rows } : { cols: 2, rows: 2 }
+            };
+        }
+
         let saveTimeout;
-        App.saveConfiguration = function() {
+        App.saveConfiguration = function(origin) {
             const state = App.stateManager.state;
             if (state.isSaving) return;
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
                 state.isSaving = true;
-                console.log(`[Config] Debounced save triggered for ${App.versionType} version.`);
                 const config = {
-                    cameras: state.cameras.map(c => { const { player, ...rest } = c; return rest; }),
+                    cameras: state.cameras.map(c => { const { player, ...rest } = c; return filterCamera(rest); }),
                     groups: state.groups,
-                    layouts: state.layouts,
+                    layouts: state.layouts.map(filterLayout),
                     activeLayoutId: state.activeLayoutId,
                 };
-                try { 
-                    await window.api.saveConfiguration(config); 
-                } finally { 
-                    state.isSaving = false; 
+                console.log('[Config][Save] Сохраняем конфиг (origin=' + (origin||'unknown') + '):', JSON.stringify(config, null, 2));
+                try {
+                    await window.api.saveConfiguration(config, { origin: origin || 'renderer:saveConfiguration' });
+                    console.log('[Config][Save] Конфиг успешно сохранён!');
+                } catch (e) {
+                    console.error('[Config][Save] Ошибка сохранения:', e);
+                } finally {
+                    state.isSaving = false;
                 }
             }, 500);
+        };
+
+        // Immediate save helper: clears any debounce and writes config immediately.
+        // Used for critical operations (like delete) to avoid losing changes on quick shutdown.
+        App.saveConfigurationNow = async function() {
+            const state = App.stateManager.state;
+            // If another save is already in progress, wait a short while for it to finish
+            if (state.isSaving) {
+                await new Promise(resolve => {
+                    const check = () => { if (!state.isSaving) return resolve(); setTimeout(check, 50); };
+                    check();
+                });
+            }
+            clearTimeout(saveTimeout);
+            state.isSaving = true;
+            const config = {
+                cameras: state.cameras.map(filterCamera),
+                groups: state.groups,
+                layouts: state.layouts.map(filterLayout),
+                activeLayoutId: state.activeLayoutId,
+            };
+            console.log('[Config][SaveNow] Immediate save of config:', JSON.stringify(config, null, 2));
+            // Deep clone to remove any proxies or non-serializable objects
+            let safeConfig;
+            try {
+                safeConfig = JSON.parse(JSON.stringify(config));
+            } catch (e) {
+                console.warn('[Config][SaveNow] Failed to deep clone config, using original (may contain proxies):', e);
+                safeConfig = config;
+            }
+            try {
+                await window.api.saveConfiguration(safeConfig, { origin: 'renderer:saveConfigurationNow' });
+                console.log('[Config][SaveNow] Config successfully saved (immediate).');
+            } catch (e) {
+                console.error('[Config][SaveNow] Error saving config immediately:', e);
+                throw e;
+            } finally {
+                state.isSaving = false;
+            }
         };
 
         function updateSystemStats() {

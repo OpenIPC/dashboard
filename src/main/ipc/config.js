@@ -17,13 +17,19 @@ function registerConfigHandlers() {
   ipcMain.handle(CHANNELS.LOAD_APP_SETTINGS, withErrorHandling(configManager.getAppSettings, 'loadAppSettings'));
   
   // VVVVVV --- ВОЗВРАЩАЕМ HANDLE --- VVVVVV
-  ipcMain.handle(CHANNELS.SAVE_APP_SETTINGS, withErrorHandling((event, settings) => configManager.saveAppSettings(settings), 'saveAppSettings'));
+  ipcMain.handle(CHANNELS.SAVE_APP_SETTINGS, withErrorHandling((event, settings) => {
+    try {
+      const keys = settings && typeof settings === 'object' ? Object.keys(settings) : [];
+      console.log('[IPC] save-app-settings invoked, keys=', keys);
+    } catch (e) { console.warn('[IPC] save-app-settings invoked (failed to extract keys)', e); }
+    return configManager.saveAppSettings(settings);
+  }, 'saveAppSettings'));
   // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
   
   ipcMain.handle(CHANNELS.LOAD_CONFIG, withErrorHandling(configManager.loadConfiguration, 'loadConfiguration'));
   
   // VVVVVV --- ВОЗВРАЩАЕМ HANDLE --- VVVVVV
-  ipcMain.handle(CHANNELS.SAVE_CONFIG, withErrorHandling((event, config) => configManager.saveConfiguration(config), 'saveConfiguration'));
+  ipcMain.handle(CHANNELS.SAVE_CONFIG, withErrorHandling((event, config, meta) => configManager.saveConfiguration(config, meta), 'saveConfiguration'));
   // ^^^^^^ --- КОНЕЦ ИЗМЕНЕНИЯ --- ^^^^^^
   
   ipcMain.handle(CHANNELS.EXPORT_CONFIG, withErrorHandling(() => configManager.exportConfig(getMainWindow()), 'exportConfig'));

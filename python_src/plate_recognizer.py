@@ -3,6 +3,12 @@ import numpy as np
 import os
 import time
 from lpd_yunet import LPD_YuNet
+try:
+    from lpd_yunet_ort import LPD_YuNetORT
+    ORT_AVAILABLE = True
+except Exception:
+    LPD_YuNetORT = None
+    ORT_AVAILABLE = False
 import easyocr
 
 try:
@@ -56,16 +62,32 @@ def recognize_text_easyocr(img, reader):
     except Exception:
         return ""
 
-def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2000, min_height=40, min_aspect=1.2, max_aspect=7.5, max_frames=10):
-    model = LPD_YuNet(
-        modelPath=MODEL_PATH,
-        confThreshold=CONF_THRESHOLD,
-        nmsThreshold=NMS_THRESHOLD,
-        topK=TOP_K,
-        keepTopK=KEEP_TOP_K,
-        backendId=cv.dnn.DNN_BACKEND_OPENCV,
-        targetId=cv.dnn.DNN_TARGET_CPU
-    )
+def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2000, min_height=40, min_aspect=1.2, max_aspect=7.5, max_frames=10, use_ort=False):
+    """
+    Recognize plates from RTSP stream.
+    If `use_ort=True` and ONNX Runtime wrapper is available, it will be used (attempts to use DirectML provider).
+    Otherwise falls back to OpenCV-based `LPD_YuNet`.
+    """
+    if use_ort and ORT_AVAILABLE:
+        model = LPD_YuNetORT(
+            modelPath=MODEL_PATH,
+            inputSize=[320, 240],
+            confThreshold=CONF_THRESHOLD,
+            nmsThreshold=NMS_THRESHOLD,
+            topK=TOP_K,
+            keepTopK=KEEP_TOP_K,
+            prefer_dml=True
+        )
+    else:
+        model = LPD_YuNet(
+            modelPath=MODEL_PATH,
+            confThreshold=CONF_THRESHOLD,
+            nmsThreshold=NMS_THRESHOLD,
+            topK=TOP_K,
+            keepTopK=KEEP_TOP_K,
+            backendId=cv.dnn.DNN_BACKEND_OPENCV,
+            targetId=cv.dnn.DNN_TARGET_CPU
+        )
     reader = easyocr.Reader(['en', 'ru'])
     paddle_reader = PaddleOCR(lang='en', use_angle_cls=True, show_log=False, use_gpu=False) if PADDLE_AVAILABLE else None
     cap = cv.VideoCapture(rtsp_url)
@@ -86,9 +108,18 @@ def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2
         frame_resized = cv.resize(frame, (input_w, input_h))
         detections = model.infer(frame_resized)
         for det in detections:
-            bbox = det[:-1].astype(np.int32)
+            bbox = det[:-1].astype(np.float32)
             score = det[-1]
-            pts = np.array([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], dtype=np.int32)
+            pts = np.array([[bbox[0], bbox[1]], [bbox[2], bbox[3]], [bbox[4], bbox[5]], [bbox[6], bbox[7]]], dtype=np.float32)
+            # Map coordinates from model input space back to original frame size
+            orig_h, orig_w = frame.shape[:2]
+            input_w = input_w if 'input_w' in locals() else frame.shape[1]
+            input_h = input_h if 'input_h' in locals() else frame.shape[0]
+            scale_x = float(orig_w) / float(input_w)
+            scale_y = float(orig_h) / float(input_h)
+            pts[:, 0] = np.clip(np.round(pts[:, 0] * scale_x), 0, orig_w - 1)
+            pts[:, 1] = np.clip(np.round(pts[:, 1] * scale_y), 0, orig_h - 1)
+            pts = pts.astype(np.int32)
             x_min, y_min = np.min(pts, axis=0)
             x_max, y_max = np.max(pts, axis=0)
             width = x_max - x_min

@@ -976,13 +976,28 @@
                     if (sourceCellIdStr) {
                         const sourceCellId = parseInt(sourceCellIdStr, 10);
                         if (sourceCellId !== cellIndex) {
-                            const sourceContent = newGrid[sourceCellId];
-                            const targetContent = newGrid[cellIndex];
+                            // swap only id/streamId/paused
+                            function filterCell(cell) {
+                                if (!cell || typeof cell !== 'object') return null;
+                                return {
+                                    camera: cell.camera && typeof cell.camera.id === 'number' ? { id: cell.camera.id } : undefined,
+                                    streamId: typeof cell.streamId === 'number' ? cell.streamId : 1,
+                                    paused: cell.paused === true ? true : undefined
+                                };
+                            }
+                            const sourceContent = filterCell(newGrid[sourceCellId]);
+                            const targetContent = filterCell(newGrid[cellIndex]);
                             newGrid[cellIndex] = sourceContent;
                             newGrid[sourceCellId] = targetContent;
                         }
                     } else {
-                        newGrid[cellIndex] = { camera: { id: cameraId }, streamId: 1 };
+                        // Всегда указываем streamId: 0 по умолчанию (или 1, если только один поток)
+                        const cameraObj = stateManager.state.cameras.find(c => c.id === cameraId);
+                        let defaultStreamId = 0;
+                        if (cameraObj && typeof cameraObj.streamPath1 === 'string' && cameraObj.streamPath1.trim() !== '') {
+                            defaultStreamId = 1;
+                        }
+                        newGrid[cellIndex] = { camera: { id: cameraId }, streamId: 0 };
                     }
                     stateManager.updateGridState(newGrid);
                 }
@@ -998,15 +1013,21 @@
                         ssh: `💻  ${App.i18n.t('context_ssh')}`,
                         archive: `🗄️  ${App.i18n.t('archive_title')}`
                     };
-
                     if (currentUser.role === 'admin' || currentUser.permissions?.edit_cameras) {
                         menuItems.edit = `✏️  ${App.i18n.t('context_edit')}`;
                     }
                     if (currentUser.role === 'admin' || currentUser.permissions?.delete_cameras) {
                         menuItems.delete = `🗑️  ${App.i18n.t('context_delete')}`;
                     }
-                    
-                    window.api.showCameraContextMenu({ cameraId, labels: menuItems });
+                    // Фильтруем только сериализуемые поля камеры
+                    const cameraObjRaw = stateManager.state.cameras.find(c => c.id === cameraId) || null;
+                    let cameraObj = null;
+                    if (cameraObjRaw) {
+                        const { id, groupId, name, ip, port, username, streamPath, streamPath0, streamPath1, protocol, onvifAuth } = cameraObjRaw;
+                        cameraObj = { id, groupId, name, ip, port, username, streamPath, streamPath0, streamPath1, protocol, onvifAuth };
+                    }
+                    console.log('[ContextMenu] cameraObj:', cameraObj);
+                    window.api.showCameraContextMenu({ cameraId, labels: menuItems, camera: cameraObj });
                 }
             };
 
@@ -1127,7 +1148,7 @@
             });
         }
 
-        function createVideoPlayer(cell, streamUrl) {
+        function createVideoPlayer(cell, streamUrl, useWebRTC = false) {
             // Remove old video if exists
             const oldVideo = cell.querySelector('.video-player');
             if (oldVideo) cell.removeChild(oldVideo);
@@ -1138,8 +1159,12 @@
             video.setAttribute('autoplay', '');
             video.style.width = '100%';
             video.style.height = '100%';
-            // Detect device and stream type
-            if (/\.m3u8($|\?)/.test(streamUrl)) {
+            // Detect stream type or use WebRTC if specified
+            if (useWebRTC) {
+                // WebRTC stream: extract path from URL or assume it's the path
+                const path = streamUrl.replace(/^http:\/\/[^\/]+\//, ''); // Remove base URL
+                window.WebRTCLoader.attachWebRTCStream(video, path);
+            } else if (/\.m3u8($|\?)/.test(streamUrl)) {
                 // HLS stream
                 window.HlsLoader.attachHlsStream(video, streamUrl);
             } else {
@@ -1150,23 +1175,40 @@
             return video;
         }
 
-        function getPreferredStreamUrl(cameraId) {
-            // Проверяем доступность HLS потока
-            const hlsUrl = 'http://127.0.0.1:8888/' + cameraId + '/hls.m3u8';
-            // Проверяем доступность WebRTC (WHEP)
-            const whepUrl = 'http://127.0.0.1:8889/' + cameraId + '/whep';
-            // Для мобильных устройств и ТВ пробуем HLS, иначе WebRTC
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|SmartTV|GoogleTV/i.test(navigator.userAgent);
-            // Попробуем HLS, если не доступен — fallback на WHEP
+        function getPreferredStreamUrl(cameraId, useWebRTC = false) {
+            if (useWebRTC) {
+                // WebRTC: return the path directly, not URL
+                return cameraId; // e.g., 'cam1_0'
+            }
+            // HLS: check availability
+            const hlsUrl = 'http://127.0.0.1:8888/' + cameraId + '/index.m3u8';
             return fetch(hlsUrl, { method: 'HEAD' })
-                .then(resp => resp.ok ? hlsUrl : whepUrl)
-                .catch(() => whepUrl);
+                .then(resp => resp.ok ? hlsUrl : null)
+                .catch(() => null);
         }
 
         async function attachStreamToCell(cell, cameraId) {
             cell.innerHTML = '';
-            const streamUrl = await getPreferredStreamUrl(cameraId);
-            createVideoPlayer(cell, streamUrl);
+            const appSettings = stateManager.state.appSettings || {};
+            const useWebRTC = appSettings.useWebRTC || false;
+            const streamUrl = await getPreferredStreamUrl(cameraId, useWebRTC);
+            if (!streamUrl) {
+                cell.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #ff6b6b;">Stream not available</div>';
+                return;
+            }
+            createVideoPlayer(cell, streamUrl, useWebRTC);
+        }
+
+        async function restartStreamsForCamera(cameraId) {
+            const activeLayout = getActiveLayoutState();
+            if (!activeLayout) return;
+            for (let i = 0; i < gridCells.length; i++) {
+                const cell = gridCells[i];
+                const cellState = activeLayout.gridState[i];
+                if (cellState && cellState.camera && cellState.camera.id === cameraId) {
+                    await attachStreamToCell(cell, cameraId);
+                }
+            }
         }
 
         async function render() {
@@ -1803,7 +1845,8 @@
             getGridState,
             updateGridLayoutView,
             updatePlaceholdersLanguage,
-            handleAnalyticsUpdate
+            handleAnalyticsUpdate,
+            restartStreamsForCamera
         };
     };
 })(window);

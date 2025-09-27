@@ -2,6 +2,7 @@
 
 import './js/template-loader.js';
 import './js/hls-loader.js';
+import './js/webrtc-loader.js';
 import './js/i18n.js';
 import './js/state-manager.js';
 import './js/modals/camera-handler.js';

@@ -117,7 +117,7 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.GET_NETIP_SETTINGS, withErrorHandling((event, camera) => cameraAPI.getNetipSettings(camera), 'getNetipSettings'));
   ipcMain.handle(CHANNELS.SET_NETIP_SETTINGS, withErrorHandling((event, data) => cameraAPI.setNetipSettings(data), 'setNetipSettings'));
 
-  ipcMain.on(CHANNELS.SHOW_CAMERA_CONTEXT_MENU, (event, { cameraId, labels }) => {
+  ipcMain.on(CHANNELS.SHOW_CAMERA_CONTEXT_MENU, (event, { cameraId, labels, camera: cameraFromRenderer }) => {
       const mainWindow = getMainWindow();
       if (!mainWindow) return;
 
@@ -126,26 +126,43 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
       
       const clickHandler = async (command) => {
           try {
-              const camera = await configManager.getCameraConfig(cameraId);
-              if (!camera) throw new Error(`Camera with ID ${cameraId} not found.`);
-
-              switch(command) {
-                  case 'open_in_browser':
-                      const url = camera.ip.startsWith('http') ? camera.ip : `http://${camera.ip}`;
-                      shell.openExternal(url);
-                      break;
-                  case 'files':
-                      createFileManagerWindow(camera, fileManagerConnections);
-                      break;
-                  case 'ssh':
-                      const win = createSshTerminalWindow(camera, sshConnections);
-                      if(win) cameraAPI.setupSshConnection(win, camera, sshConnections);
-                      break;
-                  case 'archive':
-                  case 'edit':
-                  case 'delete':
+              // For actions that require the full camera object on the main side (files/ssh/open_in_browser)
+              // prefer the camera object provided by the renderer (cameraFromRenderer). If that's not
+              // available, fall back to reading the persisted config. For actions handled by the
+              // renderer (archive/edit/delete) just forward the command so renderer will operate on
+              // its current in-memory state (which may include unsaved cameras).
+              if (command === 'open_in_browser' || command === 'files' || command === 'ssh') {
+                  let camera = cameraFromRenderer;
+                  if (!camera) {
+                      // Try to read from persisted config as a fallback
+                      camera = await configManager.getCameraConfig(cameraId);
+                  }
+                  if (!camera) {
+                      // If still not found, forward command to renderer to let it handle (no exception)
                       mainWindow.webContents.send(CHANNELS.ON_CONTEXT_MENU_COMMAND, { command, cameraId });
-                      break;
+                      return;
+                  }
+
+                  switch (command) {
+                      case 'open_in_browser': {
+                          const url = camera.ip && String(camera.ip).startsWith('http') ? camera.ip : `http://${camera.ip}`;
+                          shell.openExternal(url);
+                          break;
+                      }
+                      case 'files': {
+                          createFileManagerWindow(camera, fileManagerConnections);
+                          break;
+                      }
+                      case 'ssh': {
+                          const win = createSshTerminalWindow(camera, sshConnections);
+                          if (win) cameraAPI.setupSshConnection(win, camera, sshConnections);
+                          break;
+                      }
+                  }
+              } else {
+                  // archive/edit/delete are renderer-side actions — forward to renderer so it operates on
+                  // the current in-memory state (which may contain unsaved changes).
+                  mainWindow.webContents.send(CHANNELS.ON_CONTEXT_MENU_COMMAND, { command, cameraId });
               }
           } catch (error) {
               require('../services').handleError(error, `contextMenu:${command}`);
@@ -461,6 +478,8 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   });
 
   ipcMain.handle('get-analytics-states', withErrorHandling(() => processManager.getAnalyticsStates(), 'getAnalyticsStates'));
+
+  ipcMain.handle('update-mediamtx-paths', withErrorHandling(() => processManager.updateMediaMTXPaths(), 'updateMediaMTXPaths'));
 }
 
 module.exports = {

@@ -57,6 +57,7 @@
             getRendererModules: () => invoke('get-renderer-modules'),
             toggleAnalytics: (id, streamId) => invoke('toggle-analytics', id, streamId),
             getAnalyticsStates: () => invoke('get-analytics-states'),
+            updateMediaMTXPaths: () => invoke('update-mediamtx-paths'),
             openInBrowser: (ip) => invoke('open-in-browser', ip),
             openFileManager: (camera) => invoke('open-file-manager', camera),
             openSshTerminal: (camera) => invoke('open-ssh-terminal', camera),

@@ -7,6 +7,7 @@ const authManagerMain = require(path.join(__dirname, '..', '..', 'src', 'main', 
 
 // Map cameraId -> child process
 const analyticsProcesses = new Map();
+const currentStreamIds = new Map();
 const SAVE_COOLDOWN_MS = 5000;
 const lastSaveTimestamps = {};
 
@@ -44,44 +45,55 @@ async function savePlatesToFile(api) {
 function findPythonExecutable() {
   try {
     const repoRoot = path.join(__dirname, '..', '..');
-    const candidate = path.join(repoRoot, '.analytics_venvs', 'dml', 'Scripts', 'python.exe');
-    return require('fs').existsSync(candidate) ? candidate : 'python';
+    // Prefer the project's venv (created at repoRoot/venv) as the default Python executable.
+    // This venv is used during development and is where onnxruntime-directml was installed.
+    const projectVenv = path.join(repoRoot, 'venv', 'Scripts', 'python.exe');
+    if (require('fs').existsSync(projectVenv)) return projectVenv;
+    // Fallback to legacy analytics venv (if present)
+    const analyticsVenv = path.join(repoRoot, '.analytics_venvs', 'dml', 'Scripts', 'python.exe');
+    if (require('fs').existsSync(analyticsVenv)) return analyticsVenv;
+    // Final fallback to system python on PATH
+    return 'python';
   } catch (e) { return 'python'; }
 }
 
-function buildRtspForCamera(camera) {
-  // Prefer explicit stream path from camera config when present
+async function getCurrentStreamIdForCamera(api, cameraId) {
   try {
-    if (!camera) return `rtsp://127.0.0.1:8554/cam${camera.id}_0`;
-    // If camera has a full RTSP URL already, use it
-    if (camera.streamPath0 && typeof camera.streamPath0 === 'string') {
-      const sp = camera.streamPath0.trim();
-      if (sp.startsWith('rtsp://') || sp.startsWith('rtsps://')) return sp;
-      // If streamPath0 looks like a relative path (e.g. /stream=0) prefer using MediaMTX local source
-      if (sp.startsWith('/')) {
-        console.log('[Module: LicensePlate] Using local MediaMTX path for camera', camera.id, sp);
-        return `rtsp://127.0.0.1:8554/cam${camera.id}_0`;
-      }
-      // if streamPath0 is a path like stream=0 (no leading slash), try build direct RTSP URL from camera.ip with credentials
-      if (camera.ip) {
-        const port = camera.port || 554;
-        const user = camera.username || '';
-        const pass = camera.password || '';
-        const url = `rtsp://${user}${pass ? ':' + pass : ''}${user || pass ? '@' : ''}${camera.ip}:${port}${sp.startsWith('/') ? '' : '/'}${sp}`;
-        console.log('[Module: LicensePlate] Using direct RTSP URL for camera', camera.id, url.replace(/:[^:]+@/, ':****@'));
-        return url;
+    const state = await api.getAppState();
+    if (!state || !state.layouts) return 0;
+    const activeLayout = state.layouts.find(l => l.id === state.activeLayoutId);
+    if (!activeLayout || !activeLayout.gridState) return 0;
+    for (const cell of activeLayout.gridState) {
+      if (cell && cell.camera && cell.camera.id === cameraId) {
+        return cell.streamId || 0;
       }
     }
-    // Try streamPath1 as fallback
-    if (camera.streamPath1 && typeof camera.streamPath1 === 'string') {
-      const sp = camera.streamPath1.trim();
+  } catch (e) {
+    console.error('[Module: LicensePlate] Failed to get current streamId for camera', cameraId, e);
+  }
+  return 0;
+}
+
+function buildRtspForCamera(camera, streamId) {
+  // Prefer explicit stream path from camera config when present
+  try {
+    if (!camera) return `rtsp://127.0.0.1:8554/cam${camera.id}_${streamId}`;
+    const streamPath = streamId === 1 ? camera.streamPath1 : camera.streamPath0;
+    if (streamPath && typeof streamPath === 'string') {
+      const sp = streamPath.trim();
       if (sp.startsWith('rtsp://') || sp.startsWith('rtsps://')) return sp;
+      // If streamPath looks like a relative path (e.g. /stream=0) prefer using MediaMTX local source
+      if (sp.startsWith('/')) {
+        console.log('[Module: LicensePlate] Using local MediaMTX path for camera', camera.id, 'stream', streamId, sp);
+        return `rtsp://127.0.0.1:8554/cam${camera.id}_${streamId}`;
+      }
+      // if streamPath is a path like stream=0 (no leading slash), try build direct RTSP URL from camera.ip with credentials
       if (camera.ip) {
         const port = camera.port || 554;
         const user = camera.username || '';
         const pass = camera.password || '';
         const url = `rtsp://${user}${pass ? ':' + pass : ''}${user || pass ? '@' : ''}${camera.ip}:${port}${sp.startsWith('/') ? '' : '/'}${sp}`;
-        console.log('[Module: LicensePlate] Using direct RTSP URL for camera', camera.id, url.replace(/:[^:]+@/, ':****@'));
+        console.log('[Module: LicensePlate] Using direct RTSP URL for camera', camera.id, 'stream', streamId, url.replace(/:[^:]+@/, ':****@'));
         return url;
       }
     }
@@ -89,8 +101,8 @@ function buildRtspForCamera(camera) {
     // ignore and fallback to mediamtx path
   }
   // Fallback to local MediaMTX path which is usually available
-  console.log('[Module: LicensePlate] Falling back to local MediaMTX path for camera', camera && camera.id);
-  return `rtsp://127.0.0.1:8554/cam${camera.id}_0`;
+  console.log('[Module: LicensePlate] Falling back to local MediaMTX path for camera', camera && camera.id, 'stream', streamId);
+  return `rtsp://127.0.0.1:8554/cam${camera.id}_${streamId}`;
 }
 
 async function handleAnalyticsLine(api, cameraId, line) {
@@ -248,6 +260,9 @@ async function handleAnalyticsLine(api, cameraId, line) {
 async function spawnAnalyticsForCamera(api, camera) {
   const cameraId = camera.id;
   if (analyticsProcesses.has(cameraId)) return;
+  const streamId = await getCurrentStreamIdForCamera(api, cameraId);
+  console.log('[Module: LicensePlate] Starting analytics for camera', cameraId, 'on stream', streamId);
+  currentStreamIds.set(cameraId, streamId);
   const repoRoot = path.join(__dirname, '..', '..');
   const python = findPythonExecutable();
   const script = path.join(repoRoot, 'python_src', 'test_plate_yunet.py');
@@ -277,51 +292,17 @@ async function spawnAnalyticsForCamera(api, camera) {
   };
   const configArg = Buffer.from(JSON.stringify(configForScript)).toString('base64');
   // Try to construct a direct RTSP URL (with credentials) using configManager and authManager.
-  // Add verbose diagnostics so we can see why a direct URL might fail and why we fall back to MediaMTX.
-  let rtspUrl;
-  try {
-    const camConfig = await api.configManager.getCameraConfig(cameraId);
-    // Try main auth manager (not necessarily provided via api) for more reliable lookup
-    let password = null;
-    try { password = await authManagerMain.getPasswordForCamera(cameraId); } catch (e) { console.warn('[Module: LicensePlate] authManagerMain.getPasswordForCamera threw:', e && e.message); }
-
-    console.log('[Module: LicensePlate] Direct RTSP build attempt - camera config summary:', {
-      id: camConfig && camConfig.id,
-      ip: camConfig && camConfig.ip,
-      username: camConfig && camConfig.username ? 'yes' : 'no',
-      hasPassword: !!password
-    });
-
-    if (camConfig && camConfig.ip) {
-      const creds = { ...camConfig, password: password || '' };
-      const streamPath = (typeof creds.streamPath0 === 'string' && creds.streamPath0.trim().length > 0) ? creds.streamPath0.trim() : '/stream=0';
-      const FfmpegCommandBuilder = require(path.join(__dirname, '..', '..', 'src', 'main', 'ffmpeg-builder'));
-      const appSettings = await api.configManager.getAppSettings();
-      const builder = new FfmpegCommandBuilder(appSettings || {});
-      const direct = builder.buildRtspUrl(creds, streamPath);
-      const masked = typeof direct === 'string' ? direct.replace(/:[^:@/]+@/, ':****@') : direct;
-      console.log('[Module: LicensePlate] Built direct RTSP URL (masked):', masked);
-      rtspUrl = direct;
-    } else {
-      console.log('[Module: LicensePlate] Skipping direct RTSP build: missing camConfig or camConfig.ip');
-    }
-  } catch (e) {
-    console.error('[Module: LicensePlate] Failed to build direct RTSP URL (will fallback to MediaMTX):', e && e.stack ? e.stack : e);
-  }
-
-  // Fallback to existing builder if direct build not available
-  if (!rtspUrl) rtspUrl = camera && camera.directRtsp ? camera.directRtsp : buildRtspForCamera(camera);
+  // Always use MediaMTX for seamless stream switching
+  const rtspUrl = buildRtspForCamera(camera, streamId);
 
   console.log('[Module: LicensePlate] Spawning analytics runner for camera', cameraId, '->', script);
   console.log('[Module: LicensePlate] Using python executable:', python);
   console.log('[Module: LicensePlate] RTSP URL:', rtspUrl);
   console.log('[Module: LicensePlate] Config(base64):', configArg.length ? `${configArg.substring(0,8)}...(${configArg.length}b)` : '<none>');
 
-  // Получаем настройки frame_skip и resize_width из настроек модуля, если есть, иначе из глобальных
-  const moduleFrameSkip = parseInt(settings['module_license-plate_frameSkip'], 10);
-  const moduleResizeWidth = parseInt(settings['module_license-plate_resizeWidth'], 10);
-  const frameSkip = !isNaN(moduleFrameSkip) ? moduleFrameSkip : (parseInt(settings.analytics_frame_skip, 10) || 2);
-  const resizeWidth = !isNaN(moduleResizeWidth) ? moduleResizeWidth : (parseInt(settings.analytics_resize_width, 10) || 0);
+  // Получаем настройки frame_skip и resize_width из глобальных настроек
+  const frameSkip = parseInt(settings.analytics_frame_skip, 10) || 5;
+  const resizeWidth = parseInt(settings.analytics_resize_width, 10) || 640;
   // --- Передача параметров распознавания номеров из appSettings ---
   const minScore = settings.plate_min_score != null ? settings.plate_min_score : 0.65;
   const minArea = settings.plate_min_area != null ? settings.plate_min_area : 1000;
@@ -343,6 +324,14 @@ async function spawnAnalyticsForCamera(api, camera) {
     '--allowlist', allowlist
   ];
   if (resizeWidth > 0) args.push('--resize-width', String(resizeWidth));
+  // Respect module setting to prefer ONNX Runtime (DirectML) if available
+  try {
+    const useOrtSetting = settings['module_license-plate_use_ort'];
+    if (useOrtSetting === true || useOrtSetting === 'true' || useOrtSetting === '1') {
+      args.push('--use-ort');
+      console.log('[Module: LicensePlate] Passing --use-ort to runner');
+    }
+  } catch (e) { /* ignore */ }
   const pythonSrcDir = path.join(repoRoot, 'python_src');
   console.log('[LicensePlate-Analytics] Using cwd for runner:', pythonSrcDir);
   let proc;
@@ -399,6 +388,31 @@ async function spawnAnalyticsForCamera(api, camera) {
     }
   });
 
+  // Additionally, if the runner reports inability to open the RTSP source (common when direct camera
+  // connection is blocked or required OpenCV backends are not available), attempt to respawn using MediaMTX.
+  proc.stderr.on('data', (d) => {
+    const s = d.toString();
+    // If we've already attempted fallback for this process, don't loop
+    if (proc.__attemptedMediaMtxFallback) return;
+    if (s.includes('Failed to open video source') || s.includes('All backends failed to open source')) {
+      proc.__attemptedMediaMtxFallback = true;
+      try {
+        console.warn('[LicensePlate-Analytics] Detected failure to open direct RTSP for camera', cameraId, '- will restart using MediaMTX fallback');
+        proc.kill();
+      } catch (e) { console.error('[LicensePlate-Analytics] Failed to kill process before MediaMTX respawn:', e); }
+      const mediaMtxUrl = `rtsp://127.0.0.1:8554/cam${cameraId}_0`;
+      console.log('[Module: LicensePlate] Respawning runner for camera', cameraId, 'with MediaMTX URL due to open failure:', mediaMtxUrl);
+      const newProc = spawn(python, [script, '--video', mediaMtxUrl, '--frame-skip', String(frameSkip), '--save-dir', configuredSave], { windowsHide: true, cwd: pythonSrcDir });
+      analyticsProcesses.set(cameraId, newProc);
+      newProc.stdout.on('data', async (data2) => {
+        const lines = data2.toString().split('\n').filter(Boolean);
+        for (const line of lines) { try { await handleAnalyticsLine(api, cameraId, line); } catch (e) { console.error(e); } }
+      });
+      newProc.stderr.on('data', (d2) => { const m = d2.toString().trim(); if (m) console.error('[LicensePlate-Analytics] stderr (fallback):', m); });
+      newProc.on('exit', (c, s) => { console.log(`[LicensePlate-Analytics] Fallback process for camera ${cameraId} exit (code=${c})`); analyticsProcesses.delete(cameraId); });
+    }
+  });
+
   proc.on('exit', (code, signal) => {
     console.log(`[LicensePlate-Analytics] Exit event for camera ${cameraId} (code=${code}, signal=${signal})`);
   });
@@ -406,6 +420,20 @@ async function spawnAnalyticsForCamera(api, camera) {
   proc.on('close', (code, signal) => {
     console.log(`[LicensePlate-Analytics] Process for camera ${cameraId} closed (code=${code}, signal=${signal})`);
     analyticsProcesses.delete(cameraId);
+    currentStreamIds.delete(cameraId);
+    // Auto-restart if not explicitly stopped and camera still exists
+    if (code !== null || signal !== 'SIGTERM') {
+      console.log(`[LicensePlate-Analytics] Auto-restarting process for camera ${cameraId}`);
+      setTimeout(() => {
+        // Check if camera still exists and analytics should be running
+        api.getAppState().then(state => {
+          const camera = (state.cameras || []).find(c => c.id === cameraId);
+          if (camera && !analyticsProcesses.has(cameraId)) {
+            spawnAnalyticsForCamera(api, camera);
+          }
+        }).catch(e => console.error('[LicensePlate-Analytics] Failed to check camera state for restart', e));
+      }, 5000); // Delay restart by 5 seconds
+    }
   });
 }
 
@@ -417,6 +445,7 @@ function stopAnalyticsForCamera(cameraId) {
     proc.kill();
   } catch (e) { console.error('[LicensePlate-Analytics] stopAnalyticsForCamera: failed to kill process', e); }
   analyticsProcesses.delete(cameraId);
+  currentStreamIds.delete(cameraId);
 }
 
 async function activate(api) {
@@ -450,6 +479,59 @@ async function activate(api) {
       return { success: false, error: e && e.message ? e.message : String(e) };
     }
   });
+
+  // Diagnostic: test whether ONNX Runtime DirectML is available by running a short python probe
+  api.registerIpcHandler('module-license-plate-test-ort', async () => {
+    try {
+      const repoRoot = path.join(__dirname, '..', '..');
+      const python = findPythonExecutable();
+      const probeScript = path.join(repoRoot, 'python_src', 'probe_ort_providers.py');
+      const fsSync = require('fs');
+      if (!fsSync.existsSync(python)) return { success: false, error: 'python-not-found' };
+      if (!fsSync.existsSync(probeScript)) return { success: false, error: 'probe-script-missing' };
+
+      return await new Promise((resolve) => {
+        const proc = require('child_process').spawn(python, [probeScript], { windowsHide: true, cwd: path.join(repoRoot, 'python_src') });
+        let out = '';
+        let err = '';
+        proc.stdout.on('data', (d) => { out += d.toString(); });
+        proc.stderr.on('data', (d) => { err += d.toString(); });
+        proc.on('close', (code) => {
+          if (code === 0) {
+            try {
+              const parsed = JSON.parse(out.trim());
+              resolve({ success: true, data: parsed });
+            } catch (e) {
+              resolve({ success: false, error: 'invalid-probe-output', raw: out, stderr: err });
+            }
+          } else {
+            resolve({ success: false, error: 'probe-failed', code, raw: out, stderr: err });
+          }
+        });
+      });
+    } catch (e) {
+      return { success: false, error: e && e.message ? e.message : String(e) };
+    }
+  });
+
+  // Periodically check if streamId changed for running processes and restart if needed
+  setInterval(async () => {
+    for (const [cameraId, proc] of analyticsProcesses.entries()) {
+      const currentStreamId = await getCurrentStreamIdForCamera(api, parseInt(cameraId));
+      const storedStreamId = currentStreamIds.get(parseInt(cameraId));
+      if (currentStreamId !== storedStreamId) {
+        console.log(`[Module: LicensePlate] Stream changed for camera ${cameraId} from ${storedStreamId} to ${currentStreamId}, restarting process`);
+        stopAnalyticsForCamera(parseInt(cameraId));
+        // Restart will happen via auto-restart if process closes, but to be safe, spawn new one
+        api.getAppState().then(state => {
+          const camera = (state.cameras || []).find(c => c.id === parseInt(cameraId));
+          if (camera) {
+            spawnAnalyticsForCamera(api, camera);
+          }
+        }).catch(e => console.error('[Module: LicensePlate] Failed to restart on stream change', e));
+      }
+    }
+  }, 5000); // Check every 5 seconds
 }
 
 async function deactivate(api) {
