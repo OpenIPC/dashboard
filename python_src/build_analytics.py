@@ -68,7 +68,7 @@ def create_and_build(name, req_file):
     print(f"Running PyInstaller for {name}...")
     pyinstaller_command = [
         python_executable, "-m", "PyInstaller",
-        "--noconfirm", "--onefile",
+        "--noconfirm", "--onefile", "--noupx",
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
         f"--add-data={MODEL_FILE}{os.pathsep}.",
