@@ -48,6 +48,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse2
 
+      - name: Clean extra/analytics directory
+        if: matrix.version_type == 'intellect'
+        run: rm -rf extra/analytics
+
       - name: Build Python analytics executables
         if: matrix.version_type == 'intellect'
         run: python ./python_src/build_analytics.py
