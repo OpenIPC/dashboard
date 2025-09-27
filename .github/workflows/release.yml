@@ -1,8 +1,11 @@
 # .github/workflows/release.yml
 
-name: Build & Release Cross-Platform
-
-on:
+name: Build & Release Cross-Platf      - name: Download UPX (Windows only)
+        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
+        run: |
+          Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
+          Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
+        shell: powershelln:
   push:
     tags:
       - 'v*.*.*'
@@ -67,8 +70,9 @@ jobs:
       - name: Download UPX (Windows only)
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
         run: |
-          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip
-          powershell -Command "Expand-Archive upx-4.2.1-win64.zip -DestinationPath ."
+          Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
+          Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
+        shell: powershell
 
       - name: Compress analytics executables with UPX (Windows only)
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
@@ -118,8 +122,8 @@ jobs:
       - name: Download UPX for installers (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip
-          powershell -Command "Expand-Archive upx-4.2.1-win64.zip -DestinationPath ."
+          Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
+          Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
         shell: powershell
 
       - name: Compress installers with UPX (Windows)
