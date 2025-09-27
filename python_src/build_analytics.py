@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 SRC_DIR = BASE_DIR
 SRC_FILE = SRC_DIR / "analytics.py"
 MODEL_FILE = SRC_DIR / "yolov8n.onnx"
-DIST_PATH = BASE_DIR / "extra" / "analytics"
+DIST_PATH = BASE_DIR.parent / "extra" / "analytics"
 REQUIREMENTS_DIR = BASE_DIR / "requirements"
 
 BUILDS = {
