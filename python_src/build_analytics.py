@@ -98,19 +98,6 @@ def create_and_build(name, req_file):
     run_command(pyinstaller_command)
     print(f"--- Successfully built {name} version! ---")
 
-    # === UPX compression ===
-    exe_name = f"analytics_{name}.exe" if sys.platform == "win32" else f"analytics_{name}"
-    exe_path = DIST_PATH / exe_name
-    upx_path = "upx"
-    # Проверяем, доступен ли upx в PATH
-    try:
-        subprocess.run([upx_path, "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print(f"Compressing {exe_name} with UPX...")
-        run_command([upx_path, "--best", "--lzma", "--force", str(exe_path)])
-        print(f"--- UPX compression complete for {exe_name}! ---")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("[INFO] UPX not found in PATH. Skipping UPX compression.")
-
 
 if __name__ == "__main__":
     if not SRC_FILE.exists():

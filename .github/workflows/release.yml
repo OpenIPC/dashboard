@@ -53,29 +53,43 @@ jobs:
         run: rm -rf extra/analytics
         shell: bash
 
-      - name: Build Python analytics executables
-        if: matrix.version_type == 'intellect'
-        run: python ./python_src/build_analytics.py
-      
       - name: Download UPX (Linux only)
         if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
         run: |
           curl -LO https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
           tar -xf upx-4.2.1-amd64_linux.tar.xz
-
-      - name: Compress analytics executables with UPX (Linux only)
+      - name: Disable UPX for PyInstaller (Linux)
         if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
-        run: |
-          ./upx-4.2.1-amd64_linux/upx --lzma extra/analytics/analytics_cpu
-          ./upx-4.2.1-amd64_linux/upx --lzma extra/analytics/analytics_dml
-      
+        run: mv upx-4.2.1-amd64_linux/upx upx-4.2.1-amd64_linux/upx.disabled
+        shell: bash
       - name: Download UPX (Windows only)
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
         run: |
           Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
           Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
         shell: powershell
+      - name: Disable UPX for PyInstaller (Windows)
+        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
+        run: mv upx-4.2.1-win64/upx.exe upx-4.2.1-win64/upx.disabled.exe
+        shell: powershell
+      - name: Build Python analytics executables
+        if: matrix.version_type == 'intellect'
+        run: python ./python_src/build_analytics.py
 
+      - name: Enable UPX (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
+        run: mv upx-4.2.1-amd64_linux/upx.disabled upx-4.2.1-amd64_linux/upx
+        shell: bash
+      - name: Enable UPX (Windows)
+        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
+        run: mv upx-4.2.1-win64/upx.disabled.exe upx-4.2.1-win64/upx.exe
+        shell: powershell
+      - name: Compress analytics executables with UPX (Linux only)
+        if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
+        run: |
+          ./upx-4.2.1-amd64_linux/upx --lzma extra/analytics/analytics_cpu
+          ./upx-4.2.1-amd64_linux/upx --lzma extra/analytics/analytics_dml
+      
       - name: Compress analytics executables with UPX (Windows only)
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
         run: |
