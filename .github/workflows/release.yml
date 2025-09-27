@@ -50,7 +50,7 @@ jobs:
 
       - name: Build Python analytics executables
         if: matrix.version_type == 'intellect'
-        run: python ./build_analytics.py
+        run: python ./python_src/build_analytics.py
       
       - name: Download UPX (Linux only)
         if: matrix.os == 'ubuntu-latest' && matrix.version_type == 'intellect'
