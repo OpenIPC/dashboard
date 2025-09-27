@@ -1,11 +1,8 @@
 # .github/workflows/release.yml
 
-name: Build & Release Cross-Platf      - name: Download UPX (Windows only)
-        if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
-        run: |
-          Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
-          Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
-        shell: powershelln:
+name: Build & Release Cross-Platform
+
+on:
   push:
     tags:
       - 'v*.*.*'
