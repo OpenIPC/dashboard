@@ -101,6 +101,7 @@ jobs:
       - name: List built analytics files (for debugging, Windows)
         if: matrix.version_type == 'intellect' && runner.os == 'Windows'
         run: dir extra\analytics /s
+        shell: cmd
 
       - name: Build and package Electron app (Linux)
         if: matrix.os == 'ubuntu-latest'
