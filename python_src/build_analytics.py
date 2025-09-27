@@ -4,7 +4,20 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-import site # <-- Импортируем новый модуль
+import site
+import shutil
+
+# Disable UPX to prevent double compression
+upx_exe = shutil.which('upx')
+if upx_exe:
+    os.rename(upx_exe, upx_exe + '.disabled')
+    def restore_upx():
+        if os.path.exists(upx_exe + '.disabled'):
+            os.rename(upx_exe + '.disabled', upx_exe)
+    import atexit
+    atexit.register(restore_upx)
+
+BASE_DIR = Path(__file__).parent.resolve()
 
 BASE_DIR = Path(__file__).parent.resolve()
 # VENV_DIR больше не нужен
