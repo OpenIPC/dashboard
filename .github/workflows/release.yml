@@ -66,6 +66,7 @@ jobs:
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
         run: |
           Invoke-WebRequest -Uri https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip -OutFile upx-4.2.1-win64.zip
+          Remove-Item -Recurse -Force upx-4.2.1-win64 -ErrorAction SilentlyContinue
           Expand-Archive upx-4.2.1-win64.zip -DestinationPath . -Force
         shell: powershell
       - name: Disable UPX for PyInstaller (Windows)
