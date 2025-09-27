@@ -51,6 +51,7 @@ jobs:
       - name: Clean extra/analytics directory
         if: matrix.version_type == 'intellect'
         run: rm -rf extra/analytics
+        shell: bash
 
       - name: Build Python analytics executables
         if: matrix.version_type == 'intellect'
