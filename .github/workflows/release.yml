@@ -92,8 +92,8 @@ jobs:
       - name: Compress analytics executables with UPX (Windows only)
         if: matrix.os == 'windows-latest' && matrix.version_type == 'intellect'
         run: |
-          ./upx-4.2.1-win64/upx.exe --lzma extra/analytics/analytics_cpu.exe
-          ./upx-4.2.1-win64/upx.exe --lzma extra/analytics/analytics_dml.exe
+          ./upx-4.2.1-win64/upx.exe --lzma --force extra/analytics/analytics_cpu.exe
+          ./upx-4.2.1-win64/upx.exe --lzma --force extra/analytics/analytics_dml.exe
       
       - name: List built analytics files (for debugging)
         if: matrix.version_type == 'intellect' && runner.os == 'Linux'
