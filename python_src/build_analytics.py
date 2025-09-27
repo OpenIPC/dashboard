@@ -8,14 +8,14 @@ import site
 import shutil
 
 # Disable UPX to prevent double compression
-upx_exe = shutil.which('upx')
-if upx_exe:
-    os.rename(upx_exe, upx_exe + '.disabled')
-    def restore_upx():
-        if os.path.exists(upx_exe + '.disabled'):
-            os.rename(upx_exe + '.disabled', upx_exe)
-    import atexit
-    atexit.register(restore_upx)
+# upx_exe = shutil.which('upx')
+# if upx_exe:
+#     os.rename(upx_exe, upx_exe + '.disabled')
+#     def restore_upx():
+#         if os.path.exists(upx_exe + '.disabled'):
+#             os.rename(upx_exe + '.disabled', upx_exe)
+#     import atexit
+#     atexit.register(restore_upx)
 
 BASE_DIR = Path(__file__).parent.resolve()
 
@@ -81,7 +81,7 @@ def create_and_build(name, req_file):
     print(f"Running PyInstaller for {name}...")
     pyinstaller_command = [
         python_executable, "-m", "PyInstaller",
-        "--noconfirm", "--onefile", "--noupx",
+        "--noconfirm", "--onefile", "--noupx", "--upx-dir=/tmp/no_upx",
         f"--name=analytics_{name}",
         f"--distpath={DIST_PATH}",
         f"--add-data={MODEL_FILE}{os.pathsep}.",
