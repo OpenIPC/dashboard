@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 MediaMTX binaries downloader for cross-platform builds
 Downloads latest MediaMTX binaries for Windows, Linux and macOS
@@ -6,6 +7,12 @@ Downloads latest MediaMTX binaries for Windows, Linux and macOS
 
 import os
 import sys
+
+# Fix encoding issues on Windows
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Check for required dependencies
 try:
@@ -45,14 +52,14 @@ PLATFORMS = {
 
 def get_latest_release():
     """Get latest MediaMTX release info"""
-    print("🔍 Getting latest MediaMTX release info...")
+    print("[*] Getting latest MediaMTX release info...")
     response = requests.get(MEDIAMTX_API_URL)
     response.raise_for_status()
     return response.json()
 
 def download_file(url, destination):
     """Download file with progress"""
-    print(f"⬇️  Downloading {os.path.basename(destination)}...")
+    print(f"[*] Downloading {os.path.basename(destination)}...")
     response = requests.get(url, stream=True)
     response.raise_for_status()
     
@@ -81,7 +88,7 @@ def extract_tar(archive_path, extract_to):
 
 def download_platform_binary(platform, asset_url, version):
     """Download and extract binary for specific platform"""
-    print(f"\n📦 Processing {platform}...")
+    print(f"\n[*] Processing {platform}...")
     
     # Create platform directory
     platform_dir = Path("src-tauri/binaries") / platform
@@ -121,11 +128,11 @@ def download_platform_binary(platform, asset_url, version):
         if item.is_dir():
             shutil.rmtree(item)
     
-    print(f"✅ {platform} binary ready: {binary_name}")
+    print(f"[+] {platform} binary ready: {binary_name}")
 
 def main():
     """Main function"""
-    print("🚀 MediaMTX Cross-Platform Binary Downloader")
+    print("[*] MediaMTX Cross-Platform Binary Downloader")
     print("=" * 50)
     
     try:
@@ -134,8 +141,8 @@ def main():
         version = release_data["tag_name"]
         assets = release_data["assets"]
         
-        print(f"📋 Latest version: {version}")
-        print(f"📋 Found {len(assets)} assets")
+        print(f"[*] Latest version: {version}")
+        print(f"[*] Found {len(assets)} assets")
         
         # Process each platform
         for platform, config in PLATFORMS.items():
@@ -159,17 +166,17 @@ def main():
             if matching_asset:
                 download_platform_binary(platform, matching_asset["browser_download_url"], version)
             else:
-                print(f"❌ No asset found for {platform} (looking for pattern in asset names)")
+                print(f"[-] No asset found for {platform} (looking for pattern in asset names)")
                 # Debug: show available assets
                 print(f"   Available assets:")
                 for asset in assets[:3]:  # Show first 3 for debugging
                     print(f"   - {asset['name']}")
         
-        print(f"\n🎉 All binaries downloaded successfully!")
-        print(f"📁 Binaries location: src-tauri/binaries/")
+        print(f"\n[+] All binaries downloaded successfully!")
+        print(f"[*] Binaries location: src-tauri/binaries/")
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[-] Error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
