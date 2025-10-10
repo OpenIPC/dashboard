@@ -6,7 +6,16 @@ Downloads latest MediaMTX binaries for Windows, Linux and macOS
 
 import os
 import sys
-import requests
+
+# Check for required dependencies
+try:
+    import requests
+except ImportError:
+    print("Error: 'requests' module not found.")
+    print("Please install it with: pip install requests")
+    print("Or: pip install -r requirements.txt")
+    sys.exit(1)
+
 import zipfile
 import tarfile
 import shutil
