@@ -70,6 +70,14 @@
 - Platform-specific dependencies (see [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
 
 ### Local Build
+
+#### Prerequisites
+- **Node.js 18+** - [Download](https://nodejs.org/)
+- **Rust 1.70+** - [Install](https://rustup.rs/)
+- **Python 3.6+** - [Download](https://python.org/downloads/)
+- Platform-specific dependencies (see [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
+
+#### Quick Start
 ```bash
 # Clone repository
 git clone https://github.com/OpenIPC/dashboard.git
@@ -78,12 +86,67 @@ cd dashboard
 # Install dependencies
 npm install
 
+# Download MediaMTX binaries (required for builds)
+npm run download-mediamtx
+
 # Run in development mode
 npm run tauri
 
-# Build release
-npm run tauri-build
+# Build release for current platform
+npm run build-release
 ```
+
+#### Cross-Platform Building
+```bash
+# Build for Windows (from any platform)
+npm run build-windows
+
+# Build for Linux (from any platform) 
+npm run build-linux
+
+# Build for macOS (from any platform)
+npm run build-macos
+
+# Build debug version
+npm run build-debug
+
+# Only download MediaMTX binaries
+npm run download-mediamtx
+```
+
+#### Alternative Build Methods
+```bash
+# Using PowerShell (Windows)
+.\tools\build.ps1 --platform windows
+
+# Using Bash (Linux/macOS)
+./tools/build.sh --platform linux
+
+# Using Python directly
+python tools/build.py --platform macos --debug
+```
+
+#### Build Outputs
+- **Windows**: `.msi` installer in `src-tauri/target/release/bundle/msi/`
+- **Linux**: `.deb` package and `.AppImage` in `src-tauri/target/release/bundle/`
+- **macOS**: `.dmg` installer in `src-tauri/target/release/bundle/dmg/`
+
+#### Release Building
+For creating distributable releases:
+```bash
+# Prepare all platform binaries
+npm run download-mediamtx
+
+# Build release installers
+npm run build-release
+
+# For other platforms (requires platform-specific setup)
+# npm run build-windows  # Windows MSI
+# npm run build-linux    # Linux DEB + AppImage  
+# npm run build-macos    # macOS DMG
+```
+
+See [Build Guide](./docs/build-guide.md) for detailed build instructions and [Release Process](./docs/release-process.md) for creating releases.
 
 ### Project Structure
 ```

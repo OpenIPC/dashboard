@@ -1,5 +1,5 @@
 {
-  "name": "dashboard",
+  "name": "dashboard-for-openipc",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,7 +10,13 @@
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
     "tauri": "tauri dev",
-    "tauri-build": "tauri build"
+    "tauri-build": "tauri build",
+    "download-mediamtx": "python tools/download-mediamtx.py",
+    "build-release": "python tools/build.py",
+    "build-debug": "python tools/build.py --debug",
+    "build-windows": "python tools/build.py --platform windows",
+    "build-linux": "python tools/build.py --platform linux",
+    "build-macos": "python tools/build.py --platform macos"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

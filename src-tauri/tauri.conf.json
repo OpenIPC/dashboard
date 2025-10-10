@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "dashboard",
+  "productName": "Dashboard for OpenIPC",
   "version": "0.1.0",
   "identifier": "com.openipc.dashboard",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "VMS Dashboard",
+        "title": "Dashboard for OpenIPC",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -40,7 +40,28 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "mediamtx/*"
-    ]
+      "mediamtx/mediamtx.yml",
+      "mediamtx/mediamtx.yml.template",
+      "binaries/mediamtx*"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "entitlements": null,
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "hardenedRuntime": true
+    }
   }
 }
