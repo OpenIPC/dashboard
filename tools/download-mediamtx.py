@@ -53,7 +53,26 @@ PLATFORMS = {
 def get_latest_release():
     """Get latest MediaMTX release info"""
     print("[*] Getting latest MediaMTX release info...")
-    response = requests.get(MEDIAMTX_API_URL)
+    headers = {"Accept": "application/vnd.github+json"}
+
+    token = (
+        os.environ.get("MEDIAMTX_GITHUB_TOKEN")
+        or os.environ.get("GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+    )
+
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    response = requests.get(MEDIAMTX_API_URL, headers=headers, timeout=30)
+
+    if response.status_code == 403:
+        reset_at = response.headers.get("X-RateLimit-Reset")
+        hint = "Set GITHUB_TOKEN or MEDIAMTX_GITHUB_TOKEN env var to increase rate limit."
+        if reset_at:
+            hint += f" Rate limit resets at UNIX timestamp {reset_at}."
+        raise RuntimeError(f"GitHub API rate limit hit (403). {hint}")
+
     response.raise_for_status()
     return response.json()
 

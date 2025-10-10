@@ -122,6 +122,8 @@ jobs:
 
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: lint frontend (continue on error)
         run: npm run lint
@@ -194,6 +196,8 @@ jobs:
 
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: lint frontend (continue on error)
         run: npm run lint
@@ -267,6 +271,8 @@ jobs:
 
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: lint frontend (continue on error)
         run: npm run lint
@@ -341,6 +347,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: lint frontend (continue on error)
         run: npm run lint
         continue-on-error: true
@@ -402,6 +410,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: lint frontend (continue on error)
         run: npm run lint
         continue-on-error: true
@@ -464,6 +474,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: lint frontend (continue on error)
         run: npm run lint
         continue-on-error: true
