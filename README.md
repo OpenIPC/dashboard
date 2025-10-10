@@ -163,20 +163,7 @@ dashboard/
 └── docs/                   # Documentation
 ```
 
----
 
-## 🌐 Supported Cameras
-
-| Manufacturer | Protocol | Status |
-|--------------|----------|--------|
-| **Hikvision** | ONVIF, RTSP | ✅ Full support |
-| **Dahua** | ONVIF, RTSP | ✅ Full support |
-| **Axis** | ONVIF | ✅ Full support |
-| **OpenIPC** | RTSP | ✅ Optimized support |
-| **Uniview** | ONVIF | ✅ Supported |
-| **Other ONVIF** | ONVIF | ✅ Basic support |
-
----
 
 ## 📊 System Requirements
 
