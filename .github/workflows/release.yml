@@ -84,6 +84,10 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

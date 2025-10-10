@@ -253,7 +253,6 @@ const LayoutTemplateDialog: React.FC<LayoutTemplateDialogProps> = ({
                     >
                       {cells.map((_, idx) => (
                         <Box
-                          // eslint-disable-next-line react/no-array-index-key
                           key={`grid-${size}-${idx}`}
                           sx={{
                             borderRadius: 0.6,
