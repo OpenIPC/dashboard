@@ -150,7 +150,6 @@ We welcome community contributions! Please:
 - 🌍 **Translations** - UI translations
 - 🧪 **Testing** - writing tests
 
----
 
 ## 📄 License
 
@@ -163,7 +162,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - 📋 [Issues](https://github.com/OpenIPC/dashboard/issues) - bug reports and feature requests
 - 💬 [Discussions](https://github.com/OpenIPC/dashboard/discussions) - general questions and discussions
 - 📖 [Wiki](https://github.com/OpenIPC/dashboard/wiki) - detailed documentation
-- 📧 Email: support@openipc.org
+-  Email: support@openipc.org
 
 ---
 
