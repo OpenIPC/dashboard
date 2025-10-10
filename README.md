@@ -8,178 +8,178 @@
 ![Rust](https://img.shields.io/badge/Rust-Latest-red?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**Современная нативная система управления видеонаблюдением для профессионалов**
+**Modern native video surveillance management system for professionals**
 
-[Скачать релиз](https://github.com/OpenIPC/dashboard/releases) • [Документация](./docs/) • [Сообщить об ошибке](https://github.com/OpenIPC/dashboard/issues)
+[Download Release](https://github.com/OpenIPC/dashboard/releases) • [Documentation](./docs/) • [Report Bug](https://github.com/OpenIPC/dashboard/issues)
 
 </div>
 
 ---
 
-## 🚀 Ключевые особенности
+## 🚀 Key Features
 
-### 📹 **Управление камерами**
-- **Автообнаружение ONVIF камер** в локальной сети
-- **Множественные протоколы**: ONVIF, RTSP, OpenIPC, Hikvision, Dahua
-- **Два режима подключения**: прямой RTSP и MediaMTX интеграция
-- **Группировка и организация** камер
-- **Безопасное хранение** учетных данных
+### 📹 **Camera Management**
+- **Automatic ONVIF camera discovery** in local network
+- **Multiple protocols support**: ONVIF, RTSP, OpenIPC, Hikvision, Dahua
+- **Two connection modes**: direct RTSP and MediaMTX integration
+- **Camera grouping and organization**
+- **Secure credential storage** with encryption
 
-### 🖥️ **Профессиональный интерфейс мониторинга**
-- **Мультисеточные макеты**: от 1 до 64 камер одновременно
-- **Настраиваемые шаблоны** с системой вкладок
-- **Drag & Drop** управление камерами
-- **Полноэкранный режим** и детальный просмотр
-- **Индивидуальные настройки** для каждой ячейки
+### 🖥️ **Professional Monitoring Interface**
+- **Multi-grid layouts**: from 1 to 64 cameras simultaneously
+- **Customizable templates** with tab system
+- **Drag & Drop** camera management
+- **Fullscreen mode** and detailed viewing
+- **Individual cell settings** (audio, pause, recording)
 
-### 📊 **Архив и аналитика**
-- **Интерактивная временная шкала** для навигации по записям
-- **Календарный интерфейс** поиска
-- **Экспорт видеофрагментов**
-- **Статистика и графики** активности
-- **Журнал событий** с фильтрацией
+### 📊 **Archive & Analytics**
+- **Interactive timeline** for recording navigation
+- **Calendar interface** for search
+- **Video clip export** functionality
+- **Activity statistics and charts**
+- **Event log** with filtering and search
 
-### 🛡️ **Безопасность и производительность**
-- **Нативное приложение** без браузерных ограничений
-- **Локальная обработка** данных без облачных сервисов
-- **Шифрование паролей** AES-256
-- **Низкое потребление ресурсов** благодаря Rust/Tauri
-
----
-
-## 📥 Быстрый старт
-
-### Установка
-1. Скачайте последний [релиз](https://github.com/OpenIPC/dashboard/releases) для вашей ОС
-2. Установите приложение (Windows: `.msi`, macOS: `.dmg`, Linux: `.deb`/`.AppImage`)
-3. Запустите VMS Dashboard
-
-### Первая настройка
-1. **Добавьте камеры**: используйте автопоиск ONVIF или добавьте вручную
-2. **Создайте макет**: перетащите камеры в сетку мониторинга
-3. **Настройте запись**: укажите расписание и параметры архива
-4. **Начните мониторинг**: наслаждайтесь профессиональным видеонаблюдением!
+### 🛡️ **Security & Performance**
+- **Native application** without browser limitations
+- **Local data processing** without cloud dependencies
+- **AES-256 password encryption**
+- **Low resource consumption** thanks to Rust/Tauri
 
 ---
 
-## 🔧 Разработка
+## 📥 Quick Start
 
-### Системные требования
+### Installation
+1. Download the latest [release](https://github.com/OpenIPC/dashboard/releases) for your OS
+2. Install the application (Windows: `.msi`, macOS: `.dmg`, Linux: `.deb`/`.AppImage`)
+3. Launch VMS Dashboard
+
+### Initial Setup
+1. **Add cameras**: use ONVIF auto-discovery or add manually
+2. **Create layout**: drag cameras to monitoring grid
+3. **Configure recording**: set schedule and archive parameters
+4. **Start monitoring**: enjoy professional video surveillance!
+
+---
+
+## 🔧 Development
+
+### System Requirements
 - Node.js 18+
 - Rust 1.70+
-- Platform-specific dependencies (см. [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
+- Platform-specific dependencies (see [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites))
 
-### Локальная сборка
+### Local Build
 ```bash
-# Клонирование репозитория
+# Clone repository
 git clone https://github.com/OpenIPC/dashboard.git
 cd dashboard
 
-# Установка зависимостей
+# Install dependencies
 npm install
 
-# Запуск в режиме разработки
+# Run in development mode
 npm run tauri
 
-# Сборка релиза
+# Build release
 npm run tauri-build
 ```
 
-### Структура проекта
+### Project Structure
 ```
 dashboard/
 ├── src/                    # React frontend
-│   ├── components/         # UI компоненты
-│   ├── contexts/           # React контексты
-│   ├── services/           # API сервисы
-│   └── types/              # TypeScript типы
+│   ├── components/         # UI components
+│   ├── contexts/           # React contexts
+│   ├── services/           # API services
+│   └── types/              # TypeScript types
 ├── src-tauri/              # Rust backend
-│   ├── src/                # Основной код
-│   ├── mediamtx/           # MediaMTX интеграция
-│   └── capabilities/       # Tauri разрешения
-└── docs/                   # Документация
+│   ├── src/                # Core code
+│   ├── mediamtx/           # MediaMTX integration
+│   └── capabilities/       # Tauri permissions
+└── docs/                   # Documentation
 ```
 
 ---
 
-## 🌐 Поддерживаемые камеры
+## 🌐 Supported Cameras
 
-| Производитель | Протокол | Статус |
-|---------------|----------|--------|
-| **Hikvision** | ONVIF, RTSP | ✅ Полная поддержка |
-| **Dahua** | ONVIF, RTSP | ✅ Полная поддержка |
-| **Axis** | ONVIF | ✅ Полная поддержка |
-| **OpenIPC** | RTSP | ✅ Оптимизированная поддержка |
-| **Uniview** | ONVIF | ✅ Поддержка |
-| **Другие ONVIF** | ONVIF | ✅ Базовая поддержка |
+| Manufacturer | Protocol | Status |
+|--------------|----------|--------|
+| **Hikvision** | ONVIF, RTSP | ✅ Full support |
+| **Dahua** | ONVIF, RTSP | ✅ Full support |
+| **Axis** | ONVIF | ✅ Full support |
+| **OpenIPC** | RTSP | ✅ Optimized support |
+| **Uniview** | ONVIF | ✅ Supported |
+| **Other ONVIF** | ONVIF | ✅ Basic support |
 
 ---
 
-## 📊 Системные требования
+## 📊 System Requirements
 
-### Минимальные
-- **ОС**: Windows 10, macOS 10.15, Ubuntu 18.04
+### Minimum
+- **OS**: Windows 10, macOS 10.15, Ubuntu 18.04
 - **RAM**: 4 GB
 - **CPU**: Dual-core 2.0 GHz
-- **GPU**: Поддержка H.264 декодирования
-- **Сеть**: 100 Mbps для локальных камер
+- **GPU**: H.264 decoding support
+- **Network**: 100 Mbps for local cameras
 
-### Рекомендуемые
+### Recommended
 - **RAM**: 8+ GB
 - **CPU**: Quad-core 3.0+ GHz
-- **GPU**: Дискретная с аппаратным декодированием
-- **Сеть**: Gigabit Ethernet
-- **Хранилище**: SSD для записей
+- **GPU**: Discrete with hardware decoding
+- **Network**: Gigabit Ethernet
+- **Storage**: SSD for recordings
 
 ---
 
-## 🤝 Вклад в проект
+## 🤝 Contributing
 
-Мы приветствуем вклад сообщества! Пожалуйста:
+We welcome community contributions! Please:
 
-1. 🍴 Форкните репозиторий
-2. 🌿 Создайте feature-ветку (`git checkout -b feature/amazing-feature`)
-3. 💾 Зафиксируйте изменения (`git commit -m 'Add amazing feature'`)
-4. 📤 Отправьте в ветку (`git push origin feature/amazing-feature`)
-5. 🔄 Создайте Pull Request
+1. 🍴 Fork the repository
+2. 🌿 Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. 💾 Commit your changes (`git commit -m 'Add amazing feature'`)
+4. 📤 Push to the branch (`git push origin feature/amazing-feature`)
+5. 🔄 Create a Pull Request
 
-### Типы вкладов
-- 🐛 **Bug fixes** - исправление ошибок
-- ✨ **Features** - новая функциональность
-- 📝 **Documentation** - улучшение документации
-- 🌍 **Translations** - переводы интерфейса
-- 🧪 **Testing** - написание тестов
-
----
-
-## 📄 Лицензия
-
-Проект распространяется под лицензией MIT. См. [LICENSE](LICENSE) для подробностей.
+### Types of Contributions
+- 🐛 **Bug fixes** - fixing issues
+- ✨ **Features** - new functionality
+- 📝 **Documentation** - improving docs
+- 🌍 **Translations** - UI translations
+- 🧪 **Testing** - writing tests
 
 ---
 
-## 🆘 Поддержка
+## 📄 License
 
-- 📋 [Issues](https://github.com/OpenIPC/dashboard/issues) - сообщения об ошибках и предложения
-- 💬 [Discussions](https://github.com/OpenIPC/dashboard/discussions) - общие вопросы и обсуждения
-- 📖 [Wiki](https://github.com/OpenIPC/dashboard/wiki) - детальная документация
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## 🆘 Support
+
+- 📋 [Issues](https://github.com/OpenIPC/dashboard/issues) - bug reports and feature requests
+- 💬 [Discussions](https://github.com/OpenIPC/dashboard/discussions) - general questions and discussions
+- 📖 [Wiki](https://github.com/OpenIPC/dashboard/wiki) - detailed documentation
 - 📧 Email: support@openipc.org
 
 ---
 
-## 🙏 Благодарности
+## 🙏 Acknowledgments
 
-- [OpenIPC](https://openipc.org/) за поддержку проекта
-- [Tauri](https://tauri.app/) за кроссплатформенный фреймворк
-- [MediaMTX](https://github.com/bluenviron/mediamtx) за потоковый сервер
-- Сообществу за тестирование и обратную связь
+- [OpenIPC](https://openipc.org/) for project support
+- [Tauri](https://tauri.app/) for cross-platform framework
+- [MediaMTX](https://github.com/bluenviron/mediamtx) for streaming server
+- Community for testing and feedback
 
 ---
 
 <div align="center">
 
-**⭐ Поставьте звездочку, если проект оказался полезным!**
+**⭐ Star this repo if you find it useful!**
 
-[⬆ Наверх](#vms-dashboard---professional-video-management-system)
+[⬆ Back to top](#vms-dashboard---professional-video-management-system)
 
 </div>
