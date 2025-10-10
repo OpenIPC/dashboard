@@ -1,0 +1,674 @@
+﻿#[path = "discovery.rs"] mod discovery;
+#[path = "onvif.rs"] mod onvif;
+#[path = "ffmpeg.rs"] mod ffmpeg;
+#[path = "camera_store.rs"] mod camera_store;
+
+use tauri::Manager;
+use tauri::Emitter;
+use tauri::async_runtime::spawn;
+use warp::Filter;
+use webrtc::api::APIBuilder;
+use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::peer_connection::RTCPeerConne		// Для новых версий MediaMTX API порт другой
+		let api_urls = [
+			"http://127.0.0.1:9997/v2/config/get",
+			"http://127.0.0.1:9997/v1/config/get", 
+			"http://127.0.0.1:9997/config/get",
+			"http://127.0.0.1:8888/v2/config/get",
+			"http://127.0.0.1:8888/v1/config/get"
+		];
+		let mut api_ok = false;
+		
+		// Пытаемся проверить API
+		for api_url in api_urls {
+			match reqwest::blocking::get(api_url) {
+			Ok(r) => {
+					if r.status().is_success() {
+						println!("MediaMTX HTTP API is responsive on {}", api_url);
+						api_ok = true;
+						break;
+					} else {
+						println!("MediaMTX HTTP API returned status: {} for {}", r.status(), api_url);
+					}
+				},c::peer_connection::configuration::RTCConfiguration;
+use once_cell::sync::Lazy;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use std::sync::Mutex as StdMutex;
+use serde::{Deserialize};
+use warp::body;
+use std::collections::HashMap;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
+use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
+use std::path::PathBuf;
+use std::fs::File;
+use std::io::Write;
+use std::process::{Command as StdCommand, Child as StdChild, Stdio};
+use tauri::State;
+
+struct MediaMtxState {
+	child: Option<StdChild>,
+	config_path: PathBuf,
+	exe_path: PathBuf,
+}
+
+impl MediaMtxState {
+	fn new(app_handle: &tauri::AppHandle) -> Self {
+		let base = app_handle.path().app_local_data_dir().unwrap();
+		let mediamtx_dir = base.join("mediamtx");
+		let config_path = mediamtx_dir.join("mediamtx.yml");
+		let exe_path = mediamtx_dir.join("mediamtx.exe");
+
+		// Ensure mediamtx directory exists and try to copy a bundled binary if one exists in the repo (useful during development)
+		if !mediamtx_dir.exists() {
+			let _ = std::fs::create_dir_all(&mediamtx_dir);
+		}
+		if !exe_path.exists() {
+			// check for a bundled binary inside the project (src-tauri/mediamtx/mediamtx.exe)
+			if let Ok(cur) = std::env::current_dir() {
+				let alt = cur.join("src-tauri").join("mediamtx").join("mediamtx.exe");
+				if alt.exists() {
+					let _ = std::fs::copy(&alt, &exe_path);
+					println!("Copied bundled mediamtx from {:?} to {:?}", alt, exe_path);
+				}
+			}
+		}
+		// best-effort: kill any stray mediamtx.exe processes that may have been started with wrong args
+		#[cfg(windows)]
+		{
+			let _ = StdCommand::new("taskkill").arg("/IM").arg("mediamtx.exe").arg("/F").spawn();
+		}
+
+		Self { child: None, config_path, exe_path }
+	}
+}
+
+#[derive(Deserialize)]
+
+struct SignalingOffer {
+	sdp: String,
+}
+
+pub static PEER_CONNECTIONS: Lazy<Mutex<HashMap<usize, Arc<RTCPeerConnection>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static PEER_TRACKS: Lazy<Mutex<HashMap<usize, Arc<TrackLocalStaticSample>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+// ...existing code...
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+	tauri::Builder::default()
+		.invoke_handler(tauri::generate_handler![
+			ffmpeg::start_stream,
+			ffmpeg::stop_stream,
+			ffmpeg::play_recording,
+			mediamtx_start,
+			mediamtx_stop,
+			mediamtx_add_camera,
+			check_stream_status,
+			camera_store::save_cameras,
+			camera_store::load_cameras,
+			camera_store::encrypt_password,
+			camera_store::decrypt_password,
+			camera_store::remove_camera,
+			discovery::discover_cameras,
+			onvif::get_rtsp_url,
+			onvif::get_onvif_profiles,
+			play_direct_rtsp
+		])
+		.setup(|app| {
+			// Тестовое событие для проверки доставки
+			app.handle().emit("device-found", serde_json::json!({
+				"ip": "192.168.0.100",
+				"name": "Test Camera",
+				"protocol": "onvif"
+			})).ok();
+
+			// Start HTTP server for serving video files and signaling endpoint
+			let app_handle = app.handle().clone();
+
+			// Initialize mediamtx state and attach to managed state so invokes can access it
+			let mediamtx_state = MediaMtxState::new(&app_handle);
+			// store inside a std Mutex so command handlers can mutate it synchronously
+			app_handle.manage(StdMutex::new(mediamtx_state));
+
+			let data_dir = app_handle.path().app_local_data_dir().unwrap();
+			println!("Serving files from: {:?}", data_dir);
+			
+			// Добавляем временную директорию для потоков
+			let temp_dir = std::env::temp_dir().join("mediamtx_streams");
+			if !temp_dir.exists() {
+				let _ = std::fs::create_dir_all(&temp_dir);
+			}
+			println!("Serving streams from: {:?}", temp_dir);
+			
+			spawn(async move {
+					// Создаём маршруты по-другому, более совместимо с Reply
+					let data_route = warp::fs::dir(data_dir)
+						.with(warp::cors().allow_any_origin());
+						
+					// Маршрут для потоков из временной директории
+					let streams_route = warp::path("streams")
+						.and(warp::fs::dir(temp_dir));
+						
+					let signaling_route = warp::path!("signaling" / usize)
+						.and(warp::post())
+						.and(body::json())
+						.then(handle_signaling);
+						
+					// Комбинируем маршруты
+					let routes = data_route
+						.or(streams_route)
+						.or(signaling_route)
+						.with(warp::cors().allow_any_origin()
+							.allow_methods(vec!["GET", "POST"])
+							.allow_headers(vec!["Content-Type"]));
+							
+					// Запускаем сервер
+					warp::serve(routes).run(([127, 0, 0, 1], 8080)).await;
+			});
+
+			Ok(())
+		})
+		.run(tauri::generate_context!())
+		.expect("error while running tauri application");
+}
+
+async fn handle_signaling(idx: usize, offer: SignalingOffer) -> impl warp::Reply {
+		let api = APIBuilder::new().build();
+		let config = RTCConfiguration {
+				ice_servers: vec![RTCIceServer {
+						urls: vec!["stun:stun.l.google.com:19302".to_owned()],
+						..Default::default()
+				}],
+				..Default::default()
+		};
+		let peer_connection = Arc::new(api.new_peer_connection(config).await.unwrap());
+		PEER_CONNECTIONS.lock().await.insert(idx, peer_connection.clone());
+		let offer_sdp = offer.sdp.clone();
+		peer_connection.set_remote_description(webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(offer_sdp.clone()).unwrap()).await.unwrap();
+		// Choose codec based on offer SDP (prefer H265 if client offers it)
+		let mut mime = "video/H264".to_owned();
+		if offer_sdp.to_lowercase().contains("h265") || offer_sdp.to_lowercase().contains("hevc") {
+			mime = "video/H265".to_owned();
+		}
+		// Create a local TrackLocalStaticSample for video and attach to peer connection so we can inject samples into it.
+		let codec = RTCRtpCodecCapability { mime_type: mime.clone(), ..Default::default() };
+		let track = Arc::new(TrackLocalStaticSample::new(codec, format!("video-{}", idx), format!("stream-{}", idx)));
+	// Add track to peer connection so that client's ontrack will fire
+	let _sender = peer_connection.add_track(track.clone()).await.unwrap();
+	println!("[webrtc] created track for idx {} mime {}", idx, mime);
+		PEER_TRACKS.lock().await.insert(idx, track.clone());
+		let answer = peer_connection.create_answer(None).await.unwrap();
+		peer_connection.set_local_description(answer.clone()).await.unwrap();
+		let answer_json = serde_json::json!({ "type": "answer", "sdp": answer.sdp });
+		warp::reply::json(&answer_json)
+}
+
+#[tauri::command]
+fn mediamtx_start(state: State<'_, StdMutex<MediaMtxState>>) -> Result<String, String> {
+	let mut s = state.lock().unwrap();
+	// clone paths so we don't hold borrows into s while mutating child
+	let exe = s.exe_path.clone();
+	let cfg = s.config_path.clone();
+	
+	// Проверяем наличие исполняемого файла MediaMTX
+	if !exe.exists() {
+		// try to copy from repo already attempted in new(); if still missing, attempt to download
+		let download_url = "https://github.com/bluenviron/mediamtx/releases/download/v1.3.0/mediamtx_v1.3.0_windows_amd64.zip";
+		println!("mediamtx not found at {:?}, attempting download from {}", exe, download_url);
+		
+		// Создаем временный каталог для загрузки и извлечения zip
+		let temp_dir = std::env::temp_dir().join("mediamtx_download");
+		let _ = std::fs::create_dir_all(&temp_dir);
+		let zip_path = temp_dir.join("mediamtx.zip");
+		
+		match reqwest::blocking::get(download_url) {
+			Ok(resp) => {
+				if resp.status().is_success() {
+					match resp.bytes() {
+						Ok(bytes) => {
+							// Сохраняем zip файл
+							if let Err(e) = std::fs::write(&zip_path, &bytes) {
+								return Err(format!("failed to write mediamtx zip: {}", e));
+							}
+							
+							// Извлекаем zip (упрощенно, без зависимости от библиотеки zip)
+							#[cfg(windows)]
+							{
+								let extract_cmd = std::process::Command::new("powershell")
+									.args(&["-Command", &format!("Expand-Archive -Path '{}' -DestinationPath '{}'", 
+												zip_path.to_string_lossy(), temp_dir.to_string_lossy())])
+									.output();
+									
+								if let Err(e) = extract_cmd {
+									return Err(format!("failed to extract mediamtx zip: {}", e));
+								}
+								
+								// Ищем исполняемый файл mediamtx.exe в распакованном архиве
+								let extracted_exe = temp_dir.join("mediamtx.exe");
+								if extracted_exe.exists() {
+									if let Err(e) = std::fs::copy(&extracted_exe, &exe) {
+										return Err(format!("failed to copy extracted mediamtx.exe: {}", e));
+									}
+								} else {
+									return Err(format!("extracted mediamtx.exe not found in {}", temp_dir.to_string_lossy()));
+								}
+							}
+							
+							println!("Downloaded and extracted mediamtx to {:?}", exe);
+						}
+						Err(e) => return Err(format!("failed to read mediamtx response bytes: {}", e)),
+					}
+				} else {
+					return Err(format!("failed to download mediamtx: HTTP {}", resp.status()));
+				}
+			}
+			Err(e) => return Err(format!("failed to download mediamtx: {}", e)),
+		}
+	}
+
+	// Останавливаем существующий процесс, если есть
+	if s.child.is_some() {
+		println!("Stopping existing MediaMTX process");
+		if let Some(mut existing) = s.child.take() {
+			let _ = existing.kill();
+			let _ = existing.wait();
+		}
+	}
+	
+	// На всякий случай, убиваем все процессы mediamtx, которые могут мешать нам
+	#[cfg(windows)]
+	{
+		println!("Stopping all mediamtx processes...");
+		let output = StdCommand::new("taskkill")
+			.args(&["/F", "/IM", "mediamtx.exe"])
+			.output();
+			
+		match output {
+			Ok(out) => {
+				println!("Taskkill output: {}", String::from_utf8_lossy(&out.stdout));
+				if !out.stderr.is_empty() {
+					println!("Taskkill error: {}", String::from_utf8_lossy(&out.stderr));
+				}
+			},
+			Err(e) => println!("Taskkill failed: {}", e)
+		}
+			
+		std::thread::sleep(std::time::Duration::from_millis(1000)); // Даем системе время освободить порты
+	}
+
+	// Создаем базовую конфигурацию MediaMTX в файле
+	println!("Starting MediaMTX with config at {:?}", &cfg);
+	
+	// Запускаем MediaMTX процесс с указанной конфигурацией
+	let mut cmd = StdCommand::new(&exe);
+	// Проверим версию MediaMTX
+	let version_output = StdCommand::new(&exe).arg("--version").output();
+	let version_str = match version_output {
+		Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+		Err(_) => "unknown".to_string(),
+	};
+	println!("MediaMTX version: {}", version_str);
+	
+	// Для новых версий MediaMTX (v1.0+) может потребоваться другой подход к конфигурации
+	cmd.arg(&cfg)
+	   .current_dir(exe.parent().unwrap())
+	   .stdout(Stdio::piped())
+	   .stderr(Stdio::piped());
+	   
+	println!("Запуск MediaMTX с конфигурацией: {:?}", &cfg);
+	
+	let mut child = match cmd.spawn() {
+		Ok(child) => child,
+		Err(e) => {
+			println!("Failed to spawn MediaMTX: {}", e);
+			return Err(format!("failed to spawn mediamtx: {}", e));
+		}
+	};
+
+	// forward stdout/stderr to our console asynchronously
+	if let Some(out) = child.stdout.take() {
+		let _ = std::thread::spawn(move || {
+			use std::io::{BufRead, BufReader};
+			let reader = BufReader::new(out);
+			for line in reader.lines() {
+				if let Ok(l) = line {
+					println!("[mediamtx stdout] {}", l);
+				}
+			}
+		});
+	}
+    if let Some(err) = child.stderr.take() {
+        let _ = std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(err);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    eprintln!("[mediamtx stderr] {}", l);
+                }
+            }
+        });
+    }	s.child = Some(child);
+
+	// Poll the HTTP API until it responds (or timeout)
+	let mut ok = false;
+	
+	// Проверяем, запустился ли процесс успешно
+	std::thread::sleep(std::time::Duration::from_millis(1000));
+	if let Some(ref mut child) = s.child {
+		match child.try_wait() {
+			Ok(Some(status)) => {
+				// Процесс уже завершился - это проблема
+				println!("MediaMTX exited immediately with status: {:?}", status);
+				return Err(format!("MediaMTX exited immediately with status: {:?}", status));
+			}
+			_ => {
+				// Процесс запущен, продолжаем проверять доступность API
+			}
+		}
+	}
+	
+	// Проверяем базовый эндпоинт API на порту 9997 (для MediaMTX 1.15+) или 8888 (для старых версий)
+	for i in 0..20 { // 10 секунд таймаут
+		std::thread::sleep(std::time::Duration::from_millis(500));
+		
+		// Проверяем статус процесса
+		if let Some(ref mut child) = s.child {
+			match child.try_wait() {
+				Ok(Some(status)) => {
+					println!("MediaMTX exited with status: {:?}", status);
+					return Err(format!("MediaMTX exited with status: {:?}", status));
+				}
+				_ => {
+					// Процесс еще работает
+				}
+			}
+		}
+		
+		// Для новых версий MediaMTX API порт другой
+		let api_urls = [
+			"http://127.0.0.1:9997/v2/config/get",
+			"http://127.0.0.1:9997/v1/config/get", 
+			"http://127.0.0.1:9997/config/get",
+			"http://127.0.0.1:8888/v2/config/get",
+			"http://127.0.0.1:8888/v1/config/get"
+		];
+		let mut api_ok = false;
+		
+		// Пытаемся проверить API
+		for api_url in api_urls {
+			match reqwest::blocking::get(api_url) {
+				Ok(r) => {
+					if r.status().is_success() {
+						println!("MediaMTX HTTP API is responsive on {}", api_url);
+						api_ok = true;
+						break;
+					} else {
+						println!("MediaMTX HTTP API returned status: {} for {}", r.status(), api_url);
+					}
+				}
+				Err(e) => {
+					if i < 5 || i % 5 == 0 { // Выводим сообщение реже после первых попыток
+						println!("MediaMTX API not available at {} (attempt {}): {}", api_url, i+1, e);
+					}
+					continue;
+				}
+			}
+		}
+		
+		if api_ok {
+			ok = true;
+			break;
+		}
+	}
+
+	if ok {
+		Ok("started and ready".into())
+	} else {
+		// Если сервер не запустился, проверяем что процесс хотя бы работает
+		if let Some(ref mut child) = s.child {
+			match child.try_wait() {
+				Ok(Some(status)) => {
+					println!("MediaMTX exited with status: {:?}", status);
+				}
+				_ => {
+					// Проверяем что сервер запустился, даже если API возвращает 404
+					// Это может быть изменение в API MediaMTX версии 1.15+
+					println!("MediaMTX process still running but API not responding correctly");
+					
+					// В новых версиях MediaMTX API может возвращать 404 на /config/get
+					// но при этом сервис работает нормально. Проверим порты.
+					let ports_to_check = [(9997, "API"), (8554, "RTSP"), (8888, "HLS")];
+					let mut all_ports_open = true;
+					
+					for (port, service) in ports_to_check {
+						match std::net::TcpStream::connect(format!("127.0.0.1:{}", port)) {
+							Ok(_) => {
+								println!("{} port {} is open, MediaMTX seems to be working", service, port);
+							},
+							Err(_) => {
+								println!("{} port {} is not responding", service, port);
+								all_ports_open = false;
+							}
+						}
+					}
+					
+					if all_ports_open {
+						return Ok("started (API returning 404 but ports are open)".into());
+					}
+				}
+			}
+		}
+		
+		println!("MediaMTX started but API not responding. Continuing anyway...");
+		Ok("started (not yet responding)".into())
+	}
+}
+
+#[tauri::command]
+fn mediamtx_stop(state: State<'_, StdMutex<MediaMtxState>>) -> Result<String, String> {
+	let mut s = state.lock().unwrap();
+	if let Some(mut c) = s.child.take() {
+		let _ = c.kill();
+		return Ok("stopped".into());
+	}
+	Ok("not running".into())
+}
+
+#[tauri::command]
+fn mediamtx_add_camera(state: State<'_, StdMutex<MediaMtxState>>, name: String, rtsp: String) -> Result<String, String> {
+	// write mediamtx YAML using a minimal explicit template to match the mediamtx expectation
+	let s = state.lock().unwrap();
+	let cfg_path = &s.config_path;
+	let cfg_dir = cfg_path.parent().unwrap();
+	std::fs::create_dir_all(cfg_dir).map_err(|e| format!("create dir: {}", e))?;
+
+	// MediaMTX 1.x использует другой формат конфигурации
+	// Проверим, установлена ли версия MediaMTX
+	let exe_path = &s.exe_path;
+	let version_output = StdCommand::new(exe_path)
+		.arg("--version")
+		.output()
+		.ok();
+
+	// Получаем строку с версией MediaMTX
+	let version_string = match &version_output {
+		Some(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+		None => String::new(),
+	};
+
+	// Определяем версию MediaMTX
+	let is_v1_or_newer = version_string.contains("1.") || version_string.contains("2.");
+	let is_v1_15_plus = version_string.contains("v1.15") || version_string.contains("v1.16") || version_string.contains("v2.");
+	
+	// Попробуем использовать шаблон из репозитория, если он доступен
+	let template_path = if let Ok(cur) = std::env::current_dir() {
+		let path = cur.join("src-tauri").join("mediamtx").join("mediamtx.yml.template");
+		if path.exists() {
+			Some(path)
+		} else {
+			let path = cur.join("src-tauri").join("mediamtx").join("mediamtx.yml");
+			if path.exists() {
+				Some(path)
+			} else {
+				None
+			}
+		}
+	} else {
+		None
+	};
+
+	let yaml = if let Some(template_path) = template_path {
+		// Используем шаблон из файла
+		match std::fs::read_to_string(&template_path) {
+			Ok(content) => {
+				// Добавляем конфигурацию камеры к существующему шаблону
+				let mut yaml = content;
+				let camera_config = format!("\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: yes\n", name, rtsp);
+				
+				// Заменяем существующую секцию paths, если она есть
+				if let Some(paths_pos) = yaml.find("\npaths:") {
+					// Находим конец раздела paths
+					if let Some(next_section) = yaml[paths_pos+1..].find("\n###") {
+						yaml.truncate(paths_pos + next_section + 1);
+					} else {
+						yaml.truncate(paths_pos + 1);
+					}
+					yaml.push_str(&camera_config);
+				} else {
+					yaml.push_str(&camera_config);
+				}
+				yaml
+			},
+			Err(_) => {
+				// Если не удалось прочитать шаблон, используем упрощенную конфигурацию
+				if is_v1_15_plus {
+					// Формат для MediaMTX 1.15+
+					format!(
+						"logLevel: info\nrtspAddress: :8554\nrtmpAddress: :1935\nhlsAddress: :8888\nwebrtcAddress: :8889\nsrtAddress: :8890\napi: true\napiAddress: :9997\n\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: true\n",
+						name,
+						rtsp
+					)
+				} else if is_v1_or_newer {
+					// Формат для MediaMTX 1.0-1.14.x
+					format!(
+						"logLevel: info\nlogDestinations: [stdout]\nlogFile: mediamtx.log\n\n# RTSP server\nrtsp:\n  protocols: [tcp, udp]\n  encryption: no\n\n# RTMP server\nrtmp:\n  enabled: yes\n\n# HLS server\nhls:\n  enabled: yes\n\n# WebRTC server\nwebrtc:\n  enabled: yes\n\n# API server\napi:\n  enabled: yes\n  address: :8888\n\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: yes\n",
+						name,
+						rtsp
+					)
+				} else {
+					// Формат для MediaMTX 0.x (устаревший)
+					format!(
+						"server:\n  readTimeout: 10s\n  writeTimeout: 10s\n  readBufferCount: 512\n  protocols: [tcp, udp]\n  apiAddress: :8888\n  metrics: yes\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: yes\n",
+						name,
+						rtsp
+					)
+				}
+			}
+		}
+	} else {
+		// Если шаблон не найден, используем версионно-зависимую конфигурацию
+		if is_v1_15_plus {
+			// Формат для MediaMTX 1.15+
+			format!(
+				"logLevel: info\nrtspAddress: :8554\nrtmpAddress: :1935\nhlsAddress: :8888\nwebrtcAddress: :8889\nsrtAddress: :8890\napi: true\napiAddress: :9997\n\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: true\n",
+				name,
+				rtsp
+			)
+		} else if is_v1_or_newer {
+			// Формат для MediaMTX 1.0-1.14.x
+			format!(
+				"logLevel: info\nlogDestinations: [stdout]\nlogFile: mediamtx.log\n\n# RTSP server\nrtsp:\n  protocols: [tcp, udp]\n  encryption: no\n\n# RTMP server\nrtmp:\n  enabled: yes\n\n# HLS server\nhls:\n  enabled: yes\n\n# WebRTC server\nwebrtc:\n  enabled: yes\n\n# API server\napi:\n  enabled: yes\n  address: :8888\n\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: yes\n",
+				name,
+				rtsp
+			)
+		} else {
+			// Формат для MediaMTX 0.x (устаревший)
+			format!(
+				"server:\n  readTimeout: 10s\n  writeTimeout: 10s\n  readBufferCount: 512\n  protocols: [tcp, udp]\n  apiAddress: :8888\n  metrics: yes\npaths:\n  {}:\n    source: {}\n    sourceOnDemand: yes\n",
+				name,
+				rtsp
+			)
+		}
+	};
+
+	let mut f = File::create(cfg_path).map_err(|e| format!("create cfg: {}", e))?;
+	f.write_all(yaml.as_bytes()).map_err(|e| format!("write cfg: {}", e))?;
+	println!("Wrote mediamtx config to {:?}:\n{}", cfg_path, yaml);
+	
+	// Для отладки выведем информацию о RTSP URL
+	println!("Camera RTSP URL: {}", rtsp);
+	
+	// Для камер с разными форматами URL выводим информацию для отладки
+	if rtsp.contains("user=") && rtsp.contains("password=") {
+		println!("Detected Hikvision style URL with embedded credentials");
+	} else if rtsp.contains("@") {
+		println!("Detected standard RTSP URL with embedded credentials");
+		
+		// Проверка на двойной символ @ и исправление его для MediaMTX
+		if rtsp.contains("@@") {
+			println!("WARNING: Detected double @ symbol in URL, this may cause issues with RTSP parsing");
+			println!("Try modifying the URL to have only one @ symbol if streaming fails");
+		}
+	}
+	
+	Ok(format!("wrote {}", cfg_path.display()))
+}
+
+#[tauri::command]
+fn check_stream_status(state: State<'_, StdMutex<MediaMtxState>>, name: String) -> Result<String, String> {
+	let _s = state.lock().unwrap(); // Добавляем подчеркивание чтобы указать компилятору, что переменная намеренно не используется
+	
+	// Формируем URL для проверки статуса потока в MediaMTX API
+	// В MediaMTX v1.15+ API URL отличается
+	// Проверяем на разных портах и с разными путями API в зависимости от версии
+	let api_urls = vec![
+		// MediaMTX v1.15+
+		format!("http://127.0.0.1:9997/v2/paths/{}", name),
+		format!("http://127.0.0.1:9997/v2/paths/{}/status", name),
+		format!("http://127.0.0.1:9997/v1/paths/{}", name),
+		format!("http://127.0.0.1:9997/paths/{}/status", name),
+		// Старые версии
+		format!("http://127.0.0.1:8888/v2/paths/{}", name),
+		format!("http://127.0.0.1:8888/v1/paths/{}", name)
+	];
+	
+	// Пробуем проверить API на разных портах
+	for api_url in api_urls {
+		match reqwest::blocking::get(&api_url) {
+			Ok(r) => {
+				if r.status().is_success() {
+					match r.text() {
+						Ok(text) => {
+							println!("MediaMTX stream status for {}: {}", name, text);
+							return Ok(text);
+						},
+						Err(e) => println!("Failed to read response text: {}", e)
+					}
+				} else {
+					println!("MediaMTX API returned status: {} for {}", r.status(), api_url);
+				}
+			},
+			Err(e) => println!("MediaMTX API not available at {}: {}", api_url, e)
+		}
+	}
+	
+	Err("Failed to check stream status".into())
+}
+
+// Команда для прямого воспроизведения RTSP-потока без MediaMTX
+#[tauri::command]
+fn play_direct_rtsp(rtsp_url: String) -> Result<String, String> {
+	println!("Direct RTSP playback requested for URL: {}", rtsp_url);
+	
+	// Проверка на двойной символ @ и исправление его
+	let fixed_url = if rtsp_url.contains("@@") {
+		println!("Fixing double @ in URL");
+		rtsp_url.replace("@@", "@")
+	} else {
+		rtsp_url
+	};
+	
+	// Возвращаем URL для прямого воспроизведения
+	Ok(fixed_url)
+}

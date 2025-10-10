@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1,
+    "name": "1",
+    "ip": "192.168.0.157",
+    "protocol": "openipc",
+    "port": 554,
+    "user": "root",
+    "pass_enc": "yy6Y6CeB2PmVMntZlrc82wDiIqPaOc7Y5KA=",
+    "onvif_auth": true,
+    "path_hd": "/stream0",
+    "path_sd": "/stream1",
+    "status": "offline"
+  },
+  {
+    "id": 2,
+    "name": "ONVIF Camera",
+    "ip": "172.22.80.46",
+    "protocol": "onvif",
+    "port": 80,
+    "user": "",
+    "pass_enc": "",
+    "onvif_auth": false,
+    "path_hd": "",
+    "path_sd": "",
+    "status": "offline"
+  }
+]

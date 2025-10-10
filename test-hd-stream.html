@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HD Stream Test</title>
+</head>
+<body>
+    <h1>Direct HD Stream Test</h1>
+    <div>
+        <h3>HD Stream (stream=0):</h3>
+        <video id="hdVideo" controls autoplay muted style="width: 640px; height: 480px; border: 1px solid #000;">
+        </video>
+        <br>
+        <button onclick="testHdStream()">Test HD Stream</button>
+        <button onclick="testSdStream()">Test SD Stream</button>
+    </div>
+    
+    <div id="logs" style="margin-top: 20px; padding: 10px; background: #f0f0f0; font-family: monospace; white-space: pre-wrap;">
+    </div>
+
+    <script>
+        const video = document.getElementById('hdVideo');
+        const logs = document.getElementById('logs');
+        
+        function log(message) {
+            console.log(message);
+            logs.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+            logs.scrollTop = logs.scrollHeight;
+        }
+        
+        async function testStream(streamId, streamName) {
+            try {
+                log(`Testing ${streamName} stream (${streamId})...`);
+                
+                // Очищаем предыдущий поток
+                if (video.srcObject) {
+                    video.srcObject.getTracks().forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+                
+                const pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                pc.ontrack = (event) => {
+                    log(`${streamName}: Received track - ${event.track.kind} (${event.track.label})`);
+                    if (event.track.kind === 'video') {
+                        video.srcObject = event.streams[0];
+                        log(`${streamName}: Video track assigned to video element`);
+                    }
+                };
+                
+                pc.onconnectionstatechange = () => {
+                    log(`${streamName}: Connection state: ${pc.connectionState}`);
+                };
+                
+                pc.oniceconnectionstatechange = () => {
+                    log(`${streamName}: ICE connection state: ${pc.iceConnectionState}`);
+                };
+                
+                // Создаем offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                log(`${streamName}: Created offer, sending to MediaMTX...`);
+                
+                // Отправляем offer на MediaMTX
+                const endpoints = [
+                    `http://localhost:8889/whep/cam${streamId}`,
+                    `http://localhost:8889/cam${streamId}/whep`,
+                    `http://localhost:9997/whep/cam${streamId}`,
+                    `http://localhost:9997/cam${streamId}/whep`
+                ];
+
+                let connected = false;
+                for (const endpoint of endpoints) {
+                    log(`${streamName}: Trying endpoint ${endpoint}...`);
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/sdp'
+                            },
+                            body: offer.sdp
+                        });
+
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            log(`${streamName}: Endpoint ${endpoint} responded with ${response.status}: ${errorText}`);
+                            continue;
+                        }
+
+                        const answerSdp = await response.text();
+                        log(`${streamName}: Received answer from ${endpoint}`);
+
+                        await pc.setRemoteDescription({
+                            type: 'answer',
+                            sdp: answerSdp
+                        });
+
+                        log(`${streamName}: WebRTC connection established via ${endpoint}!`);
+                        connected = true;
+                        break;
+                    } catch (fetchError) {
+                        log(`${streamName}: Endpoint ${endpoint} failed: ${fetchError instanceof Error ? fetchError.message : fetchError}`);
+                    }
+                }
+
+                if (!connected) {
+                    throw new Error(`${streamName}: All WHEP endpoints failed`);
+                }
+                
+            } catch (error) {
+                log(`${streamName}: Error - ${error.message}`);
+            }
+        }
+        
+        function testHdStream() {
+            testStream(0, 'HD');
+        }
+        
+        function testSdStream() {
+            testStream(1, 'SD');
+        }
+    </script>
+</body>
+</html>

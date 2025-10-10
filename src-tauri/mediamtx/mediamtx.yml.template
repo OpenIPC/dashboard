@@ -1,0 +1,26 @@
+# Базовая конфигурация для MediaMTX
+
+# HTTP API сервер для HLS потоков 
+api: yes
+apiAddress: "127.0.0.1:9997"
+
+# Адрес для HTTP потоков (HLS)
+rtsp:
+  protocols: [tcp, udp]
+  
+rtmp:
+  enabled: yes
+
+# HLS настройки
+hlsDisable: no
+hlsAddress: ":8888"
+hlsAllowOrigin: "*"
+
+# WebRTC настройки
+webrtcDisable: no
+webrtcAddress: ":8889"
+webrtcAllowOrigin: "*"
+
+# Настройки для путей (path)
+paths:
+  # Пути для камер будут добавлены динамически в коде

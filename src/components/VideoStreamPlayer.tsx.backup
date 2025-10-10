@@ -1,0 +1,293 @@
+import React, { useState, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+// appLocalDataDir removed; MediaMTX will be used for streaming
+import { Box, Typography, Paper, IconButton, Button } from '@mui/material';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
+
+const CAMERA_GRID_OPTIONS = [1, 4, 9, 16, 25, 32, 64];
+
+interface Camera {
+  id?: number;
+  name?: string;
+  ip?: string;
+  streamUrl?: string;
+  protocol?: string;
+  port?: number;
+  user?: string;
+  pass_enc?: string;
+  path_hd?: string;
+  path_sd?: string;
+  status?: string;
+}
+
+const Dashboard: React.FC = () => {
+  const [gridSize, setGridSize] = useState<number>(4);
+  const [cellCameras, setCellCameras] = useState<(Camera | null)[]>(Array(64).fill(null));
+  const [cellStreams, setCellStreams] = useState<(boolean | null)[]>(Array(64).fill(null));
+  const [hoveredCell, setHoveredCell] = useState<number | null>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>(Array(64).fill(null));
+
+  const handleGridChange = (size: number) => setGridSize(size);
+
+  // вычисляем квадратную сетку
+  const cols = Math.ceil(Math.sqrt(gridSize));
+  const rows = Math.ceil(gridSize / cols);
+  const gridCells = Array.from({ length: cols * rows }).map((_, idx) => {
+    const cam = cellCameras[idx];
+
+    const handleDrop = async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cameraIdStr = e.dataTransfer.getData('application/x-camera-id');
+      console.log('DROP EVENT FIRED', idx, cameraIdStr);
+      if (!cameraIdStr) return;
+      const cameraId = parseInt(cameraIdStr, 10);
+      if (isNaN(cameraId)) return;
+
+  // Найти камеру по id среди глобального списка
+  const cameras = (window as any).__VMS_CAMERAS || [];
+  const cam = cameras.find((c: any) => c && c.id === cameraId);
+  if (!cam) return;
+
+      setCellCameras(prev => {
+        const copy = [...prev];
+        copy[idx] = cam;
+        return copy;
+      });
+
+      // Attempt to start stream via backend; use streamUrl if provided
+  const decryptedPass = await invoke('decrypt_password', { enc: cam.pass_enc });
+      const rtspUrl = cam.streamUrl || `rtsp://${cam.user}:${decryptedPass as string}@${cam.ip}/stream=0`;
+      console.log('Registering camera with MediaMTX', cam.name, 'RTSP:', rtspUrl);
+      try {
+        const addRes = await invoke('mediamtx_add_camera', { name: `camera_${idx}`, rtspUrl: rtspUrl });
+        console.log('add_camera_to_mediamtx ->', addRes);
+        const startRes = await invoke('mediamtx_start');
+        console.log('mediamtx_start ->', startRes);
+        // Give MediaMTX a moment to initialize if it reported not yet responding
+        await new Promise(r => setTimeout(r, 800));
+        setCellStreams(prev => {
+          const arr = [...prev];
+          arr[idx] = true;
+          return arr;
+        });
+      } catch (err) {
+        console.error('mediamtx err', err);
+      }
+    };
+
+    return (
+      <Box
+        key={`cell-${idx}`}
+        tabIndex={0}
+        sx={{
+          position: 'relative',
+          overflow: 'hidden',
+          width: '100%',
+          height: '100%',
+          minHeight: 180,
+          border: '1px solid #31353a',
+          borderRadius: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#36393f',
+          cursor: 'move',
+          '&.drag-over': { boxShadow: '0 0 0 2px #1976d2' }
+        }}
+        onMouseEnter={() => setHoveredCell(idx)}
+        onMouseLeave={() => setHoveredCell(null)}
+        onDragEnter={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+        onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }}
+        onDragLeave={e => { e.currentTarget.classList.remove('drag-over'); }}
+        onDrop={e => { e.currentTarget.classList.remove('drag-over'); handleDrop(e); }}
+      >
+        {cam ? (
+          <>
+            <video style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 2 }} controls ref={(el) => { if (el) videoRefs.current[idx] = el; }} />
+            {hoveredCell === idx && (
+              <IconButton
+                size="small"
+                sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2, bgcolor: '#23272b', color: '#fff', boxShadow: 2 }}
+                onClick={() => {
+                  setCellCameras(prev => {
+                    const copy = [...prev];
+                    copy[idx] = null;
+                    return copy;
+                  });
+                  setCellStreams(prev => {
+                    const arr = [...prev];
+                    arr[idx] = null;
+                    return arr;
+                  });
+                }}
+              >
+                ✕
+              </IconButton>
+            )}
+          </>
+        ) : (
+          <>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#bfc8d6', mb: 1, position: 'relative' }}>
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="8" y="12" width="32" height="24" rx="4" fill="#bfc8d6" fillOpacity="0.12" />
+                <path d="M32 20C32 22.2091 30.2091 24 28 24C25.7909 24 24 22.2091 24 20C24 17.7909 25.7909 16 28 16C30.2091 16 32 17.7909 32 20Z" fill="#bfc8d6" fillOpacity="0.32" />
+                <rect x="34" y="14" width="6" height="6" rx="2" fill="#bfc8d6" />
+              </svg>
+              <svg width="20" height="20" viewBox="0 0 20 20" style={{ position: 'absolute', top: 12, right: 12 }} fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="10" cy="10" r="10" fill="#bfc8d6" fillOpacity="0.18" />
+                <path d="M10 6V14" stroke="#bfc8d6" strokeWidth="2" strokeLinecap="round" />
+                <path d="M6 10H14" stroke="#bfc8d6" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </Box>
+            <Typography sx={{ color: '#bfc8d6', fontWeight: 500, fontSize: 18, textAlign: 'center' }}>Перетащите камеру</Typography>
+          </>
+        )}
+      </Box>
+    );
+  });
+
+  React.useEffect(() => {
+    window.setCellCamera = async (cam: Camera) => {
+      console.log('setCellCamera called with', cam);
+      // Найти первую свободную ячейку
+      const idx = cellCameras.findIndex(c => !c);
+      if (idx === -1) return;
+      console.log('Found free cell', idx);
+      setCellCameras(prev => {
+        const copy = [...prev];
+        copy[idx] = cam;
+        return copy;
+      });
+      // Запустить поток
+  const decryptedPass = await invoke('decrypt_password', { enc: cam.pass_enc });
+      const rtspUrl = cam.streamUrl || `rtsp://${cam.user}:${decryptedPass as string}@${cam.ip}/stream=0`;
+      console.log('Registering camera with MediaMTX', cam.name, 'RTSP:', rtspUrl);
+      try {
+        const addRes = await invoke('mediamtx_add_camera', { name: `camera_${idx}`, rtspUrl: rtspUrl });
+        console.log('add_camera_to_mediamtx ->', addRes);
+        const startRes = await invoke('mediamtx_start');
+        console.log('mediamtx_start ->', startRes);
+        await new Promise(r => setTimeout(r, 800));
+        setCellStreams(prev => {
+          const arr = [...prev];
+          arr[idx] = true;
+          return arr;
+        });
+      } catch (err) {
+        console.error('mediamtx err', err);
+      }
+    };
+    return () => {
+      window.setCellCamera = undefined;
+    };
+  }, [cellCameras, cellStreams]);
+
+  React.useEffect(() => {
+    cellStreams.forEach(async (stream, idx) => {
+      if (stream && videoRefs.current[idx]) {
+        const video = videoRefs.current[idx];
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+
+        pc.addTransceiver('video', { direction: 'recvonly' });
+
+        let gotTrack = false;
+        pc.ontrack = (event) => {
+          console.log('Received track for camera', idx);
+          gotTrack = true;
+          video.srcObject = event.streams[0];
+          video.play();
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log('ICE candidate', event.candidate);
+          }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Use MediaMTX's built-in WebRTC play endpoint. MediaMTX usually exposes WebRTC HTTP on the webrtcAddress (8889 by default here).
+        console.log(`Attempting to connect to WebRTC endpoint for camera_${idx}`);
+        let answer;
+        try {
+            const response = await fetch(`http://127.0.0.1:8889/rtc/v1/play?path=camera_${idx}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sdp: offer.sdp })
+            });
+            
+            console.log(`WebRTC response status for camera_${idx}:`, response.status);
+            
+            try {
+              answer = await response.json();
+              console.log(`WebRTC answer received for camera_${idx}:`, answer);
+            } catch (e) {
+              // If the response wasn't JSON, dump plain text for debugging (MediaMTX often returns text on error)
+              const txt = await response.text();
+              console.error(`mediamtx /rtc/v1/play error for camera_${idx}:`, txt);
+              throw e;
+            }
+        } catch (e) {
+            console.error(`Failed to connect to WebRTC endpoint for camera_${idx}:`, e);
+            return; // Прерываем обработку при ошибке
+        }
+
+        await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp });
+
+        // If no track arrives in a few seconds, we currently simply log — MediaMTX should provide the stream.
+        setTimeout(() => {
+          if (!gotTrack) {
+            console.warn('No WebRTC track for camera', idx, 'after offer; ensure MediaMTX is running and the camera path exists');
+          }
+        }, 4000);
+
+        console.log('WebRTC setup for camera', idx);
+      }
+    });
+  }, [cellStreams]);
+
+  return (
+    <Box sx={{ p: 0, height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#23272b' }}>
+      <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 2, p: 0, minHeight: 0 }}>
+        {gridCells}
+      </Box>
+      <Paper sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, p: 1.5, bgcolor: '#242628', borderRadius: 0, boxShadow: 0 }}>
+        <IconButton size="small" onClick={() => handleGridChange(Math.max(1, Math.floor(gridSize / 4)))} disabled={gridSize === 1} sx={{ color: 'rgba(255,255,255,0.6)' }}>
+          <ArrowBackIosIcon fontSize="small" />
+        </IconButton>
+        {CAMERA_GRID_OPTIONS.map(opt => (
+          <Button
+            key={`gridopt-${opt}`}
+            size="small"
+            onClick={() => handleGridChange(opt)}
+            sx={{
+              minWidth: 36,
+              px: 1,
+              bgcolor: gridSize === opt ? '#1976d2' : 'transparent',
+              color: gridSize === opt ? '#fff' : 'rgba(255,255,255,0.7)',
+              border: '1px solid rgba(255,255,255,0.04)',
+              borderRadius: 1,
+              fontWeight: 700,
+              boxShadow: gridSize === opt ? '0 2px 6px rgba(25,118,210,0.16)' : 'none',
+            }}
+          >
+            {opt}
+          </Button>
+        ))}
+        <IconButton size="small" onClick={() => handleGridChange(Math.min(64, gridSize * 4))} disabled={gridSize === 64} sx={{ color: 'rgba(255,255,255,0.6)' }}>
+          <ArrowForwardIosIcon fontSize="small" />
+        </IconButton>
+      </Paper>
+    </Box>
+  );
+};
+
+export default Dashboard;
+
+
+
