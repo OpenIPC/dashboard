@@ -11,11 +11,24 @@ on:
         required: true
         type: string
 
+# Runner selection (supports self-hosted). Adjust the determine-mode job below to toggle the self-hosted variants
+# and update the runner label arrays if you maintain your own infrastructure.
+
 jobs:
+  determine-mode:
+    runs-on: ubuntu-latest
+    outputs:
+      use_self_hosted: ${{ steps.resolve.outputs.use_self_hosted }}
+    steps:
+      - id: resolve
+        run: echo "use_self_hosted=false" >> "$GITHUB_OUTPUT"
+        shell: bash
+
   create-release:
+    needs: determine-mode
     permissions:
       contents: write
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create-release.outputs.result }}
 
@@ -25,42 +38,43 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: get version
-        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
       - name: create release
         id: create-release
         uses: actions/github-script@v7
         with:
           script: |
+            const manualTag = core.getInput('version')?.trim()
+            const inferredTag = context.ref?.split('/').pop()
+            const tag = manualTag || inferredTag
+
+            if (!tag) {
+              core.setFailed('Unable to determine release tag name.')
+              return
+            }
+
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: `v${process.env.PACKAGE_VERSION}`,
-              name: `VMS Dashboard v${process.env.PACKAGE_VERSION}`,
+              tag_name: tag,
+              name: `Dashboard for OpenIPC ${tag}`,
               body: 'See the assets to download this version and install.',
               draft: true,
               prerelease: false
             })
+
             return data.id
 
-  build-tauri:
-    needs: create-release
+  # GitHub-hosted runners (default)
+  build-linux:
+    needs:
+      - determine-mode
+      - create-release
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest' # for Arm based macs (M1 and above).
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest' # for Intel based macs.
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-20.04' # for Tauri v1 you could replace this with ubuntu-20.04.
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+    if: ${{ needs.determine-mode.outputs.use_self_hosted != 'true' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -68,24 +82,43 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up the linux and windows builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-20.04' # This must match the platform value defined above.
+      - name: install dependencies (linux only)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || sudo apt-get install -y libwebkit2gtk-4.1-dev || true
+          sudo apt-get install -y libgtk-3-dev librsvg2-dev patchelf || true
+          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev || true
 
       - name: install frontend dependencies
-        run: npm install
+        run: npm ci
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
       - name: install Python dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: download MediaMTX binaries
         run: python tools/download-mediamtx.py
@@ -94,22 +127,397 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
+      - name: build Tauri app (npx)
+        run: npx tauri build
 
-  publish-release:
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundles
+          path: src-tauri/target/release/bundle
+
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+          tag_name: ${{ github.ref_name }}
+
+  build-windows:
+    needs:
+      - determine-mode
+      - create-release
     permissions:
       contents: write
-    runs-on: ubuntu-20.04
-    needs: [create-release, build-tauri]
+    if: ${{ needs.determine-mode.outputs.use_self_hosted != 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: build Tauri app (npx)
+        run: npx tauri build
+
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundles
+          path: src-tauri/target/release/bundle
+
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.msi
+          tag_name: ${{ github.ref_name }}
+
+  build-macos:
+    needs:
+      - determine-mode
+      - create-release
+    permissions:
+      contents: write
+    if: ${{ needs.determine-mode.outputs.use_self_hosted != 'true' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: build Tauri app (ARM64)
+        run: npx tauri build --target aarch64-apple-darwin
+
+      - name: build Tauri app (x86_64)
+        run: npx tauri build --target x86_64-apple-darwin
+
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundles
+          path: src-tauri/target/release/bundle
+
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.dmg
+          tag_name: ${{ github.ref_name }}
+
+  # Self-hosted runner variants (enabled when repo variable USE_SELF_HOSTED='true')
+  build-linux-sh:
+    needs:
+      - determine-mode
+      - create-release
+    if: ${{ needs.determine-mode.outputs.use_self_hosted == 'true' }}
+    permissions:
+      contents: write
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: install dependencies (linux only)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || sudo apt-get install -y libwebkit2gtk-4.1-dev || true
+          sudo apt-get install -y libgtk-3-dev librsvg2-dev patchelf || true
+          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev || true
+      - name: install frontend dependencies
+        run: npm ci
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+      - name: build Tauri app (npx)
+        run: npx tauri build
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundles
+          path: src-tauri/target/release/bundle
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+          tag_name: ${{ github.ref_name }}
+
+  build-windows-sh:
+    needs:
+      - determine-mode
+      - create-release
+    if: ${{ needs.determine-mode.outputs.use_self_hosted == 'true' }}
+    permissions:
+      contents: write
+    runs-on: [self-hosted, Windows]
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: install frontend dependencies
+        run: npm ci
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+      - name: build Tauri app (npx)
+        run: npx tauri build
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundles
+          path: src-tauri/target/release/bundle
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.msi
+          tag_name: ${{ github.ref_name }}
+
+  build-macos-sh:
+    needs:
+      - determine-mode
+      - create-release
+    if: ${{ needs.determine-mode.outputs.use_self_hosted == 'true' }}
+    permissions:
+      contents: write
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: install frontend dependencies
+        run: npm ci
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+      - name: lint frontend (continue on error)
+        run: npm run lint
+        continue-on-error: true
+      - name: build Tauri app (ARM64)
+        run: npx tauri build --target aarch64-apple-darwin
+      - name: build Tauri app (x86_64)
+        run: npx tauri build --target x86_64-apple-darwin
+      - name: upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundles
+          path: src-tauri/target/release/bundle
+      - name: upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: true
+          files: |
+            src-tauri/target/release/bundle/**/*.dmg
+          tag_name: ${{ github.ref_name }}
+
+  publish-release-hosted:
+    if: ${{ needs.determine-mode.outputs.use_self_hosted != 'true' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [determine-mode, create-release, build-linux, build-windows, build-macos]
 
     steps:
       - name: publish release
-        id: publish-release
+        id: publish-release-hosted
+        uses: actions/github-script@v7
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              draft: false,
+              prerelease: false
+            })
+
+  publish-release-self-hosted:
+    if: ${{ needs.determine-mode.outputs.use_self_hosted == 'true' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [determine-mode, create-release, build-linux-sh, build-windows-sh, build-macos-sh]
+
+    steps:
+      - name: publish release
+        id: publish-release-self-hosted
         uses: actions/github-script@v7
         env:
           release_id: ${{ needs.create-release.outputs.release_id }}
