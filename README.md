@@ -148,6 +148,28 @@ npm run build-release
 
 See [Build Guide](./docs/build-guide.md) for detailed build instructions and [Release Process](./docs/release-process.md) for creating releases.
 
+#### Manual GitHub Actions Build
+You can trigger builds manually without committing code:
+
+1. **Go to**: [GitHub Actions](https://github.com/OpenIPC/dashboard/actions)
+2. **Select**: "Build and Test" workflow
+3. **Click**: "Run workflow" 
+4. **Choose platform**:
+   - `all` - Build for all platforms (Windows, Linux, macOS)
+   - `windows` - Build only for Windows  
+   - `linux` - Build only for Linux
+   - `macos` - Build only for macOS
+
+This allows you to test builds on different platforms without automatic triggering on every commit.
+
+#### Automatic Release Build
+For official releases, push a version tag:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+This automatically builds and creates a GitHub release with installers for all platforms.
+
 ### Project Structure
 ```
 dashboard/
