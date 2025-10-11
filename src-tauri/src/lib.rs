@@ -52,6 +52,8 @@ fn configure_gstreamer_environment() {
         "/usr/lib/gstreamer-1.0/gst-plugin-scanner",
         "/usr/local/lib/gstreamer1.0/gst-plugin-scanner",
         "/usr/local/lib/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/libexec/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/libexec/gstreamer1.0/gst-plugin-scanner",
     ];
 
     let mut merged: HashSet<String> = HashSet::new();
