@@ -67,7 +67,7 @@ fn configure_gstreamer_environment() {
     };
 
     if let Ok(existing) = env::var("GST_PLUGIN_PATH") {
-        for entry in env::split_paths(existing) {
+        for entry in env::split_paths(&existing) {
             add_plugin_path(entry);
         }
     }
@@ -85,7 +85,7 @@ fn configure_gstreamer_environment() {
     };
 
     if let Ok(existing) = env::var("LD_LIBRARY_PATH") {
-        for entry in env::split_paths(existing) {
+        for entry in env::split_paths(&existing) {
             add_library_path(entry);
         }
     }
@@ -121,7 +121,7 @@ fn configure_gstreamer_environment() {
         let gstreamer_bin = app_dir_path.join("resources/gstreamer/bin");
         if gstreamer_bin.exists() {
             let path_var = env::var("PATH").unwrap_or_default();
-            let mut path_entries: Vec<PathBuf> = env::split_paths(path_var).collect();
+            let mut path_entries: Vec<PathBuf> = env::split_paths(&path_var).collect();
             if !path_entries.iter().any(|p| p == &gstreamer_bin) {
                 path_entries.insert(0, gstreamer_bin.clone());
                 if let Ok(joined_path) = env::join_paths(path_entries.iter()) {
