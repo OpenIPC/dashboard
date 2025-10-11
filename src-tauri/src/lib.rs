@@ -45,6 +45,15 @@ fn configure_gstreamer_environment() {
         "/usr/local/lib64/gstreamer-1.0",
     ];
 
+    const SCANNER_CANDIDATES: &[&str] = &[
+        "/usr/lib/x86_64-linux-gnu/gstreamer1.0/gst-plugin-scanner",
+        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/lib/gstreamer1.0/gst-plugin-scanner",
+        "/usr/lib/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/local/lib/gstreamer1.0/gst-plugin-scanner",
+        "/usr/local/lib/gstreamer-1.0/gst-plugin-scanner",
+    ];
+
     let mut merged: HashSet<String> = HashSet::new();
 
     if let Ok(existing) = std::env::var("GST_PLUGIN_PATH") {
@@ -67,6 +76,15 @@ fn configure_gstreamer_environment() {
     if std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").is_err() {
         if let Ok(path) = std::env::var("GST_PLUGIN_PATH") {
             std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", path);
+        }
+    }
+
+    if std::env::var("GST_PLUGIN_SCANNER").is_err() {
+        for candidate in SCANNER_CANDIDATES {
+            if Path::new(candidate).exists() {
+                std::env::set_var("GST_PLUGIN_SCANNER", candidate);
+                break;
+            }
         }
     }
 }
