@@ -13,6 +13,38 @@ fn main() {
     if !binaries_dir.exists() {
         fs::create_dir_all(binaries_dir).expect("Failed to create binaries directory");
     }
+
+    // Guarantee the gstreamer resources folder has at least one visible file so the
+    // Tauri resource glob does not fail on platforms where we skip bundling.
+    let gstreamer_dir = Path::new("resources/gstreamer");
+    if !gstreamer_dir.exists() {
+        fs::create_dir_all(gstreamer_dir).expect("Failed to create gstreamer resources directory");
+    }
+
+    let mut has_visible_files = false;
+    if let Ok(entries) = fs::read_dir(gstreamer_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    if let Some(name_str) = name.to_str() {
+                        if !name_str.starts_with('.') {
+                            has_visible_files = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !has_visible_files {
+        let placeholder = gstreamer_dir.join("README.txt");
+        if !placeholder.exists() {
+            fs::write(&placeholder, "Optional GStreamer runtime placeholder.\n")
+                .expect("Failed to create gstreamer placeholder file");
+        }
+    }
     
     // Copy appropriate MediaMTX binary based on target platform
     let (src_binary, dst_binary) = match target_os.as_str() {
