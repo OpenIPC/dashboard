@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14", features = ["full"] }
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
+sysinfo = "0.30"
 pnet_datalink = "0.35.0"
 get_if_addrs = "0.5.3"
 dirs-next = "2.0.0"

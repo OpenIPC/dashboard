@@ -24,6 +24,7 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child as StdChild, Command as StdCommand, Stdio};
 use std::sync::{Arc, Mutex as StdMutex};
+use sysinfo::System;
 use tauri::async_runtime::{spawn, spawn_blocking, JoinHandle};
 use tauri::{AppHandle, Manager, State};
 use tokio::process::Command;
@@ -33,6 +34,42 @@ const DEFAULT_RECORDINGS_PATH: &str = "E:\\VMS";
 const DEFAULT_SCREENSHOTS_PATH: &str = "E:\\VMS\\screenshots";
 
 type AsyncJoinHandle = JoinHandle<()>;
+
+#[cfg(target_os = "linux")]
+fn configure_gstreamer_environment() {
+    const CANDIDATE_DIRS: &[&str] = &[
+        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        "/usr/lib64/gstreamer-1.0",
+        "/usr/lib/gstreamer-1.0",
+        "/usr/local/lib/gstreamer-1.0",
+        "/usr/local/lib64/gstreamer-1.0",
+    ];
+
+    let mut merged: HashSet<String> = HashSet::new();
+
+    if let Ok(existing) = std::env::var("GST_PLUGIN_PATH") {
+        for entry in std::env::split_paths(existing.as_str()).filter_map(|p| p.to_str().map(str::to_string)) {
+            merged.insert(entry);
+        }
+    }
+
+    for dir in CANDIDATE_DIRS {
+        if Path::new(dir).exists() {
+            merged.insert(dir.to_string());
+        }
+    }
+
+    if !merged.is_empty() {
+        let joined = std::env::join_paths(merged.iter().map(PathBuf::from)).unwrap_or_default();
+        std::env::set_var("GST_PLUGIN_PATH", joined);
+    }
+
+    if std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").is_err() {
+        if let Ok(path) = std::env::var("GST_PLUGIN_PATH") {
+            std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", path);
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct EventInfo {
@@ -122,6 +159,14 @@ struct RecordingsState {
     active_recordings: HashMap<String, RecordingProcess>,
     recordings_dir: PathBuf,
     segment_handles: HashMap<String, AsyncJoinHandle>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppResourceUsage {
+    cpu_usage: f32,
+    memory_bytes: u64,
+    timestamp: i64,
 }
 
 impl RecordingsState {
@@ -230,6 +275,9 @@ fn default_screenshots_dir() -> PathBuf {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_gstreamer_environment();
+
     tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle();
@@ -245,6 +293,9 @@ pub fn run() {
             let auth_state = Arc::new(auth::AuthState::new(&app_handle));
             auth_state.initialize();
             app.manage(auth_state);
+
+            let system_state = Arc::new(StdMutex::new(System::new_all()));
+            app.manage(system_state);
 
             Ok(())
         })
@@ -294,6 +345,7 @@ pub fn run() {
             save_screenshot,
             http_server::start_http_server,
             http_server::check_http_server,
+            get_app_resource_usage,
             auth::login,
             auth::auto_login,
             auth::logout,
@@ -359,6 +411,32 @@ fn save_mediamtx_config(state: &MediaMtxState, value: &serde_yaml::Value) -> Res
         .map_err(|e| format!("Failed to serialize mediamtx config: {}", e))?;
     fs::write(&state.config_path, content)
         .map_err(|e| format!("Failed to write mediamtx config: {}", e))
+}
+
+#[tauri::command]
+fn get_app_resource_usage(
+    system_state: State<'_, Arc<StdMutex<System>>>,
+) -> Result<AppResourceUsage, String> {
+    let mut system = system_state
+        .lock()
+        .map_err(|_| "Failed to lock system information state".to_string())?;
+
+    system.refresh_cpu_usage();
+    system.refresh_processes();
+
+    let pid = std::process::id();
+    let process = system
+        .process(sysinfo::Pid::from_u32(pid))
+        .ok_or_else(|| "Process information unavailable".to_string())?;
+
+    let cpu_usage = process.cpu_usage();
+    let memory_bytes = process.memory();
+
+    Ok(AppResourceUsage {
+        cpu_usage,
+        memory_bytes,
+        timestamp: Utc::now().timestamp_millis(),
+    })
 }
 
 fn sanitize_stream_key(name: &str) -> String {
