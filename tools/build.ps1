@@ -31,7 +31,8 @@ function Show-Help {
     Write-Host "Examples:" -ForegroundColor Yellow
     Write-Host "  npm run build-release                # Build release"
     Write-Host "  npm run build-debug                  # Build debug"
-    Write-Host "  npm run download-mediamtx             # Download MediaMTX"
+    Write-Host "  npm run download-mediamtx            # Download MediaMTX"
+    Write-Host "  npm run download-gstreamer           # Download optional GStreamer bundle"
     Write-Host ""
 }
 

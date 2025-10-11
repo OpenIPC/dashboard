@@ -162,18 +162,21 @@ const LayoutTabs: React.FC<LayoutTabsProps> = ({
       {/* Кнопка добавления новой вкладки */}
       <Tooltip title={t('new_layout_tab')}>
         <IconButton
-          size="small"
+          size="medium"
           onClick={onNewTab}
           sx={{
             ml: 0.5,
             color: '#f3f8ff',
             border: '1px solid #3a4a60',
-            borderRadius: 0,
-            minWidth: 32,
-            width: 32,
-            height: 32,
+            borderRadius: '6px',
+            width: 40,
+            height: 40,
+            mt: '-10px',
             background: 'linear-gradient(180deg, #3b4f68 0%, #2c3f54 100%)',
             boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.1)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             '&:hover': {
               color: '#fff',
               bgcolor: '#3f5a78',
@@ -181,25 +184,28 @@ const LayoutTabs: React.FC<LayoutTabsProps> = ({
             }
           }}
         >
-          <AddIcon fontSize="small" />
+          <AddIcon fontSize="medium" />
         </IconButton>
       </Tooltip>
 
       <Tooltip title={t('manage_templates')}>
         <IconButton
-          size="small"
+          size="medium"
           onClick={onManageLayouts}
           sx={{
             ml: 0.5,
             color: '#fff',
             border: '1px solid #2f3f54',
-            borderRadius: 0,
-            minWidth: 32,
-            width: 32,
-            height: 32,
+            borderRadius: '6px',
+            width: 40,
+            height: 40,
+            mt: '-10px',
             px: 0,
             background: 'linear-gradient(180deg, #33435a 0%, #253448 100%)',
             boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             '&:hover': {
               bgcolor: '#3e5980',
               borderColor: '#40638f'
@@ -215,8 +221,8 @@ const LayoutTabs: React.FC<LayoutTabsProps> = ({
             }}
           >
             <svg
-              width="16"
-              height="16"
+              width="26"
+              height="26"
               viewBox="0 0 16 16"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"

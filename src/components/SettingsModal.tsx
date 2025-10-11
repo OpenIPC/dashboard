@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
+import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { useLocalization } from '../contexts/LocalizationContext';
@@ -221,9 +222,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       console.log('Is Tauri detected:', isTauri);
       
       if (isTauri) {
-        console.log('Attempting to use Tauri dialog API...');
-        
-        const selected = await open({
+  console.log('Attempting to use Tauri dialog API...');
+
+  const selected = await openDialog({
           directory: true,
           multiple: false,
           title: settingKey === 'recordingsPath' 
@@ -423,11 +424,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   };
 
   const openDonationPage = () => {
-    window.open('https://opencollective.com/openipc/projects/openipc-dashboard/donate?interval=oneTime&amount=20&contributeAs=me', '_blank');
+    void openExternal('https://opencollective.com/openipc/projects/openipc-dashboard/donate?interval=oneTime&amount=20&contributeAs=me');
   };
 
   const reportIssue = () => {
-    window.open('https://github.com/OpenIPC/dashboard/issues', '_blank');
+    void openExternal('https://github.com/OpenIPC/dashboard/issues');
   };
 
   if (!isOpen) return null;

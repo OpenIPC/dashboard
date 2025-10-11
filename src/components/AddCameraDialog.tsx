@@ -6,6 +6,7 @@ import { useLocalization } from '../contexts/LocalizationContext';
 
 const AddCameraDialog: React.FC<{ open: boolean; onClose: () => void; onSave?: (data: any) => void; initialData?: any }> = ({ open, onClose, onSave, initialData }) => {
   const { t } = useLocalization();
+  const isEditing = Boolean(initialData?.id);
   const [name, setName] = useState(initialData?.name || '');
   const [ip, setIp] = useState(initialData?.ip || '');
   const [port, setPort] = useState(initialData?.port || 554); // RTSP порт обычно 554
@@ -88,6 +89,14 @@ const AddCameraDialog: React.FC<{ open: boolean; onClose: () => void; onSave?: (
       onvifPort, 
       streamUrl: finalHdUrl 
     };
+    if (isEditing && typeof initialData?.id === 'number') {
+      data = {
+        ...initialData,
+        ...data,
+        id: initialData.id,
+        groupId: initialData.groupId ?? null,
+      };
+    }
     
     console.log('Saving camera with RTSP URLs:', { hd: finalHdUrl, sd: finalSdUrl });
     
@@ -98,7 +107,7 @@ const AddCameraDialog: React.FC<{ open: boolean; onClose: () => void; onSave?: (
   return (
     <Dialog open={open} onClose={onClose} PaperProps={{ sx: { background: '#2f3438', color: '#fff', borderRadius: 2, minWidth: 520 } }}>
       <DialogTitle sx={{ px: 3, py: 1.5, bgcolor: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Box sx={{ fontWeight: 800 }}>{t('add_camera')}</Box>
+        <Box sx={{ fontWeight: 800 }}>{t(isEditing ? 'edit_camera_title' : 'add_camera_title')}</Box>
         <IconButton onClick={onClose} sx={{ color: '#cfd6db', border: '1px solid rgba(255,255,255,0.04)', width: 36, height: 36, borderRadius: '50%' }}>
           <CloseIcon />
         </IconButton>

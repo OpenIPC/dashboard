@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 
 import DevicePanel from './DevicePanel';
+import AppFooter from './AppFooter';
 import { Box, Button, Typography } from '@mui/material';
 import { CameraContextMenuProvider } from '../contexts/CameraContextMenuContext';
 // Динамический импорт Tauri window API
@@ -31,7 +32,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <Button variant="contained" onClick={() => { setIsSimClosed(false); setIsSimMinimized(false); setIsSimMaximized(false); }} sx={{ bgcolor: '#50545a', color: '#fff' }}>Reopen</Button>
             </Box>
           )}
-          <Box component="main" sx={{ flexGrow: 1, p: 0, bgcolor: '#23272b', minHeight: 0, width: '100%' }}>
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              p: 0,
+              bgcolor: '#23272b',
+              minHeight: 0,
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             <Box
               sx={
                 isSimMinimized
@@ -51,7 +63,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       bgcolor: '#23272b',
                       zIndex: 1300,
                     }
-                  : { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 2, height: '100vh', p: 2, boxSizing: 'border-box' }
+                  : {
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 340px',
+                      gap: 2,
+                      flexGrow: 1,
+                      minHeight: 0,
+                      height: '100%',
+                      p: 2,
+                      boxSizing: 'border-box',
+                    }
               }
             >
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>{children}</Box>
@@ -60,6 +81,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </Box>
             </Box>
           </Box>
+          <AppFooter />
         </Box>
       </Box>
     </CameraContextMenuProvider>

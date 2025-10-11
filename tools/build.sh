@@ -58,7 +58,8 @@ show_help() {
     echo -e "${YELLOW}Examples:${NC}"
     echo "  npm run build-release                 # Build release"
     echo "  npm run build-debug                   # Build debug"
-    echo "  npm run download-mediamtx              # Download MediaMTX"
+    echo "  npm run download-mediamtx             # Download MediaMTX"
+    echo "  npm run download-gstreamer            # Download optional GStreamer bundle"
     echo ""
 }
 

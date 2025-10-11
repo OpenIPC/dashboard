@@ -89,6 +89,9 @@ npm install
 # Download MediaMTX binaries (required for builds)
 npm run download-mediamtx
 
+# (Optional) Download bundled GStreamer runtime for Linux AppImage builds
+npm run download-gstreamer
+
 # Run in development mode
 npm run tauri
 
@@ -112,6 +115,9 @@ npm run build-debug
 
 # Only download MediaMTX binaries
 npm run download-mediamtx
+
+# Only download the optional GStreamer runtime bundle
+npm run download-gstreamer
 ```
 
 #### Alternative Build Methods
@@ -125,6 +131,11 @@ npm run download-mediamtx
 # Using Python directly
 python tools/build.py --platform macos --debug
 ```
+
+#### Optional Linux GStreamer Bundle
+- `npm run download-gstreamer` stages a redistributable runtime when one is available.
+- If no bundle is found, Linux builds rely on the target system's GStreamer installation.
+- Provide custom artifacts with `GSTREAMER_BUNDLE_URL` (URLs) or `GSTREAMER_BUNDLE_ARCHIVE` (local file) before rerunning the download script.
 
 #### Build Outputs
 - **Windows**: `.msi` installer in `src-tauri/target/release/bundle/msi/`

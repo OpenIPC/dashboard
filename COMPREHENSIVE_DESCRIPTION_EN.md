@@ -104,13 +104,6 @@ VMS Dashboard is a modern native desktop video management system built on Tauri 
 - **H.265/HEVC** - high compression
 - **MJPEG** - for compatibility
 
-### Camera Manufacturers
-- **Hikvision** - full API support
-- **Dahua** - ONVIF and direct connection
-- **Axis** - ONVIF standard
-- **OpenIPC** - open firmware
-- **Uniview, Tiandy, and others** via ONVIF
-
 ---
 
 ## 🚀 Advantages

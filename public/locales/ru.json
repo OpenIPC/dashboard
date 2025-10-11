@@ -6,6 +6,7 @@
   "archive_tooltip": "Архив записей",
   "status_cpu": "ЦП",
   "status_ram": "ОЗУ",
+  "resource_monitor_unavailable": "Мониторинг недоступен",
   "archive_title": "Архив",
   "add_camera_title": "Добавить новую камеру",
   "edit_camera_title": "Редактировать камеру",

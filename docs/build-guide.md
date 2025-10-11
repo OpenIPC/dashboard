@@ -35,6 +35,9 @@ npm install
 # Download MediaMTX binaries (required)
 npm run download-mediamtx
 
+# (Optional) Download bundled GStreamer runtime for Linux AppImage builds
+npm run download-gstreamer
+
 # Build for current platform
 npm run build-release
 ```
@@ -45,6 +48,9 @@ npm run build-release
 ```bash
 # Download MediaMTX binaries for all platforms
 npm run download-mediamtx
+
+# Download the optional GStreamer runtime bundle (Linux packaging)
+npm run download-gstreamer
 
 # Build release for current platform
 npm run build-release
@@ -187,6 +193,33 @@ src-tauri/binaries/
 ├── macos/mediamtx
 └── mediamtx[.exe]  # Current platform binary
 ```
+
+## GStreamer Runtime (Linux)
+
+Linux AppImage builds can embed a GStreamer runtime so the application ships
+with its own plugin registry and `gst-plugin-scanner`. The repository includes
+`tools/download-gstreamer-runtime.py`, which tries to download the official
+bundle and stage it under `src-tauri/resources/gstreamer` for packaging.
+
+```bash
+# Download or refresh the runtime bundle
+npm run download-gstreamer
+
+# Force a fresh download after changing mirrors or local archive
+python tools/download-gstreamer-runtime.py --force
+```
+
+Because the upstream project no longer publishes redistributable Linux
+binaries, the helper script may mark the download as skipped. In that case the
+build succeeds and the AppImage falls back to the target system's GStreamer
+installation. You can provide your own bundle by setting one of the following
+before invoking the download script:
+
+- `GSTREAMER_BUNDLE_URL` – semicolon-separated list of direct URLs to try first
+- `GSTREAMER_BUNDLE_ARCHIVE` – path to a local `gstreamer-1.0-x86_64-*.tar.*`
+
+Remove `src-tauri/resources/gstreamer/.download-skipped` or rerun the script
+with `--force` after supplying a custom archive to retry bundling.
 
 ## Troubleshooting
 

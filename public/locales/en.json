@@ -6,6 +6,7 @@
   "archive_tooltip": "Recordings archive",
   "status_cpu": "CPU",
   "status_ram": "RAM",
+  "resource_monitor_unavailable": "Resource monitor unavailable",
   "archive_title": "Archive",
   "add_camera_title": "Add New Camera",
   "edit_camera_title": "Edit Camera",

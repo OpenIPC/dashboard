@@ -380,6 +380,33 @@ const DevicePanel: React.FC = () => {
   };
 
   const handleAddCamera = async (newCamera: any) => {
+    const existingId = typeof newCamera?.id === 'number' ? newCamera.id : undefined;
+
+    if (existingId !== undefined) {
+      const currentCamera = cameras.find(cam => cam.id === existingId);
+      if (!currentCamera) {
+        console.warn('Attempted to update camera that does not exist', existingId);
+        return;
+      }
+
+      const updatedCamera: Camera = {
+        ...currentCamera,
+        name: newCamera.name ?? currentCamera.name,
+        ip: newCamera.ip ?? currentCamera.ip,
+        protocol: newCamera.protocol ?? currentCamera.protocol,
+        port: typeof newCamera.port === 'number' ? newCamera.port : currentCamera.port,
+        user: newCamera.user ?? currentCamera.user,
+        pass: newCamera.pass ?? currentCamera.pass,
+        path_hd: newCamera.pathHd ?? currentCamera.path_hd,
+        path_sd: newCamera.pathSd ?? currentCamera.path_sd,
+        onvifPort: typeof newCamera.onvifPort === 'number' ? newCamera.onvifPort : currentCamera.onvifPort,
+        streamUrl: newCamera.streamUrl ?? currentCamera.streamUrl,
+      };
+
+      await updateCamera(updatedCamera);
+      return;
+    }
+
     const camera: Camera = {
       id: nextId.current++,
       name: newCamera.name || 'Camera',
@@ -392,7 +419,8 @@ const DevicePanel: React.FC = () => {
       path_sd: newCamera.pathSd || '',
       status: 'offline',
       onvifPort: newCamera.onvifPort,
-      groupId: null // Новые камеры по умолчанию без группы
+      groupId: null, // Новые камеры по умолчанию без группы
+      streamUrl: newCamera.streamUrl,
     };
     
     await addCamera(camera);

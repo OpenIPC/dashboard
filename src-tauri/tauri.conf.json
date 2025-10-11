@@ -43,7 +43,8 @@
     "resources": [
       "mediamtx/mediamtx.yml",
       "mediamtx/mediamtx.yml.template",
-      "binaries/mediamtx*"
+      "binaries/mediamtx*",
+      "resources/gstreamer/**"
     ],
     "windows": {
       "certificateThumbprint": null,

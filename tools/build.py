@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Cross-platform build script for VMS Dashboard
-Automatically prepares MediaMTX binaries and builds for target platform
+Automatically prepares MediaMTX binaries, the Linux GStreamer runtime,
+and builds for the selected target platform.
 """
 
 import os
@@ -59,6 +60,29 @@ def prepare_mediamtx_binary(target_platform=None):
     
     print(f"✅ MediaMTX binary ready: {dst_binary}")
 
+
+def prepare_gstreamer_runtime(target_platform=None):
+    """Ensure the bundled GStreamer runtime is available for Linux builds."""
+    if target_platform is None:
+        target_platform = get_current_platform()
+
+    if target_platform != "linux":
+        return
+
+    scanner_path = Path("src-tauri/resources/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner")
+    skip_marker = Path("src-tauri/resources/gstreamer/.download-skipped")
+
+    if scanner_path.exists():
+        print("✅ GStreamer runtime already prepared.")
+        return
+
+    if skip_marker.exists():
+        print("ℹ️  GStreamer bundle download previously skipped; relying on system GStreamer.")
+        return
+
+    print("🔧 Preparing GStreamer runtime for Linux bundle...")
+    subprocess.run([sys.executable, "tools/download-gstreamer-runtime.py"], check=True)
+
 def run_build(target=None, debug=False):
     """Run Tauri build"""
     print(f"🚀 Building VMS Dashboard...")
@@ -110,6 +134,7 @@ def main():
         
         # Prepare MediaMTX binary
         prepare_mediamtx_binary(target_platform)
+        prepare_gstreamer_runtime(target_platform)
         
         if args.download_only:
             print("✅ Download completed!")

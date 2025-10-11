@@ -37,7 +37,9 @@ type AsyncJoinHandle = JoinHandle<()>;
 
 #[cfg(target_os = "linux")]
 fn configure_gstreamer_environment() {
-    const CANDIDATE_DIRS: &[&str] = &[
+    use std::env;
+
+    const DEFAULT_PLUGIN_DIRS: &[&str] = &[
         "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
         "/usr/lib64/gstreamer-1.0",
         "/usr/lib/gstreamer-1.0",
@@ -45,7 +47,7 @@ fn configure_gstreamer_environment() {
         "/usr/local/lib64/gstreamer-1.0",
     ];
 
-    const SCANNER_CANDIDATES: &[&str] = &[
+    const SYSTEM_SCANNER_CANDIDATES: &[&str] = &[
         "/usr/lib/x86_64-linux-gnu/gstreamer1.0/gst-plugin-scanner",
         "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner",
         "/usr/lib/gstreamer1.0/gst-plugin-scanner",
@@ -56,48 +58,125 @@ fn configure_gstreamer_environment() {
         "/usr/libexec/gstreamer1.0/gst-plugin-scanner",
     ];
 
-    let mut merged: HashSet<String> = HashSet::new();
+    let mut plugin_paths: Vec<PathBuf> = Vec::new();
+    let mut seen_plugins: HashSet<PathBuf> = HashSet::new();
+    let mut add_plugin_path = |candidate: PathBuf| {
+        if candidate.exists() && seen_plugins.insert(candidate.clone()) {
+            plugin_paths.push(candidate);
+        }
+    };
 
-    if let Ok(existing) = std::env::var("GST_PLUGIN_PATH") {
-        for entry in std::env::split_paths(existing.as_str()).filter_map(|p| p.to_str().map(str::to_string)) {
-            merged.insert(entry);
+    if let Ok(existing) = env::var("GST_PLUGIN_PATH") {
+        for entry in env::split_paths(existing) {
+            add_plugin_path(entry);
         }
     }
 
-    for dir in CANDIDATE_DIRS {
-        if Path::new(dir).exists() {
-            merged.insert(dir.to_string());
+    for dir in DEFAULT_PLUGIN_DIRS {
+        add_plugin_path(PathBuf::from(dir));
+    }
+
+    let mut library_paths: Vec<PathBuf> = Vec::new();
+    let mut seen_libraries: HashSet<PathBuf> = HashSet::new();
+    let mut add_library_path = |candidate: PathBuf| {
+        if candidate.exists() && seen_libraries.insert(candidate.clone()) {
+            library_paths.push(candidate);
+        }
+    };
+
+    if let Ok(existing) = env::var("LD_LIBRARY_PATH") {
+        for entry in env::split_paths(existing) {
+            add_library_path(entry);
         }
     }
 
-    if !merged.is_empty() {
-        let joined = std::env::join_paths(merged.iter().map(PathBuf::from)).unwrap_or_default();
-        std::env::set_var("GST_PLUGIN_PATH", joined);
-    }
+    if let Ok(app_dir) = env::var("APPDIR") {
+        let app_dir_path = PathBuf::from(&app_dir);
 
-    if std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").is_err() {
-        if let Ok(path) = std::env::var("GST_PLUGIN_PATH") {
-            std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", path);
+        for rel in [
+            "usr/lib/gstreamer-1.0",
+            "lib/gstreamer-1.0",
+            "resources/gstreamer/lib/gstreamer-1.0",
+            "resources/gstreamer/plugins",
+        ] {
+            add_plugin_path(app_dir_path.join(rel));
+        }
+
+        for rel in [
+            "usr/lib",
+            "usr/lib64",
+            "lib",
+            "lib64",
+            "resources/gstreamer/lib",
+        ] {
+            add_library_path(app_dir_path.join(rel));
+        }
+
+        let registry_path = app_dir_path.join("resources/gstreamer/cache/registry.bin");
+        if let Some(parent) = registry_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        env::set_var("GST_REGISTRY_1_0", &registry_path);
+
+        let gstreamer_bin = app_dir_path.join("resources/gstreamer/bin");
+        if gstreamer_bin.exists() {
+            let path_var = env::var("PATH").unwrap_or_default();
+            let mut path_entries: Vec<PathBuf> = env::split_paths(path_var).collect();
+            if !path_entries.iter().any(|p| p == &gstreamer_bin) {
+                path_entries.insert(0, gstreamer_bin.clone());
+                if let Ok(joined_path) = env::join_paths(path_entries.iter()) {
+                    env::set_var("PATH", joined_path);
+                }
+            }
         }
     }
 
-    if std::env::var("GST_PLUGIN_SCANNER").is_err() {
-        for candidate in SCANNER_CANDIDATES {
-            if Path::new(candidate).exists() {
-                std::env::set_var("GST_PLUGIN_SCANNER", candidate);
+    if !plugin_paths.is_empty() {
+        if let Ok(joined) = env::join_paths(plugin_paths.iter()) {
+            env::set_var("GST_PLUGIN_PATH", &joined);
+            if env::var("GST_PLUGIN_SYSTEM_PATH_1_0").is_err() {
+                env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", joined);
+            }
+        }
+    }
+
+    if !library_paths.is_empty() {
+        if let Ok(joined) = env::join_paths(library_paths.iter()) {
+            env::set_var("LD_LIBRARY_PATH", joined);
+        }
+    }
+
+    if env::var("GST_PLUGIN_SCANNER").is_err() {
+        let mut dynamic_candidates: Vec<PathBuf> = Vec::new();
+
+        if let Ok(app_dir) = env::var("APPDIR") {
+            let app_dir_path = PathBuf::from(app_dir);
+            dynamic_candidates.push(app_dir_path.join("resources/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner"));
+            dynamic_candidates.push(app_dir_path.join("resources/gstreamer/bin/gst-plugin-scanner"));
+            dynamic_candidates.push(app_dir_path.join("usr/libexec/gstreamer-1.0/gst-plugin-scanner"));
+            dynamic_candidates.push(app_dir_path.join("usr/libexec/gstreamer1.0/gst-plugin-scanner"));
+        }
+
+        for candidate in dynamic_candidates
+            .into_iter()
+            .chain(SYSTEM_SCANNER_CANDIDATES.iter().map(PathBuf::from))
+        {
+            if candidate.exists() {
+                env::set_var("GST_PLUGIN_SCANNER", &candidate);
                 break;
             }
         }
     }
 
-    std::env::set_var("GST_VAAPI_DISABLE", "1");
-    std::env::set_var("GST_VAAPI_ALL_DRIVERS", "0");
-    std::env::set_var("GST_PLUGIN_FEATURE_RANK", "vaapi*:0");
+    env::set_var("GST_VAAPI_DISABLE", "1");
+    env::set_var("GST_VAAPI_ALL_DRIVERS", "0");
+    env::set_var("GST_PLUGIN_FEATURE_RANK", "vaapi*:0");
 
     println!(
-        "Configured GStreamer env: GST_PLUGIN_PATH={:?}, GST_PLUGIN_SCANNER={:?}",
-        std::env::var("GST_PLUGIN_PATH").ok(),
-        std::env::var("GST_PLUGIN_SCANNER").ok()
+        "Configured GStreamer env: GST_PLUGIN_PATH={:?}, GST_PLUGIN_SCANNER={:?}, LD_LIBRARY_PATH={:?}",
+        env::var("GST_PLUGIN_PATH").ok(),
+        env::var("GST_PLUGIN_SCANNER").ok(),
+        env::var("LD_LIBRARY_PATH").ok()
     );
 }
 
