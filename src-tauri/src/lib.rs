@@ -87,6 +87,16 @@ fn configure_gstreamer_environment() {
             }
         }
     }
+
+    std::env::set_var("GST_VAAPI_DISABLE", "1");
+    std::env::set_var("GST_VAAPI_ALL_DRIVERS", "0");
+    std::env::set_var("GST_PLUGIN_FEATURE_RANK", "vaapi*:0");
+
+    println!(
+        "Configured GStreamer env: GST_PLUGIN_PATH={:?}, GST_PLUGIN_SCANNER={:?}",
+        std::env::var("GST_PLUGIN_PATH").ok(),
+        std::env::var("GST_PLUGIN_SCANNER").ok()
+    );
 }
 
 #[derive(Clone, Debug, Serialize)]
