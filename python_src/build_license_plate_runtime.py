@@ -114,13 +114,35 @@ def copy_python_sources(target_dir: Path) -> None:
 
 
 def strip_unneeded_files(venv_path: Path) -> None:
-    if platform.system().lower().startswith("win"):
-        for pattern in ("*.pdb", "*.a", "*.lib"):
+    system = platform.system().lower()
+
+    if system.startswith("win"):
+        patterns = ("*.pdb", "*.a", "*.lib")
+        for pattern in patterns:
             for file in venv_path.glob(f"**/{pattern}"):
                 try:
                     file.unlink()
                 except OSError:
                     pass
+        return
+
+    if system.startswith("linux"):
+        for pattern in ("*.a", "*.la", "*.o"):
+            for file in venv_path.glob(f"**/{pattern}"):
+                try:
+                    file.unlink()
+                except OSError:
+                    pass
+
+        strip_bin = shutil.which("strip")
+        if strip_bin:
+            shared_objects = list(venv_path.rglob("*.so")) + list(venv_path.rglob("*.so.*"))
+            for so_path in shared_objects:
+                try:
+                    print(f"[strip] Stripping {so_path}")
+                    subprocess.run([strip_bin, "--strip-unneeded", str(so_path)], check=True)
+                except subprocess.CalledProcessError:
+                    print(f"[strip] Warning: failed to strip {so_path}")
 
 
 def make_archive(staging_dir: Path, archive_dir: Path, archive_name: str, fmt: str) -> Path:
