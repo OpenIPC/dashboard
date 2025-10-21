@@ -1,0 +1,2 @@
+-r python_src/requirements/requirements_cpu.txt
+-r python_src/requirements/requirements_dml.txt
