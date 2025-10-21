@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   runtime:
     name: Build license-plate runtime (${{ matrix.platform_tag }})
