@@ -42,6 +42,20 @@
     {
       "from": "mediamtx/",
       "to": "mediamtx"
+    },
+    {
+      "from": "python_src/",
+      "to": "python",
+      "filter": [
+        "license_plate_detection.onnx",
+        "test_plate_yunet.py",
+        "lpd_yunet.py",
+        "lpd_yunet_ort.py",
+        "plate_recognizer.py",
+        "paddle_ocr_processor.py",
+        "plate_api.py",
+        "probe_ort_providers.py"
+      ]
     }
   ],
   "files": [

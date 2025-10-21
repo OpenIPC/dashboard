@@ -3,6 +3,10 @@
 // Renderer runs in browser context; use exposed `window.api` instead of require
 
 window.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('detected-plates-list')) {
+    console.info('[LP Renderer] Detected modern plates panel; legacy renderer is disabled.');
+    return;
+  }
   // Debug: report runtime API availability
   try {
     console.debug('[LP Renderer] window.api type:', typeof window.api);
@@ -15,6 +19,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const modulesPanelContent = document.getElementById('detected-plates-list');
   if (modulesPanelContent) {
     modulesPanelContent.innerHTML = `
+      <div id="runtime-status" style="margin-bottom:12px; font-size:13px; color:#444;">
+        <div id="runtime-status-text">Preparing runtime...</div>
+        <div id="runtime-progress-container" style="display:none; height:6px; background:#ddd; border-radius:3px; overflow:hidden; margin-top:6px;">
+          <div id="runtime-progress-bar" style="height:100%; width:0%; background:#4caf50;"></div>
+        </div>
+        <div style="margin-top:8px;">
+          <button id="runtime-reinstall-btn" style="padding:4px 8px; font-size:12px;" disabled>Reinstall Runtime</button>
+        </div>
+      </div>
       <div id="plates-stats" style="margin-bottom: 10px; font-size: 14px; color: #666;"></div>
       <div style="margin-bottom:10px;">
         <label style="font-size:13px; color:#333;"><input id="use-ort-checkbox" type="checkbox" style="margin-right:6px;">Use ONNX Runtime (DirectML)</label>
@@ -36,6 +49,15 @@ window.addEventListener('DOMContentLoaded', () => {
     container.className = 'module-license-plate';
     container.innerHTML = `
       <h4>License Plate Module</h4>
+      <div id="runtime-status" style="margin-bottom:12px; font-size:13px; color:#444;">
+        <div id="runtime-status-text">Preparing runtime...</div>
+        <div id="runtime-progress-container" style="display:none; height:6px; background:#ddd; border-radius:3px; overflow:hidden; margin-top:6px;">
+          <div id="runtime-progress-bar" style="height:100%; width:0%; background:#4caf50;"></div>
+        </div>
+        <div style="margin-top:8px;">
+          <button id="runtime-reinstall-btn" style="padding:4px 8px; font-size:12px;" disabled>Reinstall Runtime</button>
+        </div>
+      </div>
       <div id="plates-stats" style="margin-bottom: 10px; font-size: 14px; color: #666;"></div>
       <div style="margin-bottom:10px;">
         <label style="font-size:13px; color:#333;"><input id="use-ort-checkbox" type="checkbox" style="margin-right:6px;">Use ONNX Runtime (DirectML)</label>
@@ -50,6 +72,191 @@ window.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
     document.body.appendChild(container);
+  }
+
+  const runtimeUi = {
+    container: document.getElementById('runtime-status'),
+    text: document.getElementById('runtime-status-text'),
+    progressContainer: document.getElementById('runtime-progress-container'),
+    progressBar: document.getElementById('runtime-progress-bar'),
+    reinstallButton: document.getElementById('runtime-reinstall-btn')
+  };
+
+  function setRuntimeStatus(message, options = {}) {
+    const {
+      progress = null,
+      showProgress = progress !== null,
+      busy = false,
+      tone = 'info',
+      allowReinstall = true
+    } = options;
+    if (runtimeUi.text) {
+      runtimeUi.text.textContent = message;
+      runtimeUi.text.style.color = tone === 'error' ? '#c0392b' : '#444';
+    }
+    if (runtimeUi.progressContainer && runtimeUi.progressBar) {
+      if (showProgress) {
+        runtimeUi.progressContainer.style.display = 'block';
+        const width = progress === null ? 0 : Math.round(Math.max(0, Math.min(1, progress)) * 100);
+        runtimeUi.progressBar.style.width = `${width}%`;
+      } else {
+        runtimeUi.progressContainer.style.display = 'none';
+        runtimeUi.progressBar.style.width = '0%';
+      }
+    }
+    if (runtimeUi.reinstallButton) {
+      runtimeUi.reinstallButton.disabled = !!busy || !allowReinstall;
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    const fixed = value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1);
+    return `${fixed} ${units[unitIndex]}`;
+  }
+
+  function formatPathTail(input) {
+    if (!input || typeof input !== 'string') return '';
+    const normalized = input.replace(/\\+/g, '/');
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.length <= 3) return normalized;
+  return `.../${parts.slice(-3).join('/')}`;
+  }
+
+  function setReadyStatus(payload = {}) {
+    const mode = payload.mode || 'ready';
+    let label;
+    if (mode === 'development') label = 'local Python';
+    else if (mode === 'cached') label = 'cached runtime';
+    else if (mode === 'downloaded') label = 'downloaded runtime';
+    else label = 'runtime';
+    let versionLabel = '';
+    if (payload.version) {
+      versionLabel = payload.version === 'dev' ? ' (dev)' : ` (${payload.version})`;
+    }
+    const suffix = payload.pythonPath ? ` (${formatPathTail(payload.pythonPath)})` : '';
+    setRuntimeStatus(`Runtime ready — ${label}${versionLabel}${suffix}`, { busy: false, showProgress: false });
+  }
+
+  function handleRuntimeProgress(payload = {}) {
+    if (!payload || !payload.status) return;
+    switch (payload.status) {
+      case 'checking':
+        setRuntimeStatus('Checking runtime...', { busy: true, showProgress: false });
+        break;
+      case 'downloading': {
+        const ratio = typeof payload.progress === 'number' ? Math.max(0, Math.min(1, payload.progress)) : null;
+        const percent = ratio !== null ? ` — ${Math.round(ratio * 100)}%` : '';
+        const bytesInfo = payload.total ? ` (${formatBytes(payload.downloaded || 0)} / ${formatBytes(payload.total)})` : '';
+        setRuntimeStatus(`Downloading runtime${percent}${bytesInfo}`, { busy: true, showProgress: true, progress: ratio });
+        break;
+      }
+      case 'verifying':
+        setRuntimeStatus('Verifying archive checksum...', { busy: true, showProgress: true });
+        break;
+      case 'extracting':
+        setRuntimeStatus('Extracting runtime files...', { busy: true, showProgress: true });
+        break;
+      case 'resetting':
+        setRuntimeStatus('Removing existing runtime...', { busy: true, showProgress: true });
+        break;
+      case 'ready':
+        setReadyStatus(payload);
+        setTimeout(() => { refreshRuntimeStatus(); }, 300);
+        break;
+      case 'error':
+        setRuntimeStatus(`Runtime error: ${payload.message || 'unknown error'}`, { busy: false, showProgress: false, tone: 'error' });
+        setTimeout(() => { refreshRuntimeStatus(); }, 500);
+        break;
+      default:
+        break;
+    }
+  }
+
+  function handleRuntimeError(payload = {}) {
+    const cameraScope = payload && Number.isFinite(payload.cameraId) ? ` (camera ${payload.cameraId})` : '';
+    const msg = payload && payload.message ? payload.message : 'unknown error';
+    setRuntimeStatus(`Runtime error${cameraScope}: ${msg}`, { busy: false, showProgress: false, tone: 'error' });
+    setTimeout(() => { refreshRuntimeStatus(); }, 500);
+  }
+
+  function applyRuntimeStatus(status) {
+    if (!status) {
+      setRuntimeStatus('Runtime status unavailable', { busy: false, tone: 'error' });
+      return;
+    }
+    if (status.runtime) {
+  const mode = status.runtime.mode || 'ready';
+  setReadyStatus({ mode, pythonPath: status.runtime.pythonPath, version: status.runtime.version });
+      return;
+    }
+    if (status.installed) {
+      setRuntimeStatus('Downloaded runtime detected. It will be verified automatically.', { busy: false, showProgress: false });
+      return;
+    }
+    if (status.developmentAvailable) {
+      const suffix = status.pythonPath ? ` (${formatPathTail(status.pythonPath)})` : '';
+      setRuntimeStatus(`Local Python available${suffix}. Download runtime for offline use if needed.`, { busy: false, showProgress: false });
+      return;
+    }
+    setRuntimeStatus('Runtime not installed yet. Use "Reinstall Runtime" to download it.', { busy: false, showProgress: false, tone: 'error' });
+  }
+
+  async function refreshRuntimeStatus() {
+    if (!window.api || typeof window.api.invoke !== 'function') return;
+    try {
+      const response = await window.api.invoke('module-license-plate-runtime-status');
+      if (response && response.success && response.data) {
+        applyRuntimeStatus(response.data);
+      } else {
+        const message = response && response.error ? response.error : 'unknown error';
+        setRuntimeStatus(`Runtime status unavailable: ${message}`, { busy: false, showProgress: false, tone: 'error' });
+      }
+    } catch (e) {
+      console.error('[LP Renderer] Failed to query runtime status', e);
+      setRuntimeStatus('Runtime status unavailable', { busy: false, showProgress: false, tone: 'error' });
+    }
+  }
+
+  async function requestRuntimeReinstall() {
+    if (!window.api || typeof window.api.invoke !== 'function') return;
+    setRuntimeStatus('Starting runtime reinstall...', { busy: true, showProgress: true, progress: 0 });
+    try {
+      const response = await window.api.invoke('module-license-plate-runtime-reinstall');
+      if (!response || response.success === false) {
+        const message = response && response.error ? response.error : 'unknown error';
+        setRuntimeStatus(`Failed to start reinstall: ${message}`, { busy: false, showProgress: false, tone: 'error' });
+      }
+    } catch (e) {
+      console.error('[LP Renderer] Failed to start runtime reinstall', e);
+      setRuntimeStatus(`Failed to start reinstall: ${e && e.message ? e.message : e}`, { busy: false, showProgress: false, tone: 'error' });
+    }
+  }
+
+  if (runtimeUi.reinstallButton) {
+    runtimeUi.reinstallButton.addEventListener('click', requestRuntimeReinstall);
+  }
+
+  if (runtimeUi.reinstallButton && (!window.api || typeof window.api.invoke !== 'function')) {
+    runtimeUi.reinstallButton.disabled = true;
+  }
+
+  if (window.api && typeof window.api.on === 'function') {
+    window.api.on('module-license-plate-runtime-progress', handleRuntimeProgress);
+    window.api.on('module-license-plate-runtime-error', handleRuntimeError);
+  }
+
+  if (window.api && typeof window.api.invoke === 'function') {
+    refreshRuntimeStatus();
+  } else {
+    setRuntimeStatus('Runtime controls are unavailable in this build.', { busy: false, showProgress: false, allowReinstall: false });
   }
 
   // Update stats and unique plates

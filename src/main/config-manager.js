@@ -7,11 +7,16 @@ const os = require('os');
 const { exec } = require('child_process');
 const { Mutex } = require('async-mutex');
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
 
-ffmpeg.setFfmpegPath(ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked'));
-ffmpeg.setFfprobePath(ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked'));
+try {
+    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+    const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+    ffmpeg.setFfmpegPath(ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked'));
+    ffmpeg.setFfprobePath(ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked'));
+} catch (e) {
+    // Use system ffmpeg if bundled not available
+    console.log('Bundled ffmpeg not available, using system ffmpeg');
+}
 
 const authManager = require('./auth-manager');
 

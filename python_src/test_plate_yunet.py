@@ -1,4 +1,11 @@
 import sys
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 try:
     with open("log.txt", "a", encoding="utf-8") as f:
         f.write("runner started\n")
@@ -25,6 +32,71 @@ if script_dir and script_dir not in sys.path:
 from lpd_yunet import LPD_YuNet
 import easyocr
 
+DEFAULT_CYRILLIC_PLATE_CHARS = 'АВЕКМНОРСТУХ'
+LATIN_TO_CYRILLIC = {
+    'A': 'А',
+    'B': 'В',
+    'E': 'Е',
+    'K': 'К',
+    'M': 'М',
+    'H': 'Н',
+    'O': 'О',
+    'P': 'Р',
+    'C': 'С',
+    'T': 'Т',
+    'Y': 'У',
+    'X': 'Х'
+}
+CYRILLIC_TO_LATIN = {v: k for k, v in LATIN_TO_CYRILLIC.items()}
+PLATE_DIGITS = '0123456789'
+DEFAULT_ALLOWLIST = DEFAULT_CYRILLIC_PLATE_CHARS + ''.join(LATIN_TO_CYRILLIC.keys()) + PLATE_DIGITS
+CANONICAL_CHAR_SET = set(DEFAULT_CYRILLIC_PLATE_CHARS + PLATE_DIGITS)
+TRANSLATION_TABLE = {
+    **{ord(k): ord(v) for k, v in LATIN_TO_CYRILLIC.items()},
+    **{ord(k.lower()): ord(v) for k, v in LATIN_TO_CYRILLIC.items()}
+}
+
+
+def sanitize_allowlist(raw_value):
+    candidates = ''.join(str(raw_value or '').split())
+    if not candidates:
+        candidates = DEFAULT_ALLOWLIST
+
+    seen = set()
+    result = []
+
+    def add(char):
+        if char and char not in seen:
+            result.append(char)
+            seen.add(char)
+
+    for ch in candidates:
+        upper = ch.upper()
+        add(upper)
+        if upper in LATIN_TO_CYRILLIC:
+            add(LATIN_TO_CYRILLIC[upper])
+        if upper in CYRILLIC_TO_LATIN:
+            add(CYRILLIC_TO_LATIN[upper])
+
+    for ch in DEFAULT_CYRILLIC_PLATE_CHARS:
+        add(ch)
+
+    for digit in PLATE_DIGITS:
+        add(digit)
+
+    return ''.join(result)
+
+
+def normalize_plate_text(raw_text):
+    if not raw_text:
+        return ''
+
+    text = ''.join(ch for ch in str(raw_text) if ch.isalnum())
+    text = text.upper()
+    text = text.translate(TRANSLATION_TABLE)
+    normalized = ''.join(ch for ch in text if ch in CANONICAL_CHAR_SET)
+    return normalized
+
 # Global placeholders for lazy initialization to avoid heavy startup memory use
 READER = None
 OCR_ENGINE = 'easyocr'  # Only EasyOCR with GPU
@@ -50,7 +122,7 @@ def detect_gpu_availability():
 
 
 # Значение по умолчанию, может быть переопределено через аргумент
-ALLOWLIST = 'АБВЕКМНОРСТУХ0123456789'
+ALLOWLIST = DEFAULT_ALLOWLIST
 # Patch model constants and OUT_DIR/IMG_DIR defaults (moved here so they are
 # available during initialization inside main()). This prevents NameError and
 # premature exit when model is created before these constants were defined.
@@ -82,7 +154,7 @@ def main():
     parser.add_argument('--min-height', type=int, default=40, help='Minimum height for license plate crop (default: 40, working)')
     parser.add_argument('--min-aspect', type=float, default=1.2, help='Minimum aspect ratio (default: 1.2, relaxed)')
     parser.add_argument('--max-aspect', type=float, default=7.5, help='Maximum aspect ratio (default: 7.5, relaxed)')
-    parser.add_argument('--allowlist', type=str, default='АБВЕКМНОРСТУХ0123456789', help='Разрешённые символы для распознавания номеров')
+    parser.add_argument('--allowlist', type=str, default=DEFAULT_ALLOWLIST, help='Разрешённые символы для распознавания номеров')
     parser.add_argument('--enable-position-filter', action='store_true', help='Enable y_min position filter (default: off)')
     parser.add_argument('--backend', type=str, default=None, help='Video backend to use (e.g., FFMPEG, DSHOW, MSMF, ANY). Default: FFMPEG for video, ANY for camera')
     parser.add_argument('--max-frames', type=int, default=0, help='Maximum number of frames to process (0 = unlimited)')
@@ -100,8 +172,7 @@ def main():
     max_aspect = args.max_aspect
     disable_position_filter = not args.enable_position_filter
     global ALLOWLIST
-    # Fix allowlist encoding - use hardcoded Cyrillic allowlist
-    ALLOWLIST = 'АБВЕКМНОРСТУХ0123456789'
+    ALLOWLIST = sanitize_allowlist(args.allowlist)
     print(f'[runner] Filters: score>={min_score}, area>={min_area}, height>={min_height}, aspect in [{min_aspect}, {max_aspect}], allowlist={ALLOWLIST}, position_filter={not disable_position_filter}', file=sys.stderr)
     sys.stderr.flush()
     sys.stdout.flush()
@@ -263,7 +334,7 @@ def main():
                 # Enhance image for better OCR quality (use lighter enhancement)
                 enhanced_img = enhance_plate_image(img, scale_factor=1.5)
                 # Run OCR on in-memory image to avoid disk IO
-                text = recognize_text(enhanced_img)
+                text = normalize_plate_text(recognize_text(enhanced_img))
                 print(f"{os.path.basename(img_path)}: OCR text: '{text}'")
                 # Save only when recognized or when debugging
                 saved_path = None
@@ -330,7 +401,7 @@ def main():
                 plate_path = os.path.join(save_dir, f'plate_yunet_{os.path.splitext(os.path.basename(img_path))[0]}_{filtered_count+1}.jpg')
                 try:
                     # Run OCR in-memory first to avoid unnecessary IO
-                    text = recognize_text(plate_img)
+                    text = normalize_plate_text(recognize_text(plate_img))
                     # Save plate image only if recognized or debugging is enabled
                     saved = False
                     if text and text.strip():
@@ -534,10 +605,10 @@ def main():
                 cv.imwrite(plate_path, plate_img)
                 # Run OCR in-memory first to avoid disk IO and to allow flip-checks
                 try:
-                    text = recognize_text(plate_img)
+                    text = normalize_plate_text(recognize_text(plate_img))
                 except Exception:
                     # Fallback to path-based OCR
-                    text = recognize_text(plate_path)
+                    text = normalize_plate_text(recognize_text(plate_path))
 
                 # Heuristic: if OCR produced nothing or contains very few allowed characters,
                 # try horizontal flip (mirror) and re-run OCR — sometimes perspective warp or
@@ -553,7 +624,7 @@ def main():
                 try:
                     if best_score < 0.5:
                         flipped = cv.flip(plate_img, 1)
-                        flipped_text = recognize_text(flipped)
+                        flipped_text = normalize_plate_text(recognize_text(flipped))
                         flipped_score = allowed_fraction(flipped_text)
                         if flipped_score > best_score and flipped_text:
                             # prefer flipped result

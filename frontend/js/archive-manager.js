@@ -33,6 +33,8 @@ if (typeof window.Hls === 'undefined') {
             eventCar: '#ffc107',
             eventDefault: '#6c757d'
         };
+        const DEFAULT_EVENT_DURATION = 30;
+        const MIN_EVENT_DURATION = 1;
         let currentCamera = null, calendarInstance = null, recordingsForDay = [], allCameraEventsForDay = [], activeFilters = new Set();
         let hls = null, hlsConversionActive = false, currentHlsSource = null;
         let isPlaying = false, currentSpeedIndex = 0, currentTime = 0, animationFrameId = null;
@@ -129,6 +131,98 @@ if (typeof window.Hls === 'undefined') {
             }
             return new Date(year, month - 1, day, hour, minute, second);
         };
+
+        const coercePositiveNumber = (value, fallback = 0) => {
+            const num = Number(value);
+            if (!Number.isFinite(num) || num < 0) return fallback;
+            return num;
+        };
+
+        function normalizeRecordings(recordings) {
+            const startOfDay = getStartOfDay();
+            const dayStartTime = startOfDay.getTime();
+            return recordings
+                .map((rec) => {
+                    const recStartDate = createLocalDateFromString(rec.startTimeString);
+                    if (!recStartDate || Number.isNaN(recStartDate.getTime())) {
+                        return null;
+                    }
+                    const rawStartSeconds = (recStartDate.getTime() - dayStartTime) / 1000;
+                    const durationCandidates = [rec.duration, rec.durationSeconds, rec.length, rec.totalDuration];
+                    let rawDurationSeconds = 0;
+                    for (const candidate of durationCandidates) {
+                        const value = coercePositiveNumber(candidate);
+                        if (value > 0) {
+                            rawDurationSeconds = value;
+                            break;
+                        }
+                    }
+                    const rawEndSeconds = rawStartSeconds + rawDurationSeconds;
+                    let startSeconds = Math.max(0, rawStartSeconds);
+                    let endSeconds = Math.min(DAY_IN_SECONDS, rawEndSeconds);
+                    if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
+                        return null;
+                    }
+                    const durationSeconds = endSeconds - startSeconds;
+                    if (durationSeconds <= 0) {
+                        return null;
+                    }
+                    return {
+                        ...rec,
+                        rawStartSeconds,
+                        rawDurationSeconds,
+                        startSeconds,
+                        endSeconds,
+                        durationSeconds
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.startSeconds - b.startSeconds);
+        }
+
+        function normalizeEvents(events, normalizedRecordings) {
+            const startOfDay = getStartOfDay();
+            const dayStartTime = startOfDay.getTime();
+            return events
+                .map((event) => {
+                    const eventDate = new Date(event.timestamp * 1000);
+                    if (!eventDate || Number.isNaN(eventDate.getTime())) {
+                        return null;
+                    }
+                    const rawStartSeconds = (eventDate.getTime() - dayStartTime) / 1000;
+                    let rawDurationSeconds = coercePositiveNumber(event.duration, DEFAULT_EVENT_DURATION);
+                    if (rawDurationSeconds === 0) {
+                        rawDurationSeconds = DEFAULT_EVENT_DURATION;
+                    }
+                    const preliminaryStart = Math.max(0, rawStartSeconds);
+                    let preliminaryEnd = Math.min(DAY_IN_SECONDS, rawStartSeconds + rawDurationSeconds);
+                    let startSeconds = preliminaryStart;
+                    let endSeconds = preliminaryEnd;
+                    let durationSeconds = Math.max(endSeconds - startSeconds, MIN_EVENT_DURATION);
+                    let hasRecording = false;
+                    for (const rec of normalizedRecordings) {
+                        const overlaps = preliminaryEnd > rec.startSeconds && preliminaryStart < rec.endSeconds;
+                        if (overlaps) {
+                            hasRecording = true;
+                            startSeconds = Math.max(preliminaryStart, rec.startSeconds);
+                            endSeconds = Math.min(preliminaryEnd, rec.endSeconds);
+                            durationSeconds = Math.max(endSeconds - startSeconds, MIN_EVENT_DURATION);
+                            break;
+                        }
+                    }
+                    return {
+                        ...event,
+                        rawStartSeconds,
+                        rawDurationSeconds,
+                        startSeconds,
+                        endSeconds,
+                        durationSeconds,
+                        hasRecording
+                    };
+                })
+                .filter((event) => event && event.durationSeconds > 0 && event.endSeconds > 0 && event.startSeconds < DAY_IN_SECONDS)
+                .sort((a, b) => a.startSeconds - b.startSeconds);
+        }
         
         function play() {
             if (isPlaying) return;
@@ -182,17 +276,17 @@ if (typeof window.Hls === 'undefined') {
         async function seek(timeInSeconds, startPlaying = false) {
             currentTime = Math.max(0, Math.min(timeInSeconds, DAY_IN_SECONDS));
             seekerTime = currentTime;
-            const targetBlock = recordingsForDay.find(rec => {
-                const start = (createLocalDateFromString(rec.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
-                const end = start + rec.duration;
-                return currentTime >= start && currentTime < end;
-            });
+            const targetBlock = recordingsForDay.find(rec => currentTime >= rec.startSeconds && currentTime < rec.endSeconds);
             if (!targetBlock) {
                 App.modalHandler.showToast(App.t('archive_no_recordings_for_time'), true);
                 return;
             }
-            const blockStart = (createLocalDateFromString(targetBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
-            const seekInFile = currentTime - blockStart;
+            const blockStart = Number.isFinite(targetBlock.rawStartSeconds) ? targetBlock.rawStartSeconds : targetBlock.startSeconds;
+            const blockDuration = Number.isFinite(targetBlock.rawDurationSeconds) && targetBlock.rawDurationSeconds > 0
+                ? targetBlock.rawDurationSeconds
+                : targetBlock.durationSeconds;
+            let seekInFile = currentTime - blockStart;
+            seekInFile = Math.max(0, Math.min(seekInFile, blockDuration));
             if (!hlsConversionActive || currentHlsSource !== targetBlock.name) {
                 hlsConversionActive = true;
                 currentHlsSource = targetBlock.name;
@@ -262,31 +356,27 @@ if (typeof window.Hls === 'undefined') {
             timelineCtx.fillRect(0, 0, canvasWidth, canvasHeight);
             const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
             recordingsForDay.forEach(rec => {
-                const recDate = createLocalDateFromString(rec.startTimeString);
-                const startOfDay = getStartOfDay();
-                const startTimeInSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
-                const durationInSeconds = rec.duration;
-                const endTimeInSeconds = startTimeInSeconds + durationInSeconds;
-                if (endTimeInSeconds < viewStartSeconds || startTimeInSeconds > viewStartSeconds + totalVisibleSeconds) return;
-                const x = ((startTimeInSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
-                const w = (durationInSeconds / totalVisibleSeconds) * canvasWidth;
-                const isHovered = mouseTime >= startTimeInSeconds && mouseTime < endTimeInSeconds;
+                const { startSeconds, endSeconds, durationSeconds } = rec;
+                if (endSeconds < viewStartSeconds || startSeconds > viewStartSeconds + totalVisibleSeconds) return;
+                const x = ((startSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
+                const w = (durationSeconds / totalVisibleSeconds) * canvasWidth;
+                const isHovered = mouseTime >= startSeconds && mouseTime < endSeconds;
                 timelineCtx.fillStyle = isHovered ? COLORS.recordingHover : COLORS.recording;
                 timelineCtx.fillRect(x, canvasHeight * 0.25, Math.max(1, w), canvasHeight * 0.5);
             });
             allCameraEventsForDay.forEach(event => {
-                const eventDate = new Date(event.timestamp * 1000);
-                const startOfDay = getStartOfDay();
-                const startTimeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
-                const durationInSeconds = event.duration || 30;
-                const endTimeInSeconds = startTimeInSeconds + durationInSeconds;
-                if (endTimeInSeconds < viewStartSeconds || startTimeInSeconds > viewStartSeconds + totalVisibleSeconds) return;
-                if (activeFilters.size > 0 && !event.objects.some(obj => activeFilters.has(obj))) return;
-                const mainObjectType = event.objects?.[0];
+                const { startSeconds, endSeconds, durationSeconds } = event;
+                if (endSeconds < viewStartSeconds || startSeconds > viewStartSeconds + totalVisibleSeconds) return;
+                const eventObjects = Array.isArray(event.objects) ? event.objects : [];
+                if (activeFilters.size > 0 && !eventObjects.some(obj => activeFilters.has(obj))) return;
+                const mainObjectType = eventObjects[0];
+                const isOutsideRecording = !event.hasRecording;
+                if (isOutsideRecording) { timelineCtx.globalAlpha = 0.45; }
                 timelineCtx.fillStyle = (mainObjectType === 'person') ? COLORS.eventPerson : (mainObjectType === 'car' ? COLORS.eventCar : COLORS.eventDefault);
-                const x = ((startTimeInSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
-                const w = (durationInSeconds / totalVisibleSeconds) * canvasWidth;
+                const x = ((startSeconds - viewStartSeconds) / totalVisibleSeconds) * canvasWidth;
+                const w = (durationSeconds / totalVisibleSeconds) * canvasWidth;
                 timelineCtx.fillRect(x, 0, Math.max(1, w), canvasHeight);
+                if (isOutsideRecording) { timelineCtx.globalAlpha = 1; }
             });
             if (isSelecting) {
                 const start = Math.min(selectionStartTime, currentTime);
@@ -445,7 +535,6 @@ if (typeof window.Hls === 'undefined') {
                 if (isSelecting) {
                     const endTime = currentTime;
                     await handleExport(selectionStartTime, endTime);
-                    resetSelection();
                 }
             });
             timelineWrapper.addEventListener('mousedown', handleTimelineMouseDown);
@@ -473,65 +562,12 @@ if (typeof window.Hls === 'undefined') {
             }
             // add preview mousemove after functions are defined
             timelineWrapper.addEventListener('mousemove', handleTimelinePreviewMove);
-        // --- Preview logic ---
-        function handleTimelinePreviewMove(e) {
-            if (!recordingsForDay.length || !timelineThumbnails.length) return;
-            const rect = timelineWrapper.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const totalVisibleSeconds = DAY_IN_SECONDS / zoomLevel;
-            const hoverTime = viewStartSeconds + (mouseX / rect.width) * totalVisibleSeconds;
-            // Найти ближайшее превью
-            let best = timelineThumbnails[0];
-            let minDiff = Math.abs(hoverTime - best.time);
-            for (const thumb of timelineThumbnails) {
-                const diff = Math.abs(hoverTime - thumb.time);
-                if (diff < minDiff) { best = thumb; minDiff = diff; }
-            }
-            timelinePreviewImg.src = best.url;
-            timelinePreviewTime.textContent = formatTime(Math.floor(best.time));
-            // Позиционирование превью
-            let left = mouseX - 60; // 120px ширина превью
-            left = Math.max(0, Math.min(left, rect.width - 120));
-            timelinePreview.style.left = left + 'px';
-            timelinePreview.style.top = '-80px';
-            timelinePreview.style.display = 'block';
-        }
-
-        function hideTimelinePreview() {
-            if (typeof timelinePreview !== 'undefined' && timelinePreview) timelinePreview.style.display = 'none';
-        }
-
-        // --- Загрузка реальных превью с сервера ---
-        async function loadRealThumbnails() {
-            timelineThumbnails = [];
-            // Берём первый блок записи за день (или ближайший)
-            if (!recordingsForDay.length) return;
-            // Можно доработать: генерировать превью для всех блоков, сейчас — для первого
-            const rec = recordingsForDay[0];
-            try {
-                const result = await window.api.getArchiveThumbnails({
-                    sourceFilename: rec.name,
-                    interval: 600, // 10 минут
-                    count: 10
-                });
-                if (result.success && Array.isArray(result.thumbnails)) {
-                    timelineThumbnails = result.thumbnails;
-                } else {
-                    // fallback: одна заглушка
-                    console.warn('[Archive] getArchiveThumbnails returned no thumbnails, using placeholder');
-                    timelineThumbnails = [{ time: 0, url: 'https://via.placeholder.com/120x68?text=No+Preview' }];
-                }
-            } catch (e) {
-                console.error('[Archive] Error while loading thumbnails:', e);
-                timelineThumbnails = [{ time: 0, url: 'https://via.placeholder.com/120x68?text=Error' }];
-            }
-        }
             videoPlayer.addEventListener('timeupdate', () => {
                 placeholder.classList.add('hidden');
                 videoPlayer.classList.remove('hidden');
                 const currentBlock = recordingsForDay.find(rec => rec.name === currentHlsSource);
                 if (currentBlock) {
-                    const blockStart = (createLocalDateFromString(currentBlock.startTimeString).getTime() - getStartOfDay().getTime()) / 1000;
+                    const blockStart = Number.isFinite(currentBlock.rawStartSeconds) ? currentBlock.rawStartSeconds : currentBlock.startSeconds;
                     currentTime = blockStart + videoPlayer.currentTime;
                     seekerTime = currentTime;
                 }
@@ -618,9 +654,10 @@ if (typeof window.Hls === 'undefined') {
                     window.api.getRecordingsForDate({ cameraId: currentCamera.id, date }),
                     window.api.getEventsForDate({ date })
                 ]);
-                recordingsForDay = recordings;
-                console.log('[Archive] recordingsForDay loaded:', JSON.stringify(recordingsForDay, null, 2));
-                allCameraEventsForDay = events.filter(event => event.cameraId === currentCamera.id).sort((a, b) => b.timestamp - a.timestamp);
+                recordingsForDay = normalizeRecordings(Array.isArray(recordings) ? recordings : []);
+                console.log('[Archive] recordingsForDay normalized:', JSON.stringify(recordingsForDay, null, 2));
+                const cameraEvents = (Array.isArray(events) ? events : []).filter(event => event.cameraId === currentCamera.id);
+                allCameraEventsForDay = normalizeEvents(cameraEvents, recordingsForDay).sort((a, b) => b.timestamp - a.timestamp);
                 // После загрузки записей генерируем превьюы для таймлайна
                 try {
                     await loadRealThumbnails();
@@ -666,53 +703,100 @@ if (typeof window.Hls === 'undefined') {
         }
 
         async function handleExport(start, end) {
-            if (start >= end) {
-                App.modalHandler.showToast("Ошибка: время начала клипа должно быть раньше времени окончания.", true);
+            const selectionStart = Math.max(0, Math.min(start, end));
+            const selectionEnd = Math.min(DAY_IN_SECONDS, Math.max(start, end));
+            if (!Number.isFinite(selectionStart) || !Number.isFinite(selectionEnd) || selectionEnd - selectionStart <= 0) {
+                App.modalHandler.showToast("Ошибка: выберите непустой диапазон для экспорта.", true);
+                resetSelection();
                 return;
             }
             clipExportBtn.disabled = true;
             clipExportBtn.innerHTML = `...`;
             clipStartBtn.disabled = true;
-            const sourceBlock = recordingsForDay.find(rec => {
-                const recDate = createLocalDateFromString(rec.startTimeString);
-                const startOfDay = getStartOfDay();
-                const blockStart = (recDate.getTime() - startOfDay.getTime()) / 1000;
-                return start >= blockStart && end <= blockStart + rec.duration;
+
+            const segments = [];
+            const totalDuration = selectionEnd - selectionStart;
+            recordingsForDay.forEach(rec => {
+                const overlapStart = Math.max(selectionStart, rec.startSeconds);
+                const overlapEnd = Math.min(selectionEnd, rec.endSeconds);
+                if (overlapEnd <= overlapStart) {
+                    return;
+                }
+                const blockStartSeconds = Number.isFinite(rec.rawStartSeconds) ? rec.rawStartSeconds : rec.startSeconds;
+                const blockDurationSeconds = Number.isFinite(rec.rawDurationSeconds) && rec.rawDurationSeconds > 0
+                    ? rec.rawDurationSeconds
+                    : rec.durationSeconds;
+                let startTimeInFile = overlapStart - blockStartSeconds;
+                startTimeInFile = Math.max(0, Math.min(startTimeInFile, blockDurationSeconds));
+                let durationInFile = overlapEnd - overlapStart;
+                durationInFile = Math.max(0, Math.min(durationInFile, blockDurationSeconds - startTimeInFile));
+                if (durationInFile > 0) {
+                    segments.push({
+                        sourceFilename: rec.name,
+                        startTime: startTimeInFile,
+                        duration: durationInFile
+                    });
+                }
             });
-            if (!sourceBlock) { 
-                App.modalHandler.showToast(App.t('archive_export_single_file_error'), true); 
-                resetSelection(); 
-                return; 
+
+            if (!segments.length) {
+                App.modalHandler.showToast(App.t('archive_export_single_file_error'), true);
+                resetSelection();
+                return;
             }
-            const recDate = createLocalDateFromString(sourceBlock.startTimeString);
-            const startOfDay = getStartOfDay();
-            const blockStartSeconds = (recDate.getTime() - startOfDay.getTime()) / 1000;
-            const startTimeInFile = start - blockStartSeconds;
-            const duration = end - start;
-            const result = await window.api.exportArchiveClip({ 
-                sourceFilename: sourceBlock.name, 
-                startTime: startTimeInFile, 
-                duration: duration 
-            });
-            if (result.success) { 
-                App.modalHandler.showToast(App.t('archive_export_success')); 
-            } else { 
-                App.modalHandler.showToast(`${App.t('archive_export_error')}: ${result.error}`, true); 
+
+            if (segments.length > 1 && (!window.api || typeof window.api.exportArchiveClipBatch !== 'function')) {
+                App.modalHandler.showToast('Экспорт нескольких блоков пока недоступен: обновите приложение.', true);
+                resetSelection();
+                return;
             }
+
+            try {
+                let result;
+                if (segments.length === 1) {
+                    const [segment] = segments;
+                    result = await window.api.exportArchiveClip({
+                        sourceFilename: segment.sourceFilename,
+                        startTime: segment.startTime,
+                        duration: segment.duration
+                    });
+                } else {
+                    const batchPayload = {
+                        cameraId: currentCamera ? currentCamera.id : undefined,
+                        totalDuration,
+                        segments
+                    };
+                    result = await window.api.exportArchiveClipBatch(batchPayload);
+                }
+                if (result && result.success) {
+                    App.modalHandler.showToast(App.t('archive_export_success'));
+                } else {
+                    const errorMessage = result && result.error ? result.error : 'unknown';
+                    App.modalHandler.showToast(`${App.t('archive_export_error')}: ${errorMessage}`, true);
+                }
+            } catch (error) {
+                console.error('[Archive] export failed:', error);
+                const message = error && error.message ? error.message : 'unknown error';
+                App.modalHandler.showToast(`${App.t('archive_export_error')}: ${message}`, true);
+            }
+
             resetSelection();
         }
 
         function applyFiltersAndRender() {
             let filteredEvents = allCameraEventsForDay;
             if (activeFilters.size > 0) {
-                filteredEvents = allCameraEventsForDay.filter(event => event.objects.some(obj => activeFilters.has(obj)));
+                filteredEvents = allCameraEventsForDay.filter(event => {
+                    const eventObjects = Array.isArray(event.objects) ? event.objects : [];
+                    return eventObjects.some(obj => activeFilters.has(obj));
+                });
             }
             renderEventList(filteredEvents);
             drawTimeline();
         }
 
         function renderFilters() {
-            const allObjectTypes = new Set(allCameraEventsForDay.flatMap(e => e.objects).filter(Boolean));
+            const allObjectTypes = new Set(allCameraEventsForDay.flatMap(e => Array.isArray(e.objects) ? e.objects : []).filter(Boolean));
             if (allObjectTypes.size === 0) {
                 filtersContainer.innerHTML = '';
                 return;
@@ -742,22 +826,22 @@ if (typeof window.Hls === 'undefined') {
             }
             let listHTML = '';
             events.forEach(event => {
-                const eventDate = new Date(event.timestamp * 1000);
-                const timeString = eventDate.toLocaleTimeString();
-                const objectsString = event.objects.map(o => App.t(`object_${o}`) || o).join(', ');
-                listHTML += `<li data-timestamp="${event.timestamp}"><span class="event-time">${timeString}</span><span class="event-objects">${objectsString}</span></li>`;
+                const timeString = formatTime(Math.floor(event.startSeconds));
+                const eventObjects = Array.isArray(event.objects) ? event.objects : [];
+                const objectsString = eventObjects.map(o => App.t(`object_${o}`) || o).join(', ');
+                const noRecordingAttr = event.hasRecording ? '' : ' data-no-recording="1"';
+                const noRecordingTitle = event.hasRecording ? '' : ` title="${App.t('archive_no_recordings_for_time')}"`;
+                listHTML += `<li data-start-seconds="${event.startSeconds}" data-end-seconds="${event.endSeconds}" data-timestamp="${event.timestamp}"${noRecordingAttr}${noRecordingTitle}><span class="event-time">${timeString}</span><span class="event-objects">${objectsString}</span></li>`;
             });
             eventListEl.innerHTML = listHTML;
             eventListEl.querySelectorAll('li').forEach(item => {
                 item.addEventListener('click', () => {
-                    const timestamp = parseFloat(item.dataset.timestamp);
-                    if (timestamp) {
-                        const eventDate = new Date(timestamp * 1000);
-                        const startOfDay = new Date(eventDate);
-                        startOfDay.setHours(0, 0, 0, 0);
-                        const timeInSeconds = (eventDate.getTime() - startOfDay.getTime()) / 1000;
-                        seek(timeInSeconds, true);
-                    }
+                    const startSeconds = Number(item.dataset.startSeconds);
+                    const endSeconds = Number(item.dataset.endSeconds);
+                    if (!Number.isFinite(startSeconds)) return;
+                    const duration = Number.isFinite(endSeconds) ? endSeconds - startSeconds : 0;
+                    const focusTime = startSeconds + Math.max(duration / 2, 0);
+                    seek(focusTime, true);
                 });
             });
         }

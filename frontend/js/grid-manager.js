@@ -15,7 +15,8 @@
         let animationFrameId = null;
 
         const peerConnections = {};
-        const streamStatsHistory = {};
+    const streamStatsHistory = {};
+    const videoMetricsState = new WeakMap();
         let statsUpdateInterval = null;
 
     // Toggleable debug overlay. Set to true for visual debug markers in overlays.
@@ -471,11 +472,19 @@
                                     const DEFAULT_MIN_AREA_PX = 400; // ~20x20
                                     const DEFAULT_MIN_NORM_AREA = 0.001;
                                     const DEFAULT_STABILITY_FRAMES = 2; // require seen in 2 frames before confirming
+                                    const DEFAULT_TRACK_MEASUREMENT_ALPHA = 0.55;
+                                    const DEFAULT_RENDER_SMOOTH_ALPHA = 0.25;
+                                    const DEFAULT_RENDER_SMOOTH_FAST_ALPHA = 0.55;
+                                    const DEFAULT_RENDER_SMOOTH_THRESHOLD_RATIO = 0.55; // relative to box diagonal
 
                                     const minConf = (typeof cameraSettings.min_confidence === 'number') ? cameraSettings.min_confidence : ((typeof window.__analytics_min_confidence === 'number') ? window.__analytics_min_confidence : DEFAULT_MIN_CONFIDENCE);
                                     const minAreaPx = (typeof cameraSettings.min_area_px === 'number') ? cameraSettings.min_area_px : ((typeof window.__analytics_min_area_px === 'number') ? window.__analytics_min_area_px : DEFAULT_MIN_AREA_PX);
                                     const minNormArea = (typeof cameraSettings.min_norm_area === 'number') ? cameraSettings.min_norm_area : ((typeof window.__analytics_min_norm_area === 'number') ? window.__analytics_min_norm_area : DEFAULT_MIN_NORM_AREA);
                                     const stabilityFrames = (typeof cameraSettings.stability_frames === 'number') ? cameraSettings.stability_frames : ((typeof window.__analytics_stability_frames === 'number') ? window.__analytics_stability_frames : DEFAULT_STABILITY_FRAMES);
+                                    const trackMeasurementAlpha = (typeof cameraSettings.track_alpha === 'number') ? cameraSettings.track_alpha : ((typeof window.__analytics_track_alpha === 'number') ? window.__analytics_track_alpha : DEFAULT_TRACK_MEASUREMENT_ALPHA);
+                                    const renderSmoothAlpha = (typeof cameraSettings.smooth_alpha === 'number') ? cameraSettings.smooth_alpha : ((typeof window.__analytics_smooth_alpha === 'number') ? window.__analytics_smooth_alpha : DEFAULT_RENDER_SMOOTH_ALPHA);
+                                    const renderSmoothFastAlpha = (typeof cameraSettings.smooth_fast_alpha === 'number') ? cameraSettings.smooth_fast_alpha : ((typeof window.__analytics_smooth_fast_alpha === 'number') ? window.__analytics_smooth_fast_alpha : DEFAULT_RENDER_SMOOTH_FAST_ALPHA);
+                                    const renderSmoothThresholdRatio = (typeof cameraSettings.smooth_threshold_ratio === 'number') ? cameraSettings.smooth_threshold_ratio : ((typeof window.__analytics_smooth_threshold_ratio === 'number') ? window.__analytics_smooth_threshold_ratio : DEFAULT_RENDER_SMOOTH_THRESHOLD_RATIO);
 
                                     // runtime debug toggle (can be disabled from DevTools)
                                     const debugNow = ANALYTICS_DEBUG_DRAW && (window.__analytics_debug !== false);
@@ -570,7 +579,7 @@
                                         }
                                         if (best && bestIou > 0.3 && !matchedTrackIds.has(best.id)) {
                                             // update existing track with smoothing
-                                            const alpha = 0.6;
+                                            const alpha = Math.max(0.05, Math.min(0.95, trackMeasurementAlpha));
                                             // keep a snapshot of previous box+time to compute velocity for prediction
                                             best.prevBox = best.box ? { x: best.box.x, y: best.box.y, w: best.box.w, h: best.box.h } : null;
                                             best.prevTime = best.lastSeen || nowMs;
@@ -588,7 +597,7 @@
                                             matchedTrackIds.add(best.id);
                                         } else {
                                             // create new track (start with seenCount = 1)
-                                            const newTrack = { id: tracker.nextId++, box: { x: det.x, y: det.y, w: det.w, h: det.h }, label: det.label, conf: det.conf, lastSeen: nowMs, age: 1, seenCount: 1 };
+                                            const newTrack = { id: tracker.nextId++, box: { x: det.x, y: det.y, w: det.w, h: det.h }, label: det.label, conf: det.conf, lastSeen: nowMs, age: 1, seenCount: 1, smoothBox: { x: det.x, y: det.y, w: det.w, h: det.h } };
                                             // mark as unconfirmed until seenCount >= stabilityFrames
                                             newTrack.confirmed = (newTrack.seenCount >= stabilityFrames);
                                             tracker.tracks.push(newTrack);
@@ -642,10 +651,33 @@
                                             predBox = t.box;
                                         }
 
-                                        const bx = Math.max(0, Math.min(frameW, predBox.x));
-                                        const by = Math.max(0, Math.min(frameH, predBox.y));
-                                        const bw = Math.max(0, Math.min(frameW - bx, predBox.w));
-                                        const bh = Math.max(0, Math.min(frameH - by, predBox.h));
+                                        // Apply additional exponential smoothing for rendered box to reduce jitter
+                                        const prevSmooth = t.smoothBox;
+                                        if (!prevSmooth || t.resetSmooth) {
+                                            t.smoothBox = { x: predBox.x, y: predBox.y, w: predBox.w, h: predBox.h };
+                                            t.resetSmooth = false;
+                                        } else {
+                                            const dx = predBox.x - prevSmooth.x;
+                                            const dy = predBox.y - prevSmooth.y;
+                                            const dist = Math.hypot(dx, dy);
+                                            const diag = Math.hypot(Math.max(predBox.w, prevSmooth.w), Math.max(predBox.h, prevSmooth.h));
+                                            const threshold = Math.max(12, diag * renderSmoothThresholdRatio);
+                                            const alphaS = (dist > threshold) ? renderSmoothFastAlpha : renderSmoothAlpha;
+                                            const alphaClamped = Math.max(0.05, Math.min(0.95, alphaS));
+                                            t.smoothBox = {
+                                                x: prevSmooth.x + dx * alphaClamped,
+                                                y: prevSmooth.y + dy * alphaClamped,
+                                                w: prevSmooth.w + (predBox.w - prevSmooth.w) * alphaClamped,
+                                                h: prevSmooth.h + (predBox.h - prevSmooth.h) * alphaClamped
+                                            };
+                                        }
+
+                                        const boxForRender = t.smoothBox || predBox;
+
+                                        const bx = Math.max(0, Math.min(frameW, boxForRender.x));
+                                        const by = Math.max(0, Math.min(frameH, boxForRender.y));
+                                        const bw = Math.max(0, Math.min(frameW - bx, boxForRender.w));
+                                        const bh = Math.max(0, Math.min(frameH - by, boxForRender.h));
                                         return { label: t.label, score: t.conf, box: { x: bx / frameW, y: by / frameH, w: bw / frameW, h: bh / frameH }, __fromTracker: true, trackId: t.id };
                                     });
 
@@ -991,13 +1023,13 @@
                             newGrid[sourceCellId] = targetContent;
                         }
                     } else {
-                        // Всегда указываем streamId: 0 по умолчанию (или 1, если только один поток)
+                        // Всегда указываем streamId: по умолчанию используем SD (1), если он доступен
                         const cameraObj = stateManager.state.cameras.find(c => c.id === cameraId);
-                        let defaultStreamId = 0;
-                        if (cameraObj && typeof cameraObj.streamPath1 === 'string' && cameraObj.streamPath1.trim() !== '') {
-                            defaultStreamId = 1;
+                        let defaultStreamId = 1;
+                        if (!cameraObj || !cameraObj.streamPath1 || cameraObj.streamPath1.trim() === '') {
+                            defaultStreamId = 0;
                         }
-                        newGrid[cellIndex] = { camera: { id: cameraId }, streamId: 0 };
+                        newGrid[cellIndex] = { camera: { id: cameraId }, streamId: defaultStreamId };
                     }
                     stateManager.updateGridState(newGrid);
                 }
@@ -1116,22 +1148,67 @@
 
             const audioBtn = controls.querySelector('.audio-btn');
             if (audioBtn) {
-                audioBtn.onclick = (e) => {
-                    e.stopPropagation();
+                if (!cellElement.dataset.audioEnabled) {
+                    cellElement.dataset.audioEnabled = 'false';
+                }
+                const applyAudioState = () => {
+                    const enabled = cellElement.dataset.audioEnabled === 'true';
                     const video = cellElement.querySelector('.video-player');
                     if (video) {
-                        video.muted = !video.muted;
-                        audioBtn.innerHTML = video.muted ? '<i class="material-icons">volume_off</i>' : '<i class="material-icons">volume_up</i>';
+                        video.muted = !enabled;
+                        video.defaultMuted = !enabled;
                     }
+                    audioBtn.innerHTML = enabled ? '<i class="material-icons">volume_up</i>' : '<i class="material-icons">volume_off</i>';
+                };
+
+                applyAudioState();
+
+                audioBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const nextEnabled = cellElement.dataset.audioEnabled === 'true' ? 'false' : 'true';
+                    cellElement.dataset.audioEnabled = nextEnabled;
+                    applyAudioState();
                 };
             }
 
             const recordBtn = controls.querySelector('.record-btn');
             const camera = stateManager.state.cameras.find(c => c.id === cellState.camera.id);
             if (recordBtn && camera) {
-                recordBtn.onclick = (e) => {
+                recordBtn.onclick = async (e) => {
                     e.stopPropagation();
-                    window.api.toggleRecording(camera);
+                    if (!window.api || typeof window.api.toggleRecording !== 'function') return;
+                    if (recordBtn.dataset.busy === '1') return;
+
+                    const spinnerMarkup = '<i class="material-icons">autorenew</i>';
+                    const previousMarkup = recordBtn.innerHTML;
+                    const wasRecording = !!stateManager.state.recordingStates[camera.id];
+                    const payload = { id: camera.id, name: camera.name };
+
+                    recordBtn.dataset.busy = '1';
+                    recordBtn.classList.add('loading');
+                    recordBtn.innerHTML = spinnerMarkup;
+
+                    try {
+                        const result = await window.api.toggleRecording(payload);
+                        if (!result || result.success !== true) {
+                            const errorMessage = (result && result.error) || App.t('record_toggle_error') || 'Не удалось переключить запись';
+                            App.modalHandler.showToast(errorMessage, true, 4000);
+                            return;
+                        }
+
+                        const nextState = (result && typeof result.recording === 'boolean') ? result.recording : !wasRecording;
+                        stateManager.setRecordingState({ cameraId: camera.id, recording: nextState });
+                        const toastKey = nextState ? 'recording_started_toast' : 'recording_stopped_toast';
+                        const toastMessage = App.t(toastKey) || (nextState ? 'Запись запущена.' : 'Запись остановлена.');
+                        App.modalHandler.showToast(toastMessage, false, 2500);
+                    } catch (err) {
+                        const errorMessage = (err && err.message) || App.t('record_toggle_error') || 'Не удалось переключить запись';
+                        App.modalHandler.showToast(errorMessage, true, 4000);
+                    } finally {
+                        recordBtn.dataset.busy = '0';
+                        recordBtn.classList.remove('loading');
+                        recordBtn.innerHTML = previousMarkup;
+                    }
                 };
             }
 
@@ -1159,6 +1236,9 @@
             video.setAttribute('autoplay', '');
             video.style.width = '100%';
             video.style.height = '100%';
+            const audioEnabled = cell.dataset && cell.dataset.audioEnabled === 'true';
+            video.muted = !audioEnabled;
+            video.defaultMuted = !audioEnabled;
             // Detect stream type or use WebRTC if specified
             if (useWebRTC) {
                 // WebRTC stream: extract path from URL or assume it's the path
@@ -1334,6 +1414,10 @@
             errorOverlay.classList.add('hidden');
             cellElement.classList.remove('error-state');
 
+            const audioEnabled = cellElement.dataset && cellElement.dataset.audioEnabled === 'true';
+            videoElement.muted = !audioEnabled;
+            videoElement.defaultMuted = !audioEnabled;
+
             try {
                 // Очищаем старый поток и PeerConnection более надежно
                 if (videoElement.srcObject) {
@@ -1490,6 +1574,9 @@
                     newVideoEl.setAttribute('autoplay', '');
                     newVideoEl.style.width = '100%';
                     newVideoEl.style.height = '100%';
+                    const audioEnabled = cell.dataset && cell.dataset.audioEnabled === 'true';
+                    newVideoEl.muted = !audioEnabled;
+                    newVideoEl.defaultMuted = !audioEnabled;
                     videoEl.parentNode.replaceChild(newVideoEl, videoEl);
                 }
                 // Восстанавливаем overlay-canvas для SD, но не показываем full-frame analytics image
@@ -1583,6 +1670,9 @@
                     newVideoEl.setAttribute('autoplay', '');
                     newVideoEl.style.width = '100%';
                     newVideoEl.style.height = '100%';
+                    const audioEnabled = cell.dataset && cell.dataset.audioEnabled === 'true';
+                    newVideoEl.muted = !audioEnabled;
+                    newVideoEl.defaultMuted = !audioEnabled;
                     videoEl.parentNode.replaceChild(newVideoEl, videoEl);
                 }
                 if (peerConnections[cellIndex]) {
@@ -1688,6 +1778,7 @@
                 if (!cellElement) return;
                 const statsDiv = cellElement.querySelector('.cell-stats');
                 if (!statsDiv) return;
+                const videoEl = cellElement.querySelector('.video-player');
         
                 if (cellState && !cellState.paused) {
                     const streamId = cellState.streamId === 0 ? 0 : 1;
@@ -1699,38 +1790,100 @@
                         return;
                     }
                     
-                    let bitrate = '...';
+                    const history = streamStatsHistory[pathName] || {};
 
-                    if (pathData.bytesReceived) {
-                        const history = streamStatsHistory[pathName];
-
-                        if (history) {
+                    let bitrate = history.lastBitrate || '...';
+                    if (typeof pathData.bytesReceived === 'number') {
+                        if (history.lastTime && typeof history.lastBytes === 'number') {
                             const timeDiffSeconds = (now - history.lastTime) / 1000;
                             const byteDiff = pathData.bytesReceived - history.lastBytes;
-
                             if (timeDiffSeconds > 0 && byteDiff >= 0) {
                                 const bytesPerSecond = byteDiff / timeDiffSeconds;
-                                bitrate = `${Math.round((bytesPerSecond * 8) / 1000)}kbps`;
+                                const kbps = Math.round((bytesPerSecond * 8) / 1000);
+                                bitrate = `${kbps}kbps`;
                             }
                         }
-
-                        streamStatsHistory[pathName] = {
-                            lastBytes: pathData.bytesReceived,
-                            lastTime: now
-                        };
+                        history.lastBytes = pathData.bytesReceived;
+                        history.lastTime = now;
+                        history.lastBitrate = bitrate;
                     }
-                    
+
                     const videoTrackName = pathData.tracks?.find(t => !t.startsWith('G7') && !t.startsWith('Opus'));
-                    const codec = videoTrackName || '...';
-                    
-                    const resolution = ''; 
+                    const codec = videoTrackName || history.lastCodec || '...';
+                    history.lastCodec = codec;
 
-                    let statsText = `${codec} | ${bitrate}`;
-                    if (resolution) {
-                        statsText = `${codec} | ${resolution} | ${bitrate}`;
+                    let resolution = history.lastResolution || '';
+                    let fpsText = history.lastFps || '';
+                    let metrics = null;
+
+                    if (videoEl) {
+                        metrics = videoMetricsState.get(videoEl);
+                        if (!metrics) {
+                            metrics = {};
+                            videoMetricsState.set(videoEl, metrics);
+                        }
+
+                        const width = videoEl.videoWidth;
+                        const height = videoEl.videoHeight;
+                        if (width && height) {
+                            resolution = `${width}x${height}`;
+                            metrics.lastResolution = resolution;
+                            history.lastResolution = resolution;
+                        } else if (metrics.lastResolution) {
+                            resolution = metrics.lastResolution;
+                        }
+
+                        let totalFrames = null;
+                        if (typeof videoEl.getVideoPlaybackQuality === 'function') {
+                            const quality = videoEl.getVideoPlaybackQuality();
+                            if (quality && typeof quality.totalVideoFrames === 'number') {
+                                totalFrames = quality.totalVideoFrames;
+                            }
+                        }
+                        if (totalFrames === null && typeof videoEl.webkitDecodedFrameCount === 'number') {
+                            totalFrames = videoEl.webkitDecodedFrameCount;
+                        }
+
+                        if (typeof totalFrames === 'number') {
+                            if (typeof metrics.lastFrameCount === 'number' && typeof metrics.lastFrameTime === 'number') {
+                                const frameDiff = totalFrames - metrics.lastFrameCount;
+                                const timeDiffSeconds = (now - metrics.lastFrameTime) / 1000;
+                                if (frameDiff >= 0 && timeDiffSeconds > 0.25) {
+                                    const fpsValue = frameDiff / timeDiffSeconds;
+                                    if (Number.isFinite(fpsValue) && fpsValue > 0) {
+                                        const rounded = Math.abs(fpsValue - Math.round(fpsValue)) < 0.1 ? Math.round(fpsValue) : Number(fpsValue.toFixed(1));
+                                        fpsText = `${rounded}fps`;
+                                        metrics.lastFps = fpsText;
+                                        history.lastFps = fpsText;
+                                    }
+                                }
+                                if (frameDiff < 0) {
+                                    metrics.lastFps = '';
+                                    history.lastFps = '';
+                                    fpsText = '';
+                                }
+                            }
+                            metrics.lastFrameCount = totalFrames;
+                            metrics.lastFrameTime = now;
+                        }
+
+                        if (!fpsText && metrics.lastFps) {
+                            fpsText = metrics.lastFps;
+                        }
                     }
-                    
-                    statsDiv.textContent = statsText;
+
+                    if (!resolution && metrics && metrics.lastResolution) {
+                        resolution = metrics.lastResolution;
+                    }
+
+                    streamStatsHistory[pathName] = history;
+
+                    const parts = [];
+                    if (codec) parts.push(codec);
+                    if (resolution) parts.push(resolution);
+                    if (fpsText) parts.push(fpsText);
+                    if (bitrate) parts.push(bitrate);
+                    statsDiv.textContent = parts.join(' | ');
                     statsDiv.style.display = 'block';
         
                 } else {

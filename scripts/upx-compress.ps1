@@ -15,7 +15,7 @@ Get-ChildItem -Path $DistPath -Recurse -File | ForEach-Object {
         try {
             & upx -9 --best $file
         } catch {
-            Write-Warning "UPX failed on $file: $_"
+            Write-Warning "UPX failed on $file"
         }
     }
 }

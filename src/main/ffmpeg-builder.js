@@ -1,8 +1,13 @@
 // --- START OF FILE src/main/ffmpeg-builder.js ---
 const path = require('path');
-const ffmpeg = require('@ffmpeg-installer/ffmpeg');
 
-const ffmpegPath = ffmpeg.path.replace('app.asar', 'app.asar.unpacked');
+let ffmpegPath;
+try {
+    const ffmpeg = require('@ffmpeg-installer/ffmpeg');
+    ffmpegPath = ffmpeg.path.replace('app.asar', 'app.asar.unpacked');
+} catch (e) {
+    ffmpegPath = 'ffmpeg'; // Use system ffmpeg
+}
 
 class FfmpegCommandBuilder {
     constructor(appSettings) {
@@ -10,30 +15,20 @@ class FfmpegCommandBuilder {
     }
 
     buildForStream(credentials, streamId, statsPort) { // Добавлен statsPort
-    const streamPath = streamId == 0 ? (credentials.streamPath0 || '/stream=0') : (credentials.streamPath1 || '/stream=1');
+        const streamPath = streamId === 0 ? (credentials.streamPath0 || '/stream=0') : (credentials.streamPath1 || '/stream=1');
         const streamUrl = this.buildRtspUrl(credentials, streamPath);
-        
-        const { decoderArgs, vfArgs } = this.getHwAccelOptions(streamId);
 
         const args = [
-            ...decoderArgs,
             '-rtsp_transport', 'tcp',
             '-i', streamUrl,
-            '-progress', `tcp://127.0.0.1:${statsPort}`, // Используем TCP для статистики
+            '-progress', `tcp://127.0.0.1:${statsPort}`,
             '-f', 'mpegts',
-            '-c:v', 'mpeg1video',
-            ...vfArgs,
-            '-q:v', String(this.settings.qscale || 8),
-            '-r', String(this.settings.fps || 20),
-            '-bf', '0',
-            '-c:a', 'mp2', 
-            '-b:a', '128k', 
-            '-ar', '44100', 
-            '-ac', '1',
+            '-c:v', 'copy',
+            '-c:a', 'copy',
             '-'
         ];
 
-        return { command: ffmpegPath, args: args.filter(Boolean) };
+        return { command: ffmpegPath, args };
     }
 
     buildForRecording(credentials, outputPath) {
@@ -93,8 +88,8 @@ class FfmpegCommandBuilder {
     }
 
     getHwAccelOptions(streamId) {
-        const preference = this.settings.hwAccel || 'auto';
-        const isSD = streamId == 1;
+    const preference = this.settings.hwAccel || 'auto';
+    const isSD = streamId == 1;
         let decoderArgs = [];
         let vfArgs = ['-vf'];
         let vfString = 'format=yuv420p';

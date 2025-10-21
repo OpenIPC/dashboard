@@ -1,7 +1,8 @@
 // --- ФАЙЛ: src/main/camera-api.js ---
 
 const axios = require('axios');
-const { DigestAuth } = require('@mhoc/axios-digest-auth');
+const crypto = require('crypto');
+const { URL } = require('url');
 const onvif = require('node-onvif');
 const { Client } = require('ssh2');
 const NetIpCamera = require('../../netip-handler.js');
@@ -127,6 +128,82 @@ async function sendNetipPtzCommand(camera, command, action) {
     }
 }
 
+function parseDigestHeader(headerValue) {
+    const challenge = headerValue.replace(/^Digest\s+/i, '');
+    const regex = /([a-z0-9_-]+)=((?:"[^"]+")|[^,]+)/gi;
+    const params = {};
+    let match;
+    while ((match = regex.exec(challenge)) !== null) {
+        const key = match[1];
+        const rawValue = match[2];
+        params[key] = rawValue.replace(/^"|"$/g, '');
+    }
+    return params;
+}
+
+async function axiosDigestGet(url, { username, password, timeout = 5000 }) {
+    const method = 'GET';
+    const firstResponse = await axios.get(url, {
+        timeout,
+        validateStatus: status => status === 401 || (status >= 200 && status < 300)
+    });
+
+    if (firstResponse.status !== 401) {
+        return firstResponse;
+    }
+
+    const authHeader = firstResponse.headers['www-authenticate'];
+    if (!authHeader) {
+        throw new Error('Digest challenge not provided by server');
+    }
+
+    const params = parseDigestHeader(authHeader);
+    const uri = new URL(url);
+    const pathWithQuery = uri.pathname + (uri.search || '');
+    const nc = '00000001';
+    const cnonce = crypto.randomBytes(8).toString('hex');
+    const realm = params.realm || '';
+    const nonce = params.nonce || '';
+    const qopToken = (params.qop || '').split(',').map(q => q.trim()).find(q => q === 'auth' || q === 'auth-int');
+
+    const ha1 = crypto.createHash('md5').update(`${username}:${realm}:${password}`).digest('hex');
+    const ha2 = crypto.createHash('md5').update(`${method}:${pathWithQuery}`).digest('hex');
+
+    let responseHash;
+    if (qopToken) {
+        responseHash = crypto.createHash('md5').update(`${ha1}:${nonce}:${nc}:${cnonce}:${qopToken}:${ha2}`).digest('hex');
+    } else {
+        responseHash = crypto.createHash('md5').update(`${ha1}:${nonce}:${ha2}`).digest('hex');
+    }
+
+    const parts = [
+        `Digest username="${username}"`,
+        `realm="${realm}"`,
+        `nonce="${nonce}"`,
+        `uri="${pathWithQuery}"`,
+        `response="${responseHash}"`
+    ];
+
+    if (params.opaque) {
+        parts.push(`opaque="${params.opaque}"`);
+    }
+    if (params.algorithm) {
+        parts.push(`algorithm=${params.algorithm}`);
+    }
+    if (qopToken) {
+        parts.push(`qop=${qopToken}`);
+        parts.push(`nc=${nc}`);
+        parts.push(`cnonce="${cnonce}"`);
+    }
+
+    const authorization = parts.join(', ');
+
+    return axios.get(url, {
+        timeout,
+        headers: { Authorization: authorization }
+    });
+}
+
 async function sendFinalPtzCgiCommand(camera, command, action) {
     const password = await authManager.getPasswordForCamera(camera.id);
     const fullCameraInfo = { ...camera, password };
@@ -157,8 +234,11 @@ async function sendFinalPtzCgiCommand(camera, command, action) {
     
     try {
         if (camera.onvifAuth !== false) {
-            const digestAuth = new DigestAuth({ username: fullCameraInfo.username, password: fullCameraInfo.password });
-            await digestAuth.get(url);
+            await axiosDigestGet(url, {
+                username: fullCameraInfo.username,
+                password: fullCameraInfo.password,
+                timeout: 5000
+            });
         } else {
             await axios.get(url, { timeout: 5000 });
         }

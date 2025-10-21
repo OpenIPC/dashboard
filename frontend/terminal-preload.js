@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const path = require('path');
+const { pathToFileURL } = require('url');
+
+const xtermCssHref = pathToFileURL(path.join(__dirname, '../node_modules/@xterm/xterm/css/xterm.css')).href;
+const xtermJsHref = pathToFileURL(path.join(__dirname, '../node_modules/@xterm/xterm/lib/xterm.js')).href;
+const xtermAddonFitHref = pathToFileURL(path.join(__dirname, '../node_modules/@xterm/addon-fit/lib/addon-fit.js')).href;
 
 contextBridge.exposeInMainWorld('terminalApi', {
     // Функции управления окном
@@ -14,4 +20,11 @@ contextBridge.exposeInMainWorld('terminalApi', {
     sendInput: (cameraId, data) => ipcRenderer.send(`ssh-input-${cameraId}`, data),
     readClipboard: () => ipcRenderer.invoke('clipboardRead'),
     writeClipboard: (text) => ipcRenderer.invoke('clipboardWrite', text),
+    notifyReady: (cameraId) => ipcRenderer.send('ssh-terminal-ready', cameraId),
+});
+
+contextBridge.exposeInMainWorld('terminalEnv', {
+    xtermCssHref,
+    xtermJsHref,
+    xtermAddonFitHref,
 });

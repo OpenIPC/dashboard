@@ -72,7 +72,7 @@ function createFileManagerWindow(camera, fileManagerConnections) {
         modal: true,
         webPreferences: {
             // Подключаем preload-скрипт специально для файлового менеджера
-            preload: path.join(__dirname, '../../fm-preload.js'),
+            preload: path.join(__dirname, '../../frontend/fm-preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
             // Для этого окна тоже отключаем песочницу, если понадобятся модули Node
@@ -80,7 +80,7 @@ function createFileManagerWindow(camera, fileManagerConnections) {
         }
     });
 
-    win.loadFile('file-manager.html', { query: { camera: JSON.stringify(camera) } });
+    win.loadFile(path.join(__dirname, '../../frontend/file-manager.html'), { query: { camera: JSON.stringify(camera) } });
     
     fileManagerWindows[camera.id] = win;
     win.on('closed', () => {
@@ -116,13 +116,13 @@ function createSshTerminalWindow(cameraData, sshConnections) {
         parent: mainWindow,
         webPreferences: {
             // Подключаем preload-скрипт специально для SSH терминала
-            preload: path.join(__dirname, '../../terminal-preload.js'),
+            preload: path.join(__dirname, '../../frontend/terminal-preload.js'),
             // И здесь тоже на всякий случай
             sandbox: false
         }
     });
 
-    win.loadFile('terminal.html', { query: { camera: JSON.stringify(cameraData) } });
+    win.loadFile(path.join(__dirname, '../../frontend/terminal.html'), { query: { camera: JSON.stringify(cameraData) } });
 
     sshWindows[id] = win;
     win.on('closed', () => {

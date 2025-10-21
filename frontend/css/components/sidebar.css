@@ -226,36 +226,114 @@
     padding: 15px;
 }
 
-#detected-plates-list {
-    display: flex;
-    flex-direction: column;
+#detected-plates-summary {
+    background: #202020;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    display: grid;
     gap: 8px;
 }
 
-.modules-panel .plate-item {
-    padding: 8px 12px;
-    border-bottom: 1px solid #444;
-    background: #2a2a2a;
-    margin-bottom: 4px;
-    border-radius: 4px;
+.plates-summary .summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #b5b5b5;
 }
 
-.modules-panel .plate-item:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
+.plates-summary .summary-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: #888;
 }
 
-.modules-panel .plate-text {
+.plates-summary .summary-value {
+    font-weight: 700;
+    color: #00ff88;
+}
+
+#detected-plates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.modules-panel .plate-card {
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.modules-panel .plate-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.modules-panel .plate-number {
     font-family: 'Courier New', monospace;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: bold;
     color: #00ff88;
-    margin-bottom: 4px;
 }
 
-.modules-panel .plate-timestamp {
-    font-size: 11px;
-    color: #888;
+.modules-panel .plate-score {
+    font-size: 12px;
+    color: #bbb;
+}
+
+.modules-panel .plate-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #999;
+}
+
+.modules-panel .plate-camera {
+    color: #ddd;
+}
+
+.modules-panel .plate-time {
+    color: #8c8c8c;
+}
+
+.modules-panel .plate-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.modules-panel .plate-action-btn {
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #bbb;
+    padding: 4px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.modules-panel .plate-action-btn .material-icons {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.modules-panel .plate-action-btn:hover {
+    background: #2d2d2d;
+    color: #00ff88;
+    border-color: #00ff88;
 }
 
 .modules-panel .no-plates {

@@ -203,6 +203,16 @@
     animation: pulse-rec 1.5s infinite;
 }
 
+.cell-controls button.record-btn.loading {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.cell-controls button.record-btn.loading i {
+    display: inline-block;
+    animation: spin-rec 0.9s linear infinite;
+}
+
 @keyframes pulse-rec {
     0% {
         opacity: 1;
@@ -212,6 +222,15 @@
     }
     100% {
         opacity: 1;
+    }
+}
+
+@keyframes spin-rec {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
     }
 }
 

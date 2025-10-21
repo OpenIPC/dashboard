@@ -68,7 +68,9 @@
                 const maxAspectInput = document.getElementById('plate-max-aspect');
                 if(maxAspectInput) maxAspectInput.value = appSettings.plate_max_aspect || 7.5;
                 const allowlistInput = document.getElementById('plate-allowlist');
-                if(allowlistInput) allowlistInput.value = appSettings.plate_allowlist || 'АБВЕКМНОРСТУХ0123456789';
+                if(allowlistInput) allowlistInput.value = appSettings.plate_allowlist || 'АВЕКМНОРСТУХABEKMHOPCTYX0123456789';
+                const maxCropsInput = document.getElementById('plate-max-crops-per-plate');
+                if(maxCropsInput) maxCropsInput.value = appSettings.plate_max_crops_per_plate || 10;
 
                 try {
                     const appVersionSpan = document.getElementById('app-version');
@@ -98,6 +100,9 @@
 
         async function saveGeneralSettings() {
             const { appSettings } = stateManager.state;
+            const plateMaxCropsInput = document.getElementById('plate-max-crops-per-plate');
+            const plateMaxCropsRaw = plateMaxCropsInput ? parseInt(plateMaxCropsInput.value, 10) : NaN;
+            const plateMaxCrops = Number.isFinite(plateMaxCropsRaw) && plateMaxCropsRaw > 0 ? plateMaxCropsRaw : 10;
             const newSettings = {
                 language: document.getElementById('app-settings-language').value,
                 recordingsPath: document.getElementById('app-settings-recordings-path').value,
@@ -116,7 +121,8 @@
                 plate_min_height: parseInt(document.getElementById('plate-min-height').value, 10),
                 plate_min_aspect: parseFloat(document.getElementById('plate-min-aspect').value),
                 plate_max_aspect: parseFloat(document.getElementById('plate-max-aspect').value),
-                plate_allowlist: document.getElementById('plate-allowlist').value
+                plate_allowlist: document.getElementById('plate-allowlist').value,
+                plate_max_crops_per_plate: plateMaxCrops
             };
 
             // Определяем, изменились ли "критичные" для стриминга настройки

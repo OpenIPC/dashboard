@@ -36,7 +36,12 @@ async function getArchiveThumbnails({ sourceFilename, interval = 600, count = 10
         await fsPromises.mkdir(tmpDir, { recursive: true });
 
         // Генерируем превью через ffmpeg (один кадр на каждый таймкод)
-        const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path.replace('app.asar', 'app.asar.unpacked');
+        let ffmpegPath;
+        try {
+            ffmpegPath = require('@ffmpeg-installer/ffmpeg').path.replace('app.asar', 'app.asar.unpacked');
+        } catch (e) {
+            ffmpegPath = 'ffmpeg'; // Use system ffmpeg
+        }
         const thumbFiles = [];
         for (const t of finalTimes) {
             const safeName = path.basename(sourceFilename).replace(/[^a-zA-Z0-9-_\.]/g, '_');
@@ -148,6 +153,7 @@ async function findFreeUdpPort(start = 20000, end = 40000) {
 
 const PROCESS_TYPES = { RECORDING: 'recording', ANALYTICS: 'analytics', HLS: 'hls' };
 const processes = new Map();
+const DEFAULT_RECORD_STREAM_ID = 0; // HD stream enforced for all recordings
 const recordingManager = {};
 const recordingStopTimers = {};
 let mediamtxProcess = null;
@@ -174,19 +180,21 @@ async function generateAndSaveMediaMTXConfig(options = { writeRuntime: true, bas
         const password = await authManager.getPasswordForCamera(camera.id);
         const fullCredentials = { ...camera, password };
         const builder = new FfmpegCommandBuilder({});
-        // Поток всегда активен, задержка минимальна
-        const alwaysOnConfig = {
-            sourceOnDemand: false,
-            sourceOnDemandCloseAfter: '5s', // на всякий случай, если где-то останется onDemand
+        // Держим RTSP источники в режиме on-demand, чтобы не гонять лишние транскоды.
+        const pathBaseConfig = {
+            sourceOnDemand: true,
+            sourceOnDemandStartTimeout: '5s',
+            sourceOnDemandCloseAfter: '45s',
             rtspTransport: 'tcp',
+            sourceAnyPortEnable: true,
         };
 
         const src0 = builder.buildRtspUrl(fullCredentials, fullCredentials.streamPath0 || '/stream=0');
         const src1 = builder.buildRtspUrl(fullCredentials, fullCredentials.streamPath1 || '/stream=1');
 
         // runtimePaths include plaintext credentials (used only at startup)
-        runtimePaths[`cam${camera.id}_0`] = { source: src0, ...alwaysOnConfig };
-        runtimePaths[`cam${camera.id}_1`] = { source: src1, ...alwaysOnConfig };
+    runtimePaths[`cam${camera.id}_0`] = { source: src0, ...pathBaseConfig };
+    runtimePaths[`cam${camera.id}_1`] = { source: src1, ...pathBaseConfig };
 
         // For persistent config we mask passwords so they are not stored in clear
         const mask = (url) => {
@@ -204,8 +212,8 @@ async function generateAndSaveMediaMTXConfig(options = { writeRuntime: true, bas
             return url;
         };
 
-        paths[`cam${camera.id}_0`] = { source: mask(src0), ...alwaysOnConfig };
-        paths[`cam${camera.id}_1`] = { source: mask(src1), ...alwaysOnConfig };
+    paths[`cam${camera.id}_0`] = { source: mask(src0), ...pathBaseConfig };
+    paths[`cam${camera.id}_1`] = { source: mask(src1), ...pathBaseConfig };
 
         // Log generated sources with masked password for easier debugging
         try {
@@ -384,9 +392,10 @@ async function updateMediaMTXPaths() {
             const builder = new FfmpegCommandBuilder({});
             const onDemandConfig = {
                 sourceOnDemand: true,
-                sourceOnDemandStartTimeout: '3s', // ускоряем ожидание старта источника
-                sourceOnDemandCloseAfter: '60s',
+                sourceOnDemandStartTimeout: '5s',
+                sourceOnDemandCloseAfter: '45s',
                 rtspTransport: 'tcp',
+                sourceAnyPortEnable: true,
             };
             const src0 = builder.buildRtspUrl(fullCredentials, fullCredentials.streamPath0 || '/stream=0');
             const src1 = builder.buildRtspUrl(fullCredentials, fullCredentials.streamPath1 || '/stream=1');
@@ -840,12 +849,14 @@ function stopAllProcesses() {
 
 async function startRecording(camera, type) {
     const cameraId = camera.id;
+    const streamId = DEFAULT_RECORD_STREAM_ID;
+    const pathName = `cam${cameraId}_${streamId}`;
     if (recordingManager[cameraId]) {
-        console.log(`[REC] Recording for camera ${cameraId} is already active.`);
-        return;
+        const active = recordingManager[cameraId];
+        console.log(`[REC] Recording for camera ${cameraId} is already active on stream ${active.streamId ?? 0}.`);
+        return { streamId: active.streamId ?? 0 };
     }
 
-    const pathName = `cam${cameraId}_0`;
     try {
         const res = await axios.patch(`http://127.0.0.1:9997/v3/config/paths/patch/${pathName}`, { record: true });
         // Log response for diagnostics
@@ -857,26 +868,30 @@ async function startRecording(camera, type) {
         } catch (e) {
             console.warn(`[REC] Could not fetch MediaMTX path config for ${pathName}: ${e && e.message ? e.message : e}`);
         }
-        recordingManager[cameraId] = { type };
+        recordingManager[cameraId] = { type, streamId };
         console.log(`[REC] Started ${type} recording for ${pathName}.`);
         if (type === 'manual') {
             services.showSystemNotification({ title: 'Запись начата', body: `Камера: "${camera.name}"` });
         }
-        broadcastToRenderers('recording-state-change', { cameraId, recording: true });
+        broadcastToRenderers('recording-state-change', { cameraId, recording: true, streamId });
+        return { streamId };
     } catch (e) {
-        console.error(`[REC] Failed to start recording for ${pathName}:`, e.message);
+        console.error(`[REC] Failed to start recording for ${pathName}:`, e && e.message ? e.message : e);
+        throw e;
     }
 }
 
 async function stopRecording(cameraId) {
-    if (!recordingManager[cameraId]) return;
+    const activeRecording = recordingManager[cameraId];
+    if (!activeRecording) return { streamId: null };
 
+    const { streamId = 0 } = activeRecording;
     const camera = await configManager.getCameraConfig(cameraId);
-    const pathName = `cam${cameraId}_0`;
+    const pathName = `cam${cameraId}_${streamId}`;
     try {
         const res = await axios.patch(`http://127.0.0.1:9997/v3/config/paths/patch/${pathName}`, { record: false });
         console.log(`[REC] PATCH /v3/config/paths/patch/${pathName} -> status=${res.status}`);
-        const { type } = recordingManager[cameraId];
+        const { type } = activeRecording;
         delete recordingManager[cameraId];
         console.log(`[REC] Stopped ${type} recording for ${pathName}.`);
         // After stopping, attempt to list files in the configured camera recordings folder for quick diagnostics
@@ -901,32 +916,43 @@ async function stopRecording(cameraId) {
         if (type === 'manual' && camera) {
             services.showSystemNotification({ title: 'Запись завершена', body: `Камера: "${camera.name}"` });
         }
-        broadcastToRenderers('recording-state-change', { cameraId, recording: false });
+        broadcastToRenderers('recording-state-change', { cameraId, recording: false, streamId });
+        return { streamId };
     } catch (e) {
-        console.error(`[REC] Failed to stop recording for ${pathName}:`, e.message);
+        console.error(`[REC] Failed to stop recording for ${pathName}:`, e && e.message ? e.message : e);
+        throw e;
     }
 }
 
 async function toggleRecording(camera) {
     const cameraId = camera.id;
-    const isCurrentlyRecording = !!recordingManager[cameraId];
+    const activeRecording = recordingManager[cameraId];
 
-    if (isCurrentlyRecording) {
+    if (activeRecording) {
         if (recordingStopTimers[cameraId]) {
             clearTimeout(recordingStopTimers[cameraId]);
             delete recordingStopTimers[cameraId];
         }
-        await stopRecording(cameraId);
-    } else {
-        await startRecording(camera, 'manual');
+        const stopResult = await stopRecording(cameraId);
+        const streamId = stopResult && typeof stopResult.streamId === 'number' ? stopResult.streamId : activeRecording.streamId ?? DEFAULT_RECORD_STREAM_ID;
+        return { success: true, recording: false, streamId };
     }
+
+    const startResult = await startRecording(camera, 'manual');
+    const streamId = startResult && typeof startResult.streamId === 'number' ? startResult.streamId : DEFAULT_RECORD_STREAM_ID;
+    return { success: true, recording: true, streamId };
 }
 
 async function handleAnalyticsDetection(cameraId) {
     const camera = await configManager.getCameraConfig(cameraId);
     if (!camera) return;
 
-    await startRecording(camera, 'auto');
+    try {
+        await startRecording(camera, 'auto');
+    } catch (e) {
+        console.error(`[REC] Auto recording trigger failed for camera ${cameraId}:`, e && e.message ? e.message : e);
+        return;
+    }
 
     if (recordingStopTimers[cameraId]) {
         clearTimeout(recordingStopTimers[cameraId]);
@@ -940,7 +966,7 @@ async function handleAnalyticsDetection(cameraId) {
     recordingStopTimers[cameraId] = setTimeout(() => {
         if (recordingManager[cameraId]?.type === 'auto') {
             console.log(`[REC] Auto-stopping recording for camera ${cameraId} due to inactivity.`);
-            stopRecording(cameraId);
+            stopRecording(cameraId).catch(err => console.error(`[REC] Failed to auto-stop recording for camera ${cameraId}:`, err && err.message ? err.message : err));
         }
         delete recordingStopTimers[cameraId];
     }, autoStopDelay);

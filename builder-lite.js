@@ -1,4 +1,4 @@
-{
+module.exports = {
   "appId": "com.vavol.openipcdashboard.lite",
   "productName": "DASHBOARD for OpenIPC Lite",
   "directories": {
@@ -50,6 +50,15 @@
   "asarUnpack": [
     "**/node_modules/keytar/**"
   ],
-  "afterAllArtifactBuild": "node scripts/after-build.js",
+  "afterAllArtifactBuild": () => {
+    const { execSync } = require('child_process');
+    const path = require('path');
+    try {
+      const scriptPath = path.join(__dirname, 'scripts', 'upx-compress.ps1');
+      execSync(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, { stdio: 'inherit' });
+    } catch (error) {
+      console.warn('UPX compression failed:', error.message);
+    }
+  },
   "generateUpdatesFilesForAllChannels": true
-}
+};

@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "artifacts": {
+    "win32-x64": {
+      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-x64.zip",
+      "sha256": null,
+      "size": null,
+      "archiveType": "zip",
+      "pythonExecutable": "python/Scripts/python.exe",
+      "scriptRoot": "python_src"
+    },
+    "win32-arm64": {
+      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-arm64.zip",
+      "sha256": null,
+      "size": null,
+      "archiveType": "zip",
+      "pythonExecutable": "python/Scripts/python.exe",
+      "scriptRoot": "python_src"
+    },
+    "linux-x64": {
+      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-linux-x64.tar.gz",
+      "sha256": null,
+      "size": null,
+      "archiveType": "tar.gz",
+      "pythonExecutable": "python/bin/python3",
+      "scriptRoot": "python_src"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-darwin-arm64.tar.gz",
+      "sha256": null,
+      "size": null,
+      "archiveType": "tar.gz",
+      "pythonExecutable": "python/bin/python3",
+      "scriptRoot": "python_src"
+    }
+  }
+}

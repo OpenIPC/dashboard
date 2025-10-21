@@ -20,6 +20,7 @@ const withErrorHandling = (handler, context) => async (event, ...args) => {
 };
 
 const sshConnections = {};
+const pendingSshCameras = {};
 const fileManagerConnections = {};
 
 // Получение превью архива (thumbnails)
@@ -155,7 +156,9 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
                       }
                       case 'ssh': {
                           const win = createSshTerminalWindow(camera, sshConnections);
-                          if (win) cameraAPI.setupSshConnection(win, camera, sshConnections);
+                          if (win) {
+                              pendingSshCameras[camera.id] = camera;
+                          }
                           break;
                       }
                   }
@@ -191,7 +194,18 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   });
 
   ipcMain.handle(CHANNELS.OPEN_FILE_MANAGER, (e, camera) => createFileManagerWindow(camera, fileManagerConnections));
-  ipcMain.handle(CHANNELS.OPEN_SSH_TERMINAL, (e, camera) => { try { const win = createSshTerminalWindow(camera, sshConnections); if(win) cameraAPI.setupSshConnection(win, camera, sshConnections); } catch(err) { require('../services').handleError(err, 'openSshTerminal'); } });
+  ipcMain.handle(CHANNELS.OPEN_SSH_TERMINAL, (e, camera) => {
+      try {
+          const win = createSshTerminalWindow(camera, sshConnections);
+          if (win) {
+              pendingSshCameras[camera.id] = camera;
+          }
+          return win;
+      } catch(err) {
+          require('../services').handleError(err, 'openSshTerminal');
+          return null;
+      }
+  });
   ipcMain.handle(CHANNELS.SCP_CONNECT, withErrorHandling((e, camera) => cameraAPI.scp.connect(camera, fileManagerConnections), 'scpConnect'));
   ipcMain.handle(CHANNELS.SCP_LIST, withErrorHandling((e, data) => cameraAPI.scp.list(data, fileManagerConnections), 'scpList'));
   ipcMain.handle(CHANNELS.SCP_DOWNLOAD, withErrorHandling((e, data) => cameraAPI.scp.download(e, data, fileManagerConnections), 'scpDownload'));
@@ -199,6 +213,38 @@ function registerCameraHandlers(moduleManager, APP_VERSION) {
   ipcMain.handle(CHANNELS.SCP_MKDIR, withErrorHandling((e, data) => cameraAPI.scp.mkdir(data, fileManagerConnections), 'scpMkdir'));
   ipcMain.handle(CHANNELS.SCP_DELETE_FILE, withErrorHandling((e, data) => cameraAPI.scp.deleteFile(data, fileManagerConnections), 'scpDeleteFile'));
   ipcMain.handle(CHANNELS.SCP_DELETE_DIR, withErrorHandling((e, data) => cameraAPI.scp.deleteDir(data, fileManagerConnections), 'scpDeleteDir'));
+
+  ipcMain.on('ssh-terminal-ready', async (event, cameraIdRaw) => {
+      try {
+          const cameraId = typeof cameraIdRaw === 'number' ? cameraIdRaw : parseInt(cameraIdRaw, 10);
+          if (!Number.isFinite(cameraId)) return;
+
+          const sshWindow = BrowserWindow.fromWebContents(event.sender);
+          if (!sshWindow) return;
+
+          if (sshConnections[cameraId]) {
+              try {
+                  sshConnections[cameraId].end();
+              } catch (e) { /* ignore */ }
+              delete sshConnections[cameraId];
+          }
+
+          let camera = pendingSshCameras[cameraId];
+          if (!camera) {
+              camera = await configManager.getCameraConfig(cameraId);
+          }
+
+          if (!camera) {
+              sshWindow.webContents.send('ssh-status', { connected: false, message: '\r\n*** CAMERA NOT FOUND ***\r\n' });
+              return;
+          }
+
+          delete pendingSshCameras[cameraId];
+          cameraAPI.setupSshConnection(sshWindow, camera, sshConnections);
+      } catch (err) {
+          require('../services').handleError(err, 'sshTerminalReady');
+      }
+  });
 
   // Simple RTSP URL probe: send OPTIONS or DESCRIBE request and read response status/raw
   const net = require('net');

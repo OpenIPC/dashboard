@@ -68,6 +68,7 @@ module.exports = {
   OPEN_RECORDINGS_FOLDER: 'open-recordings-folder',
   GET_RECORDINGS_FOR_DATE: 'get-recordings-for-date',
   EXPORT_ARCHIVE_CLIP: 'export-archive-clip',
+  EXPORT_ARCHIVE_CLIP_BATCH: 'export-archive-clip-batch',
   GET_EVENTS_FOR_DATE: 'get-events-for-date',
   GET_DATES_WITH_ACTIVITY: 'get-dates-with-activity',
   PREPARE_ARCHIVE_FOR_HLS: 'prepare-archive-for-hls',

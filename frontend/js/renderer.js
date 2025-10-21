@@ -2,6 +2,12 @@
     'use strict';
     
     let App;
+    const detectedPlatesState = {
+        items: [],
+        uniqueTexts: new Set(),
+        totalDetections: 0,
+        maxItems: 200
+    };
 
     function applyBranding(config) {
         if (!config) {
@@ -613,9 +619,8 @@
         
         setInterval(updateSystemStats, 3000);
         setInterval(() => App.cameraList.pollCameraStatuses(), 10000);
-        setInterval(updatePlatesDisplay, 5000); // Обновлять список номеров каждые 5 секунд
+        initializeDetectedPlatesPanel();
         updateSystemStats();
-        updatePlatesDisplay(); // Первоначальное обновление списка номеров
 
         console.log('[DEBUG] Renderer: Sending rendererReady signal...');
         // Only call Electron API if available
@@ -707,31 +712,330 @@
         }
     }
 
-    function updatePlatesDisplay() {
-        const platesContainer = document.getElementById('detected-plates-list');
-        if (!platesContainer) return;
+    function translateOrFallback(key, fallback) {
+        return App && typeof App.t === 'function' ? App.t(key) : fallback;
+    }
 
-        window.api.getDetectedPlates().then(plates => {
-            platesContainer.innerHTML = '';
-            
-            if (!plates || !plates.recentHistory || plates.recentHistory.length === 0) {
-                platesContainer.innerHTML = '<div class="no-plates">Нет обнаруженных номеров</div>';
-                return;
+    function initializeDetectedPlatesPanel() {
+        if (!window.api || typeof window.api.getDetectedPlates !== 'function') {
+            console.warn('[Renderer] API for detected plates is not available in this build.');
+            return;
+        }
+
+        renderDetectedPlatesPanel();
+        refreshDetectedPlatesFromBackend();
+        setInterval(() => refreshDetectedPlatesFromBackend(), 15000);
+
+        if (typeof window.api.on === 'function') {
+            window.api.on('module-license-plate-saved', handlePlateSavedEvent);
+            window.api.on('module-license-plate-cleanup', resetDetectedPlatesPanel);
+        }
+    }
+
+    function refreshDetectedPlatesFromBackend() {
+        if (!window.api || typeof window.api.getDetectedPlates !== 'function') {
+            return;
+        }
+
+        window.api.getDetectedPlates()
+            .then(snapshot => applyDetectedPlatesSnapshot(snapshot))
+            .catch(error => {
+                console.error('[Renderer] Failed to refresh detected plates:', error);
+                if (!detectedPlatesState.items.length) {
+                    renderDetectedPlatesPanel(translateOrFallback('plates_load_error', 'Ошибка загрузки номеров'));
+                }
+            });
+    }
+
+    function applyDetectedPlatesSnapshot(snapshot) {
+        if (!snapshot) {
+            resetDetectedPlatesPanel();
+            return;
+        }
+
+        detectedPlatesState.totalDetections = Number.isFinite(snapshot.totalDetections) ? snapshot.totalDetections : 0;
+        detectedPlatesState.uniqueTexts = new Set();
+        if (Array.isArray(snapshot.uniquePlates)) {
+            snapshot.uniquePlates.forEach(cameraEntry => {
+                if (!cameraEntry || !Array.isArray(cameraEntry.plates)) return;
+                cameraEntry.plates.forEach(text => {
+                    if (typeof text === 'string' && text.trim()) {
+                        detectedPlatesState.uniqueTexts.add(text.trim());
+                    }
+                });
+            });
+        }
+
+        const recent = Array.isArray(snapshot.recentHistory) ? snapshot.recentHistory : [];
+        const normalized = recent
+            .filter(item => item && item.text)
+            .map(normalizePlateEntry)
+            .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+            .slice(0, detectedPlatesState.maxItems);
+
+        normalized.forEach(entry => {
+            if (entry.text) {
+                detectedPlatesState.uniqueTexts.add(entry.text);
+            }
+        });
+
+        detectedPlatesState.items = normalized;
+        renderDetectedPlatesPanel();
+    }
+
+    function handlePlateSavedEvent(payload) {
+        if (!payload || !payload.text) {
+            return;
+        }
+
+        const entry = normalizePlateEntry(payload);
+        const newKey = buildPlateKey(entry);
+        const existingKeys = new Set();
+        const deduped = [entry];
+        existingKeys.add(newKey);
+
+        let alreadyExisted = false;
+
+        for (const item of detectedPlatesState.items) {
+            const key = buildPlateKey(item);
+            if (key === newKey) {
+                alreadyExisted = true;
+            }
+            if (!existingKeys.has(key)) {
+                deduped.push(item);
+                existingKeys.add(key);
+            }
+            if (deduped.length >= detectedPlatesState.maxItems) {
+                break;
+            }
+        }
+
+        detectedPlatesState.items = deduped;
+        detectedPlatesState.totalDetections = alreadyExisted
+            ? Math.max(detectedPlatesState.totalDetections, deduped.length)
+            : Math.max(detectedPlatesState.totalDetections + 1, deduped.length);
+
+        if (entry.text) {
+            detectedPlatesState.uniqueTexts.add(entry.text);
+        }
+
+        renderDetectedPlatesPanel();
+    }
+
+    function resetDetectedPlatesPanel() {
+        detectedPlatesState.items = [];
+        detectedPlatesState.uniqueTexts = new Set();
+        detectedPlatesState.totalDetections = 0;
+        renderDetectedPlatesPanel();
+    }
+
+    function renderDetectedPlatesPanel(message) {
+        const listEl = document.getElementById('detected-plates-list');
+        const totalEl = document.getElementById('detected-plates-total');
+        const uniqueEl = document.getElementById('detected-plates-unique');
+        if (!listEl) return;
+
+        ensureDetectedPlateActionListener();
+
+        if (totalEl) totalEl.textContent = detectedPlatesState.totalDetections.toString();
+        if (uniqueEl) uniqueEl.textContent = detectedPlatesState.uniqueTexts.size.toString();
+
+        listEl.innerHTML = '';
+
+        if (typeof message === 'string' && message.trim()) {
+            listEl.innerHTML = `<div class="no-plates">${escapeHtml(message)}</div>`;
+            return;
+        }
+
+        if (!detectedPlatesState.items.length) {
+            const emptyMessage = translateOrFallback('plates_none_message', 'Нет обнаруженных номеров');
+            listEl.innerHTML = `<div class="no-plates">${escapeHtml(emptyMessage)}</div>`;
+            return;
+        }
+
+        detectedPlatesState.items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'plate-card';
+            card.innerHTML = `
+                <div class="plate-card-header">
+                    <span class="plate-number">${escapeHtml(item.text)}</span>
+                    ${item.score !== null ? `<span class="plate-score">${escapeHtml(formatPlateScore(item.score))}</span>` : ''}
+                </div>
+                <div class="plate-meta">
+                    <span class="plate-camera">${escapeHtml(item.cameraName)}</span>
+                    <span class="plate-time">${escapeHtml(item.displayTime)}</span>
+                </div>
+            `;
+
+            if (item.path) {
+                const actions = document.createElement('div');
+                actions.className = 'plate-actions';
+
+                const openBtn = document.createElement('button');
+                openBtn.type = 'button';
+                openBtn.className = 'plate-action-btn';
+                openBtn.dataset.action = 'open';
+                openBtn.dataset.path = item.path;
+                openBtn.title = translateOrFallback('plate_action_open_image', 'Открыть изображение');
+                openBtn.innerHTML = '<span class="material-icons">open_in_new</span>';
+                actions.appendChild(openBtn);
+
+                const revealBtn = document.createElement('button');
+                revealBtn.type = 'button';
+                revealBtn.className = 'plate-action-btn';
+                revealBtn.dataset.action = 'reveal';
+                revealBtn.dataset.path = item.path;
+                revealBtn.title = translateOrFallback('plate_action_show_folder', 'Показать в папке');
+                revealBtn.innerHTML = '<span class="material-icons">folder_open</span>';
+                actions.appendChild(revealBtn);
+
+                card.appendChild(actions);
             }
 
-            plates.recentHistory.forEach(plate => {
-                const plateItem = document.createElement('div');
-                plateItem.className = 'plate-item';
-                plateItem.innerHTML = `
-                    <div class="plate-text">${plate.text}</div>
-                    <div class="plate-timestamp">${new Date(plate.timestamp).toLocaleString()}</div>
-                `;
-                platesContainer.appendChild(plateItem);
-            });
-        }).catch(error => {
-            console.error('Error updating plates display:', error);
-            platesContainer.innerHTML = '<div class="no-plates">Ошибка загрузки номеров</div>';
+            listEl.appendChild(card);
         });
+    }
+
+    function ensureDetectedPlateActionListener() {
+        const listEl = document.getElementById('detected-plates-list');
+        if (!listEl || listEl.dataset.actionsBound === '1') {
+            return;
+        }
+        listEl.addEventListener('click', handleDetectedPlateActionClick);
+        listEl.dataset.actionsBound = '1';
+    }
+
+    function handleDetectedPlateActionClick(event) {
+        const actionButton = event.target && typeof event.target.closest === 'function'
+            ? event.target.closest('.plate-action-btn')
+            : null;
+        if (!actionButton) {
+            return;
+        }
+        event.preventDefault();
+        const { action, path } = actionButton.dataset || {};
+        if (!path) {
+            showPlateActionFeedback(translateOrFallback('plate_action_missing', 'Файл недоступен'), true);
+            return;
+        }
+        performDetectedPlateAction(action || 'open', path);
+    }
+
+    async function performDetectedPlateAction(action, filePath) {
+        if (!window.api || typeof window.api.invoke !== 'function') {
+            showPlateActionFeedback(translateOrFallback('plate_action_failed', 'Не удалось открыть файл'), true);
+            return;
+        }
+        try {
+            const response = await window.api.invoke('module-license-plate-open-path', { action, path: filePath });
+            if (response && response.success === false) {
+                const messageKey = response.error === 'not-found' ? 'plate_action_missing' : 'plate_action_failed';
+                const base = translateOrFallback(
+                    messageKey,
+                    response.error === 'not-found' ? 'Файл недоступен' : 'Не удалось открыть файл'
+                );
+                const detail = response.error && response.error !== 'not-found' ? ` (${response.error})` : '';
+                showPlateActionFeedback(`${base}${detail}`, true);
+            }
+        } catch (error) {
+            console.error('[Renderer] Plate action invocation failed', error);
+            showPlateActionFeedback(translateOrFallback('plate_action_failed', 'Не удалось открыть файл'), true);
+        }
+    }
+
+    function showPlateActionFeedback(message, isError) {
+        if (App && App.modalHandler && typeof App.modalHandler.showToast === 'function') {
+            App.modalHandler.showToast(message, !!isError, 6000);
+        } else if (isError) {
+            console.error(message);
+        } else {
+            console.log(message);
+        }
+    }
+
+    function normalizePlateEntry(raw) {
+        const safe = raw || {};
+        const timestamp = normalizePlateTimestamp(safe.timestamp);
+        const cameraId = safe.cameraId !== undefined ? Number(safe.cameraId) : undefined;
+        return {
+            cameraId,
+            cameraName: getCameraNameForPlate(cameraId),
+            text: typeof safe.text === 'string' ? safe.text.trim() : String(safe.text || ''),
+            score: normalizePlateScore(safe.score),
+            path: safe.path ? String(safe.path) : null,
+            timestamp,
+            displayTime: formatPlateTimestamp(timestamp)
+        };
+    }
+
+    function normalizePlateTimestamp(value) {
+        if (!value) {
+            return new Date().toISOString();
+        }
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return new Date().toISOString();
+        }
+        return date.toISOString();
+    }
+
+    function buildPlateKey(entry) {
+        return `${entry.timestamp}|${entry.cameraId ?? 'na'}|${entry.text}`;
+    }
+
+    function normalizePlateScore(score) {
+        if (typeof score === 'number' && Number.isFinite(score)) {
+            return score;
+        }
+        const parsed = Number(score);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function formatPlateScore(score) {
+        if (typeof score !== 'number' || !Number.isFinite(score)) {
+            return '';
+        }
+        const percent = score > 1 ? score : score * 100;
+        return `~${Math.round(percent)}%`;
+    }
+
+    function formatPlateTimestamp(timestampIso) {
+        try {
+            const date = new Date(timestampIso);
+            if (Number.isNaN(date.getTime())) return '';
+            const locale = App && App.stateManager && App.stateManager.state && App.stateManager.state.appSettings && App.stateManager.state.appSettings.language;
+            return date.toLocaleString(locale || undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                day: '2-digit',
+                month: '2-digit'
+            });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function getCameraNameForPlate(cameraId) {
+        try {
+            if (!App || !App.stateManager) return `ID ${cameraId ?? '?'}`;
+            const cameras = App.stateManager.state.cameras || [];
+            const camera = cameras.find(c => Number(c.id) === Number(cameraId));
+            if (!camera) return `ID ${cameraId ?? '?'}`;
+            return camera.name || `ID ${cameraId}`;
+        } catch (e) {
+            return `ID ${cameraId ?? '?'}`;
+        }
+    }
+
+    function escapeHtml(value) {
+        if (value === undefined || value === null) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
     
     document.addEventListener('DOMContentLoaded', init);

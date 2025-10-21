@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>SSH Терминал</title>
-    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <link id="xterm-css" rel="stylesheet" href="" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         :root {
@@ -50,11 +50,31 @@
         </div>
     </div>
     
-    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
-    <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
-    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            const cssLink = document.getElementById('xterm-css');
+            const env = window.terminalEnv || {};
+            if (cssLink && env.xtermCssHref) {
+                cssLink.href = env.xtermCssHref;
+            }
+
+            const loadScript = (src) => new Promise((resolve, reject) => {
+                if (!src) {
+                    reject(new Error('Script source is not defined'));
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => resolve();
+                script.onerror = (err) => reject(err);
+                document.body.appendChild(script);
+            });
+
+            loadScript(env.xtermJsHref)
+                .then(() => loadScript(env.xtermAddonFitHref))
+                .then(() => window.dispatchEvent(new Event('xterm-ready')))
+                .catch((err) => console.error('Failed to load xterm scripts:', err));
+
             const camera = JSON.parse(new URLSearchParams(window.location.search).get('camera'));
             document.getElementById('window-title').textContent = `SSH: ${camera.name} (${camera.ip})`;
 

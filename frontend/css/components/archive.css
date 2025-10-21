@@ -61,6 +61,32 @@
     background-color: var(--bg-light);
 }
 
+#event-list li[data-no-recording="1"] {
+    border-left: 3px solid #f85149;
+    background-color: rgba(248, 81, 73, 0.12);
+    cursor: help;
+    position: relative;
+}
+
+#event-list li[data-no-recording="1"]::before {
+    content: 'NO VIDEO';
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    color: #f85149;
+    background-color: rgba(248, 81, 73, 0.15);
+    border: 1px solid rgba(248, 81, 73, 0.4);
+    border-radius: 2px;
+    padding: 1px 4px;
+}
+
+#event-list li[data-no-recording="1"] .event-objects {
+    color: #f85149;
+}
+
 .event-time {
     font-weight: bold;
     margin-right: 10px;
