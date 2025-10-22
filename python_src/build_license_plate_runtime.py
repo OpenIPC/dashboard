@@ -30,6 +30,7 @@ DEFAULT_ARCHIVE_ROOT = DEFAULT_OUTPUT_ROOT / "dist"
 
 REQUIREMENTS_DIR = PY_SRC_ROOT / "requirements"
 REQUIREMENTS_CPU = REQUIREMENTS_DIR / "requirements_cpu.txt"
+REQUIREMENTS_CPU_LINUX = REQUIREMENTS_DIR / "requirements_cpu_linux.txt"
 REQUIREMENTS_DML = REQUIREMENTS_DIR / "requirements_dml.txt"
 
 
@@ -192,9 +193,16 @@ def build_runtime(args: argparse.Namespace) -> None:
     create_venv(args.python, venv_path)
     venv_python = get_venv_python(venv_path)
 
-    requirements_file = Path(args.requirements) if args.requirements else (
-        REQUIREMENTS_DML if args.provider == "dml" else REQUIREMENTS_CPU
-    )
+    if args.requirements:
+        requirements_file = Path(args.requirements)
+    else:
+        if args.provider == "dml":
+            requirements_file = REQUIREMENTS_DML
+        else:
+            if platform_tag.startswith("linux") and REQUIREMENTS_CPU_LINUX.exists():
+                requirements_file = REQUIREMENTS_CPU_LINUX
+            else:
+                requirements_file = REQUIREMENTS_CPU
     pip_install(venv_python, requirements_file, upgrade_pip=not args.skip_pip_upgrade)
 
     strip_unneeded_files(venv_path)
