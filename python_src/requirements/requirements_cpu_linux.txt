@@ -1,6 +1,7 @@
 onnxruntime==1.17.1
 opencv-python-headless
 numpy<2.0
-easyocr
+paddlepaddle
+paddleocr
 pytesseract
 pillow

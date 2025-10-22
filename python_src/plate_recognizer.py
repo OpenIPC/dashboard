@@ -9,13 +9,25 @@ try:
 except Exception:
     LPD_YuNetORT = None
     ORT_AVAILABLE = False
-import easyocr
+try:
+    import easyocr
+    EASY_AVAILABLE = True
+except ImportError:
+    easyocr = None
+    EASY_AVAILABLE = False
 
 try:
     from paddleocr import PaddleOCR
     PADDLE_AVAILABLE = True
 except ImportError:
     PADDLE_AVAILABLE = False
+
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    pytesseract = None
+    TESSERACT_AVAILABLE = False
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'license_plate_detection.onnx')
 CONF_THRESHOLD = 0.3
@@ -52,15 +64,64 @@ def enhance_plate_image(plate_img, scale_factor=3.0):
     except Exception:
         return plate_img
 
+ALLOWED_CHARS = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+
+def normalize_text(text):
+    if not text:
+        return ""
+    cleaned = ''.join(c for c in text if c.isalnum() or c in ALLOWED_CHARS)
+    return cleaned.upper()
+
+
 def recognize_text_easyocr(img, reader):
+    if not EASY_AVAILABLE or reader is None:
+        return ""
     try:
-        allowlist = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        results = reader.readtext(img, detail=1, paragraph=False, allowlist=allowlist)
-        text = ' '.join([result[1] for result in results if result[2] > 0.2])
-        cleaned_text = ''.join(c for c in text if c.isalnum() or c in allowlist).upper()
-        return cleaned_text
+        results = reader.readtext(img, detail=1, paragraph=False, allowlist=ALLOWED_CHARS)
+        lines = [result[1] for result in results if len(result) > 2 and result[2] > 0.2]
+        return normalize_text(' '.join(lines))
     except Exception:
         return ""
+
+
+def recognize_text_paddle(img, reader):
+    if not PADDLE_AVAILABLE or reader is None:
+        return ""
+    try:
+        # PaddleOCR returns a list of detections per image
+        ocr_results = reader.ocr(img, cls=True)
+        texts = []
+        for result in ocr_results:
+            for entry in result:
+                if len(entry) >= 2:
+                    candidate = entry[1][0] if isinstance(entry[1], (list, tuple)) else entry[1]
+                    texts.append(candidate)
+        return normalize_text(' '.join(texts))
+    except Exception:
+        return ""
+
+
+def recognize_text_tesseract(img):
+    if not TESSERACT_AVAILABLE:
+        return ""
+    try:
+        config = '--oem 3 --psm 7'
+        text = pytesseract.image_to_string(img, config=config, lang='eng+rus')
+        return normalize_text(text)
+    except Exception:
+        return ""
+
+
+def recognize_text(img, easy_reader=None, paddle_reader=None):
+    # Prefer PaddleOCR on Linux because it does not require PyTorch-sized dependencies
+    text = recognize_text_paddle(img, paddle_reader)
+    if text:
+        return text
+    text = recognize_text_easyocr(img, easy_reader)
+    if text:
+        return text
+    return recognize_text_tesseract(img)
 
 def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2000, min_height=40, min_aspect=1.2, max_aspect=7.5, max_frames=10, use_ort=False):
     """
@@ -88,7 +149,7 @@ def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2
             backendId=cv.dnn.DNN_BACKEND_OPENCV,
             targetId=cv.dnn.DNN_TARGET_CPU
         )
-    reader = easyocr.Reader(['en', 'ru'])
+    easyocr_reader = easyocr.Reader(['en', 'ru']) if EASY_AVAILABLE else None
     paddle_reader = PaddleOCR(lang='en', use_angle_cls=True, show_log=False, use_gpu=False) if PADDLE_AVAILABLE else None
     cap = cv.VideoCapture(rtsp_url)
     frame_count = 0
@@ -130,7 +191,7 @@ def recognize_plate_from_rtsp(rtsp_url, frame_skip=2, min_score=0.65, min_area=2
                 continue
             plate_img = frame[y_min:y_max, x_min:x_max]
             plate_img = enhance_plate_image(plate_img)
-            text = recognize_text_easyocr(plate_img, reader)
+            text = recognize_text(plate_img, easyocr_reader, paddle_reader)
             results.append({
                 "score": float(score),
                 "text": text,
