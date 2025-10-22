@@ -22,6 +22,7 @@ import os
 import glob
 import argparse
 import json
+import re
 import signal
 import time
 # Ensure this script's directory is on sys.path so imports work when launched
@@ -31,6 +32,13 @@ if script_dir and script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 from lpd_yunet import LPD_YuNet
 import easyocr
+
+try:
+    from paddleocr import PaddleOCR
+    PADDLE_AVAILABLE = True
+except Exception:
+    PaddleOCR = None
+    PADDLE_AVAILABLE = False
 
 DEFAULT_CYRILLIC_PLATE_CHARS = 'АВЕКМНОРСТУХ'
 LATIN_TO_CYRILLIC = {
@@ -50,6 +58,19 @@ LATIN_TO_CYRILLIC = {
 CYRILLIC_TO_LATIN = {v: k for k, v in LATIN_TO_CYRILLIC.items()}
 PLATE_DIGITS = '0123456789'
 DEFAULT_ALLOWLIST = DEFAULT_CYRILLIC_PLATE_CHARS + ''.join(LATIN_TO_CYRILLIC.keys()) + PLATE_DIGITS
+PLATE_PATTERN = re.compile(r'^[%s]\d{3}[%s]{2}\d{2,3}$' % (DEFAULT_CYRILLIC_PLATE_CHARS, DEFAULT_CYRILLIC_PLATE_CHARS))
+
+RUNTIME_DATA_DIR = os.path.join(script_dir, 'runtime_data') if script_dir else None
+if RUNTIME_DATA_DIR:
+    try:
+        os.makedirs(RUNTIME_DATA_DIR, exist_ok=True)
+    except Exception:
+        pass
+    default_paddle_dir = os.path.join(RUNTIME_DATA_DIR, 'paddleocr')
+    if 'PPOCR_MODEL_DIR' not in os.environ and default_paddle_dir:
+        os.environ['PPOCR_MODEL_DIR'] = default_paddle_dir
+    if 'PADDLEOCR_HOME' not in os.environ and default_paddle_dir:
+        os.environ['PADDLEOCR_HOME'] = default_paddle_dir
 CANONICAL_CHAR_SET = set(DEFAULT_CYRILLIC_PLATE_CHARS + PLATE_DIGITS)
 TRANSLATION_TABLE = {
     **{ord(k): ord(v) for k, v in LATIN_TO_CYRILLIC.items()},
@@ -97,9 +118,46 @@ def normalize_plate_text(raw_text):
     normalized = ''.join(ch for ch in text if ch in CANONICAL_CHAR_SET)
     return normalized
 
+
+def allowed_fraction(text):
+    if not text:
+        return 0.0
+    if not ALLOWLIST_SET:
+        return 0.0
+    total = len(text)
+    allowed = sum(1 for ch in text if ch in ALLOWLIST_SET)
+    return allowed / max(1, total)
+
+
+def compute_plate_score(text):
+    if not text:
+        return 0.0
+    score = allowed_fraction(text)
+    if len(text) >= 6:
+        score += 0.1
+    if PLATE_PATTERN.match(text):
+        score += 0.3
+    return min(score, 1.4)
+
+
+def get_paddle_reader():
+    global PADDLE_READER, PADDLE_INIT_FAILED
+    if not PADDLE_AVAILABLE or PADDLE_INIT_FAILED:
+        return None
+    if PADDLE_READER is None:
+        try:
+            PADDLE_READER = PaddleOCR(use_angle_cls=True, lang='ru', show_log=False, use_gpu=False)
+        except Exception as exc:
+            PADDLE_INIT_FAILED = True
+            PADDLE_READER = None
+            print(f"[WARNING] PaddleOCR init failed: {exc}", file=sys.stderr)
+    return PADDLE_READER
+
 # Global placeholders for lazy initialization to avoid heavy startup memory use
 READER = None
-OCR_ENGINE = 'easyocr'  # Only EasyOCR with GPU
+PADDLE_READER = None
+PADDLE_INIT_FAILED = False
+OCR_ENGINE = 'easyocr'  # Only EasyOCR with GPU (with Paddle fallback)
 DEBUG_MODE = False
 
 def detect_gpu_availability():
@@ -123,6 +181,7 @@ def detect_gpu_availability():
 
 # Значение по умолчанию, может быть переопределено через аргумент
 ALLOWLIST = DEFAULT_ALLOWLIST
+ALLOWLIST_SET = set(DEFAULT_ALLOWLIST)
 # Patch model constants and OUT_DIR/IMG_DIR defaults (moved here so they are
 # available during initialization inside main()). This prevents NameError and
 # premature exit when model is created before these constants were defined.
@@ -171,8 +230,9 @@ def main():
     min_aspect = args.min_aspect
     max_aspect = args.max_aspect
     disable_position_filter = not args.enable_position_filter
-    global ALLOWLIST
+    global ALLOWLIST, ALLOWLIST_SET
     ALLOWLIST = sanitize_allowlist(args.allowlist)
+    ALLOWLIST_SET = set(ALLOWLIST)
     print(f'[runner] Filters: score>={min_score}, area>={min_area}, height>={min_height}, aspect in [{min_aspect}, {max_aspect}], allowlist={ALLOWLIST}, position_filter={not disable_position_filter}', file=sys.stderr)
     sys.stderr.flush()
     sys.stdout.flush()
@@ -613,12 +673,6 @@ def main():
                 # Heuristic: if OCR produced nothing or contains very few allowed characters,
                 # try horizontal flip (mirror) and re-run OCR — sometimes perspective warp or
                 # camera orientation produces mirrored crops.
-                def allowed_fraction(s):
-                    if not s:
-                        return 0.0
-                    cnt = sum(1 for ch in s if ch.upper() in ALLOWLIST)
-                    return cnt / max(1, len(s))
-
                 best_text = text or ""
                 best_score = allowed_fraction(best_text)
                 try:
@@ -775,13 +829,46 @@ def enhance_plate_image(plate_img, scale_factor=3.0):
         return plate_img
 
 def recognize_text(image_or_path):
-    """Lazy-initialized OCR pipeline using only EasyOCR with GPU.
+    """OCR pipeline with EasyOCR primary and PaddleOCR fallback.
 
-    Initializes EasyOCR on first call.
-    Returns the recognized text or empty string.
+    Returns normalized plate text (already filtered through normalize_plate_text).
     """
     global READER
-    results = []
+
+    def consider_candidate(raw_text, confidence=None, source='easyocr'):
+        if not raw_text:
+            return None
+        normalized = normalize_plate_text(raw_text)
+        if not normalized:
+            return None
+        score = compute_plate_score(normalized)
+        if confidence is not None:
+            try:
+                adj = max(0.0, min(0.2, (float(confidence) - 0.5) * 0.4))
+                score += adj
+            except Exception:
+                pass
+        candidates.append((normalized, score, source))
+        return normalized
+
+    # Prepare numpy image if possible for re-use between OCR engines
+    img_array = None
+    if hasattr(image_or_path, 'ndim'):
+        img_array = image_or_path
+    elif isinstance(image_or_path, (str, bytes)):
+        try:
+            img_array = cv.imread(image_or_path)
+        except Exception:
+            img_array = None
+    if img_array is not None and len(img_array.shape) == 2:
+        try:
+            img_for_ocr = cv.cvtColor(img_array, cv.COLOR_GRAY2BGR)
+        except Exception:
+            img_for_ocr = img_array
+    else:
+        img_for_ocr = img_array
+
+    candidates = []
 
     def init_easyocr():
         global READER
@@ -797,26 +884,54 @@ def recognize_text(image_or_path):
                 print(f"[WARNING] easyocr init failed: {e}", file=sys.stderr)
                 READER = None
 
-    # Only use EasyOCR
     init_easyocr()
-    if READER:
+    if READER is not None:
         try:
-            # Accept either numpy array (image) or filesystem path
-            is_array = hasattr(image_or_path, 'ndim')
-            if is_array:
-                easyocr_result = READER.readtext(image_or_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
-            else:
-                easyocr_result = READER.readtext(image_or_path, detail=1, paragraph=False, allowlist=ALLOWLIST)
-            if easyocr_result:
-                text1 = ' '.join([result[1] for result in easyocr_result if result[2] > 0.2])
-                if text1:
-                    results.append(text1)
+            easy_input = img_array if img_array is not None else image_or_path
+            easyocr_result = READER.readtext(easy_input, detail=1, paragraph=False, allowlist=ALLOWLIST)
+            for entry in easyocr_result or []:
+                try:
+                    _, text, conf = entry
+                except Exception:
+                    # Some EasyOCR versions return (bbox, text, confidence)
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                        text = entry[1]
+                        conf = entry[2] if len(entry) > 2 else None
+                    else:
+                        text, conf = entry, None
+                consider_candidate(text, conf, source='easyocr')
         except Exception as e:
             print(f"[WARNING] EasyOCR recognition failed: {e}", file=sys.stderr)
 
-    if not results:
+    paddle_reader = get_paddle_reader()
+    if paddle_reader is not None and img_for_ocr is not None:
+        try:
+            paddle_result = paddle_reader.ocr(img_for_ocr, cls=True)
+            # paddle_result can be nested; flatten expected structure
+            if paddle_result:
+                lines = paddle_result[0] if isinstance(paddle_result[0], (list, tuple)) else paddle_result
+                for line in lines:
+                    if not isinstance(line, (list, tuple)) or len(line) < 2:
+                        continue
+                    info = line[1]
+                    if isinstance(info, (list, tuple)):
+                        text = info[0]
+                        conf = info[1] if len(info) > 1 else None
+                    else:
+                        text = info
+                        conf = None
+                    consider_candidate(text, conf, source='paddleocr')
+        except Exception as e:
+            print(f"[WARNING] PaddleOCR recognition failed: {e}", file=sys.stderr)
+
+    if not candidates:
         return ""
-    return max(results, key=len)
+
+    best_candidate = max(candidates, key=lambda c: (c[1], len(c[0])))
+    if DEBUG_MODE:
+        best_text, best_score, best_source = best_candidate
+        print(f"[runner] OCR best candidate ({best_source})='{best_text}' score={best_score:.2f}", file=sys.stderr)
+    return best_candidate[0]
 
 
 if __name__ == '__main__':

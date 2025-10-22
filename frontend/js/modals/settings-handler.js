@@ -11,6 +11,258 @@
 
         let selectScreenshotsPathBtn;
 
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        let runtimeOverlay;
+        let runtimeOverlayText;
+        let runtimeOverlayDetail;
+        let runtimeOverlayBar;
+        let runtimeOverlayPercent;
+        let runtimeOverlayRestartNote;
+        let runtimeOverlayHandler;
+
+        function ensureRuntimeOverlay() {
+            if (runtimeOverlay) return;
+
+            runtimeOverlay = document.createElement('div');
+            runtimeOverlay.id = 'license-plate-runtime-overlay';
+            runtimeOverlay.style.position = 'fixed';
+            runtimeOverlay.style.inset = '0';
+            runtimeOverlay.style.background = 'rgba(12, 15, 32, 0.58)';
+            runtimeOverlay.style.display = 'none';
+            runtimeOverlay.style.alignItems = 'center';
+            runtimeOverlay.style.justifyContent = 'center';
+            runtimeOverlay.style.zIndex = '14000';
+            runtimeOverlay.style.padding = '32px';
+
+            const card = document.createElement('div');
+            card.style.background = '#fff';
+            card.style.borderRadius = '14px';
+            card.style.boxShadow = '0 24px 60px rgba(16, 21, 46, 0.25)';
+            card.style.padding = '26px 30px';
+            card.style.width = '420px';
+            card.style.maxWidth = '100%';
+            card.style.color = '#1e2438';
+            card.style.fontFamily = 'inherit';
+
+            const title = document.createElement('h3');
+            title.style.margin = '0 0 10px';
+            title.style.fontSize = '20px';
+            title.style.fontWeight = '600';
+            title.textContent = App.t('license_plate_runtime_preparing_title') || 'Enabling license plate module';
+            card.appendChild(title);
+
+            runtimeOverlayText = document.createElement('div');
+            runtimeOverlayText.style.fontSize = '14px';
+            runtimeOverlayText.style.lineHeight = '1.55';
+            runtimeOverlayText.style.marginBottom = '6px';
+            runtimeOverlayText.textContent = App.t('license_plate_runtime_preparing') || 'Preparing runtime files...';
+            card.appendChild(runtimeOverlayText);
+
+            runtimeOverlayDetail = document.createElement('div');
+            runtimeOverlayDetail.style.fontSize = '12px';
+            runtimeOverlayDetail.style.color = '#5a6277';
+            runtimeOverlayDetail.style.marginBottom = '14px';
+            runtimeOverlayDetail.textContent = '';
+            card.appendChild(runtimeOverlayDetail);
+
+            const progressTrack = document.createElement('div');
+            progressTrack.style.height = '8px';
+            progressTrack.style.borderRadius = '4px';
+            progressTrack.style.background = '#e4e7f2';
+            progressTrack.style.overflow = 'hidden';
+            const progressBar = document.createElement('div');
+            progressBar.style.height = '100%';
+            progressBar.style.width = '0%';
+            progressBar.style.background = '#3665ff';
+            progressBar.style.transition = 'width 0.25s ease';
+            progressTrack.appendChild(progressBar);
+            card.appendChild(progressTrack);
+            runtimeOverlayBar = progressBar;
+
+            runtimeOverlayPercent = document.createElement('div');
+            runtimeOverlayPercent.style.fontSize = '12px';
+            runtimeOverlayPercent.style.color = '#5a6277';
+            runtimeOverlayPercent.style.marginTop = '8px';
+            runtimeOverlayPercent.textContent = '';
+            card.appendChild(runtimeOverlayPercent);
+
+            runtimeOverlayRestartNote = document.createElement('div');
+            runtimeOverlayRestartNote.style.marginTop = '16px';
+            runtimeOverlayRestartNote.style.fontSize = '13px';
+            runtimeOverlayRestartNote.style.color = '#1d6f3d';
+            runtimeOverlayRestartNote.style.display = 'none';
+            runtimeOverlayRestartNote.textContent = App.t('license_plate_runtime_restart_prompt') || 'Restart the application to finish enabling the module.';
+            card.appendChild(runtimeOverlayRestartNote);
+
+            runtimeOverlay.appendChild(card);
+            document.body.appendChild(runtimeOverlay);
+        }
+
+        function formatRuntimeBytes(value) {
+            if (!Number.isFinite(value) || value <= 0) return '';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = value;
+            let unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex += 1;
+            }
+            const formatted = size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1);
+            return `${formatted} ${units[unitIndex]}`;
+        }
+
+        function setRuntimeOverlayVisibility(visible) {
+            ensureRuntimeOverlay();
+            runtimeOverlay.style.display = visible ? 'flex' : 'none';
+            if (!visible) {
+                runtimeOverlayDetail.textContent = '';
+                runtimeOverlayPercent.textContent = '';
+                runtimeOverlayRestartNote.style.display = 'none';
+                runtimeOverlayBar.style.width = '0%';
+                runtimeOverlayBar.style.background = '#3665ff';
+            }
+        }
+
+        function updateRuntimeOverlayState({ message, detail, progress, tone, showRestart }) {
+            if (!runtimeOverlay) return;
+            if (message) runtimeOverlayText.textContent = message;
+            if (detail !== undefined) runtimeOverlayDetail.textContent = detail;
+            if (typeof progress === 'number') {
+                const clamped = Math.max(0, Math.min(1, progress));
+                runtimeOverlayBar.style.opacity = '1';
+                runtimeOverlayBar.style.width = `${Math.round(clamped * 100)}%`;
+                runtimeOverlayPercent.textContent = `${Math.round(clamped * 100)}%`;
+            } else if (progress === null) {
+                runtimeOverlayBar.style.opacity = '0.3';
+                runtimeOverlayBar.style.width = '100%';
+                runtimeOverlayPercent.textContent = '';
+            }
+            if (tone === 'error') {
+                runtimeOverlayBar.style.background = '#d64545';
+                runtimeOverlayText.style.color = '#b33232';
+            } else {
+                runtimeOverlayBar.style.background = '#3665ff';
+                runtimeOverlayText.style.color = '#1e2438';
+            }
+            runtimeOverlayRestartNote.style.display = showRestart ? 'block' : 'none';
+        }
+
+        function handleRuntimeOverlayProgress(payload = {}) {
+            if (!payload.status) return;
+            switch (payload.status) {
+                case 'checking':
+                    updateRuntimeOverlayState({
+                        message: App.t('license_plate_runtime_preparing') || 'Preparing runtime files...',
+                        detail: '',
+                        progress: null,
+                        tone: 'info',
+                        showRestart: false
+                    });
+                    break;
+                case 'downloading': {
+                    const ratio = typeof payload.progress === 'number' ? Math.max(0, Math.min(1, payload.progress)) : null;
+                    const percentLabel = ratio !== null ? `${Math.round(ratio * 100)}%` : '';
+                    const bytesInfo = payload.total ? `${formatRuntimeBytes(payload.downloaded || 0)} / ${formatRuntimeBytes(payload.total)}` : '';
+                    updateRuntimeOverlayState({
+                        message: (App.t('license_plate_runtime_downloading') || 'Downloading runtime...').replace('{percent}', percentLabel),
+                        detail: bytesInfo,
+                        progress: ratio !== null ? ratio : null,
+                        tone: 'info',
+                        showRestart: false
+                    });
+                    break;
+                }
+                case 'verifying':
+                    updateRuntimeOverlayState({
+                        message: App.t('license_plate_runtime_verifying') || 'Verifying files...',
+                        detail: '',
+                        progress: null,
+                        tone: 'info',
+                        showRestart: false
+                    });
+                    break;
+                case 'extracting':
+                    updateRuntimeOverlayState({
+                        message: App.t('license_plate_runtime_extracting') || 'Extracting runtime...',
+                        detail: '',
+                        progress: payload.progress !== undefined ? payload.progress : null,
+                        tone: 'info',
+                        showRestart: false
+                    });
+                    break;
+                case 'ready':
+                    updateRuntimeOverlayState({
+                        message: App.t('license_plate_runtime_ready') || 'Runtime installed successfully.',
+                        detail: '',
+                        progress: 1,
+                        tone: 'success',
+                        showRestart: true
+                    });
+                    break;
+                case 'error':
+                    updateRuntimeOverlayState({
+                        message: (App.t('license_plate_runtime_failed') || 'Runtime installation failed: {message}').replace('{message}', payload.message || 'unknown error'),
+                        detail: '',
+                        progress: null,
+                        tone: 'error',
+                        showRestart: false
+                    });
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        async function prepareLicensePlateRuntimeWithUi() {
+            ensureRuntimeOverlay();
+            setRuntimeOverlayVisibility(true);
+            updateRuntimeOverlayState({
+                message: App.t('license_plate_runtime_preparing') || 'Preparing runtime files...',
+                detail: '',
+                progress: null,
+                tone: 'info',
+                showRestart: false
+            });
+
+            runtimeOverlayHandler = (payload) => handleRuntimeOverlayProgress(payload || {});
+            window.api.on('module-license-plate-runtime-progress', runtimeOverlayHandler);
+
+            try {
+                const response = await window.api.prepareLicensePlateRuntime();
+                if (!response || response.success === false) {
+                    const errorMsg = response && response.error ? response.error : 'unknown error';
+                    handleRuntimeOverlayProgress({ status: 'error', message: errorMsg });
+                    await delay(1600);
+                    throw new Error(errorMsg);
+                }
+
+                if (response.alreadyInstalled) {
+                    updateRuntimeOverlayState({
+                        message: App.t('license_plate_runtime_already_installed') || 'Runtime already installed.',
+                        detail: '',
+                        progress: 1,
+                        tone: 'success',
+                        showRestart: true
+                    });
+                }
+
+                await delay(900);
+                setRuntimeOverlayVisibility(false);
+                return response;
+            } catch (error) {
+                handleRuntimeOverlayProgress({ status: 'error', message: error && error.message ? error.message : String(error) });
+                await delay(1200);
+                setRuntimeOverlayVisibility(false);
+                throw error;
+            } finally {
+                if (runtimeOverlayHandler && window.api.off) {
+                    window.api.off('module-license-plate-runtime-progress', runtimeOverlayHandler);
+                }
+                runtimeOverlayHandler = null;
+            }
+        }
+
         let updateStatusText, updateInfoContainer, updateVersionTitle, 
             updateChangelog, downloadUpdateBtn, quitAndInstallBtn;
         
@@ -137,10 +389,32 @@
 
                 const enabledModuleIds = Array.from(document.querySelectorAll('.module-checkbox:checked')).map(cb => cb.dataset.id);
                 newSettings.enabledModules = enabledModuleIds;
-                
-                const modulesWereChanged = JSON.stringify(enabledModuleIds) !== JSON.stringify(stateManager.state.appSettings.enabledModules || []);
+
+                const previouslyEnabledModules = Array.isArray(stateManager.state.appSettings.enabledModules) ? stateManager.state.appSettings.enabledModules : [];
+                const modulesWereChanged = JSON.stringify(enabledModuleIds) !== JSON.stringify(previouslyEnabledModules);
+                const licensePlateWasEnabled = previouslyEnabledModules.includes('license-plate');
+                const licensePlateWillBeEnabled = enabledModuleIds.includes('license-plate');
+                const enablingLicensePlate = !licensePlateWasEnabled && licensePlateWillBeEnabled;
 
                 if (modulesWereChanged) {
+                    if (enablingLicensePlate) {
+                        if (saveSettingsBtn) saveSettingsBtn.disabled = true;
+                        try {
+                            const prepareResult = await prepareLicensePlateRuntimeWithUi();
+                            if (prepareResult && prepareResult.alreadyInstalled) {
+                                utils.showToast(App.t('license_plate_runtime_already_installed') || 'Runtime already installed.');
+                            } else {
+                                utils.showToast(App.t('license_plate_runtime_ready_toast') || 'Runtime downloaded successfully.');
+                            }
+                        } catch (prepError) {
+                            console.error('[Settings] Failed to prepare license plate runtime:', prepError);
+                            utils.showToast((App.t('license_plate_runtime_failed_toast') || 'Failed to prepare runtime') + `: ${prepError && prepError.message ? prepError.message : prepError}`, true);
+                            if (saveSettingsBtn) saveSettingsBtn.disabled = false;
+                            return;
+                        } finally {
+                            if (saveSettingsBtn) saveSettingsBtn.disabled = false;
+                        }
+                    }
                     await window.api.saveEnabledModules(enabledModuleIds);
                 }
             }

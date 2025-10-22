@@ -119,6 +119,7 @@ module.exports = {
   SAVE_ENABLED_MODULES: 'save-enabled-modules',
   GET_RENDERER_MODULES: 'get-renderer-modules',
   GET_DETECTED_PLATES: 'get-detected-plates',
+  PREPARE_LICENSE_PLATE_RUNTIME: 'prepare-license-plate-runtime',
 
   // SCP (File Manager)
   SCP_CONNECT: 'scp-connect',

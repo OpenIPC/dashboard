@@ -1,7 +1,13 @@
 {
   "version": "1.0.0",
+  "release": {
+    "repo": "dashboard",
+    "tag": "v1.0.0",
+    "baseUrl": "https://github.com/OpenIPC/dashboard/releases"
+  },
   "artifacts": {
     "win32-x64": {
+      "fileName": "license-plate-runtime-win32-x64.zip",
       "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-x64.zip",
       "sha256": null,
       "size": null,
@@ -10,6 +16,7 @@
       "scriptRoot": "python_src"
     },
     "win32-arm64": {
+      "fileName": "license-plate-runtime-win32-arm64.zip",
       "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-arm64.zip",
       "sha256": null,
       "size": null,
@@ -18,6 +25,7 @@
       "scriptRoot": "python_src"
     },
     "linux-x64": {
+      "fileName": "license-plate-runtime-linux-x64.tar.gz",
       "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-linux-x64.tar.gz",
       "sha256": null,
       "size": null,
@@ -26,6 +34,7 @@
       "scriptRoot": "python_src"
     },
     "darwin-arm64": {
+      "fileName": "license-plate-runtime-darwin-arm64.tar.gz",
       "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-darwin-arm64.tar.gz",
       "sha256": null,
       "size": null,

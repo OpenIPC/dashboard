@@ -11,6 +11,33 @@ const tar = require('tar');
 
 const manifest = require('./runtime-manifest.json');
 
+function resolveReleaseBaseUrl() {
+    const release = manifest.release || {};
+    if (release.baseUrl) {
+        return release.baseUrl.replace(/\/$/, '');
+    }
+    if (release.repo) {
+        return `https://github.com/${release.repo}/releases/download`;
+    }
+    return null;
+}
+
+function normalizeArtifact(artifact) {
+    if (!artifact) return null;
+    if (artifact.url) return artifact;
+
+    const fileName = artifact.fileName || artifact.name;
+    const release = manifest.release || {};
+    const tag = release.tag || manifest.version;
+    const baseUrl = resolveReleaseBaseUrl();
+
+    if (fileName && baseUrl && tag) {
+        return { ...artifact, url: `${baseUrl}/${tag}/${fileName}` };
+    }
+
+    return artifact;
+}
+
 const PROGRESS_CHANNEL = 'module-license-plate-runtime-progress';
 const VERSION_FILENAME = 'runtime-info.json';
 const RUNTIME_SUBDIR = path.join('runtime', 'license-plate');
@@ -67,11 +94,11 @@ function detectPlatformKey() {
 function getArtifactForPlatform() {
     const key = detectPlatformKey();
     if (manifest.artifacts && manifest.artifacts[key]) {
-        return manifest.artifacts[key];
+        return normalizeArtifact(manifest.artifacts[key]);
     }
     // Fallbacks: try without arch suffix, then exact platform
     if (manifest.artifacts && manifest.artifacts[process.platform]) {
-        return manifest.artifacts[process.platform];
+        return normalizeArtifact(manifest.artifacts[process.platform]);
     }
     return null;
 }
@@ -81,6 +108,9 @@ function computeVersionTag(artifact) {
     const base = manifest.version || '0.0.0';
     if (artifact.version) {
         return `${base}:${artifact.version}`;
+    }
+    if (artifact.fileName) {
+        return `${base}:${artifact.fileName}`;
     }
     return `${base}:${artifact.url || 'unknown'}`;
 }

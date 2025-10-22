@@ -148,6 +148,30 @@ def strip_unneeded_files(venv_path: Path) -> None:
                     print(f"[strip] Warning: failed to strip {so_path}")
 
 
+def prefetch_paddle_models(python_bin: Path, model_dir: Path) -> None:
+    """Download PaddleOCR models into the runtime ahead of packaging."""
+    env = os.environ.copy()
+    env["PPOCR_MODEL_DIR"] = str(model_dir)
+    env.setdefault("PADDLEOCR_HOME", str(model_dir))
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    warmup_code = r"""
+import os
+import numpy as np
+from paddleocr import PaddleOCR
+
+os.makedirs(os.environ.get('PPOCR_MODEL_DIR', ''), exist_ok=True)
+ocr = PaddleOCR(use_angle_cls=True, lang='ru', show_log=False, use_gpu=False)
+_ = ocr.ocr(np.zeros((32, 96, 3), dtype='uint8'), cls=False)
+print('PaddleOCR warmup complete')
+"""
+
+    try:
+        run([str(python_bin), "-c", warmup_code], env=env)
+    except subprocess.CalledProcessError as exc:
+        print(f"[build] Warning: PaddleOCR warmup failed ({exc}). Runtime will download models on first run.")
+
+
 def make_archive(staging_dir: Path, archive_dir: Path, archive_name: str, fmt: str) -> Path:
     archive_dir.mkdir(parents=True, exist_ok=True)
     if fmt == "zip":
@@ -211,6 +235,9 @@ def build_runtime(args: argparse.Namespace) -> None:
         shutil.rmtree(python_src_target)
     copy_python_sources(python_src_target)
 
+    paddle_model_dir = python_src_target / "runtime_data" / "paddleocr"
+    prefetch_paddle_models(venv_python, paddle_model_dir)
+
     clean_pycache(staging_dir)
 
     archive_dir = Path(args.archive_dir or DEFAULT_ARCHIVE_ROOT)
@@ -226,7 +253,7 @@ def build_runtime(args: argparse.Namespace) -> None:
     print(f"SHA256: {checksum}")
 
     manifest_entry = {
-        "url": f"<upload-url>/{archive_path.name}",
+        "fileName": archive_path.name,
         "sha256": checksum,
         "size": size_bytes,
         "archiveType": archive_ext,

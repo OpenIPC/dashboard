@@ -32,7 +32,8 @@ const invokeChannels = [
     CHANNELS.DISCOVER_DEVICES, CHANNELS.GET_SYSTEM_STATS, CHANNELS.KILL_ALL_FFMPEG,
     CHANNELS.CHECK_FOR_UPDATES, CHANNELS.DOWNLOAD_UPDATE, CHANNELS.SUBMIT_REPORT,
     CHANNELS.OPEN_IMAGE_FILES, CHANNELS.GET_AVAILABLE_MODULES, CHANNELS.SAVE_ENABLED_MODULES,
-    CHANNELS.GET_RENDERER_MODULES, CHANNELS.GET_DETECTED_PLATES, CHANNELS.TOGGLE_ANALYTICS, 'get-analytics-states', // 'get-analytics-states' не было в твоем CHANNELS, добавил напрямую
+    CHANNELS.GET_RENDERER_MODULES, CHANNELS.GET_DETECTED_PLATES, CHANNELS.PREPARE_LICENSE_PLATE_RUNTIME,
+    CHANNELS.TOGGLE_ANALYTICS, 'get-analytics-states', // 'get-analytics-states' не было в твоем CHANNELS, добавил напрямую
     CHANNELS.OPEN_IN_BROWSER, CHANNELS.OPEN_FILE_MANAGER, CHANNELS.OPEN_SSH_TERMINAL,
     CHANNELS.SAVE_SCREENSHOT,
     CHANNELS.TEST_RTSP_URL // <--- добавлено для теста RTSP
@@ -89,6 +90,7 @@ onChannels.forEach(channel => {
 // access to ipcRenderer from the renderer context.
 api.invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 api.on = (channel, callback) => ipcRenderer.on(channel, (event, ...args) => callback(...args));
+api.off = (channel, callback) => ipcRenderer.removeListener(channel, callback);
 
 // Пробрасываем созданный и наполненный объект 'api' в глобальный объект window
 contextBridge.exposeInMainWorld('api', api);

@@ -120,7 +120,8 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
   ipcMain.handle(CHANNELS.OPEN_IMAGE_FILES, withErrorHandling(async () => { const { canceled, filePaths } = await dialog.showOpenDialog({ title: 'Select Screenshots', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }] }); if (canceled || !filePaths) return []; return filePaths.map(filePath => { try { const buffer = fs.readFileSync(filePath); const base64 = buffer.toString('base64'); const extension = path.extname(filePath).substring(1); return `data:image/${extension};base64,${base64}`; } catch (e) { console.error(`Failed to read file ${filePath}:`, e); return null; } }).filter(Boolean); }, 'openImageFiles'));
   
   // Modules (Intellect only)
-  if (APP_VERSION === 'intellect') {
+    if (APP_VERSION === 'intellect') {
+        const runtimeManager = require(path.resolve(__dirname, '../../../modules/license-plate/runtime-manager'));
     ipcMain.handle(CHANNELS.GET_AVAILABLE_MODULES, withErrorHandling(() => moduleManager.availableModules.map(mod => ({ id: mod.id, name: mod.name, version: mod.version, description: mod.description, author: mod.author })), 'getAvailableModules'));
     ipcMain.handle(CHANNELS.SAVE_ENABLED_MODULES, withErrorHandling(async (event, enabledIds) => { 
         const settings = await configManager.getAppSettings(); 
@@ -129,6 +130,33 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
         await dialog.showMessageBox({ type: 'info', title: 'Требуется перезапуск', message: 'Настройки модулей сохранены.', detail: 'Для применения изменений приложение необходимо перезапустить.', buttons: ['Перезапустить сейчас', 'Позже'], defaultId: 0, cancelId: 1 }).then(result => { if (result.response === 0) { app.relaunch(); app.quit(); } }); 
         return { success: true }; 
     }, 'saveEnabledModules'));
+    ipcMain.handle(CHANNELS.PREPARE_LICENSE_PLATE_RUNTIME, withErrorHandling(async (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        const apiShim = {
+            sendToRenderer(channel, payload) {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send(channel, { ...payload, origin: 'settings-runtime-prepare' });
+                }
+            }
+        };
+
+        try {
+            const status = await runtimeManager.getRuntimeStatus();
+            if (status && (status.runtime || status.installed)) {
+                apiShim.sendToRenderer('module-license-plate-runtime-progress', {
+                    status: 'ready',
+                    mode: status.runtime ? status.runtime.mode : 'cached',
+                    version: status.runtime ? status.runtime.version : status.manifestVersion
+                });
+                return { success: true, alreadyInstalled: true, data: status };
+            }
+        } catch (err) {
+            log.warn('[IPC] Failed to read runtime status before prepare', err);
+        }
+
+        const info = await runtimeManager.ensureRuntimeReady(apiShim, { preferDownload: true });
+        return { success: true, data: info };
+    }, 'prepareLicensePlateRuntime'));
     ipcMain.handle(CHANNELS.GET_DETECTED_PLATES, withErrorHandling(async () => {
         const licensePlateModule = moduleManager.loadedModules.get('license-plate');
         if (licensePlateModule && licensePlateModule.code && typeof licensePlateModule.code.getDetectedPlates === 'function') {
