@@ -238,7 +238,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--provider", choices=["cpu", "dml"], default="cpu", help="Dependency profile to install")
     parser.add_argument("--requirements", help="Custom requirements file path")
     parser.add_argument("--python", default=sys.executable, help="Python interpreter used to create the virtual environment")
-    parser.add_argument("--archive", choices=["zip", "tar.gz", "tgz"], help="Archive format. Default derived from platform")
+    parser.add_argument("--archive", choices=["zip", "tar.gz", "tgz", "tar.xz", "txz"], help="Archive format. Default derived from platform")
     parser.add_argument("--output-dir", help="Staging directory for assembled runtime")
     parser.add_argument("--archive-dir", help="Directory where final archives are written")
     parser.add_argument("--runtime-version", default="1.0.0", help="Version label written into manifest snippet")
