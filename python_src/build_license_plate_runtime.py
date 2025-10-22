@@ -60,7 +60,9 @@ def detect_platform_tag() -> str:
 
 
 def get_default_archive_ext(platform_tag: str) -> str:
-    return "zip" if platform_tag.startswith("win32") else "tar.gz"
+    if platform_tag.startswith("win32"):
+        return "zip"
+    return "tar.xz"
 
 
 def run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
@@ -154,8 +156,14 @@ def make_archive(staging_dir: Path, archive_dir: Path, archive_name: str, fmt: s
 
     if fmt in {"tar.gz", "tgz"}:
         archive_path = archive_dir / f"{archive_name}.tar.gz"
-        with tarfile.open(archive_path, "w:gz") as tar:
-            tar.add(staging_dir, arcname=".")
+        with tarfile.open(archive_path, "w:gz") as tar_obj:
+            tar_obj.add(staging_dir, arcname=".")
+        return archive_path
+
+    if fmt in {"tar.xz", "txz"}:
+        archive_path = archive_dir / f"{archive_name}.tar.xz"
+        with tarfile.open(archive_path, "w:xz") as tar_obj:
+            tar_obj.add(staging_dir, arcname=".")
         return archive_path
 
     raise ValueError(f"Unsupported archive format: {fmt}")

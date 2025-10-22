@@ -160,7 +160,7 @@ async function extractArchive(archivePath, targetDir, type) {
         await extractZip(archivePath, { dir: targetDir });
         return;
     }
-    if (type === 'tar.gz' || type === 'tgz') {
+    if (type === 'tar.gz' || type === 'tgz' || type === 'tar.xz' || type === 'txz') {
         await tar.x({ file: archivePath, cwd: targetDir });
         return;
     }

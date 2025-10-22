@@ -23,7 +23,7 @@ jobs:
           - os: ubuntu-latest
             platform_tag: linux-x64
             provider: cpu
-            archive_ext: tar.gz
+            archive_ext: tar.xz
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
