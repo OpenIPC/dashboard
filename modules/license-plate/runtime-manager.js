@@ -46,6 +46,22 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 let activePromise = null;
 let cachedRuntimeInfo = null;
 
+function getResourceRoots() {
+    const roots = [];
+    if (process && typeof process.resourcesPath === 'string' && process.resourcesPath) {
+        roots.push(process.resourcesPath);
+    }
+    try {
+        const appPath = app.getAppPath();
+        if (appPath) {
+            roots.push(path.join(appPath, '..'));
+        }
+    } catch (e) {
+        // getAppPath may throw before app is ready; ignore
+    }
+    return roots;
+}
+
 // Resolve files inside extracted runtimes that may add a single wrapper directory
 function resolveWithinRuntime(runtimeRoot, relativePath) {
     const normalized = relativePath ? relativePath.replace(/^[/\\]+/, '') : '';
@@ -126,6 +142,9 @@ async function readRuntimeInfo(runtimeRoot) {
 
 function getDevPythonExecutable() {
     try {
+        if (app.isPackaged) {
+            return null;
+        }
         const scriptsDir = process.platform === 'win32' ? 'Scripts' : 'bin';
         const pythonBinary = process.platform === 'win32' ? 'python.exe' : 'python3';
 
@@ -146,13 +165,43 @@ function getDevelopmentRuntimeInfo() {
     if (!fs.existsSync(scriptEntry)) {
         return null;
     }
-    const pythonExecutable = getDevPythonExecutable() || 'python';
+    const pythonExecutable = getDevPythonExecutable();
+    if (!pythonExecutable) {
+        return null;
+    }
     return {
         mode: 'development',
         runtimeRoot: pythonSrc,
         scriptRoot: pythonSrc,
         pythonPath: pythonExecutable
     };
+}
+
+function getBundledRuntimeInfo() {
+    try {
+        const artifact = getArtifactForPlatform();
+        if (!artifact) return null;
+        const roots = getResourceRoots();
+        for (const root of roots) {
+            if (!root) continue;
+            const runtimeRoot = path.join(root, RUNTIME_SUBDIR);
+            if (!fs.existsSync(runtimeRoot)) continue;
+            const pythonPath = resolveWithinRuntime(runtimeRoot, artifact.pythonExecutable || 'python/python.exe');
+            const scriptRoot = resolveWithinRuntime(runtimeRoot, artifact.scriptRoot || '');
+            if (fs.existsSync(pythonPath) && fs.existsSync(scriptRoot)) {
+                return {
+                    mode: 'bundled',
+                    runtimeRoot,
+                    scriptRoot,
+                    pythonPath,
+                    version: computeVersionTag(artifact) || manifest.version || 'bundled'
+                };
+            }
+        }
+    } catch (e) {
+        console.warn('[LicensePlate Runtime] Failed to detect bundled runtime', e);
+    }
+    return null;
 }
 
 async function downloadFile(url, destination, onProgress) {
@@ -254,6 +303,20 @@ async function ensureRuntimeReady(api, options = {}) {
         return cachedRuntimeInfo;
     }
 
+    if (!forceDownload && !preferDownload) {
+        const bundledInfo = getBundledRuntimeInfo();
+        if (bundledInfo && bundledInfo.pythonPath && fs.existsSync(bundledInfo.pythonPath)) {
+            cachedRuntimeInfo = { ...bundledInfo };
+            emitProgress(api, {
+                status: 'ready',
+                mode: bundledInfo.mode || 'bundled',
+                pythonPath: bundledInfo.pythonPath,
+                version: bundledInfo.version || 'bundled'
+            });
+            return cachedRuntimeInfo;
+        }
+    }
+
     if (activePromise) {
         return activePromise;
     }
@@ -342,6 +405,7 @@ async function getRuntimeStatus() {
     const artifact = getArtifactForPlatform();
     const storedInfo = await readRuntimeInfo(runtimeRoot);
     const devInfo = getDevelopmentRuntimeInfo();
+    const bundledInfo = getBundledRuntimeInfo();
 
     let runtime = cachedRuntimeInfo ? { ...cachedRuntimeInfo } : null;
     if (!runtime && artifact && storedInfo) {
@@ -356,6 +420,10 @@ async function getRuntimeStatus() {
                 version: storedInfo.version
             };
         }
+    }
+
+    if (!runtime && bundledInfo) {
+        runtime = { ...bundledInfo };
     }
 
     if (!runtime && devInfo) {
@@ -378,7 +446,8 @@ async function getRuntimeStatus() {
         storedInfo,
         installed,
         pythonPath,
-        developmentAvailable: !!devInfo
+        developmentAvailable: !!devInfo,
+        bundledAvailable: !!bundledInfo
     };
 }
 
@@ -395,6 +464,7 @@ module.exports = {
     resolvePythonScript,
     getRuntimeRoot,
     getDevelopmentRuntimeInfo,
+    getBundledRuntimeInfo,
     reinstallRuntime,
     clearCachedRuntime,
     getRuntimeStatus

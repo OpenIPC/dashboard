@@ -1,44 +1,24 @@
 {
   "version": "1.0.0",
   "release": {
-    "repo": "dashboard",
-    "tag": "v1.0.0",
-    "baseUrl": "https://github.com/OpenIPC/dashboard/releases"
+    "repo": "OpenIPC/dashboard",
+    "tag": "v2.9.0",
+    "baseUrl": "https://github.com/OpenIPC/dashboard/releases/download"
   },
   "artifacts": {
     "win32-x64": {
       "fileName": "license-plate-runtime-win32-x64.zip",
-      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-x64.zip",
-      "sha256": null,
-      "size": null,
-      "archiveType": "zip",
-      "pythonExecutable": "python/Scripts/python.exe",
-      "scriptRoot": "python_src"
-    },
-    "win32-arm64": {
-      "fileName": "license-plate-runtime-win32-arm64.zip",
-      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-win32-arm64.zip",
-      "sha256": null,
-      "size": null,
+      "sha256": "c1476f8af95a8705682fcd654d3cdad3fe7fa5f77df2c743d09b21e7e70e02b7",
+      "size": 425178200,
       "archiveType": "zip",
       "pythonExecutable": "python/Scripts/python.exe",
       "scriptRoot": "python_src"
     },
     "linux-x64": {
-      "fileName": "license-plate-runtime-linux-x64.tar.gz",
-      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-linux-x64.tar.gz",
-      "sha256": null,
-      "size": null,
-      "archiveType": "tar.gz",
-      "pythonExecutable": "python/bin/python3",
-      "scriptRoot": "python_src"
-    },
-    "darwin-arm64": {
-      "fileName": "license-plate-runtime-darwin-arm64.tar.gz",
-      "url": "https://github.com/OpenIPC/dashboard-runtime/releases/download/v1.0.0/license-plate-runtime-darwin-arm64.tar.gz",
-      "sha256": null,
-      "size": null,
-      "archiveType": "tar.gz",
+      "fileName": "license-plate-runtime-linux-x64.tar.xz",
+      "sha256": "c5ce215c17cc4b5dd0fa63350fca8838625f8d6a4a7ed04ea4d6a7a5b77f5e43",
+      "size": 234537884,
+      "archiveType": "tar.xz",
       "pythonExecutable": "python/bin/python3",
       "scriptRoot": "python_src"
     }

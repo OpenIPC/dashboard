@@ -78,6 +78,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const { app, dialog } = require('electron');
 const yaml = require('js-yaml');
+const runtimeManager = require(path.join(__dirname, '..', '..', 'modules', 'license-plate', 'runtime-manager'));
 const axios = require('axios');
 const dgram = require('dgram');
 const net = require('net');
@@ -1143,24 +1144,73 @@ async function toggleAnalytics(cameraId, streamId, mainWindow, moduleManager) {
     }
     let analyticsProcess;
     if (usePlate) {
-        // Путь к python и скрипту
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-        // Абсолютный путь к скрипту test_plate_yunet.py
-        const scriptPath = path.join(app.getAppPath(), 'python_src', 'test_plate_yunet.py');
-        if (!fs.existsSync(scriptPath)) {
-            const errorMsg = `test_plate_yunet.py not found at path: ${scriptPath}`;
-            console.error(`[Analytics ERROR] ${errorMsg}`);
+        let runtimeInfo;
+        try {
+            const shim = {
+                sendToRenderer(channel, payload) {
+                    broadcastToRenderers(channel, payload);
+                }
+            };
+            runtimeInfo = await runtimeManager.ensureRuntimeReady(shim, { preferDownload: false });
+        } catch (err) {
+            const message = err && err.message ? err.message : String(err);
+            console.error('[Analytics ERROR] Failed to prepare license-plate runtime:', message);
+            dialog.showErrorBox('Ошибка запуска аналитики', `Не удалось подготовить среду для распознавания номеров: ${message}`);
+            return { success: false, error: message };
+        }
+
+        const pythonCmd = runtimeInfo.pythonPath;
+        const scriptPath = runtimeManager.resolvePythonScript('test_plate_yunet.py', runtimeInfo);
+        const pythonWorkDir = runtimeInfo.scriptRoot || path.dirname(scriptPath);
+
+        if (!pythonCmd || !fs.existsSync(pythonCmd)) {
+            const errorMsg = `Python runtime not found at ${pythonCmd}`;
+            console.error('[Analytics ERROR]', errorMsg);
             dialog.showErrorBox('Ошибка запуска аналитики', errorMsg);
             return { success: false, error: errorMsg };
         }
+        if (!fs.existsSync(scriptPath)) {
+            const errorMsg = `test_plate_yunet.py not found at path: ${scriptPath}`;
+            console.error('[Analytics ERROR]', errorMsg);
+            dialog.showErrorBox('Ошибка запуска аналитики', errorMsg);
+            return { success: false, error: errorMsg };
+        }
+
+        const spawnEnv = {
+            ...process.env,
+            PYTHONIOENCODING: 'utf-8',
+            PYTHONUTF8: '1'
+        };
+
+        const args = [
+            scriptPath,
+            '--video', rtspUrl,
+            '--frame-skip', String(configForScript.frame_skip || 5),
+            '--ocr-engine', 'auto'
+        ];
+
+        if (configForScript.resize_width && Number(configForScript.resize_width) > 0) {
+            args.push('--resize-width', String(configForScript.resize_width));
+        }
+
+        if (settings.plate_allowlist) {
+            args.push('--allowlist', settings.plate_allowlist);
+        }
+
         console.log('--- [Analytics DEBUG] ---');
         console.log(`[Analytics DEBUG] Starting license plate analytics (test_plate_yunet.py) for camera ID: ${cameraId}`);
+        console.log(`[Analytics DEBUG] Python runtime: ${pythonCmd}`);
         console.log(`[Analytics DEBUG] Script path: ${scriptPath}`);
-        console.log(`[Analytics DEBUG] Connecting to LOCAL MediaMTX stream URL: ${rtspUrl}`);
-        console.log(`[Analytics DEBUG] Config object being sent:`, configForScript);
-        console.log(`[Analytics DEBUG] Provider choice: ${providerChoice}`);
+        console.log(`[Analytics DEBUG] Working directory: ${pythonWorkDir}`);
+        console.log(`[Analytics DEBUG] Connecting to RTSP URL: ${rtspUrl}`);
+        console.log(`[Analytics DEBUG] Arguments: ${args.join(' ')}`);
         console.log('-------------------------');
-        analyticsProcess = spawn(pythonCmd, [scriptPath, '--video', rtspUrl, '--ocr-engine', 'auto'], { windowsHide: true });
+
+        analyticsProcess = spawn(pythonCmd, args, {
+            windowsHide: true,
+            cwd: pythonWorkDir,
+            env: spawnEnv
+        });
     } else {
         // --- СТАРЫЙ ВАРИАНТ: exe ---
         const analyticsBasePath = app.isPackaged

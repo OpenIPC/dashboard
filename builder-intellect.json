@@ -44,6 +44,10 @@
       "to": "mediamtx"
     },
     {
+      "from": "runtime/license-plate/",
+      "to": "runtime/license-plate"
+    },
+    {
       "from": "python_src/",
       "to": "python",
       "filter": [
