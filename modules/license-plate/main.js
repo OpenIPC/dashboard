@@ -635,6 +635,14 @@ async function spawnAnalyticsForCamera(api, camera) {
     PYTHONIOENCODING: 'utf-8',
     PYTHONUTF8: '1'
   };
+  // Remove host Python launch hints so bundled interpreter resolves correctly
+  delete spawnEnv.__PYVENV_LAUNCHER__;
+  delete spawnEnv.PYTHONHOME;
+  delete spawnEnv.PYTHONPATH;
+  delete spawnEnv.PYTHONEXECUTABLE;
+  delete spawnEnv.PYENV_ROOT;
+  delete spawnEnv.PYENV;
+  delete spawnEnv.VIRTUAL_ENV;
   const spawnOptions = { windowsHide: true, cwd: pythonSrcDir, env: spawnEnv };
   const sanitizedRtspUrl = maskRtspCredentials(rtspUrl);
   emitRunnerEvent(api, cameraId, {
