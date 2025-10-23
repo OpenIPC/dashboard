@@ -208,10 +208,21 @@ jobs:
           if (Test-Path dist) {
             Get-ChildItem -Path dist -Recurse -File -Include *.exe,*.msi | ForEach-Object {
               Write-Host "Compressing: $($_.FullName)"
-              try { & "$env:UPX_DIR\upx.exe" --best --lzma $_.FullName } catch { Write-Warning "UPX failed on $($_.FullName): $_" }
+              try {
+                & "$env:UPX_DIR\upx.exe" --best --lzma $_.FullName
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Warning "UPX exited with $LASTEXITCODE on $($_.FullName); skipping"
+                  $global:LASTEXITCODE = 0
+                }
+              } catch {
+                Write-Warning "UPX failed on $($_.FullName): $_"
+                $global:LASTEXITCODE = 0
+              }
             }
+            $global:LASTEXITCODE = 0
           } else {
             Write-Warning 'No dist folder found; skipping installer compression'
+            $global:LASTEXITCODE = 0
           }
 
       - name: Upload build artifact
