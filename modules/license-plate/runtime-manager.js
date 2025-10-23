@@ -11,6 +11,31 @@ const tar = require('tar');
 
 const manifest = require('./runtime-manifest.json');
 
+const MODULE_ROOT = path.resolve(__dirname);
+const MODULE_PARENT = path.dirname(MODULE_ROOT);
+const MODULE_GRANDPARENT = path.dirname(MODULE_PARENT);
+
+function pickExistingPath(...candidates) {
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+            if (fs.existsSync(candidate)) {
+                return candidate;
+            }
+        } catch (e) {
+            // ignore and continue
+        }
+    }
+    return null;
+}
+
+const DEV_PYTHON_SRC_ROOT = pickExistingPath(
+    process.env.DASHBOARD_LP_PYTHON_SRC && path.resolve(process.env.DASHBOARD_LP_PYTHON_SRC),
+    path.join(MODULE_ROOT, 'python_src'),
+    path.join(MODULE_PARENT, 'python_src'),
+    path.join(MODULE_GRANDPARENT, 'python_src')
+);
+
 function resolveReleaseBaseUrl() {
     const release = manifest.release || {};
     if (release.baseUrl) {
@@ -41,7 +66,6 @@ function normalizeArtifact(artifact) {
 const PROGRESS_CHANNEL = 'module-license-plate-runtime-progress';
 const VERSION_FILENAME = 'runtime-info.json';
 const RUNTIME_SUBDIR = path.join('runtime', 'license-plate');
-const REPO_ROOT = path.join(__dirname, '..', '..');
 
 let activePromise = null;
 let cachedRuntimeInfo = null;
@@ -145,22 +169,31 @@ function getDevPythonExecutable() {
         if (app.isPackaged) {
             return null;
         }
-        const scriptsDir = process.platform === 'win32' ? 'Scripts' : 'bin';
-        const pythonBinary = process.platform === 'win32' ? 'python.exe' : 'python3';
-
-        const projectVenv = path.join(REPO_ROOT, 'venv', scriptsDir, pythonBinary);
-        if (fs.existsSync(projectVenv)) return projectVenv;
-
-        const legacyVenv = path.join(REPO_ROOT, '.analytics_venvs', 'dml', scriptsDir, pythonBinary);
-        if (fs.existsSync(legacyVenv)) return legacyVenv;
     } catch (e) {
-        // ignore and fall through
+        // app may not be ready; fall through
     }
-    return null;
+
+    const envPython = process.env.DASHBOARD_LP_DEV_PYTHON;
+    if (envPython && fs.existsSync(envPython)) {
+        return path.resolve(envPython);
+    }
+
+    const scriptsDir = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const pythonBinary = process.platform === 'win32' ? 'python.exe' : 'python3';
+
+    return pickExistingPath(
+        path.join(MODULE_ROOT, 'venv', scriptsDir, pythonBinary),
+        path.join(MODULE_PARENT, 'venv', scriptsDir, pythonBinary),
+        path.join(MODULE_GRANDPARENT, 'venv', scriptsDir, pythonBinary),
+        path.join(MODULE_GRANDPARENT, '.analytics_venvs', 'dml', scriptsDir, pythonBinary)
+    );
 }
 
 function getDevelopmentRuntimeInfo() {
-    const pythonSrc = path.join(REPO_ROOT, 'python_src');
+    const pythonSrc = DEV_PYTHON_SRC_ROOT;
+    if (!pythonSrc) {
+        return null;
+    }
     const scriptEntry = path.join(pythonSrc, 'test_plate_yunet.py');
     if (!fs.existsSync(scriptEntry)) {
         return null;
@@ -453,10 +486,13 @@ async function getRuntimeStatus() {
 
 function resolvePythonScript(scriptName, runtimeInfo) {
     const info = runtimeInfo || cachedRuntimeInfo || getDevelopmentRuntimeInfo();
-    if (!info || !info.scriptRoot) {
-        return path.join(REPO_ROOT, 'python_src', scriptName);
+    if (info && info.scriptRoot) {
+        return path.join(info.scriptRoot, scriptName);
     }
-    return path.join(info.scriptRoot, scriptName);
+    if (DEV_PYTHON_SRC_ROOT) {
+        return path.join(DEV_PYTHON_SRC_ROOT, scriptName);
+    }
+    return path.join(MODULE_ROOT, 'python_src', scriptName);
 }
 
 module.exports = {

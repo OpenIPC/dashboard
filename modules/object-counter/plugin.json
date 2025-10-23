@@ -1,6 +1,6 @@
 {
   "name": "Object Counter",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Displays a counter of detected objects in the cell.",
   "author": "Rinibr",
   "entryPoints": {

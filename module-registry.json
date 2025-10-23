@@ -1,0 +1,44 @@
+{
+  "registryVersion": 1,
+  "modules": [
+    {
+      "id": "face-detector",
+      "name": "Face Detector",
+      "version": "0.1.0",
+      "summary": "Detects persons in analytics stream and saves cropped snapshots.",
+      "platforms": {
+        "default": {
+          "url": "https://github.com/Rinibr25/Face-Detector-Module-for-Dashboard-/releases/download/v0.1.0/face-detector.zip",
+          "archiveType": "zip",
+          "sha256": "7B43FA020FE454CF642447A60813493902679186172F52AFE06EA50C6E212B61"
+        }
+      }
+    },
+    {
+      "id": "object-counter",
+      "name": "Object Counter",
+      "version": "0.1.0",
+      "summary": "Displays live counts of detected objects per camera cell.",
+      "platforms": {
+        "default": {
+          "url": "https://github.com/Rinibr25/Object-Counter-for-Dashboard/releases/download/v0.1.0/object-counter.zip",
+          "archiveType": "zip",
+          "sha256": "3B04DB76EDDE8F8313D85069D1666C50E59915DAA33AF76DF0BF3280724B08C8"
+        }
+      }
+    },
+    {
+      "id": "license-plate",
+      "name": "License Plate Detector",
+      "version": "0.1.0",
+      "summary": "Runs the license plate recognition pipeline using the external runtime package.",
+      "platforms": {
+        "default": {
+          "url": "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard/releases/download/v0.1.0/license-plate.zip",
+          "archiveType": "zip",
+          "sha256": "51CB9C9DACA12A92A3C6FC081C558CA40EB8B04519463B236540DB0D2A5676DC"
+        }
+      }
+    }
+  ]
+}

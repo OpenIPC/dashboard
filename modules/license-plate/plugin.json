@@ -1,6 +1,6 @@
 {
   "name": "License Plate Detector",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Saves cropped images of detected license plates and notifies the UI.",
   "author": "OpenIPC",
   "entryPoints": {

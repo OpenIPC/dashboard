@@ -273,9 +273,10 @@ app.whenReady().then(async () => {
 
     console.log('[Main] Инициализация модульной системы...');
     if (APP_VERSION === 'intellect') {
-        moduleManager.discoverModules();
+        await moduleManager.initialize();
+        await moduleManager.discoverModules();
         const currentSettings = await configManager.getAppSettings();
-        moduleManager.loadEnabledModules(currentSettings);
+        await moduleManager.loadEnabledModules(currentSettings);
         console.log('[Main] Module system initialized for Intellect version.');
     } else {
         console.log('[Main] Lite version, skipping module system initialization.');

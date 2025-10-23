@@ -11,10 +11,6 @@ try {
 const { spawn } = require('child_process');
 const runtimeManager = require('./runtime-manager');
 // Use central auth-manager for reliable password lookup
-const authManagerMain = require(path.join(__dirname, '..', '..', 'src', 'main', 'auth-manager'));
-
-const REPO_ROOT = path.join(__dirname, '..', '..');
-
 // Map cameraId -> child process
 const analyticsProcesses = new Map();
 const currentStreamIds = new Map();

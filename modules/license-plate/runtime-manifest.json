@@ -1,9 +1,9 @@
 {
-  "version": "1.0.0",
+  "version": "0.1.0",
   "release": {
-    "repo": "OpenIPC/dashboard",
-    "tag": "v2.9.0",
-    "baseUrl": "https://github.com/OpenIPC/dashboard/releases/download"
+    "repo": "Rinibr25/License-Plate-Detector-for-Dashboard",
+    "tag": "v0.1.0",
+    "baseUrl": "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard/releases/download"
   },
   "artifacts": {
     "win32-x64": {
