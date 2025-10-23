@@ -32,6 +32,55 @@ let maxSavedCropsPerPlate = DEFAULT_MAX_SAVED_CROPS_PER_PLATE;
 const PLATE_SAVE_RESET_MS = 30 * 60 * 1000;
 const PLATE_SKIP_LOG_THROTTLE_MS = 60 * 1000;
 const DEFAULT_ALLOWLIST = 'АВЕКМНОРСТУХABEKMHOPCTYX0123456789';
+const RUNNER_EVENT_CHANNEL = 'module-license-plate-runner-event';
+const MAX_RUNNER_MESSAGE_LENGTH = 800;
+let moduleApiRef = null;
+
+function formatPathTailForLog(input) {
+  if (!input || typeof input !== 'string') return '';
+  const normalized = input.replace(/\\+/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length <= 3) return normalized;
+  return `.../${parts.slice(-3).join('/')}`;
+}
+
+function maskRtspCredentials(url) {
+  if (!url || typeof url !== 'string') return url;
+  try {
+    const schemeIdx = url.indexOf('://');
+    if (schemeIdx === -1) return url;
+    const authStart = schemeIdx + 3;
+    const atIdx = url.indexOf('@', authStart);
+    if (atIdx === -1) return url;
+    const colonIdx = url.indexOf(':', authStart);
+    if (colonIdx === -1 || colonIdx > atIdx) return url;
+    return `${url.slice(0, colonIdx + 1)}****${url.slice(atIdx)}`;
+  } catch (e) {
+    return url;
+  }
+}
+
+function emitRunnerEvent(api, cameraId, payload = {}) {
+  if (!api || typeof api.sendToRenderer !== 'function') {
+    return;
+  }
+  const event = {
+    cameraId,
+    timestamp: new Date().toISOString(),
+    ...payload
+  };
+  if (typeof event.message === 'string') {
+    event.message = event.message.trim();
+    if (event.message.length > MAX_RUNNER_MESSAGE_LENGTH) {
+      event.message = `${event.message.slice(0, MAX_RUNNER_MESSAGE_LENGTH)}…`;
+    }
+  }
+  try {
+    api.sendToRenderer(RUNNER_EVENT_CHANNEL, event);
+  } catch (err) {
+    console.warn('[Module: LicensePlate] Failed to emit runner event', err);
+  }
+}
 
 function clearPlateStatsForCamera(cameraId) {
   const prefix = `${cameraId}|`;
@@ -209,9 +258,16 @@ function buildRtspForCamera(camera, streamId) {
   return `rtsp://127.0.0.1:8554/cam${camera.id}_${streamId}`;
 }
 
-async function handleAnalyticsLine(api, cameraId, line) {
+async function handleAnalyticsLine(api, cameraId, line, contextTag = 'primary') {
+  const trimmedLine = typeof line === 'string' ? line.trim() : '';
+  if (!trimmedLine) return;
   let result;
-  try { result = JSON.parse(line); } catch (e) { return; }
+  try {
+    result = JSON.parse(trimmedLine);
+  } catch (e) {
+    emitRunnerEvent(api, cameraId, { type: 'stdout', message: trimmedLine, context: contextTag });
+    return;
+  }
   console.log('[Module: LicensePlate] Incoming analytics line:', line);
   // If runner provided recognized plates (runner saved crops and returned paths), forward them
   if (result.recognized && Array.isArray(result.recognized) && result.recognized.length > 0) {
@@ -262,6 +318,20 @@ async function handleAnalyticsLine(api, cameraId, line) {
       } catch (e) {
         console.error('[Module: LicensePlate] Failed to handle recognized plate result', e);
       }
+    }
+    try {
+      const summaryTexts = result.recognized
+        .map(rec => (rec && rec.text ? String(rec.text).trim() : ''))
+        .filter(Boolean);
+      emitRunnerEvent(api, cameraId, {
+        type: 'recognized',
+        message: summaryTexts.length
+          ? `Recognized ${summaryTexts.length} plate(s): ${summaryTexts.join(', ')}`
+          : `Recognized ${result.recognized.length} plate(s)`,
+        context: contextTag
+      });
+    } catch (emitErr) {
+      console.warn('[Module: LicensePlate] Failed to emit recognized summary event', emitErr);
     }
     if (savedAnyThisBatch) {
       lastSaveTimestamps[cameraId] = now;
@@ -387,15 +457,34 @@ async function spawnAnalyticsForCamera(api, camera) {
     runtimeInfo = await runtimeManager.ensureRuntimeReady(api);
   } catch (err) {
     console.error('[LicensePlate-Analytics] Failed to prepare runtime for camera', cameraId, err);
+    emitRunnerEvent(api, cameraId, {
+      type: 'runtime-error',
+      message: err && err.message ? err.message : String(err),
+      context: 'primary'
+    });
     api.sendToRenderer('module-license-plate-runtime-error', { cameraId, message: err.message || String(err) });
     return;
   }
+  emitRunnerEvent(api, cameraId, {
+    type: 'runtime-ready',
+    message: `Runtime ready (${runtimeInfo.mode || 'unknown'})`,
+    mode: runtimeInfo.mode,
+    pythonPath: runtimeInfo.pythonPath,
+    version: runtimeInfo.version,
+    context: 'primary'
+  });
   const python = runtimeInfo.pythonPath;
   const script = runtimeManager.resolvePythonScript('test_plate_yunet.py', runtimeInfo);
   const pythonSrcDir = runtimeInfo.scriptRoot || path.dirname(script);
   console.log('[Module: LicensePlate] Using runtime mode:', runtimeInfo.mode, 'python:', python);
   if (!fsSync.existsSync(python)) {
     console.error(`[LicensePlate-Analytics] Python executable not found: ${python}`);
+    emitRunnerEvent(api, cameraId, {
+      type: 'runtime-error',
+      message: 'Python executable not found',
+      pythonPath: python,
+      context: 'primary'
+    });
     api.sendToRenderer('module-license-plate-runtime-error', {
       cameraId,
       message: 'python-not-found',
@@ -405,6 +494,12 @@ async function spawnAnalyticsForCamera(api, camera) {
   }
   if (!fsSync.existsSync(script)) {
     console.error(`[LicensePlate-Analytics] Script not found: ${script}`);
+    emitRunnerEvent(api, cameraId, {
+      type: 'runtime-error',
+      message: 'Runner script not found',
+      scriptPath: script,
+      context: 'primary'
+    });
     api.sendToRenderer('module-license-plate-runtime-error', {
       cameraId,
       message: 'script-not-found',
@@ -414,6 +509,12 @@ async function spawnAnalyticsForCamera(api, camera) {
   }
   if (!fsSync.existsSync(pythonSrcDir)) {
     console.error(`[LicensePlate-Analytics] Script root not found: ${pythonSrcDir}`);
+    emitRunnerEvent(api, cameraId, {
+      type: 'runtime-error',
+      message: 'Script root not found',
+      scriptRoot: pythonSrcDir,
+      context: 'primary'
+    });
     api.sendToRenderer('module-license-plate-runtime-error', {
       cameraId,
       message: 'script-root-not-found',
@@ -429,13 +530,36 @@ async function spawnAnalyticsForCamera(api, camera) {
   const configuredSave = settings[savePathKey] || path.join(api.configManager.getDataPath(), 'plates');
   await ensureDir(configuredSave);
 
-  const registerLifecycleHandlers = (childProc) => {
+  const registerLifecycleHandlers = (childProc, { tag = 'primary' } = {}) => {
+    childProc.once('spawn', () => {
+      emitRunnerEvent(api, cameraId, {
+        type: 'spawned',
+        message: `Runner started (pid=${childProc.pid || 'unknown'}) [${tag}]`,
+        pid: childProc.pid,
+        context: tag
+      });
+    });
+
     childProc.on('exit', (code, signal) => {
       console.log(`[LicensePlate-Analytics] Exit event for camera ${cameraId} (code=${code}, signal=${signal})`);
+      emitRunnerEvent(api, cameraId, {
+        type: 'exit',
+        message: `Runner exited (code=${code}, signal=${signal || 'none'}) [${tag}]`,
+        code,
+        signal,
+        context: tag
+      });
     });
 
     childProc.on('close', (code, signal) => {
       console.log(`[LicensePlate-Analytics] Process for camera ${cameraId} closed (code=${code}, signal=${signal})`);
+      emitRunnerEvent(api, cameraId, {
+        type: 'close',
+        message: `Runner closed (code=${code}, signal=${signal || 'none'}) [${tag}]`,
+        code,
+        signal,
+        context: tag
+      });
       analyticsProcesses.delete(cameraId);
       currentStreamIds.delete(cameraId);
       forcedHdLog.delete(cameraId);
@@ -504,6 +628,7 @@ async function spawnAnalyticsForCamera(api, camera) {
       console.log('[Module: LicensePlate] Passing --use-ort to runner');
     }
   } catch (e) { /* ignore */ }
+  const useOrtEnabled = args.includes('--use-ort');
   console.log('[LicensePlate-Analytics] Using cwd for runner:', pythonSrcDir);
   const spawnEnv = {
     ...process.env,
@@ -511,23 +636,49 @@ async function spawnAnalyticsForCamera(api, camera) {
     PYTHONUTF8: '1'
   };
   const spawnOptions = { windowsHide: true, cwd: pythonSrcDir, env: spawnEnv };
+  const sanitizedRtspUrl = maskRtspCredentials(rtspUrl);
+  emitRunnerEvent(api, cameraId, {
+    type: 'launch',
+    message: `Launching runner (stream ${streamId}) in ${runtimeInfo.mode || 'unknown'} mode`,
+    pythonPath: python,
+    scriptPath: script,
+    videoSource: sanitizedRtspUrl,
+    frameSkip,
+    resizeWidth,
+    useOrt: useOrtEnabled,
+    saveDir: configuredSave,
+    config: configForScript,
+    mode: runtimeInfo.mode,
+    context: 'primary'
+  });
   let proc;
   try {
     proc = spawn(python, args, spawnOptions);
   } catch (err) {
     console.error('[LicensePlate-Analytics] Synchronous spawn error for camera', cameraId, err);
+    emitRunnerEvent(api, cameraId, {
+      type: 'error',
+      message: `Failed to spawn runner: ${err && err.message ? err.message : err}`,
+      pythonPath: python,
+      scriptPath: script
+    });
     return;
   }
   proc.on('error', (err) => {
     console.error('[LicensePlate-Analytics] Failed to spawn process for camera', cameraId, err);
+    emitRunnerEvent(api, cameraId, {
+      type: 'error',
+      message: `Runner process error: ${err && err.message ? err.message : err}`,
+      context: 'primary'
+    });
   });
   analyticsProcesses.set(cameraId, proc);
-  registerLifecycleHandlers(proc);
+  registerLifecycleHandlers(proc, { tag: 'primary' });
 
   proc.stdout.on('data', async (data) => {
     const lines = data.toString().split('\n').filter(Boolean);
     for (const line of lines) {
-      try { await handleAnalyticsLine(api, cameraId, line); } catch (e) { console.error(e); }
+      try { await handleAnalyticsLine(api, cameraId, line, 'primary'); } catch (e) { console.error(e); }
     }
   });
 
@@ -535,8 +686,18 @@ async function spawnAnalyticsForCamera(api, camera) {
     const msg = data.toString().trim();
     if (msg.length > 0) {
       console.error('[LicensePlate-Analytics] stderr:', msg);
+      emitRunnerEvent(api, cameraId, {
+        type: 'stderr',
+        message: msg,
+        context: 'primary'
+      });
     } else {
       console.error('[LicensePlate-Analytics] stderr: <empty>');
+      emitRunnerEvent(api, cameraId, {
+        type: 'stderr',
+        message: '<empty>',
+        context: 'primary'
+      });
     }
   });
 
@@ -544,9 +705,15 @@ async function spawnAnalyticsForCamera(api, camera) {
   let sawUnauthorized = false;
   proc.stderr.on('data', (d) => {
     const s = d.toString();
+    if (sawUnauthorized) return;
     if (s.includes('401 Unauthorized') || s.toLowerCase().includes('method describe failed: 401')) {
       sawUnauthorized = true;
       console.warn('[LicensePlate-Analytics] Detected RTSP 401 Unauthorized for camera', cameraId, '- will restart using MediaMTX fallback');
+      emitRunnerEvent(api, cameraId, {
+        type: 'fallback',
+        message: 'RTSP 401 Unauthorized detected. Switching to MediaMTX.',
+        context: 'primary'
+      });
       try {
         console.warn('[LicensePlate-Analytics] About to kill process for camera', cameraId, 'due to RTSP 401; stack:\n', new Error().stack);
         proc.kill();
@@ -556,16 +723,51 @@ async function spawnAnalyticsForCamera(api, camera) {
       const mediaMtxUrl = buildMediaMtxUrl(cameraId, desiredStreamId);
       console.log('[Module: LicensePlate] Respawning runner for camera', cameraId, 'with MediaMTX URL:', mediaMtxUrl);
       const fallbackArgs = replaceVideoArg(args, mediaMtxUrl);
-  const newProc = spawn(python, fallbackArgs, spawnOptions);
+      emitRunnerEvent(api, cameraId, {
+        type: 'fallback',
+        message: 'Respawning runner with MediaMTX after 401 Unauthorized',
+        context: 'fallback-401',
+        videoSource: maskRtspCredentials(mediaMtxUrl)
+      });
+      let newProc;
+      try {
+        newProc = spawn(python, fallbackArgs, spawnOptions);
+      } catch (spawnErr) {
+        console.error('[LicensePlate-Analytics] Failed to spawn fallback process after 401:', spawnErr);
+        emitRunnerEvent(api, cameraId, {
+          type: 'error',
+          message: `Failed to spawn fallback runner: ${spawnErr && spawnErr.message ? spawnErr.message : spawnErr}`,
+          context: 'fallback-401'
+        });
+        return;
+      }
       analyticsProcesses.set(cameraId, newProc);
       currentStreamIds.set(cameraId, desiredStreamId);
-      registerLifecycleHandlers(newProc);
+      registerLifecycleHandlers(newProc, { tag: 'fallback-401' });
+      newProc.on('error', (err) => {
+        console.error('[LicensePlate-Analytics] Fallback process error (401) for camera', cameraId, err);
+        emitRunnerEvent(api, cameraId, {
+          type: 'error',
+          message: `Fallback runner error (401): ${err && err.message ? err.message : err}`,
+          context: 'fallback-401'
+        });
+      });
       // wire up handlers for the new process (reuse existing handlers lightly)
       newProc.stdout.on('data', async (data2) => {
         const lines = data2.toString().split('\n').filter(Boolean);
-        for (const line of lines) { try { await handleAnalyticsLine(api, cameraId, line); } catch (e) { console.error(e); } }
+        for (const line of lines) { try { await handleAnalyticsLine(api, cameraId, line, 'fallback-401'); } catch (e) { console.error(e); } }
       });
-      newProc.stderr.on('data', (d2) => { const m = d2.toString().trim(); if (m) console.error('[LicensePlate-Analytics] stderr (fallback):', m); });
+      newProc.stderr.on('data', (d2) => {
+        const m = d2.toString().trim();
+        if (m) {
+          console.error('[LicensePlate-Analytics] stderr (fallback):', m);
+          emitRunnerEvent(api, cameraId, {
+            type: 'stderr',
+            message: m,
+            context: 'fallback-401'
+          });
+        }
+      });
     }
   });
 
@@ -579,21 +781,61 @@ async function spawnAnalyticsForCamera(api, camera) {
       proc.__attemptedMediaMtxFallback = true;
       try {
         console.warn('[LicensePlate-Analytics] Detected failure to open direct RTSP for camera', cameraId, '- will restart using MediaMTX fallback');
+        emitRunnerEvent(api, cameraId, {
+          type: 'fallback',
+          message: 'Direct RTSP failed to open. Switching to MediaMTX.',
+          context: 'primary'
+        });
         proc.kill();
       } catch (e) { console.error('[LicensePlate-Analytics] Failed to kill process before MediaMTX respawn:', e); }
       const desiredStreamId = currentStreamIds.get(cameraId) ?? streamId;
       const mediaMtxUrl = buildMediaMtxUrl(cameraId, desiredStreamId);
       console.log('[Module: LicensePlate] Respawning runner for camera', cameraId, 'with MediaMTX URL due to open failure:', mediaMtxUrl);
       const fallbackArgs = replaceVideoArg(args, mediaMtxUrl);
-  const newProc = spawn(python, fallbackArgs, spawnOptions);
+      emitRunnerEvent(api, cameraId, {
+        type: 'fallback',
+        message: 'Respawning runner with MediaMTX after open failure',
+        context: 'fallback-open',
+        videoSource: maskRtspCredentials(mediaMtxUrl)
+      });
+      let newProc;
+      try {
+        newProc = spawn(python, fallbackArgs, spawnOptions);
+      } catch (spawnErr) {
+        console.error('[LicensePlate-Analytics] Failed to spawn fallback process after open failure:', spawnErr);
+        emitRunnerEvent(api, cameraId, {
+          type: 'error',
+          message: `Failed to spawn fallback runner: ${spawnErr && spawnErr.message ? spawnErr.message : spawnErr}`,
+          context: 'fallback-open'
+        });
+        return;
+      }
       analyticsProcesses.set(cameraId, newProc);
       currentStreamIds.set(cameraId, desiredStreamId);
-      registerLifecycleHandlers(newProc);
+      registerLifecycleHandlers(newProc, { tag: 'fallback-open' });
+      newProc.on('error', (err) => {
+        console.error('[LicensePlate-Analytics] Fallback process error (open failure) for camera', cameraId, err);
+        emitRunnerEvent(api, cameraId, {
+          type: 'error',
+          message: `Fallback runner error (open failure): ${err && err.message ? err.message : err}`,
+          context: 'fallback-open'
+        });
+      });
       newProc.stdout.on('data', async (data2) => {
         const lines = data2.toString().split('\n').filter(Boolean);
-        for (const line of lines) { try { await handleAnalyticsLine(api, cameraId, line); } catch (e) { console.error(e); } }
+        for (const line of lines) { try { await handleAnalyticsLine(api, cameraId, line, 'fallback-open'); } catch (e) { console.error(e); } }
       });
-      newProc.stderr.on('data', (d2) => { const m = d2.toString().trim(); if (m) console.error('[LicensePlate-Analytics] stderr (fallback):', m); });
+      newProc.stderr.on('data', (d2) => {
+        const m = d2.toString().trim();
+        if (m) {
+          console.error('[LicensePlate-Analytics] stderr (fallback):', m);
+          emitRunnerEvent(api, cameraId, {
+            type: 'stderr',
+            message: m,
+            context: 'fallback-open'
+          });
+        }
+      });
     }
   });
 }
@@ -601,6 +843,13 @@ async function spawnAnalyticsForCamera(api, camera) {
 function stopAnalyticsForCamera(cameraId) {
   const proc = analyticsProcesses.get(cameraId);
   if (!proc) return;
+  if (moduleApiRef) {
+    emitRunnerEvent(moduleApiRef, cameraId, {
+      type: 'stop',
+      message: 'Stopping runner for camera',
+      context: 'primary'
+    });
+  }
   try {
     console.log('[LicensePlate-Analytics] stopAnalyticsForCamera: killing process for camera', cameraId, 'stack:\n', new Error().stack);
     proc.kill();
@@ -613,6 +862,12 @@ function stopAnalyticsForCamera(cameraId) {
 
 async function activate(api) {
   console.log('[Module: LicensePlate] Activated.');
+  moduleApiRef = api;
+  emitRunnerEvent(api, undefined, {
+    type: 'info',
+    message: 'License plate module activating',
+    context: 'module'
+  });
 
   try {
     const initialSettings = await api.configManager.getAppSettings();
@@ -623,6 +878,11 @@ async function activate(api) {
 
   runtimeManager.ensureRuntimeReady(api).catch((err) => {
     console.error('[Module: LicensePlate] Failed to prepare runtime during activation', err);
+    emitRunnerEvent(api, undefined, {
+      type: 'runtime-error',
+      message: err && err.message ? err.message : String(err),
+      context: 'activation'
+    });
     api.sendToRenderer('module-license-plate-runtime-error', {
       message: err && err.message ? err.message : String(err)
     });
@@ -782,6 +1042,13 @@ async function activate(api) {
 
 async function deactivate(api) {
   console.log('[Module: LicensePlate] Deactivated.');
+  moduleApiRef = api;
+
+  emitRunnerEvent(api, undefined, {
+    type: 'info',
+    message: 'License plate module deactivating',
+    context: 'module'
+  });
   
   // Save plates data before deactivation
   await savePlatesToFile(api);
@@ -790,6 +1057,7 @@ async function deactivate(api) {
   plateSaveStats.clear();
   forcedHdLog.clear();
   api.sendToRenderer('module-license-plate-cleanup');
+  moduleApiRef = null;
 }
 
 async function getDetectedPlates() {

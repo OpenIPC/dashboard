@@ -3,10 +3,6 @@
 // Renderer runs in browser context; use exposed `window.api` instead of require
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (document.getElementById('detected-plates-list')) {
-    console.info('[LP Renderer] Detected modern plates panel; legacy renderer is disabled.');
-    return;
-  }
   // Debug: report runtime API availability
   try {
     console.debug('[LP Renderer] window.api type:', typeof window.api);
@@ -42,6 +38,10 @@ window.addEventListener('DOMContentLoaded', () => {
         <h5>Recent Detections:</h5>
         <ul id="license-plate-list" style="max-height: 200px; overflow-y: auto;"></ul>
       </div>
+      <div id="runner-events" style="margin-top:15px;">
+        <h5>Runner Diagnostics:</h5>
+        <div id="runner-events-log" style="max-height:200px; overflow-y:auto; border:1px solid #ccc; padding:5px; font-size:12px; background:#fafafa;"></div>
+      </div>
     `;
   } else {
     // Fallback: create separate container if modules panel is not found
@@ -70,6 +70,10 @@ window.addEventListener('DOMContentLoaded', () => {
         <h5>Recent Detections:</h5>
         <ul id="license-plate-list" style="max-height: 200px; overflow-y: auto;"></ul>
       </div>
+      <div id="runner-events" style="margin-top:15px;">
+        <h5>Runner Diagnostics:</h5>
+        <div id="runner-events-log" style="max-height:200px; overflow-y:auto; border:1px solid #ccc; padding:5px; font-size:12px; background:#fafafa;"></div>
+      </div>
     `;
     document.body.appendChild(container);
   }
@@ -81,6 +85,12 @@ window.addEventListener('DOMContentLoaded', () => {
     progressBar: document.getElementById('runtime-progress-bar'),
     reinstallButton: document.getElementById('runtime-reinstall-btn')
   };
+
+  const runnerEventsUi = {
+    log: document.getElementById('runner-events-log')
+  };
+
+  const RUNNER_EVENT_LIMIT = 120;
 
   function setRuntimeStatus(message, options = {}) {
     const {
@@ -127,7 +137,82 @@ window.addEventListener('DOMContentLoaded', () => {
     const normalized = input.replace(/\\+/g, '/');
     const parts = normalized.split('/').filter(Boolean);
     if (parts.length <= 3) return normalized;
-  return `.../${parts.slice(-3).join('/')}`;
+    return `.../${parts.slice(-3).join('/')}`;
+  }
+
+  function truncateValue(value, maxLength = 160) {
+    if (!value || typeof value !== 'string') return value;
+    if (value.length <= maxLength) return value;
+    const slice = Math.floor(maxLength / 2) - 1;
+    return `${value.slice(0, slice)}…${value.slice(-slice)}`;
+  }
+
+  function appendRunnerEvent(payload = {}) {
+    if (!runnerEventsUi.log) return;
+    const entry = document.createElement('div');
+    entry.className = 'runner-event-entry';
+    entry.style.padding = '4px 0';
+    entry.style.borderBottom = '1px solid rgba(0,0,0,0.06)';
+    entry.style.fontSize = '12px';
+
+    const type = typeof payload.type === 'string' ? payload.type : 'info';
+    const typeLower = type.toLowerCase();
+    if (typeLower === 'stderr' || typeLower === 'error' || typeLower === 'runtime-error') entry.style.color = '#c0392b';
+    else if (typeLower === 'recognized') entry.style.color = '#1b5e20';
+    else entry.style.color = '#34495e';
+
+    const ts = payload.timestamp ? new Date(payload.timestamp) : new Date();
+    const tsText = Number.isNaN(ts.getTime()) ? new Date().toLocaleTimeString() : ts.toLocaleTimeString();
+
+    const metaParts = [];
+    if (payload.cameraId !== undefined && payload.cameraId !== null) metaParts.push(`Cam ${payload.cameraId}`);
+    if (payload.context) metaParts.push(String(payload.context));
+    metaParts.push(type);
+
+    const header = document.createElement('div');
+    header.style.fontWeight = '600';
+    header.textContent = `[${tsText}] ${metaParts.join(' · ')}`;
+    entry.appendChild(header);
+
+    if (payload.message) {
+      const message = document.createElement('div');
+      message.style.marginTop = '2px';
+      message.textContent = payload.message;
+      entry.appendChild(message);
+    }
+
+    const detailParts = [];
+    const pushDetail = (label, value, formatter) => {
+      if (value === undefined || value === null || value === '') return;
+      const formatted = formatter ? formatter(value) : value;
+      if (formatted === undefined || formatted === null || formatted === '') return;
+      detailParts.push(`${label}: ${formatted}`);
+    };
+
+    pushDetail('python', payload.pythonPath, formatPathTail);
+    pushDetail('script', payload.scriptPath, formatPathTail);
+    pushDetail('video', payload.videoSource, (v) => truncateValue(v, 140));
+    pushDetail('save', payload.saveDir, formatPathTail);
+    pushDetail('mode', payload.mode);
+    if (payload.pid !== undefined) pushDetail('pid', payload.pid);
+    if (payload.frameSkip !== undefined) pushDetail('frameSkip', payload.frameSkip);
+    if (payload.resizeWidth !== undefined) pushDetail('resizeWidth', payload.resizeWidth);
+    if (payload.useOrt !== undefined) pushDetail('ORT', payload.useOrt ? 'on' : 'off');
+
+    if (detailParts.length) {
+      const detail = document.createElement('div');
+      detail.style.marginTop = '2px';
+      detail.style.fontSize = '11px';
+      detail.style.opacity = '0.75';
+      detail.textContent = detailParts.join(' · ');
+      entry.appendChild(detail);
+    }
+
+    runnerEventsUi.log.appendChild(entry);
+    while (runnerEventsUi.log.children.length > RUNNER_EVENT_LIMIT) {
+      runnerEventsUi.log.removeChild(runnerEventsUi.log.firstChild);
+    }
+    runnerEventsUi.log.scrollTop = runnerEventsUi.log.scrollHeight;
   }
 
   function setReadyStatus(payload = {}) {
@@ -185,6 +270,12 @@ window.addEventListener('DOMContentLoaded', () => {
     const msg = payload && payload.message ? payload.message : 'unknown error';
     setRuntimeStatus(`Runtime error${cameraScope}: ${msg}`, { busy: false, showProgress: false, tone: 'error' });
     setTimeout(() => { refreshRuntimeStatus(); }, 500);
+    appendRunnerEvent({
+      type: 'runtime-error',
+      message: `Runtime error${cameraScope}: ${msg}`,
+      cameraId: payload && Number.isFinite(payload.cameraId) ? payload.cameraId : undefined,
+      context: payload && payload.context ? payload.context : 'primary'
+    });
   }
 
   function applyRuntimeStatus(status) {
@@ -193,8 +284,8 @@ window.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (status.runtime) {
-  const mode = status.runtime.mode || 'ready';
-  setReadyStatus({ mode, pythonPath: status.runtime.pythonPath, version: status.runtime.version });
+      const mode = status.runtime.mode || 'ready';
+      setReadyStatus({ mode, pythonPath: status.runtime.pythonPath, version: status.runtime.version });
       return;
     }
     if (status.installed) {
@@ -251,6 +342,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (window.api && typeof window.api.on === 'function') {
     window.api.on('module-license-plate-runtime-progress', handleRuntimeProgress);
     window.api.on('module-license-plate-runtime-error', handleRuntimeError);
+    window.api.on('module-license-plate-runner-event', (payload) => appendRunnerEvent(payload || {}));
   }
 
   if (window.api && typeof window.api.invoke === 'function') {
@@ -352,6 +444,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // Update display every 5 seconds
   setInterval(updatePlatesDisplay, 5000);
   updatePlatesDisplay(); // Initial update
+
+  if (runnerEventsUi.log) {
+    appendRunnerEvent({ type: 'info', message: 'Runner diagnostics initialized' });
+  }
 
   // Listen for saved plates via window.api.on
   window.api.on('module-license-plate-saved', (data) => {

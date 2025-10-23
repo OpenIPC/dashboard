@@ -262,6 +262,142 @@
     gap: 10px;
 }
 
+.runner-events {
+    margin-top: 18px;
+    background: #1a1a1a;
+    border: 1px solid #2f2f2f;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.runner-events-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid #2f2f2f;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.runner-events-header h4 {
+    margin: 0;
+    font-size: 0.95em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #c7c7c7;
+}
+
+.runner-events-clear {
+    background: transparent;
+    border: 1px solid #3b3b3b;
+    color: #bbbbbb;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.runner-events-clear:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.runner-events-log {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.runner-events-log::-webkit-scrollbar {
+    width: 6px;
+}
+
+.runner-events-log::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+.runner-event {
+    background: #202020;
+    border: 1px solid #303030;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    line-height: 1.4;
+}
+
+.runner-event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: 600;
+    color: #d0d0d0;
+}
+
+.runner-event-message {
+    color: #e0e0e0;
+}
+
+.runner-event-details {
+    font-size: 11px;
+    color: #9f9f9f;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.runner-event-details span::before {
+    content: "•";
+    margin-right: 4px;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.runner-events-empty {
+    font-size: 12px;
+    color: #7f7f7f;
+    font-style: italic;
+}
+
+.runner-event--success {
+    border-color: rgba(0, 255, 136, 0.25);
+}
+
+.runner-event--success .runner-event-header {
+    color: #4cff9c;
+}
+
+.runner-event--warning {
+    border-color: rgba(255, 193, 7, 0.3);
+}
+
+.runner-event--warning .runner-event-header {
+    color: #f5c468;
+}
+
+.runner-event--error {
+    border-color: rgba(255, 82, 82, 0.35);
+}
+
+.runner-event--error .runner-event-header {
+    color: #ff7070;
+}
+
+.runner-event--info .runner-event-header {
+    color: #64b5f6;
+}
+
+.runner-event--muted {
+    opacity: 0.85;
+}
+
 .modules-panel .plate-card {
     background: #222;
     border: 1px solid #333;

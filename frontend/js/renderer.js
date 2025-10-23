@@ -9,6 +9,27 @@
         maxItems: 200
     };
 
+    const runnerEventsState = {
+        items: [],
+        limit: 150
+    };
+
+    const RUNNER_EVENT_TYPE_META = {
+        'runtime-ready': { className: 'success', i18n: 'runner_event_type_runtime_ready', fallback: 'Runtime ready' },
+        'runtime-error': { className: 'error', i18n: 'runner_event_type_runtime_error', fallback: 'Runtime error' },
+        launch: { className: 'info', i18n: 'runner_event_type_launch', fallback: 'Launch' },
+        error: { className: 'error', i18n: 'runner_event_type_error', fallback: 'Error' },
+        stderr: { className: 'warning', i18n: 'runner_event_type_stderr', fallback: 'stderr' },
+        fallback: { className: 'warning', i18n: 'runner_event_type_fallback', fallback: 'Fallback' },
+        recognized: { className: 'success', i18n: 'runner_event_type_recognized', fallback: 'Recognized' },
+        spawned: { className: 'info', i18n: 'runner_event_type_spawned', fallback: 'Spawned' },
+        exit: { className: 'muted', i18n: 'runner_event_type_exit', fallback: 'Exit' },
+        close: { className: 'muted', i18n: 'runner_event_type_close', fallback: 'Closed' },
+        stop: { className: 'warning', i18n: 'runner_event_type_stop', fallback: 'Stopped' },
+        stdout: { className: 'muted', i18n: 'runner_event_type_stdout', fallback: 'stdout' },
+        info: { className: 'info', i18n: 'runner_event_type_info', fallback: 'Info' }
+    };
+
     function applyBranding(config) {
         if (!config) {
             console.warn('[Branding] Branding config is missing. Using defaults.');
@@ -717,18 +738,30 @@
     }
 
     function initializeDetectedPlatesPanel() {
+        renderDetectedPlatesPanel();
+        renderRunnerEventsPanel();
+
+        const clearBtn = document.getElementById('runner-events-clear');
+        if (clearBtn && clearBtn.dataset.bound !== '1') {
+            clearBtn.addEventListener('click', () => {
+                runnerEventsState.items = [];
+                renderRunnerEventsPanel();
+            });
+            clearBtn.dataset.bound = '1';
+        }
+
         if (!window.api || typeof window.api.getDetectedPlates !== 'function') {
             console.warn('[Renderer] API for detected plates is not available in this build.');
             return;
         }
 
-        renderDetectedPlatesPanel();
         refreshDetectedPlatesFromBackend();
         setInterval(() => refreshDetectedPlatesFromBackend(), 15000);
 
         if (typeof window.api.on === 'function') {
             window.api.on('module-license-plate-saved', handlePlateSavedEvent);
             window.api.on('module-license-plate-cleanup', resetDetectedPlatesPanel);
+            window.api.on('module-license-plate-runner-event', handleRunnerEvent);
         }
     }
 
@@ -894,6 +927,144 @@
 
             listEl.appendChild(card);
         });
+    }
+
+    function handleRunnerEvent(payload) {
+        const event = normalizeRunnerEvent(payload);
+        runnerEventsState.items.unshift(event);
+        if (runnerEventsState.items.length > runnerEventsState.limit) {
+            runnerEventsState.items.length = runnerEventsState.limit;
+        }
+        renderRunnerEventsPanel();
+    }
+
+    function renderRunnerEventsPanel() {
+        const logEl = document.getElementById('runner-events-log');
+        if (!logEl) return;
+
+        logEl.innerHTML = '';
+
+        if (!runnerEventsState.items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'runner-events-empty';
+            empty.textContent = translateOrFallback('runner_events_empty', 'Пока нет событий.');
+            logEl.appendChild(empty);
+            return;
+        }
+
+        runnerEventsState.items.forEach(event => {
+            const entry = document.createElement('div');
+            const classSuffix = event.className || 'info';
+            entry.className = `runner-event runner-event--${classSuffix}`;
+
+            const header = document.createElement('div');
+            header.className = 'runner-event-header';
+            header.textContent = `[${event.timeLabel}] ${event.header}`;
+            entry.appendChild(header);
+
+            const message = document.createElement('div');
+            message.className = 'runner-event-message';
+            message.textContent = event.message;
+            entry.appendChild(message);
+
+            if (event.details && event.details.length) {
+                const detailWrap = document.createElement('div');
+                detailWrap.className = 'runner-event-details';
+                event.details.forEach(detail => {
+                    const span = document.createElement('span');
+                    span.textContent = detail;
+                    detailWrap.appendChild(span);
+                });
+                entry.appendChild(detailWrap);
+            }
+
+            logEl.appendChild(entry);
+        });
+
+        logEl.scrollTop = 0;
+    }
+
+    function normalizeRunnerEvent(raw) {
+        const payload = raw && typeof raw === 'object' ? raw : {};
+        const typeKey = typeof payload.type === 'string' ? payload.type.toLowerCase() : 'info';
+        const meta = RUNNER_EVENT_TYPE_META[typeKey] || RUNNER_EVENT_TYPE_META.info;
+        let timestamp = payload.timestamp ? new Date(payload.timestamp) : new Date();
+        if (Number.isNaN(timestamp.getTime())) timestamp = new Date();
+        const cameraId = Number.isFinite(payload.cameraId) ? Number(payload.cameraId) : null;
+        const cameraName = cameraId !== null ? getCameraNameForPlate(cameraId) : null;
+        const message = typeof payload.message === 'string' && payload.message.trim()
+            ? payload.message.trim()
+            : translateOrFallback('runner_event_message_missing', 'Сообщение отсутствует');
+
+        const headerParts = [];
+        if (cameraName) headerParts.push(cameraName);
+        else if (cameraId !== null) headerParts.push(`${translateOrFallback('runner_event_camera_label', 'Камера')} ${cameraId}`);
+        if (payload.context) headerParts.push(String(payload.context));
+        headerParts.push(translateOrFallback(meta.i18n, meta.fallback));
+
+        return {
+            className: meta.className || 'info',
+            timeLabel: formatRunnerTime(timestamp),
+            header: headerParts.join(' · '),
+            message,
+            details: buildRunnerEventDetails(payload, { cameraName, cameraId })
+        };
+    }
+
+    function buildRunnerEventDetails(payload, { cameraName, cameraId }) {
+        const details = [];
+        if (cameraId !== null) {
+            const label = translateOrFallback('runner_event_camera_label', 'Камера');
+            details.push(`${label}: ${cameraName || cameraId}`);
+        }
+        if (payload.mode) details.push(`${translateOrFallback('runner_event_mode_label', 'Режим')}: ${payload.mode}`);
+        if (payload.version) details.push(`${translateOrFallback('runner_event_runtime_version_label', 'Версия')}: ${payload.version}`);
+        if (payload.context) details.push(`${translateOrFallback('runner_event_context_label', 'Контекст')}: ${payload.context}`);
+        if (payload.pythonPath) details.push(`${translateOrFallback('runner_event_python_label', 'Python')}: ${formatPathTail(payload.pythonPath)}`);
+        if (payload.scriptPath) details.push(`${translateOrFallback('runner_event_script_label', 'Скрипт')}: ${formatPathTail(payload.scriptPath)}`);
+        if (payload.videoSource) details.push(`${translateOrFallback('runner_event_video_label', 'Видео')}: ${truncateMiddle(String(payload.videoSource), 140)}`);
+        if (payload.saveDir) details.push(`${translateOrFallback('runner_event_save_label', 'Папка')}: ${formatPathTail(payload.saveDir)}`);
+        if (payload.pid !== undefined && payload.pid !== null) details.push(`${translateOrFallback('runner_event_pid_label', 'PID')}: ${payload.pid}`);
+        if (payload.code !== undefined && payload.code !== null) details.push(`${translateOrFallback('runner_event_exit_label', 'Код выхода')}: ${payload.code}`);
+        if (payload.signal) details.push(`${translateOrFallback('runner_event_signal_label', 'Сигнал')}: ${payload.signal}`);
+        if (payload.frameSkip !== undefined) details.push(`${translateOrFallback('runner_event_frameskip_label', 'Пропуск кадров')}: ${payload.frameSkip}`);
+        if (payload.resizeWidth !== undefined) details.push(`${translateOrFallback('runner_event_resize_label', 'Ширина ресайза')}: ${payload.resizeWidth}`);
+        if (payload.useOrt !== undefined) {
+            const ortValue = payload.useOrt
+                ? translateOrFallback('runner_event_ort_on', 'вкл')
+                : translateOrFallback('runner_event_ort_off', 'выкл');
+            details.push(`${translateOrFallback('runner_event_ort_label', 'ORT')}: ${ortValue}`);
+        }
+        return details;
+    }
+
+    function formatRunnerTime(date) {
+        try {
+            const locale = App && App.stateManager && App.stateManager.state && App.stateManager.state.appSettings && App.stateManager.state.appSettings.language;
+            return date.toLocaleTimeString(locale || undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        } catch (e) {
+            return new Date().toLocaleTimeString();
+        }
+    }
+
+    function formatPathTail(value) {
+        if (typeof value !== 'string' || !value.trim()) return value;
+        const normalized = value.replace(/\\+/g, '/');
+        const parts = normalized.split('/').filter(Boolean);
+        if (parts.length <= 3) return normalized;
+        return `.../${parts.slice(-3).join('/')}`;
+    }
+
+    function truncateMiddle(value, maxLength) {
+        if (typeof value !== 'string') return value;
+        const limit = Number.isFinite(maxLength) && maxLength > 8 ? Math.floor(maxLength) : 120;
+        if (value.length <= limit) return value;
+        const half = Math.floor((limit - 3) / 2);
+        return `${value.slice(0, half)}...${value.slice(-half)}`;
     }
 
     function ensureDetectedPlateActionListener() {
