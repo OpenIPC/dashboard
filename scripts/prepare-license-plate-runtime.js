@@ -5,6 +5,7 @@ const fsPromises = fs.promises;
 const os = require('os');
 const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
+const { spawn } = require('child_process');
 const axios = require('axios');
 const extractZip = require('extract-zip');
 const tar = require('tar');
@@ -108,10 +109,40 @@ async function extractArchive(archivePath, targetDir, type) {
     return;
   }
   if (type === 'tar.gz' || type === 'tgz' || type === 'tar.xz' || type === 'txz') {
-    await tar.x({ file: archivePath, cwd: targetDir });
+    try {
+      await tar.x({ file: archivePath, cwd: targetDir });
+    } catch (err) {
+      const message = err && err.message ? err.message : '';
+      const code = err && err.code ? err.code : '';
+      const needsFallback = /Unrecognized archive format/i.test(message) || code === 'TAR_BAD_ARCHIVE';
+      if (!needsFallback) {
+        throw err;
+      }
+      console.warn(`[runtime] Node tar extraction failed (${code || message.trim()}), trying system tar`);
+      await extractWithSystemTar(archivePath, targetDir);
+    }
     return;
   }
   throw new Error(`Unsupported archive type: ${type}`);
+}
+
+async function extractWithSystemTar(archivePath, targetDir) {
+  const tarCommand = process.platform === 'win32' ? 'tar.exe' : 'tar';
+  const args = ['-xf', archivePath, '-C', targetDir];
+  await fsPromises.mkdir(targetDir, { recursive: true });
+  await new Promise((resolve, reject) => {
+    const child = spawn(tarCommand, args, { stdio: 'inherit' });
+    child.on('error', (error) => {
+      reject(error);
+    });
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`System tar exited with code ${code}`));
+      }
+    });
+  });
 }
 
 async function findRuntimeRoot(stagingDir) {
