@@ -36,34 +36,13 @@
   },
   "extraResources": [
     {
-      "from": "extra/analytics/",
-      "to": "analytics"
-    },
-    {
       "from": "mediamtx/",
       "to": "mediamtx"
-    },
-    {
-      "from": "runtime/license-plate/",
-      "to": "runtime/license-plate"
-    },
-    {
-      "from": "python_src/",
-      "to": "python",
-      "filter": [
-        "license_plate_detection.onnx",
-        "test_plate_yunet.py",
-        "lpd_yunet.py",
-        "lpd_yunet_ort.py",
-        "plate_recognizer.py",
-        "paddle_ocr_processor.py",
-        "plate_api.py",
-        "probe_ort_providers.py"
-      ]
     }
   ],
   "files": [
     "**/*",
+    "!modules/",
     "!python_src/",
     "!*.spec",
     "!builder-*.json",

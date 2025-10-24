@@ -121,7 +121,7 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
   
   // Modules (Intellect only)
     if (APP_VERSION === 'intellect') {
-        const runtimeManager = require(path.resolve(__dirname, '../../../modules/license-plate/runtime-manager'));
+        const licensePlateRuntimeManager = require('../runtime/license-plate-runtime-manager');
     ipcMain.handle(CHANNELS.GET_AVAILABLE_MODULES, withErrorHandling(() => moduleManager.availableModules.map(mod => ({ id: mod.id, name: mod.name, version: mod.version, description: mod.description, author: mod.author })), 'getAvailableModules'));
     ipcMain.handle(CHANNELS.SAVE_ENABLED_MODULES, withErrorHandling(async (event, enabledIds) => { 
         const settings = await configManager.getAppSettings(); 
@@ -141,7 +141,7 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
         };
 
         try {
-            const status = await runtimeManager.getRuntimeStatus();
+            const status = await licensePlateRuntimeManager.getRuntimeStatus();
             if (status && (status.runtime || status.installed)) {
                 apiShim.sendToRenderer('module-license-plate-runtime-progress', {
                     status: 'ready',
@@ -154,7 +154,7 @@ function registerSystemHandlers(APP_VERSION, moduleManager) {
             log.warn('[IPC] Failed to read runtime status before prepare', err);
         }
 
-        const info = await runtimeManager.ensureRuntimeReady(apiShim, { preferDownload: true });
+    const info = await licensePlateRuntimeManager.ensureRuntimeReady(apiShim, { preferDownload: true });
         return { success: true, data: info };
     }, 'prepareLicensePlateRuntime'));
     ipcMain.handle(CHANNELS.GET_DETECTED_PLATES, withErrorHandling(async () => {

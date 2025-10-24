@@ -18,8 +18,6 @@ import shutil
 #     atexit.register(restore_upx)
 
 BASE_DIR = Path(__file__).parent.resolve()
-
-BASE_DIR = Path(__file__).parent.resolve()
 # VENV_DIR больше не нужен
 SRC_DIR = BASE_DIR
 SRC_FILE = SRC_DIR / "analytics.py"
@@ -27,12 +25,15 @@ MODEL_FILE = SRC_DIR / "yolov8n.onnx"
 DIST_PATH = BASE_DIR.parent / "extra" / "analytics"
 REQUIREMENTS_DIR = BASE_DIR / "requirements"
 
-BUILDS = {
-    "cpu": "requirements_cpu.txt",
-}
-
 if sys.platform == "win32":
-    BUILDS["dml"] = "requirements_dml.txt"
+    BUILDS = {
+        "cpu": "requirements_cpu.txt",
+        "dml": "requirements_dml.txt",
+    }
+else:
+    BUILDS = {
+        "cpu": "requirements_cpu_linux.txt",
+    }
 
 def run_command(command, cwd=None):
     """Runs a command as a list of arguments, which is safer."""

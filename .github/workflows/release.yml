@@ -1,4 +1,4 @@
-name: Build & Release Cross-Platform
+name: Build & Release Core App
 
 on:
   push:
@@ -9,55 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  runtime:
-    name: Build license-plate runtime (${{ matrix.platform_tag }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform_tag: win32-x64
-            provider: dml
-            archive_ext: zip
-          - os: ubuntu-latest
-            platform_tag: linux-x64
-            provider: cpu
-            archive_ext: tar.xz
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Build runtime archive
-        run: >
-          python python_src/build_license_plate_runtime.py
-          --platform ${{ matrix.platform_tag }}
-          --provider ${{ matrix.provider }}
-          --archive ${{ matrix.archive_ext }}
-          --runtime-version ${{ github.ref_name }}
-
-      - name: Collect runtime artifacts
-        shell: bash
-        run: |
-          set -e
-          mkdir -p runtime_artifacts
-          cp python_src/build/license_plate_runtime/dist/license-plate-runtime-${{ matrix.platform_tag }}* runtime_artifacts/
-
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: runtime-${{ matrix.platform_tag }}
-          path: runtime_artifacts/
-
   build:
     name: Build ${{ matrix.version_type }} (${{ matrix.os }})
-    needs: runtime
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -91,13 +44,6 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
 
-      - name: Setup Python
-        if: matrix.version_type == 'intellect'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
       - name: Install Linux dependencies
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
@@ -122,58 +68,6 @@ jobs:
           Expand-Archive upx-4.2.1-win64.zip -DestinationPath .
           $dir = Resolve-Path .\upx-4.2.1-win64
           "UPX_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Clean bundled analytics directory
-        if: matrix.version_type == 'intellect'
-        run: rm -rf extra/analytics
-        shell: bash
-
-      - name: Disable UPX for PyInstaller (Linux)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'ubuntu-latest' }}
-        shell: bash
-        run: mv "$UPX_DIR/upx" "$UPX_DIR/upx.disabled"
-
-      - name: Disable UPX for PyInstaller (Windows)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'windows-latest' }}
-        shell: powershell
-        run: Rename-Item "$env:UPX_DIR\upx.exe" "upx.disabled.exe"
-
-      - name: Build Python analytics executables
-        if: matrix.version_type == 'intellect'
-        run: python ./python_src/build_analytics.py
-
-      - name: Enable UPX for PyInstaller (Linux)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'ubuntu-latest' }}
-        shell: bash
-        run: mv "$UPX_DIR/upx.disabled" "$UPX_DIR/upx"
-
-      - name: Enable UPX for PyInstaller (Windows)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'windows-latest' }}
-        shell: powershell
-        run: Rename-Item "$env:UPX_DIR\upx.disabled.exe" "upx.exe"
-
-      - name: Compress analytics executables with UPX (Linux)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'ubuntu-latest' }}
-        shell: bash
-        run: |
-          "$UPX_DIR/upx" --lzma extra/analytics/analytics_cpu
-
-      - name: Compress analytics executables with UPX (Windows)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'windows-latest' }}
-        shell: powershell
-        run: |
-          & "$env:UPX_DIR\upx.exe" --lzma --force extra/analytics/analytics_cpu.exe
-          & "$env:UPX_DIR\upx.exe" --lzma --force extra/analytics/analytics_dml.exe
-
-      - name: List built analytics files (Linux)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'ubuntu-latest' }}
-        run: ls -R extra/analytics
-        shell: bash
-
-      - name: List built analytics files (Windows)
-        if: ${{ matrix.version_type == 'intellect' && matrix.os == 'windows-latest' }}
-        shell: cmd
-        run: dir extra\analytics /s
 
       - name: Build and package Electron app (Linux)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -235,7 +129,6 @@ jobs:
     name: Create GitHub Release
     needs:
       - build
-      - runtime
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -259,8 +152,7 @@ jobs:
             -name '*.msi' -o \
             -name '*.AppImage' -o \
             -name 'latest*.yml' -o \
-            -name 'mediamtx*' -o \
-            -name 'license-plate-runtime-*' \
+            -name 'mediamtx*' \
           \) -exec cp {} release_assets/ \;
 
       - name: List final release assets

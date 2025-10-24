@@ -78,7 +78,8 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const { app, dialog } = require('electron');
 const yaml = require('js-yaml');
-const runtimeManager = require(path.join(__dirname, '..', '..', 'modules', 'license-plate', 'runtime-manager'));
+const licensePlateRuntimeManager = require('./runtime/license-plate-runtime-manager');
+const analyticsRuntimeManager = require('./runtime/analytics-runtime-manager');
 const axios = require('axios');
 const dgram = require('dgram');
 const net = require('net');
@@ -1151,7 +1152,7 @@ async function toggleAnalytics(cameraId, streamId, mainWindow, moduleManager) {
                     broadcastToRenderers(channel, payload);
                 }
             };
-            runtimeInfo = await runtimeManager.ensureRuntimeReady(shim, { preferDownload: false });
+            runtimeInfo = await licensePlateRuntimeManager.ensureRuntimeReady(shim, { preferDownload: false });
         } catch (err) {
             const message = err && err.message ? err.message : String(err);
             console.error('[Analytics ERROR] Failed to prepare license-plate runtime:', message);
@@ -1159,8 +1160,8 @@ async function toggleAnalytics(cameraId, streamId, mainWindow, moduleManager) {
             return { success: false, error: message };
         }
 
-        const pythonCmd = runtimeInfo.pythonPath;
-        const scriptPath = runtimeManager.resolvePythonScript('test_plate_yunet.py', runtimeInfo);
+    const pythonCmd = runtimeInfo.pythonPath;
+    const scriptPath = licensePlateRuntimeManager.resolvePythonScript('test_plate_yunet.py', runtimeInfo);
         const pythonWorkDir = runtimeInfo.scriptRoot || path.dirname(scriptPath);
 
         if (!pythonCmd || !fs.existsSync(pythonCmd)) {
@@ -1212,26 +1213,56 @@ async function toggleAnalytics(cameraId, streamId, mainWindow, moduleManager) {
             env: spawnEnv
         });
     } else {
-        // --- СТАРЫЙ ВАРИАНТ: exe ---
-        const analyticsBasePath = app.isPackaged
-            ? path.join(process.resourcesPath, 'analytics')
-            : path.join(app.getAppPath(), 'python_src', 'extra', 'analytics');
-        const analyticsExecutableName = process.platform === 'win32' ? 'analytics_dml.exe' : 'analytics_cpu';
-        const analyticsPath = path.join(analyticsBasePath, analyticsExecutableName);
-        if (!fs.existsSync(analyticsPath)) {
-            const errorMsg = `Analytics executable not found at path: ${analyticsPath}`;
+        let runtimeInfo;
+        try {
+            runtimeInfo = await analyticsRuntimeManager.ensureRuntimeReady({ preferDownload: false });
+        } catch (err) {
+            const message = err && err.message ? err.message : String(err);
+            console.error('[Analytics ERROR] Failed to prepare analytics runtime:', message);
+            dialog.showErrorBox('Ошибка запуска аналитики', `Не удалось подготовить среду аналитики: ${message}`);
+            return { success: false, error: message };
+        }
+
+        const analyticsPath = analyticsRuntimeManager.resolveExecutableForProvider(providerChoice, runtimeInfo);
+        if (!analyticsPath || !fs.existsSync(analyticsPath)) {
+            const providerLabel = String(providerChoice || 'auto');
+            const errorMsg = `Analytics executable not found for provider "${providerLabel}"`;
             console.error(`[Analytics ERROR] ${errorMsg}`);
             dialog.showErrorBox('Ошибка запуска аналитики', errorMsg);
             return { success: false, error: errorMsg };
         }
+
+        const normalizedProvider = String(providerChoice || 'auto').toLowerCase();
+        if (normalizedProvider === 'dml' && (!runtimeInfo.executables || !runtimeInfo.executables.dml)) {
+            console.warn('[Analytics] DirectML executable unavailable; falling back to CPU runtime');
+        }
+
+        const resolvedProviderKey = analyticsRuntimeManager.getProviderKeyForExecutable(analyticsPath, runtimeInfo);
+        const normalizedResolved = resolvedProviderKey ? resolvedProviderKey.toLowerCase() : null;
+        let providerArg = normalizedProvider;
+
+        if (normalizedProvider === 'auto') {
+            providerArg = 'auto';
+        } else if (normalizedResolved && normalizedResolved !== normalizedProvider) {
+            providerArg = normalizedResolved === 'default' ? 'auto' : normalizedResolved;
+        }
+
+        if (!providerArg) {
+            providerArg = 'auto';
+        }
+
         console.log('--- [Analytics DEBUG] ---');
         console.log(`[Analytics DEBUG] Starting analytics for camera ID: ${cameraId}`);
         console.log(`[Analytics DEBUG] Executable path: ${analyticsPath}`);
+        console.log(`[Analytics DEBUG] Runtime mode: ${runtimeInfo.mode || 'unknown'}`);
         console.log(`[Analytics DEBUG] Connecting to LOCAL MediaMTX stream URL: ${rtspUrl}`);
         console.log(`[Analytics DEBUG] Config object being sent:`, configForScript);
-        console.log(`[Analytics DEBUG] Provider choice: ${providerChoice}`);
+        console.log(`[Analytics DEBUG] Provider choice: ${providerChoice}, resolved provider: ${providerArg}`);
         console.log('-------------------------');
-        analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg, providerChoice], { windowsHide: true });
+        analyticsProcess = spawn(analyticsPath, [rtspUrl, configArg, providerArg], {
+            windowsHide: process.platform === 'win32',
+            cwd: path.dirname(analyticsPath)
+        });
     }
     addProcess(analyticsId, analyticsProcess, PROCESS_TYPES.ANALYTICS);
 

@@ -129,30 +129,15 @@ npm run dist
 
 The finished files will appear in the `dist` folder.
 
-### Analytics Services (`python_src/`)
+### Analytics Runtimes
 
-The optional analytics binaries (object detection and license plate recognition) are bundled from the sources under `python_src/`. Keep them in sync with application releases so runtime downloads are not required.
+The heavy analytics components are no longer bundled with the Electron application.  Instead, each module downloads its runtime on demand using the manifests in `runtime/analytics/runtime-manifest.json` and `runtime/license-plate/runtime-manifest.json`.
 
-1. Install Python 3.10 or newer (Windows builds can additionally produce the DirectML flavor).
-2. (Recommended) Create and activate a virtual environment before installing Python dependencies.
-3. Install the requirements that match the target build:
-    ```bash
-    pip install -r python_src/requirements/requirements_cpu.txt
-    # On Windows you can also install DirectML providers
-    pip install -r python_src/requirements/requirements_dml.txt
-    ```
-4. Build the binaries and drop them into `extra/analytics/`:
-    ```bash
-    python python_src/build_analytics.py
-    ```
-   The script invokes PyInstaller and copies the resulting executables to `extra/analytics/analytics_cpu.exe` (and `analytics_dml.exe` on Windows).
-5. During development you can run the analytics script directly without packaging:
-    ```bash
-    python python_src/analytics.py --help
-    ```
-   This is useful for quick regression checks before rebuilding the distributable.
+- **Building/Publishing analytics runtimes** – use the external repository that hosts prebuilt archives (for example [`Rinibr25/Analytics-Runtime-for-Dashboard`](https://github.com/Rinibr25/Analytics-Runtime-for-Dashboard)).  After producing new archives, upload them to a release and record the file name, SHA-256 checksum, and size in the manifest.
+- **Building/Publishing license-plate runtimes** – run `python python_src/build_license_plate_runtime.py --platform <platform_tag> --provider <cpu|dml>` on the target OS to produce an archive.  Upload the archive to the License Plate runtime release, then update the corresponding manifest entry.
+- **Development workflow** – you can still execute the python sources directly (`python python_src/analytics.py --help`, `python python_src/test_plate_yunet.py`) without touching the packaged runtimes. The application will prefer local interpreters during development and fall back to downloaded archives in production.
 
-Keep the generated executables under version control so that `npm run dist:*` has everything it needs to assemble the installers.
+When the manifests are updated and a new Dashboard build is published, end users automatically receive the new runtimes during module activation.
 
 ## CI / GitHub Actions
 
@@ -181,6 +166,6 @@ Notes:
 
 - `npm ci` (or `npm install`) completes without warnings or audit failures.
 - `npm run dist:lite` and `npm run dist:intellect` succeed locally.
-- `python python_src/build_analytics.py` regenerates analytics binaries and commits the updated files from `extra/analytics/`.
+- Runtime manifests (`runtime/**/runtime-manifest.json`) reference published archives with correct URLs, sizes, and SHA-256 digests.
 - Smoke-test `npm start` against at least one camera profile, verifying live view, archive list, and terminal access.
 - Update version metadata (`version-config.json` and release notes) and tag the repository.

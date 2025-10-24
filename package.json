@@ -5,9 +5,8 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "chcp 65001 | electron .",
-    "prepare:analytics": "node scripts/prepare-analytics-assets.js",
     "dist:lite": "node scripts/set-version.js lite && electron-builder --config builder-lite.js",
-    "dist:intellect": "npm run prepare:analytics && node scripts/set-version.js intellect && electron-builder --config builder-intellect.json",
+    "dist:intellect": "node scripts/set-version.js intellect && electron-builder --config builder-intellect.json",
     "dist": "npm run dist:intellect",
     "rebuild": "electron-rebuild"
   },

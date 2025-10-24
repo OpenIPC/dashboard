@@ -10,7 +10,7 @@ const axios = require('axios');
 const extractZip = require('extract-zip');
 const tar = require('tar');
 
-const manifest = require('../modules/license-plate/runtime-manifest.json');
+const manifest = require('../runtime/license-plate/runtime-manifest.json');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeBase = path.join(repoRoot, 'runtime');

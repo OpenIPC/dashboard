@@ -1,9 +1,0 @@
-{
-  "name": "Face Detector",
-  "version": "0.1.0",
-  "description": "Detects and saves faces of people from the video stream.",
-  "author": "Rinibr",
-  "entryPoints": {
-    "main": "main.js"
-  }
-}

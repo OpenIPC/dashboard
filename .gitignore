@@ -167,3 +167,6 @@ builder-*.json
 python_src/.venv/
 .analytics_venvs/
 venv/
+python_src/extra/analytics/*.exe
+python_src/extra/analytics/*.dll
+python_src/extra/analytics/*.pdb
