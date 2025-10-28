@@ -1,0 +1,450 @@
+/* Стили для элементов управления в ячейках видео-сетки */
+
+.grid-cell {
+  position: relative;
+  background-color: #36393f;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.grid-cell:hover {
+  border-color: #1976d2;
+  box-shadow: 0 0 8px rgba(25, 118, 210, 0.5);
+}
+
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.video-wrapper video {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cell-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+  border-radius: 8px;
+  z-index: 15;
+  display: flex;
+  gap: 2px;
+  pointer-events: all;
+  padding: 4px;
+  opacity: 0; /* Возвращаем скрытие по умолчанию */
+  transition: opacity 0.3s ease-in-out;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  visibility: visible;
+}
+
+/* Показываем контроллы при наведении на ячейку */
+.grid-cell:hover .cell-controls,
+.grid-cell:hover .cell-name,
+.grid-cell:hover .cell-stats {
+  opacity: 1;
+}
+
+/* В полноэкранном режиме показываем все элементы */
+.grid-cell.fullscreen .cell-name,
+.grid-cell.fullscreen .cell-stats {
+  opacity: 1 !important;
+}
+
+.grid-cell:hover .cell-controls {
+  background-color: rgba(0, 0, 0, 0.9);
+}
+
+/* Полноэкранный режим - контроллы сверху справа */
+.grid-cell.fullscreen .cell-controls {
+  position: fixed !important;
+  top: 24px;
+  right: 24px;
+  z-index: 1002;
+  opacity: 1 !important;
+  padding: 8px;
+  background-color: rgba(0, 0, 0, 0.85);
+  border-radius: 12px;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex !important;
+  visibility: visible !important;
+}
+
+/* ОТЛАДКА: Временно делаем контроллы всегда видимыми */
+.cell-controls {
+  opacity: 0.7 !important;
+}
+
+.grid-cell:hover .cell-controls,
+.grid-cell.fullscreen .cell-controls {
+  opacity: 1 !important;
+}
+
+/* В полноэкранном режиме показываем все элементы */
+.grid-cell.fullscreen .cell-name,
+.grid-cell.fullscreen .cell-stats,
+.grid-cell.fullscreen .MuiBox-root.cell-name,
+.grid-cell.fullscreen .MuiBox-root.cell-stats {
+  opacity: 1 !important;
+}
+
+/* Скрываем кнопку закрытия в полноэкранном режиме */
+.grid-cell.fullscreen .cell-controls .close-btn {
+  display: none;
+}
+
+.fullscreen-dialog {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-dialog .cell-controls {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 1002;
+  opacity: 1 !important;
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.85);
+  border-radius: 12px;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  display: flex !important;
+  visibility: visible !important;
+}
+
+.fullscreen-dialog .cell-name,
+.fullscreen-dialog .cell-stats {
+  opacity: 1 !important;
+  visibility: visible !important;
+  backdrop-filter: blur(8px);
+}
+
+.fullscreen-dialog .cell-name {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.fullscreen-dialog .cell-stats {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.icon-button {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  min-width: 22px;
+  height: 22px;
+  backdrop-filter: blur(4px);
+}
+
+.icon-button .material-icons {
+  font-size: 14px;
+}
+
+.icon-button:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.icon-button:active {
+  background-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.icon-button.recording {
+  color: #f44336;
+  background-color: rgba(244, 67, 54, 0.2);
+  border-color: rgba(244, 67, 54, 0.4);
+  animation: pulse-rec 1.5s infinite;
+}
+
+.icon-button.stream-switch-btn .material-icons {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.icon-button.close-btn {
+  color: #ff6b6b;
+}
+
+.icon-button.close-btn:hover {
+  background-color: rgba(255, 107, 107, 0.2);
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+@keyframes pulse-rec {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.cell-name {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+  visibility: visible;
+}
+
+.cell-stats {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+  z-index: 9998;
+  visibility: visible;
+}
+
+.grid-cell:hover .cell-stats {
+  opacity: 1;
+}
+
+.grid-cell.fullscreen .cell-name,
+.grid-cell.fullscreen .cell-stats {
+  font-size: 16px;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.grid-cell.fullscreen .cell-name {
+  bottom: 24px;
+  right: 24px;
+}
+
+.grid-cell.fullscreen .cell-stats {
+  bottom: 24px;
+  left: 24px;
+  font-size: 14px;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 25;
+}
+
+.loading-overlay.hidden {
+  display: none;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #fff;
+  z-index: 30;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.error-overlay.hidden {
+  display: none;
+}
+
+.error-icon {
+  font-size: 48px;
+  color: #f44336;
+  margin-bottom: 12px;
+}
+
+.error-message {
+  font-size: 14px;
+  margin-bottom: 16px;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
+.error-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.retry-button,
+.close-on-error-btn {
+  padding: 8px 16px;
+  background-color: #424242;
+  border: 1px solid #666;
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  font-size: 13px;
+}
+
+.retry-button:hover {
+  background-color: #1976d2;
+}
+
+.close-on-error-btn:hover {
+  background-color: #616161;
+}
+
+/* Стили для режима паузы */
+.grid-cell.paused-state .video-wrapper::after {
+  content: '▶';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 60px;
+  color: white;
+  background-color: rgba(0, 0, 0, 0.6);
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* Полноэкранный режим */
+.grid-cell.fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 1001;
+  border: none;
+  border-radius: 0;
+  background-color: #000;
+}
+
+.grid-cell.fullscreen .cell-controls .close-btn {
+  display: none;
+}
+
+/* Информация о камере и потоке */
+.cell-name {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  max-width: fit-content;
+}
+
+.cell-stats {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: monospace;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  max-width: fit-content;
+}
+
+/* Состояния ячейки */
+.grid-cell.paused-state {
+  opacity: 0.6;
+}
+
+.grid-cell.error-state {
+  background-color: #3a2d2d;
+  border: 2px dashed #f44336;
+}
+
+.grid-cell.recording {
+  border: 2px solid #f44336;
+  box-shadow: 0 0 12px rgba(244, 67, 54, 0.5);
+}

@@ -1,0 +1,199 @@
+name: Build and Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build for (all, windows, linux, macos)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - windows
+        - linux
+        - macos
+
+jobs:
+  build-windows:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: lint frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: build frontend
+        run: npm run build
+
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+
+      - name: test Rust code
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: build Tauri app (npx)
+        run: npx tauri build
+
+  build-linux:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install dependencies (ubuntu only)
+        run: |
+          sudo apt-get update
+          # Install whichever WebKitGTK dev package is available
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || sudo apt-get install -y libwebkit2gtk-4.1-dev || true
+          # Other required deps
+          sudo apt-get install -y libgtk-3-dev librsvg2-dev patchelf || true
+          # AppIndicator (prefer ayatana if available)
+          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev || true
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: lint frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: build frontend
+        run: npm run build
+
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+
+      - name: test Rust code
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: build Tauri app (npx)
+        run: npx tauri build
+
+  build-macos:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: lint frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: build frontend
+        run: npm run build
+
+      - name: install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: download MediaMTX binaries
+        run: python tools/download-mediamtx.py
+
+      - name: test Rust code
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: build Tauri app (ARM64 via npx)
+        run: npx tauri build --target aarch64-apple-darwin
+
+      - name: build Tauri app (x86_64 via npx)
+        run: npx tauri build --target x86_64-apple-darwin

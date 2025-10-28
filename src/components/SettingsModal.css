@@ -1,0 +1,844 @@
+/* Settings Modal Styles - Based on OpenIPC Dashboard */
+
+:root {
+  --bg-light: #4a5568;
+  --bg-secondary: #2d3748;
+  --border-color: #626974;
+  --text-main: #ffffff;
+  --text-secondary: #a0aec0;
+  --input-bg: #2d3748;
+  --input-border: #4a5568;
+  --input-border-focus: #63b3ed;
+  --input-text: #ffffff;
+}
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-backdrop.hidden {
+  display: none !important;
+}
+
+.modal-content {
+  position: relative;
+  background: #393e43;
+  padding: 20px 30px 30px 30px;
+  border-radius: 12px;
+  width: 500px;
+  color: #fff;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  animation: slideIn 0.3s ease-out;
+  border: 1px solid #4a5568;
+}
+
+.modal-content.large {
+  width: 700px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-body {
+  overflow-y: auto;
+  flex-grow: 1;
+  padding-right: 10px;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: #2d3748;
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #5a6578;
+}
+
+.modal-footer {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid #4a5568;
+  display: flex;
+  gap: 10px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 28px;
+  font-weight: bold;
+  color: #a0aec0;
+  cursor: pointer;
+  line-height: 1;
+  user-select: none;
+  z-index: 10;
+  transition: all 0.2s ease;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close-btn:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: scale(1.1);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  align-items: center;
+  padding-top: 15px;
+}
+
+.form-grid.simple {
+  grid-template-columns: 120px 1fr;
+}
+
+.form-grid.with-button .form-input-wrapper {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.form-grid.with-button .form-input-wrapper input {
+  flex-grow: 1;
+}
+
+.form-grid label,
+.form-grid span,
+.form-grid b {
+  font-weight: 500;
+}
+
+.form-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid button {
+  padding: 8px 12px;
+  border: 1px solid #4a5568;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.form-grid input,
+.form-grid select {
+  background-color: #2d3748;
+  color: #e2e8f0;
+}
+
+.form-grid input:focus,
+.form-grid select:focus {
+  outline: none;
+  border-color: #63b3ed;
+  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.1);
+}
+
+.form-grid button {
+  background-color: #4299e1;
+  color: white;
+  cursor: pointer;
+  border: 1px solid #4299e1;
+  font-weight: 500;
+}
+
+.form-grid button:hover {
+  background-color: #3182ce;
+  border-color: #3182ce;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(66, 153, 225, 0.2);
+}
+
+.form-grid button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(66, 153, 225, 0.2);
+}
+
+.form-buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.tabs {
+  border-bottom: 2px solid #4a5568;
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+  background: #2d3748;
+  border-radius: 8px 8px 0 0;
+  padding: 4px;
+}
+
+.tab-button {
+  background: none;
+  border: none;
+  padding: 12px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #a0aec0;
+  border-radius: 6px;
+  margin: 0 2px;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.tab-button.active {
+  color: #fff;
+  background-color: #4299e1;
+  box-shadow: 0 2px 4px rgba(66, 153, 225, 0.2);
+}
+
+.tab-button:hover:not(.active) {
+  color: #e2e8f0;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+h3 {
+  border-bottom: 1px solid #4a5568;
+  padding-bottom: 8px;
+  margin-top: 25px;
+  margin-bottom: 15px;
+  font-size: 1.1em;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+h3:first-child {
+  margin-top: 0;
+}
+
+#settings-modal-title {
+  color: #fff;
+  font-weight: 700;
+  font-size: 22px;
+  text-align: center;
+  margin-bottom: 0;
+}
+
+.form-check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 15px;
+}
+
+.form-check-input {
+  width: auto;
+}
+
+.form-input-wrapper {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  position: relative;
+}
+
+.form-input-wrapper input {
+  flex-grow: 1;
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  border: 1px solid var(--input-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.form-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--input-border-focus);
+  box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.2);
+}
+
+.form-input-wrapper input[readonly] {
+  cursor: pointer;
+  background-color: #3c4147;
+}
+
+.form-input-wrapper input[readonly]:hover {
+  background-color: #434950;
+}
+
+.form-input-wrapper button {
+  width: auto;
+  min-width: 45px;
+  height: 38px;
+  padding: 0 12px;
+  background-color: #4a5568;
+  border: 1px solid #4a5568;
+  color: #e2e8f0;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.form-input-wrapper button:hover {
+  background-color: #5a6578;
+  border-color: #63b3ed;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.form-input-wrapper button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.form-input-wrapper button .material-icons {
+  color: #e2e8f0;
+  font-size: 20px;
+}
+
+/* Toast Notification Styles */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #38a169;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s ease;
+  max-width: 300px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.toast-notification.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-notification.error {
+  background: #e53e3e;
+}
+
+.toast-notification.warning {
+  background: #dd6b20;
+}
+
+.toast-notification.info {
+  background: #3182ce;
+}
+
+/* Add hidden toast element to DOM */
+#app-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #38a169;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s ease;
+  max-width: 300px;
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.range-value {
+  min-width: 30px;
+  text-align: center;
+  background-color: #4a5568;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.about-container {
+  text-align: center;
+  padding: 20px;
+  color: #e2e8f0;
+}
+
+.about-container h3 {
+  margin-top: 0;
+  font-size: 1.5em;
+  border-bottom: none;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.about-container p {
+  color: #a0aec0;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+
+/* Toast notification styles */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #38a169 0%, #48bb78 100%);
+  color: white;
+  padding: 14px 20px;
+  border-radius: 8px;
+  z-index: 2000;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3);
+  font-weight: 500;
+}
+
+.toast-notification.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .modal-content.large {
+    width: 95%;
+    height: 95%;
+    margin: 10px;
+    border-radius: 8px;
+  }
+  
+  .form-grid.simple {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .tabs {
+    flex-direction: column;
+    padding: 2px;
+  }
+  
+  .tab-button {
+    border-radius: 4px;
+    margin-bottom: 2px;
+    padding: 10px 14px;
+  }
+  
+  .tab-button.active {
+    background-color: #4299e1;
+    color: white;
+  }
+  
+  .modal-close-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 24px;
+  }
+}
+
+/* Дополнительные стили для управления конфигурацией */
+.config-buttons-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 15px;
+  padding-left: 20px;
+}
+
+.config-buttons-container button {
+  padding: 12px 18px;
+  font-size: 14px;
+  max-width: 300px;
+  text-align: center;
+  border: 1px solid #4a5568;
+  border-radius: 6px;
+  cursor: pointer;
+  background-color: #4a5568;
+  color: #e2e8f0;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.config-buttons-container button:hover {
+  background-color: #5a6578;
+  border-color: #5a6578;
+  transform: translateY(-1px);
+}
+
+/* Стили для модулей */
+.module-checkbox {
+  width: auto;
+  margin-right: 10px;
+  accent-color: #4299e1;
+}
+
+#modules-list {
+  margin-top: 15px;
+  background-color: #2d3748;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+#modules-list .form-check-inline {
+  background-color: #393e43;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #4a5568;
+  transition: all 0.2s ease;
+}
+
+#modules-list .form-check-inline:hover {
+  background-color: #4a5568;
+  border-color: #5a6578;
+}
+
+.intellect-only {
+  display: block;
+}
+
+/* Стили для секции пожертвований */
+.donation-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.donation-button {
+  background-color: #ffc107;
+  color: #212529;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: background-color 0.2s;
+}
+
+.donation-button:hover {
+  background-color: #ffca2c;
+}
+
+/* Material Icons support */
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Обновленные стили для табов */
+.tab-button.general-tab {
+  display: inline-block;
+}
+
+/* Дополнительные стили для улучшения UX */
+.form-grid input[type="range"] {
+  background: #4a5568;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.form-grid input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: #4299e1;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.form-grid input[type="range"]::-webkit-slider-thumb:hover {
+  background: #3182ce;
+  transform: scale(1.1);
+}
+
+.form-grid input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: #4299e1;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.form-grid input[type="range"]::-moz-range-thumb:hover {
+  background: #3182ce;
+  transform: scale(1.1);
+}
+
+/* Дополнительные стили для модулей */
+#modules-list {
+  background-color: #2d3748;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+#modules-list .form-check-inline {
+  background-color: #393e43;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #4a5568;
+  transition: all 0.2s ease;
+}
+
+#modules-list .form-check-inline:hover {
+  background-color: #4a5568;
+  border-color: #5a6578;
+}
+
+/* Стили для секции пожертвований */
+.donation-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #4a5568;
+}
+
+.donation-button {
+  background: linear-gradient(135deg, #ffc107 0%, #ffca2c 100%);
+  color: #212529;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+}
+
+.donation-button:hover {
+  background: linear-gradient(135deg, #ffca2c 0%, #ffd54f 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(255, 193, 7, 0.4);
+}
+
+/* User Management Modal Styles */
+.modal-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  outline: none;
+  margin: 0 4px;
+}
+
+.modal-button.primary {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+}
+
+.modal-button.primary:hover {
+  background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.modal-button.secondary {
+  background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.modal-button.secondary:hover {
+  background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.modal-button.danger {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.modal-button.danger:hover {
+  background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.modal-button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* User list styling */
+.user-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s ease;
+}
+
+.user-list-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.user-info {
+  flex-grow: 1;
+}
+
+.user-username {
+  color: var(--text-main);
+  font-size: 16px;
+  font-weight: bold;
+  margin: 0;
+}
+
+.user-role {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-left: 10px;
+}
+
+.user-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Input field styles for better visibility */
+.modal-input {
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  border: 2px solid var(--input-border) !important;
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  font-size: 14px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.modal-input:focus {
+  outline: none !important;
+  border-color: var(--input-border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.2) !important;
+  background-color: #374151 !important;
+}
+
+.modal-input::placeholder {
+  color: #9ca3af !important;
+  opacity: 0.8 !important;
+}
+
+.modal-select {
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  border: 2px solid var(--input-border) !important;
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  font-size: 14px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  cursor: pointer !important;
+}
+
+.modal-select:focus {
+  outline: none !important;
+  border-color: var(--input-border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.2) !important;
+  background-color: #374151 !important;
+}
+
+.modal-select option {
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  padding: 8px !important;
+}
