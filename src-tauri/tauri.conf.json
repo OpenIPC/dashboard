@@ -1,13 +1,13 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Dashboard for OpenIPC",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.openipc.dashboard",
   "build": {
-  "frontendDist": "../dist",
-  "beforeBuildCommand": "npm run build",
-  "devUrl": "http://localhost:5173",
-  "beforeDevCommand": "npm run dev"
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev"
   },
   "app": {
     "windows": [
@@ -43,8 +43,8 @@
     "resources": [
       "mediamtx/mediamtx.yml",
       "mediamtx/mediamtx.yml.template",
-  "binaries/mediamtx*",
-  "resources/gstreamer"
+      "binaries/mediamtx*",
+      "resources/gstreamer"
     ],
     "windows": {
       "certificateThumbprint": null,
