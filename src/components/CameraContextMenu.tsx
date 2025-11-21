@@ -10,7 +10,7 @@ import {
   GroupWork as GroupIcon,
   ArrowRight as ArrowRightIcon,
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import type { Camera, CameraGroup } from '../types';
 
 interface CameraContextMenuProps {
@@ -116,7 +116,6 @@ export const CameraContextMenu: React.FC<CameraContextMenuProps> = ({
         </ListItemIcon>
         <ListItemText primary={t('context_open_in_browser')} />
       </MenuItem>
-
       <MenuItem onClick={() => handleMenuItemClick(() => onFileManager(camera))}>
         <ListItemIcon>
           <FolderIcon fontSize="small" />

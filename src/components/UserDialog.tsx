@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useLocalization } from '../contexts/LocalizationContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useLocalization } from '../hooks/useLocalization';
+import { useAuth } from '../hooks/useAuth';
 import {
   addUser as addUserRequest,
   deleteUser as deleteUserRequest,

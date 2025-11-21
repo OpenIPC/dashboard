@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { Camera } from '../types';
 
@@ -25,14 +25,33 @@ export const TauriContextMenu: React.FC<TauriContextMenuProps> = ({
   onFileManager,
   onSSH,
 }) => {
-  React.useEffect(() => {
-    if (camera && anchorPosition) {
-      // Показываем нативное контекстное меню Tauri
-      showNativeContextMenu();
-    }
-  }, [camera, anchorPosition]);
+  const handleMenuAction = useCallback((action: string) => {
+    if (!camera) return;
 
-  const showNativeContextMenu = async () => {
+    switch (action) {
+      case 'archive':
+        onArchive();
+        break;
+      case 'edit':
+        onEdit(camera);
+        break;
+      case 'delete':
+        onDelete(camera);
+        break;
+      case 'browser':
+        onOpenInBrowser(camera);
+        break;
+      case 'filemanager':
+        onFileManager(camera);
+        break;
+      case 'ssh':
+        onSSH(camera);
+        break;
+    }
+    onClose();
+  }, [camera, onArchive, onClose, onDelete, onEdit, onFileManager, onOpenInBrowser, onSSH]);
+
+  const showNativeContextMenu = useCallback(async () => {
     if (!camera) return;
 
     try {
@@ -60,33 +79,14 @@ export const TauriContextMenu: React.FC<TauriContextMenuProps> = ({
       // Fallback - закрываем меню
       onClose();
     }
-  };
+  }, [anchorPosition, camera, handleMenuAction, onClose]);
 
-  const handleMenuAction = (action: string) => {
-    if (!camera) return;
-
-    switch (action) {
-      case 'archive':
-        onArchive();
-        break;
-      case 'edit':
-        onEdit(camera);
-        break;
-      case 'delete':
-        onDelete(camera);
-        break;
-      case 'browser':
-        onOpenInBrowser(camera);
-        break;
-      case 'filemanager':
-        onFileManager(camera);
-        break;
-      case 'ssh':
-        onSSH(camera);
-        break;
+  useEffect(() => {
+    if (camera && anchorPosition) {
+      // Показываем нативное контекстное меню Tauri
+      void showNativeContextMenu();
     }
-    onClose();
-  };
+  }, [anchorPosition, camera, showNativeContextMenu]);
 
   // Этот компонент не рендерит ничего визуально, так как использует нативное меню
   return null;

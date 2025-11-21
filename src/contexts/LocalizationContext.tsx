@@ -1,24 +1,15 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import {
+  LocalizationContext,
+  type LocalizationContextType,
+  type SupportedLanguage,
+  type Translations,
+  type TranslationValue,
+} from './LocalizationContextData';
 
-export type SupportedLanguage = 'en' | 'ru';
-
-interface TranslationValue {
-  [key: string]: string | TranslationValue;
-}
-
-interface Translations {
-  [key: string]: TranslationValue;
-}
-
-interface LocalizationContextType {
-  currentLanguage: SupportedLanguage;
-  setLanguage: (language: SupportedLanguage) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
-  translations: Translations;
-}
-
-const LocalizationContext = createContext<LocalizationContextType | undefined>(undefined);
+const isTranslationValue = (value: TranslationValue | string): value is TranslationValue =>
+  typeof value === 'object' && value !== null;
 
 const STORAGE_KEY = 'vms_dashboard_language';
 
@@ -63,29 +54,34 @@ export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Translation function with parameter substitution
   const t = (key: string, params?: Record<string, string | number>): string => {
     const keys = key.split('.');
-    let value: any = translations;
-    
+    let current: TranslationValue | string = translations;
+
     for (const k of keys) {
-      if (value && typeof value === 'object' && k in value) {
-        value = value[k];
-      } else {
+      if (!isTranslationValue(current)) {
+        return `[${key}]`;
+      }
+
+  const next: string | TranslationValue | undefined = current[k];
+      if (next === undefined) {
         // Return key if translation not found (development mode indicator)
         return `[${key}]`;
       }
+
+      current = next;
     }
-    
-    if (typeof value !== 'string') {
+
+    if (typeof current !== 'string') {
       return `[${key}]`;
     }
     
     // Replace parameters in the format {{param}}
     if (params) {
-      return value.replace(/\{\{(\w+)\}\}/g, (match, paramKey) => {
+      return current.replace(/\{\{(\w+)\}\}/g, (match, paramKey) => {
         return params[paramKey]?.toString() || match;
       });
     }
     
-    return value;
+    return current;
   };
 
   const contextValue: LocalizationContextType = {
@@ -100,14 +96,6 @@ export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ childr
       {children}
     </LocalizationContext.Provider>
   );
-};
-
-export const useLocalization = (): LocalizationContextType => {
-  const context = useContext(LocalizationContext);
-  if (!context) {
-    throw new Error('useLocalization must be used within a LocalizationProvider');
-  }
-  return context;
 };
 
 export default LocalizationContext;

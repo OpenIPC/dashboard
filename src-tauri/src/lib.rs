@@ -1,5 +1,7 @@
+mod analytics;
 mod auth;
 mod camera_store;
+mod database;
 mod discovery;
 mod ffmpeg;
 #[cfg(feature = "hevc-export")]
@@ -10,7 +12,7 @@ mod rtsp_client;
 mod rtsp_utils;
 
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -18,7 +20,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Child as StdChild, ChildStdin, Command as StdCommand, Stdio};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -47,9 +49,15 @@ const RECORDINGS_SUBDIR: &str = "recordings";
 const SCREENSHOTS_SUBDIR: &str = "screenshots";
 
 #[cfg(windows)]
-const MEDIAMTX_BINARY_NAME: &str = "mediamtx.exe";
+const GO2RTC_BINARY_NAME: &str = "go2rtc.exe";
 #[cfg(not(windows))]
-const MEDIAMTX_BINARY_NAME: &str = "mediamtx";
+const GO2RTC_BINARY_NAME: &str = "go2rtc";
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+const GO2RTC_DOWNLOAD_URL: &str =
+    "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.7/go2rtc_windows_amd64.zip";
+
+const GO2RTC_DEFAULT_API: &str = "http://127.0.0.1:1984";
 
 struct SshShellSession {
     _session: Session,
@@ -64,7 +72,7 @@ impl SshShellSession {
         password_plain: Option<String>,
         password_enc: Option<String>,
     ) -> Result<(Self, String), String> {
-        let mut session = build_ssh_session(host, port, username, password_plain, password_enc)?;
+        let session = build_ssh_session(host, port, username, password_plain, password_enc)?;
 
         let mut channel = session
             .channel_session()
@@ -85,8 +93,7 @@ impl SshShellSession {
             shell.collect_output(Duration::from_secs(2), Duration::from_millis(100))?;
         if welcome.trim().is_empty() {
             let _ = shell.channel.write_all(b"\n");
-            welcome =
-                shell.collect_output(Duration::from_secs(2), Duration::from_millis(100))?;
+            welcome = shell.collect_output(Duration::from_secs(2), Duration::from_millis(100))?;
         }
 
         Ok((shell, welcome))
@@ -391,6 +398,15 @@ struct SftpEntry {
     permissions: Option<u32>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteRecentFile {
+    absolute_path: String,
+    relative_path: String,
+    size: u64,
+    modified: i64,
+}
+
 #[derive(Debug, Copy, Clone)]
 enum StreamVideoCodec {
     H264,
@@ -402,6 +418,28 @@ impl StreamVideoCodec {
         match self {
             StreamVideoCodec::H264 => "H.264",
             StreamVideoCodec::H265 => "H.265",
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum StreamAudioCodec {
+    Aac,
+    Opus,
+    Pcma,
+    Pcmu,
+    Unknown,
+}
+
+impl StreamAudioCodec {
+    #[allow(dead_code)]
+    fn label(self) -> &'static str {
+        match self {
+            StreamAudioCodec::Aac => "AAC",
+            StreamAudioCodec::Opus => "Opus",
+            StreamAudioCodec::Pcma => "G711 (PCMA)",
+            StreamAudioCodec::Pcmu => "G711 (PCMU)",
+            StreamAudioCodec::Unknown => "Unknown",
         }
     }
 }
@@ -466,14 +504,16 @@ impl Default for RecordingsState {
     }
 }
 
-struct MediaMtxState {
+struct Go2RtcState {
     child: Option<StdChild>,
-    mediamtx_dir: PathBuf,
+    go2rtc_dir: PathBuf,
     config_path: PathBuf,
     exe_path: PathBuf,
+    ffmpeg_path: PathBuf,
+    ffmpeg_silent_path: PathBuf,
 }
 
-impl MediaMtxState {
+impl Go2RtcState {
     fn new(app_handle: &AppHandle) -> Self {
         let base_dir = app_handle.path().app_local_data_dir().unwrap_or_else(|_| {
             dirs_next::data_local_dir()
@@ -481,62 +521,300 @@ impl MediaMtxState {
                 .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         });
 
-        let mediamtx_dir = base_dir.join("mediamtx");
-        if !mediamtx_dir.exists() {
-            if let Err(err) = fs::create_dir_all(&mediamtx_dir) {
+        let go2rtc_dir = base_dir.join("go2rtc");
+        if !go2rtc_dir.exists() {
+            if let Err(err) = fs::create_dir_all(&go2rtc_dir) {
                 println!(
-                    "Failed to create MediaMTX directory {:?}: {}",
-                    mediamtx_dir, err
+                    "Failed to create go2rtc directory {:?}: {}",
+                    go2rtc_dir, err
                 );
             }
         }
 
-        let config_path = mediamtx_dir.join("mediamtx.yml");
-        let exe_path = mediamtx_dir.join(MEDIAMTX_BINARY_NAME);
+        let config_path = go2rtc_dir.join("go2rtc.yaml");
+        let exe_path = go2rtc_dir.join(GO2RTC_BINARY_NAME);
+        Self::prepare_binary(app_handle, &exe_path);
 
-        if !exe_path.exists() {
-            Self::prepare_binary(app_handle, &exe_path);
-        }
+        let ffmpeg_path = go2rtc_dir.join("ffmpeg.exe");
+        Self::prepare_ffmpeg_binary(app_handle, &ffmpeg_path, "ffmpeg.exe");
+
+        let ffmpeg_silent_path = go2rtc_dir.join("ffmpeg-silent.exe");
+        Self::prepare_ffmpeg_binary(app_handle, &ffmpeg_silent_path, "ffmpeg-silent.exe");
 
         #[cfg(windows)]
         {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            const DETACHED_PROCESS: u32 = 0x00000008;
             let _ = StdCommand::new("taskkill")
-                .args(["/IM", MEDIAMTX_BINARY_NAME, "/F"])
+                .args(["/IM", GO2RTC_BINARY_NAME, "/F"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
                 .spawn();
         }
 
         Self {
             child: None,
-            mediamtx_dir,
+            go2rtc_dir,
             config_path,
             exe_path,
+            ffmpeg_path,
+            ffmpeg_silent_path,
         }
     }
 
     fn prepare_binary(app_handle: &AppHandle, destination: &Path) {
+        println!("[prepare_binary] Destination: {:?}", destination);
+
         if destination.exists() {
+            println!("[prepare_binary] Binary already exists at destination");
             return;
         }
 
         let mut copied = false;
 
         if let Ok(resource_root) = app_handle.path().resource_dir() {
+            println!("[prepare_binary] Resource root: {:?}", resource_root);
+            println!(
+                "[prepare_binary] Checking candidates: {:?}",
+                Self::resource_candidates()
+            );
+
             for candidate in Self::resource_candidates() {
                 let source = resource_root.join(candidate);
+                println!("[prepare_binary] Checking: {:?}", source);
+
                 if source.exists() {
+                    println!("[prepare_binary] Found source binary at {:?}", source);
                     match fs::copy(&source, destination) {
                         Ok(_) => {
                             println!(
-                                "Copied MediaMTX binary from {:?} to {:?}",
+                                "Copied go2rtc binary from {:?} to {:?}",
                                 source, destination
                             );
                             copied = true;
                             break;
                         }
                         Err(err) => {
-                            println!("Failed to copy MediaMTX binary from {:?}: {}", source, err);
+                            println!("[prepare_binary] Failed to copy from {:?}: {}", source, err);
+                        }
+                    }
+                } else {
+                    println!("[prepare_binary] Source does not exist: {:?}", source);
+                }
+            }
+        } else {
+            println!("[prepare_binary] Failed to get resource_dir");
+        }
+
+        if !copied {
+            println!("[prepare_binary] Not copied from resources, trying current_dir");
+            if let Ok(current_dir) = env::current_dir() {
+                let mut search_roots: Vec<PathBuf> = vec![current_dir.clone()];
+                if let Some(parent) = current_dir.parent() {
+                    search_roots.push(parent.to_path_buf());
+                }
+
+                for root in search_roots {
+                    let candidates = [
+                        root.join("go2rtc").join(GO2RTC_BINARY_NAME),
+                        root.join("binaries").join(GO2RTC_BINARY_NAME),
+                        root.join("binaries")
+                            .join("windows")
+                            .join(GO2RTC_BINARY_NAME),
+                        root.join("src-tauri")
+                            .join("go2rtc")
+                            .join(GO2RTC_BINARY_NAME),
+                        root.join("src-tauri")
+                            .join("binaries")
+                            .join(GO2RTC_BINARY_NAME),
+                        root.join("src-tauri")
+                            .join("binaries")
+                            .join("windows")
+                            .join(GO2RTC_BINARY_NAME),
+                    ];
+
+                    for bundled in candidates.iter() {
+                        if !bundled.exists() {
+                            continue;
+                        }
+
+                        match fs::copy(bundled, destination) {
+                            Ok(_) => {
+                                println!(
+                                    "Copied go2rtc binary from {:?} to {:?}",
+                                    bundled, destination
+                                );
+                                copied = true;
+                                break;
+                            }
+                            Err(err) => {
+                                println!(
+                                    "Failed to copy go2rtc binary from {:?}: {}",
+                                    bundled, err
+                                );
+                            }
+                        }
+                    }
+
+                    if copied {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !copied {
+            #[cfg(all(windows, target_arch = "x86_64"))]
+            {
+                if let Err(err) = Self::download_binary(destination) {
+                    println!(
+                        "Failed to download go2rtc binary to {:?}: {}",
+                        destination, err
+                    );
+                } else {
+                    copied = true;
+                }
+            }
+
+            #[cfg(not(all(windows, target_arch = "x86_64")))]
+            {
+                println!("go2rtc binary not bundled; expected at {:?}", destination);
+            }
+        }
+
+        if !copied {
+            println!(
+                "go2rtc binary was not prepared; manual setup may be required at {:?}",
+                destination
+            );
+        }
+    }
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    fn download_binary(destination: &Path) -> Result<(), String> {
+        use std::fs::File;
+        use std::io::Write;
+        use zip::ZipArchive;
+
+        let response = reqwest::blocking::get(GO2RTC_DOWNLOAD_URL)
+            .map_err(|e| format!("Failed to download go2rtc archive: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "go2rtc archive download failed with HTTP status {}",
+                response.status()
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| format!("Failed to read go2rtc archive bytes: {}", e))?;
+
+        let tmp_path = destination.with_extension("zip.part");
+        {
+            let mut tmp_file = File::create(&tmp_path).map_err(|e| {
+                format!(
+                    "Failed to create temporary go2rtc archive {:?}: {}",
+                    tmp_path, e
+                )
+            })?;
+            tmp_file
+                .write_all(&bytes)
+                .map_err(|e| format!("Failed to write go2rtc archive {:?}: {}", tmp_path, e))?;
+        }
+
+        let file = File::open(&tmp_path)
+            .map_err(|e| format!("Failed to reopen go2rtc archive {:?}: {}", tmp_path, e))?;
+        let mut archive = ZipArchive::new(file)
+            .map_err(|e| format!("Failed to read go2rtc archive {:?}: {}", tmp_path, e))?;
+
+        let mut extracted = false;
+        for index in 0..archive.len() {
+            let mut entry = archive
+                .by_index(index)
+                .map_err(|e| format!("Failed to access go2rtc archive entry {}: {}", index, e))?;
+            let entry_name = entry.name().to_string();
+            if entry_name.ends_with("go2rtc.exe") {
+                if let Some(parent) = destination.parent() {
+                    if !parent.exists() {
+                        fs::create_dir_all(parent).map_err(|e| {
+                            format!("Failed to create go2rtc directory {:?}: {}", parent, e)
+                        })?;
+                    }
+                }
+
+                let mut out_file = File::create(destination).map_err(|e| {
+                    format!("Failed to create go2rtc binary {:?}: {}", destination, e)
+                })?;
+                std::io::copy(&mut entry, &mut out_file)
+                    .map_err(|e| format!("Failed to extract go2rtc binary: {}", e))?;
+                extracted = true;
+                break;
+            }
+        }
+
+        if let Err(err) = fs::remove_file(&tmp_path) {
+            println!(
+                "Warning: failed to remove temporary go2rtc archive {:?}: {}",
+                tmp_path, err
+            );
+        }
+
+        if !extracted {
+            return Err("go2rtc archive did not contain go2rtc.exe".into());
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    fn download_binary(_destination: &Path) -> Result<(), String> {
+        Err("Automatic go2rtc download is not implemented for this platform".into())
+    }
+
+    #[cfg(windows)]
+    fn resource_candidates() -> &'static [&'static str] {
+        &[
+            "go2rtc/go2rtc.exe",
+            "binaries/go2rtc.exe",
+            "binaries/go2rtc-x86_64-pc-windows-msvc.exe",
+        ]
+    }
+
+    #[cfg(not(windows))]
+    fn resource_candidates() -> &'static [&'static str] {
+        &["go2rtc/go2rtc", "binaries/go2rtc"]
+    }
+
+    fn prepare_ffmpeg_binary(app_handle: &AppHandle, destination: &Path, binary_name: &str) {
+        println!("[prepare_ffmpeg_binary] Destination: {:?}", destination);
+
+        if destination.exists() {
+            println!("[prepare_ffmpeg_binary] Binary already exists at destination");
+            return;
+        }
+
+        let mut copied = false;
+
+        if let Ok(resource_root) = app_handle.path().resource_dir() {
+            // Construct candidates based on the requested binary name
+            let candidates = [
+                format!("binaries/{}", binary_name),
+                binary_name.to_string(),
+            ];
+            
+            for candidate in candidates.iter() {
+                let source = resource_root.join(candidate);
+                if source.exists() {
+                    match fs::copy(&source, destination) {
+                        Ok(_) => {
+                            println!("Copied {} from {:?} to {:?}", binary_name, source, destination);
+                            copied = true;
+                            break;
+                        }
+                        Err(err) => {
+                            println!("[prepare_ffmpeg_binary] Failed to copy from {:?}: {}", source, err);
                         }
                     }
                 }
@@ -544,46 +822,183 @@ impl MediaMtxState {
         }
 
         if !copied {
+            println!("[prepare_ffmpeg_binary] Not copied from resources, trying current_dir");
             if let Ok(current_dir) = env::current_dir() {
-                let bundled = current_dir
-                    .join("src-tauri")
-                    .join("mediamtx")
-                    .join(MEDIAMTX_BINARY_NAME);
-                if bundled.exists() {
-                    if let Err(err) = fs::copy(&bundled, destination) {
-                        println!("Failed to copy MediaMTX binary from {:?}: {}", bundled, err);
-                    } else {
-                        println!(
-                            "Copied MediaMTX binary from {:?} to {:?}",
-                            bundled, destination
-                        );
-                        copied = true;
+                let mut search_roots: Vec<PathBuf> = vec![current_dir.clone()];
+                if let Some(parent) = current_dir.parent() {
+                    search_roots.push(parent.to_path_buf());
+                }
+
+                for root in search_roots {
+                    let candidates = [
+                        root.join("binaries").join(binary_name),
+                        root.join(binary_name),
+                        root.join("src-tauri").join("binaries").join(binary_name),
+                        root.join("target").join("debug").join("binaries").join(binary_name),
+                        root.join("target").join("release").join("binaries").join(binary_name),
+                    ];
+
+                    for bundled in candidates.iter() {
+                        if !bundled.exists() {
+                            continue;
+                        }
+                        match fs::copy(bundled, destination) {
+                            Ok(_) => {
+                                println!("Copied {} from {:?} to {:?}", binary_name, bundled, destination);
+                                copied = true;
+                                break;
+                            }
+                            Err(err) => {
+                                println!("Failed to copy {} from {:?}: {}", binary_name, bundled, err);
+                            }
+                        }
                     }
+                    if copied { break; }
                 }
             }
         }
 
         if !copied {
-            println!(
-                "MediaMTX binary not found in bundled resources; expected at {:?}",
-                destination
-            );
+            println!("[prepare_ffmpeg_binary] WARNING: Failed to copy {} to {:?}", binary_name, destination);
         }
     }
 
     #[cfg(windows)]
-    fn resource_candidates() -> &'static [&'static str] {
-        &[
-            "mediamtx/mediamtx.exe",
-            "binaries/mediamtx.exe",
-            "binaries/mediamtx-x86_64-pc-windows-msvc.exe",
-        ]
+    fn ffmpeg_resource_candidates() -> &'static [&'static str] {
+        &["binaries/ffmpeg.exe", "ffmpeg.exe"]
     }
 
     #[cfg(not(windows))]
-    fn resource_candidates() -> &'static [&'static str] {
-        &["mediamtx/mediamtx", "binaries/mediamtx"]
+    fn ffmpeg_resource_candidates() -> &'static [&'static str] {
+        &["binaries/ffmpeg", "ffmpeg"]
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamingProvider {
+    Go2Rtc,
+}
+
+impl StreamingProvider {
+    fn from_str(_value: &str) -> Self {
+        // Always use Go2RTC, MediaMTX support removed
+        StreamingProvider::Go2Rtc
+    }
+
+    #[allow(dead_code)]
+    fn as_str(&self) -> &'static str {
+        "go2rtc"
+    }
+}
+
+impl Default for StreamingProvider {
+    fn default() -> Self {
+        StreamingProvider::Go2Rtc
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StreamingSettings {
+    provider: StreamingProvider,
+    enable_on_demand: bool,
+    restart_on_config_change: bool,
+    go2rtc_api_addresses: Vec<String>,
+}
+
+impl Default for StreamingSettings {
+    fn default() -> Self {
+        Self {
+            provider: StreamingProvider::Go2Rtc,
+            enable_on_demand: true,
+            restart_on_config_change: true,
+            go2rtc_api_addresses: vec![GO2RTC_DEFAULT_API.to_string()],
+        }
+    }
+}
+
+impl StreamingSettings {
+    fn from_value(value: &serde_json::Value) -> Self {
+        let mut settings = StreamingSettings::default();
+
+        if let Some(streaming) = value.get("streaming") {
+            if let Some(provider) = streaming.get("provider").and_then(|v| v.as_str()) {
+                settings.provider = StreamingProvider::from_str(provider);
+            }
+
+            if let Some(val) = streaming.get("enableOnDemand").and_then(|v| v.as_bool()) {
+                settings.enable_on_demand = val;
+            }
+
+            if let Some(val) = streaming
+                .get("restartOnConfigChange")
+                .and_then(|v| v.as_bool())
+            {
+                settings.restart_on_config_change = val;
+            }
+
+            if let Some(go2rtc) = streaming.get("go2rtc") {
+                let mut addresses: Vec<String> = Vec::new();
+
+                if let Some(list) = go2rtc.get("apiAddresses").and_then(|v| v.as_array()) {
+                    for entry in list.iter().filter_map(|v| v.as_str()) {
+                        let normalized = entry.trim().trim_end_matches('/');
+                        if !normalized.is_empty() {
+                            addresses.push(normalized.to_string());
+                        }
+                    }
+                }
+
+                if addresses.is_empty() {
+                    if let Some(addr) = go2rtc.get("apiAddress").and_then(|v| v.as_str()) {
+                        let normalized = addr.trim().trim_end_matches('/');
+                        if !normalized.is_empty() {
+                            addresses.push(normalized.to_string());
+                        }
+                    }
+                }
+
+                if addresses.is_empty() {
+                    if let Some(addr) = go2rtc.get("baseUrl").and_then(|v| v.as_str()) {
+                        let normalized = addr.trim().trim_end_matches('/');
+                        if !normalized.is_empty() {
+                            addresses.push(normalized.to_string());
+                        }
+                    }
+                }
+
+                if !addresses.is_empty() {
+                    addresses.sort();
+                    addresses.dedup();
+                    settings.go2rtc_api_addresses = addresses;
+                }
+            }
+        }
+
+        settings
+    }
+
+    #[allow(dead_code)]
+    fn on_demand(&self) -> bool {
+        self.enable_on_demand
+    }
+
+    #[allow(dead_code)]
+    fn should_restart_on_change(&self) -> bool {
+        self.restart_on_config_change
+    }
+
+    fn go2rtc_api_bases(&self) -> Vec<String> {
+        if self.go2rtc_api_addresses.is_empty() {
+            vec![GO2RTC_DEFAULT_API.to_string()]
+        } else {
+            self.go2rtc_api_addresses.clone()
+        }
+    }
+}
+
+async fn load_streaming_settings() -> Result<StreamingSettings, String> {
+    let settings = get_app_settings_internal().await?;
+    Ok(StreamingSettings::from_value(&settings))
 }
 
 #[derive(Deserialize)]
@@ -628,6 +1043,7 @@ enum LiveStreamPipeline {
 }
 
 impl LiveStreamPipeline {
+    #[allow(dead_code)]
     fn description(&self) -> String {
         match self {
             LiveStreamPipeline::Direct { .. } => "direct source passthrough".into(),
@@ -637,6 +1053,7 @@ impl LiveStreamPipeline {
         }
     }
 
+    #[allow(dead_code)]
     fn origin_url(&self) -> &str {
         match self {
             LiveStreamPipeline::Direct { source_url } => source_url,
@@ -645,15 +1062,81 @@ impl LiveStreamPipeline {
     }
 }
 
+#[allow(dead_code)]
+fn build_audio_transcode_command(ffmpeg_cmd: &str, origin_url: &str, stream_name: &str) -> String {
+    let ffmpeg_exec = if ffmpeg_cmd.contains(' ') && !ffmpeg_cmd.starts_with('"') {
+        format!("\"{}\"", ffmpeg_cmd)
+    } else {
+        ffmpeg_cmd.to_string()
+    };
+
+    let sanitized_origin = origin_url.replace('"', "\\\"");
+    let output_url = format!("rtsp://127.0.0.1:8554/{}", stream_name);
+
+    format!(
+        "{ffmpeg_exec} -nostdin -loglevel warning -rtsp_transport tcp -i \"{origin}\" -map 0:v:0? -map 0:a:0? -c:v copy -c:a libopus -b:a 96k -ar 48000 -ac 2 -f rtsp -rtsp_transport tcp \"{output}\"",
+        ffmpeg_exec = ffmpeg_exec,
+        origin = sanitized_origin,
+        output = output_url
+    )
+}
+
+#[allow(dead_code)]
 async fn decide_live_pipeline(
     stream_name: &str,
     origin_url: &str,
     ffmpeg_cmd: &str,
     hw_config: &ffmpeg::HwAccelConfig,
 ) -> LiveStreamPipeline {
-    let _ = (stream_name, ffmpeg_cmd, hw_config);
+    let _ = hw_config;
+    let trimmed_origin = origin_url.trim().to_string();
+
+    match fetch_rtsp_sdp(&trimmed_origin, true).await {
+        Some(sdp) => {
+            let audio_codec = parse_audio_codec_from_sdp(&sdp);
+            match audio_codec {
+                Some(StreamAudioCodec::Aac) => {
+                    println!(
+                    "Stream '{}' exposes AAC audio; enabling on-demand FFmpeg transcode to Opus",
+                    stream_name
+                );
+
+                    let command =
+                        build_audio_transcode_command(ffmpeg_cmd, &trimmed_origin, stream_name);
+                    return LiveStreamPipeline::Transcode {
+                        origin_url: trimmed_origin,
+                        command,
+                        encoder: format!("{} -> Opus", StreamAudioCodec::Aac.label()),
+                    };
+                }
+                Some(StreamAudioCodec::Opus)
+                | Some(StreamAudioCodec::Pcma)
+                | Some(StreamAudioCodec::Pcmu) => {
+                    let codec = audio_codec.unwrap();
+                    println!(
+                        "Stream '{}' audio codec '{}' is WebRTC-compatible; using direct pipeline",
+                        stream_name,
+                        codec.label()
+                    );
+                }
+                Some(StreamAudioCodec::Unknown) | None => {
+                    println!(
+                        "Stream '{}' audio codec could not be determined; falling back to direct pipeline",
+                        stream_name
+                    );
+                }
+            }
+        }
+        None => {
+            println!(
+                "Failed to probe SDP for stream '{}'; using direct pipeline",
+                stream_name
+            );
+        }
+    }
+
     LiveStreamPipeline::Direct {
-        source_url: origin_url.trim().to_string(),
+        source_url: trimmed_origin,
     }
 }
 
@@ -928,7 +1411,8 @@ fn build_ssh_session(
         return Err("SSH host is required".to_string());
     }
 
-    let (password_opt, password_source) = resolve_password_with_store(host, password_plain, password_enc)?;
+    let (password_opt, password_source) =
+        resolve_password_with_store(host, password_plain, password_enc)?;
     let password = password_opt.unwrap_or_default();
 
     println!(
@@ -1151,8 +1635,27 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
 
-            let mediamtx_state = Arc::new(StdMutex::new(MediaMtxState::new(&app_handle)));
-            app.manage(mediamtx_state);
+            let go2rtc_state = Arc::new(StdMutex::new(Go2RtcState::new(&app_handle)));
+
+            // Автоматический запуск Go2RTC при старте приложения
+            {
+                let mut guard = go2rtc_state.lock().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to lock go2rtc state: {}", e),
+                    )) as Box<dyn std::error::Error>
+                })?;
+
+                if let Err(err) = spawn_go2rtc_process(&mut guard) {
+                    println!("[setup] Failed to start go2rtc automatically: {}", err);
+                    // Не прерываем инициализацию приложения, если Go2RTC не запустился
+                    // Пользователь сможет запустить его вручную через команду mediamtx_start
+                } else {
+                    println!("[setup] Go2RTC started successfully");
+                }
+            }
+
+            app.manage(go2rtc_state);
 
             let recordings_state = Arc::new(StdMutex::new(RecordingsState::new(
                 default_recordings_dir(),
@@ -1169,6 +1672,33 @@ pub fn run() {
             let ssh_shell_state = Arc::new(StdMutex::new(SshShellManager::default()));
             app.manage(ssh_shell_state);
 
+            let analytics_state = match analytics::prepare_analytics_manager(&app_handle) {
+                Ok(state) => state,
+                Err(err) => return Err(Box::new(err)),
+            };
+            app.manage(analytics_state);
+
+            // Initialize plate database
+            let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                )) as Box<dyn std::error::Error>
+            })?;
+
+            if !app_data_dir.exists() {
+                std::fs::create_dir_all(&app_data_dir)
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            }
+
+            let plate_db = database::commands::init_plate_database(&app_data_dir).map_err(|e| {
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    as Box<dyn std::error::Error>
+            })?;
+
+            let database_state = database::commands::DatabaseState { db: plate_db };
+            app.manage(database_state);
+
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -1177,13 +1707,7 @@ pub fn run() {
             ffmpeg::start_stream,
             ffmpeg::stop_stream,
             ffmpeg::play_recording,
-            mediamtx_start,
-            mediamtx_stop,
-            add_camera_to_mediamtx,
-            mediamtx_add_camera,
-            get_mediamtx_config,
-            check_mediamtx_path_ready,
-            list_mediamtx_paths,
+            start_go2rtc,
             add_camera_streams,
             check_stream_status,
             check_camera_http,
@@ -1204,7 +1728,6 @@ pub fn run() {
             onvif::get_rtsp_url,
             play_direct_rtsp,
             save_config_file,
-            check_mediamtx_status,
             check_rtsp_stream,
             start_recording,
             stop_recording,
@@ -1233,8 +1756,10 @@ pub fn run() {
             camera_sftp_list,
             camera_sftp_download,
             camera_sftp_upload,
+            camera_collect_recent_files,
             camera_remote_delete,
             local_fs_delete,
+            local_fs_ensure_dir,
             local_reveal_path,
             get_app_resource_usage,
             auth::login,
@@ -1245,29 +1770,43 @@ pub fn run() {
             auth::update_user_password,
             auth::update_user_role,
             auth::update_user_permissions,
-            auth::delete_user
+            auth::delete_user,
+            analytics::analytics_list_modules,
+            analytics::analytics_enable_module,
+            analytics::analytics_disable_module,
+            analytics::analytics_update_module_config,
+            analytics::analytics_process_frame,
+            database::commands::get_plate_records,
+            database::commands::get_plate_record_by_id,
+            database::commands::update_plate_notes,
+            database::commands::delete_plate_record,
+            database::commands::get_plate_statistics,
+            database::commands::search_plate_history,
+            database::commands::read_plate_image
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let app_handle = window.app_handle();
-                let mediamtx_state = app_handle.state::<Arc<StdMutex<MediaMtxState>>>();
-                let mediamtx_arc = mediamtx_state.inner().clone();
-                drop(mediamtx_state);
+                let go2rtc_state = app_handle.state::<Arc<StdMutex<Go2RtcState>>>();
+                let go2rtc_arc = go2rtc_state.inner().clone();
+                drop(go2rtc_state);
 
-                let mut mediamtx_child = match mediamtx_arc.lock() {
+                let mut go2rtc_child = match go2rtc_arc.lock() {
                     Ok(mut guard) => guard.child.take(),
                     Err(err) => {
                         println!(
-                            "[shutdown] Failed to lock MediaMTX state for termination: {}",
+                            "[shutdown] Failed to lock Go2RTC state for termination: {}",
                             err
                         );
                         None
                     }
                 };
 
-                if let Some(mut child) = mediamtx_child.take() {
+                if let Some(mut child) = go2rtc_child.take() {
+                    println!("[shutdown] Terminating Go2RTC process...");
                     let _ = child.kill();
                     let _ = child.wait();
+                    println!("[shutdown] Go2RTC process terminated");
                 }
             }
         })
@@ -1275,168 +1814,69 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[allow(dead_code)]
 #[tauri::command]
-async fn list_mediamtx_paths(
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+async fn list_stream_paths(
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<Vec<StreamPathStatus>, String> {
-    fetch_mediamtx_paths(&mediamtx_state).await
+    let settings = load_streaming_settings().await?;
+    fetch_go2rtc_paths(&go2rtc_state, &settings).await
 }
 
-async fn fetch_mediamtx_paths(
-    mediamtx_state: &State<'_, Arc<StdMutex<MediaMtxState>>>,
-) -> Result<Vec<StreamPathStatus>, String> {
-    let bases = load_mediamtx_api_bases(mediamtx_state);
-    if bases.is_empty() {
-        return Ok(Vec::new());
+async fn prewarm_go2rtc_streams(bases: Vec<String>, stream_names: Vec<String>) {
+    if bases.is_empty() || stream_names.is_empty() {
+        return;
     }
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = match Client::builder().timeout(Duration::from_secs(2)).build() {
+        Ok(client) => client,
+        Err(err) => {
+            println!("[go2rtc][warmup] Failed to build HTTP client: {}", err);
+            return;
+        }
+    };
 
-    let mut last_error: Option<String> = None;
-
-    for base in bases {
-        let trimmed = base.trim();
+    // КРИТИЧНО: Используем только базовые имена стримов без модификаторов
+    // Это предотвращает создание множественных producer'ов в Go2RTC
+    let mut unique_sources: BTreeSet<String> = BTreeSet::new();
+    for name in stream_names {
+        let trimmed = name.trim();
         if trimmed.is_empty() {
             continue;
         }
+        unique_sources.insert(trimmed.to_string());
+    }
 
-        let endpoints = [
-            format!("{}/v2/paths/list", trimmed),
-            format!("{}/v1/paths/list", trimmed),
-            format!("{}/paths/list", trimmed),
-        ];
+    for base in bases {
+        let normalized_base = base.trim().trim_end_matches('/');
+        if normalized_base.is_empty() {
+            continue;
+        }
 
-        for endpoint in &endpoints {
-            match client.get(endpoint).send().await {
-                Ok(response) if response.status().is_success() => {
-                    let payload: serde_json::Value = response
-                        .json()
-                        .await
-                        .map_err(|e| format!("Failed to parse MediaMTX response: {}", e))?;
-                    if let Some(items) = collect_mediamtx_paths(&payload) {
-                        return Ok(items);
-                    }
-                }
-                Ok(response) => {
-                    last_error = Some(format!(
-                        "MediaMTX endpoint {} returned status {}",
-                        endpoint,
+        for source in &unique_sources {
+            let encoded = urlencoding::encode(source);
+            let url = format!("{}/api/streams?src={}", normalized_base, encoded);
+            match client.get(&url).send().await {
+                Ok(response) if !response.status().is_success() => {
+                    println!(
+                        "[go2rtc][warmup] {} returned status {}",
+                        url,
                         response.status()
-                    ));
+                    );
+                }
+                Ok(_) => {
+                    // Successful responses are expected (typically HTTP 200/204) and don't need logging.
                 }
                 Err(err) => {
-                    last_error = Some(format!("Failed to query {}: {}", endpoint, err));
+                    println!("[go2rtc][warmup] request {} failed: {}", url, err);
                 }
             }
         }
     }
-
-    if let Some(err) = last_error {
-        Err(err)
-    } else {
-        Ok(Vec::new())
-    }
 }
 
-fn collect_mediamtx_paths(payload: &serde_json::Value) -> Option<Vec<StreamPathStatus>> {
-    if let Some(items) = payload.get("items").and_then(|v| v.as_array()) {
-        let mut result = Vec::new();
-        for item in items {
-            if let Some(entry) = map_mediamtx_path(item) {
-                result.push(entry);
-            }
-        }
-        return Some(result);
-    }
-
-    if let Some(item) = payload.get("item") {
-        if let Some(entry) = map_mediamtx_path(item) {
-            return Some(vec![entry]);
-        }
-    }
-
-    if let Some(array) = payload.as_array() {
-        let mut result = Vec::new();
-        for item in array {
-            if let Some(entry) = map_mediamtx_path(item) {
-                result.push(entry);
-            }
-        }
-        if !result.is_empty() {
-            return Some(result);
-        }
-    }
-
-    None
-}
-
-fn map_mediamtx_path(item: &serde_json::Value) -> Option<StreamPathStatus> {
-    let name = item
-        .get("name")
-        .and_then(|v| v.as_str())
-        .or_else(|| item.get("id").and_then(|v| v.as_str()))?
-        .to_string();
-
-    let ready = item
-        .get("ready")
-        .and_then(|v| v.as_bool())
-        .or_else(|| item.get("sourceReady").and_then(|v| v.as_bool()))
-        .unwrap_or(false);
-
-    let mut protocols: BTreeSet<String> = BTreeSet::new();
-    let mut reader_count = 0usize;
-
-    if let Some(readers) = item.get("readers").and_then(|v| v.as_array()) {
-        reader_count = readers.len();
-        for reader in readers {
-            if let Some(proto) = reader
-                .get("protocol")
-                .or_else(|| reader.get("type"))
-                .and_then(|v| v.as_str())
-            {
-                protocols.insert(proto.to_string());
-            }
-        }
-    }
-
-    let publisher_kind = item
-        .get("source")
-        .and_then(|v| v.get("type").or_else(|| v.get("kind")))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let source_url = item
-        .get("source")
-        .and_then(|v| v.get("url"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let on_demand = item
-        .get("source")
-        .and_then(|v| v.get("onDemand").or_else(|| v.get("on_demand")))
-        .and_then(|v| v.as_bool())
-        .or_else(|| {
-            item.get("onDemand")
-                .or_else(|| item.get("on_demand"))
-                .and_then(|v| v.as_bool())
-        })
-        .unwrap_or(true);
-
-    Some(StreamPathStatus {
-        name,
-        ready,
-        reader_count,
-        active_protocols: protocols.into_iter().collect(),
-        publisher_kind,
-        source_url,
-        on_demand,
-    })
-}
-
-fn load_mediamtx_api_bases(state: &State<'_, Arc<StdMutex<MediaMtxState>>>) -> Vec<String> {
+#[allow(dead_code)]
+fn load_go2rtc_api_bases_internal(state: &State<'_, Arc<StdMutex<Go2RtcState>>>) -> Vec<String> {
     const DEFAULTS: &[&str] = &["http://127.0.0.1:8889", "http://127.0.0.1:9997"];
 
     let mut bases: BTreeSet<String> = DEFAULTS.iter().map(|s| s.to_string()).collect();
@@ -1478,21 +1918,21 @@ fn load_mediamtx_api_bases(state: &State<'_, Arc<StdMutex<MediaMtxState>>>) -> V
     };
 
     if let Some(api_addr) = yaml.get("apiAddress").and_then(|v| v.as_str()) {
-        if let Some(base) = parse_address_to_base(api_addr) {
+        if let Some(base) = parse_address_to_base(api_addr, "http") {
             bases.insert(base);
         }
     }
 
     if let Some(entries) = yaml.get("apiAddresses").and_then(|v| v.as_sequence()) {
         for entry in entries.iter().filter_map(|v| v.as_str()) {
-            if let Some(base) = parse_address_to_base(entry) {
+            if let Some(base) = parse_address_to_base(entry, "http") {
                 bases.insert(base);
             }
         }
     }
 
     if let Some(webrtc_addr) = yaml.get("webrtcAddress").and_then(|v| v.as_str()) {
-        if let Some(base) = parse_address_to_base(webrtc_addr) {
+        if let Some(base) = parse_address_to_base(webrtc_addr, "http") {
             bases.insert(base);
         }
     }
@@ -1500,42 +1940,738 @@ fn load_mediamtx_api_bases(state: &State<'_, Arc<StdMutex<MediaMtxState>>>) -> V
     bases.into_iter().collect()
 }
 
-fn ensure_mediamtx_files(state: &mut MediaMtxState) -> Result<(), String> {
-    if !state.mediamtx_dir.exists() {
-        fs::create_dir_all(&state.mediamtx_dir)
-            .map_err(|e| format!("Failed to create mediamtx directory: {}", e))?;
+fn ensure_go2rtc_files(state: &mut Go2RtcState) -> Result<(), String> {
+    println!("[ensure_go2rtc_files] Starting Go2RTC configuration check...");
+    println!(
+        "[ensure_go2rtc_files] Go2RTC directory: {:?}",
+        state.go2rtc_dir
+    );
+    println!("[ensure_go2rtc_files] Config path: {:?}", state.config_path);
+    println!(
+        "[ensure_go2rtc_files] Executable path: {:?}",
+        state.exe_path
+    );
+
+    if !state.go2rtc_dir.exists() {
+        println!("[ensure_go2rtc_files] Creating go2rtc directory...");
+        fs::create_dir_all(&state.go2rtc_dir)
+            .map_err(|e| format!("Failed to create go2rtc directory: {}", e))?;
+    }
+
+    if !state.exe_path.exists() {
+        println!(
+            "[ensure_go2rtc_files] WARNING: Go2RTC executable not found at {:?}",
+            state.exe_path
+        );
+        return Err(format!("Go2RTC executable not found at {:?}. Please ensure the binary is included in the installer.", state.exe_path));
+    } else {
+        println!("[ensure_go2rtc_files] Go2RTC executable found");
     }
 
     if !state.config_path.exists() {
-        let default_cfg = r#"logLevel: info
-logDestinations: [stdout]
-rtspAddress: :8554
-hlsAddress: :8888
-webrtcAddress: :8889
-api: true
-apiAddress: :9997
-
-paths: {}
+        println!("[ensure_go2rtc_files] Creating default config...");
+        let default_cfg = r#"api:
+  listen: ":1984"
+  origin: "*"
+rtsp:
+  listen: ":8554"
+webrtc:
+  listen: ":8555"
+  # Low-latency optimizations
+  ice_servers: []
+  # Disable candidates gathering timeout for faster connection
+  candidates:
+    - stun:8555
+streams: {}
 "#;
 
         fs::write(&state.config_path, default_cfg)
-            .map_err(|e| format!("Failed to write default mediamtx config: {}", e))?;
+            .map_err(|e| format!("Failed to write default go2rtc config: {}", e))?;
+        println!("[ensure_go2rtc_files] Default config created");
+    }
+
+    println!("[ensure_go2rtc_files] Loading config...");
+    let mut config = load_go2rtc_config(state)?;
+    let mut updated = false;
+
+    if ensure_go2rtc_api_defaults(&mut config) {
+        updated = true;
+    }
+
+    if ensure_go2rtc_log_defaults(&mut config) {
+        updated = true;
+    }
+
+    if ensure_go2rtc_ffmpeg_defaults(&mut config, state) {
+        updated = true;
+    }
+
+    if backfill_go2rtc_variants(&mut config) {
+        updated = true;
+    }
+
+    if updated {
+        save_go2rtc_config(state, &config)?;
     }
 
     Ok(())
 }
 
-fn load_mediamtx_config(state: &MediaMtxState) -> Result<serde_yaml::Value, String> {
-    let content = fs::read_to_string(&state.config_path)
-        .map_err(|e| format!("Failed to read mediamtx config: {}", e))?;
-    serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse mediamtx config: {}", e))
+fn ensure_go2rtc_api_defaults(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    let mut changed = false;
+
+    if !config.is_mapping() {
+        *config = Value::Mapping(Mapping::new());
+        changed = true;
+    }
+
+    let root = config.as_mapping_mut().unwrap();
+    let api_key = Value::String("api".to_string());
+    let api_entry = root
+        .entry(api_key.clone())
+        .or_insert(Value::Mapping(Mapping::new()));
+
+    if !api_entry.is_mapping() {
+        *api_entry = Value::Mapping(Mapping::new());
+        changed = true;
+    }
+
+    let api_map = api_entry.as_mapping_mut().unwrap();
+
+    let listen_key = Value::String("listen".to_string());
+    let desired_listen = Value::String(":1984".to_string());
+    if !api_map.contains_key(&listen_key) {
+        api_map.insert(listen_key.clone(), desired_listen.clone());
+        changed = true;
+    }
+
+    let origin_key = Value::String("origin".to_string());
+    let desired_origin = Value::String("*".to_string());
+    match api_map.get(&origin_key) {
+        Some(existing) if existing == &desired_origin => {}
+        _ => {
+            api_map.insert(origin_key, desired_origin);
+            changed = true;
+        }
+    }
+
+    changed
 }
 
-fn save_mediamtx_config(state: &MediaMtxState, value: &serde_yaml::Value) -> Result<(), String> {
+fn ensure_go2rtc_log_defaults(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    if !config.is_mapping() {
+        return false;
+    }
+
+    let root = config.as_mapping_mut().unwrap();
+    let log_key = Value::String("log".into());
+    let log_entry = root
+        .entry(log_key.clone())
+        .or_insert(Value::Mapping(Mapping::new()));
+
+    if !log_entry.is_mapping() {
+        *log_entry = Value::Mapping(Mapping::new());
+    }
+
+    let map = log_entry.as_mapping_mut().unwrap();
+    let level_key = Value::String("level".into());
+    let desired_level = Value::String("debug".into());
+
+    match map.get(&level_key) {
+        Some(existing) if existing == &desired_level => false,
+        _ => {
+            map.insert(level_key, desired_level);
+            true
+        }
+    }
+}
+
+fn ensure_go2rtc_ffmpeg_defaults(config: &mut serde_yaml::Value, state: &Go2RtcState) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    if !config.is_mapping() {
+        return false;
+    }
+
+    let ffmpeg_bin = resolve_ffmpeg_bin(state);
+
+    let root = config.as_mapping_mut().unwrap();
+    let ffmpeg_key = Value::String("ffmpeg".into());
+    let entry = root
+        .entry(ffmpeg_key.clone())
+        .or_insert(Value::Mapping(Mapping::new()));
+
+    if !entry.is_mapping() {
+        *entry = Value::Mapping(Mapping::new());
+    }
+
+    let map = entry.as_mapping_mut().unwrap();
+    let bin_key = Value::String("bin".into());
+    let desired_bin = Value::String(ffmpeg_bin);
+
+    match map.get(&bin_key) {
+        Some(existing) if existing == &desired_bin => false,
+        _ => {
+            map.insert(bin_key, desired_bin);
+            true
+        }
+    }
+}
+
+fn resolve_ffmpeg_bin(state: &Go2RtcState) -> String {
+    // If we have prepared ffmpeg-silent in the go2rtc directory, use it to suppress windows.
+    if state.ffmpeg_silent_path.exists() {
+        return state.ffmpeg_silent_path.to_string_lossy().to_string();
+    }
+
+    // Fallback to standard ffmpeg if silent wrapper is missing
+    if state.ffmpeg_path.exists() {
+        // Use absolute path to avoid any ambiguity
+        return state.ffmpeg_path.to_string_lossy().to_string();
+    }
+
+    #[cfg(windows)]
+    {
+        if let Some(path) = resolve_bundled_ffmpeg() {
+            return path.to_string_lossy().to_string();
+        }
+        // Provide a deterministic fallback to avoid go2rtc falling back to system ffmpeg with UI windows
+        println!(
+            "[resolve_ffmpeg_bin] Bundled ffmpeg-silent binaries not found, falling back to ffmpeg-silent.exe in PATH"
+        );
+        return "ffmpeg-silent.exe".into();
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Honour overrides first, otherwise fall back to system ffmpeg binary name.
+        if let Some(env_override) = env::var_os("FFMPEG_PATH") {
+            if !env_override.is_empty() {
+                let override_path = PathBuf::from(&env_override);
+                if override_path.is_dir() {
+                    if let Some(path) = override_path.join("ffmpeg").to_str() {
+                        return Some(path.to_string());
+                    }
+                } else if let Some(path) = override_path.to_str() {
+                    return Some(path.to_string());
+                }
+            }
+        }
+
+        // On Linux/macOS, assume ffmpeg is in PATH
+        Some("ffmpeg".into())
+    }
+}
+
+#[cfg(windows)]
+fn resolve_bundled_ffmpeg() -> Option<std::path::PathBuf> {
+    use std::collections::HashSet;
+    use std::env;
+
+    let exe = env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut push_dir = |dir: PathBuf| {
+        if dir.as_os_str().is_empty() {
+            return;
+        }
+        dirs.push(dir);
+    };
+
+    // Search specific binary directories first to ensure we find the full toolset (ffmpeg.exe + shims)
+    // rather than just shims that might be stranded in the root.
+    push_dir(exe_dir.join("binaries"));
+    push_dir(exe_dir.join("resources").join("binaries"));
+    push_dir(exe_dir.to_path_buf());
+    push_dir(exe_dir.join("resources"));
+
+    // Search ancestors and their common binary folders (covers dev + packaged installs).
+    for ancestor in exe_dir.ancestors() {
+        push_dir(ancestor.to_path_buf());
+        push_dir(ancestor.join("binaries"));
+        push_dir(ancestor.join("src-tauri").join("binaries"));
+        push_dir(ancestor.join("src-tauri").join("binaries").join("windows"));
+        push_dir(ancestor.join("src-tauri").join("target").join("debug"));
+        push_dir(ancestor.join("src-tauri").join("target").join("release"));
+    }
+
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        if !seen.insert(dir.clone()) {
+            continue;
+        }
+
+        for filename in ["ffmpeg.exe", "ffmpeg-silent.exe", "ffmpeg-silent-launcher.exe"] {
+            let candidate = dir.join(filename);
+            if candidate.exists() {
+                println!("[resolve_bundled_ffmpeg] Using {}", candidate.display());
+                // Debug log to verify path in production
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("C:\\Users\\Public\\dashboard_path.log") {
+                    let _ = writeln!(f, "Found ffmpeg at: {}", candidate.display());
+                }
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+pub(crate) fn resolve_ffmpeg_command() -> String {
+    #[cfg(windows)]
+    {
+        if let Some(path) = resolve_bundled_ffmpeg() {
+            return path.to_string_lossy().to_string();
+        }
+        println!(
+            "[resolve_ffmpeg_command] Bundled ffmpeg-silent binaries not found, falling back to ffmpeg-silent.exe"
+        );
+        return "ffmpeg-silent.exe".into();
+    }
+
+    #[cfg(not(windows))]
+    {
+        "ffmpeg".into()
+    }
+}
+
+fn backfill_go2rtc_variants(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::Value;
+
+    // Clone the top-level mapping to iterate safely before mutating config.
+    let root = match config.as_mapping() {
+        Some(map) => map.clone(),
+        None => return false,
+    };
+
+    let streams_value = match root.get(&Value::String("streams".into())) {
+        Some(value) => value.clone(),
+        None => return false,
+    };
+
+    let streams_map = match streams_value.as_mapping() {
+        Some(map) => map,
+        None => return false,
+    };
+
+    // Collect base RTSP streams so we can regenerate codec-specific variants with ffmpeg fallbacks.
+    let mut candidates: Vec<(String, String)> = Vec::new();
+
+    for (key, value) in streams_map.iter() {
+        let name = match key.as_str() {
+            Some(name) if !name.contains('#') => name.to_string(),
+            _ => continue,
+        };
+
+        let url = match value.as_sequence().and_then(|seq| seq.first()) {
+            Some(Value::String(url))
+                if url.starts_with("rtsp://") || url.starts_with("rtsps://") =>
+            {
+                url.to_string()
+            }
+            _ => continue,
+        };
+
+        candidates.push((name, url));
+    }
+
+    let mut changed = false;
+    for (name, url) in candidates {
+        if ensure_go2rtc_stream(config, &name, &url) {
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn load_go2rtc_config(state: &Go2RtcState) -> Result<serde_yaml::Value, String> {
+    let content = fs::read_to_string(&state.config_path)
+        .map_err(|e| format!("Failed to read go2rtc config: {}", e))?;
+    serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse go2rtc config: {}", e))
+}
+
+fn save_go2rtc_config(state: &Go2RtcState, value: &serde_yaml::Value) -> Result<(), String> {
     let content = serde_yaml::to_string(value)
-        .map_err(|e| format!("Failed to serialize mediamtx config: {}", e))?;
+        .map_err(|e| format!("Failed to serialize go2rtc config: {}", e))?;
     fs::write(&state.config_path, content)
-        .map_err(|e| format!("Failed to write mediamtx config: {}", e))
+        .map_err(|e| format!("Failed to write go2rtc config: {}", e))
+}
+
+fn ensure_go2rtc_preload(config: &mut serde_yaml::Value, stream_name: &str, query: &str) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    if !config.is_mapping() {
+        return false;
+    }
+
+    let root = config.as_mapping_mut().unwrap();
+    let preload_entry = root
+        .entry(Value::String("preload".into()))
+        .or_insert(Value::Mapping(Mapping::new()));
+
+    if !preload_entry.is_mapping() {
+        *preload_entry = Value::Mapping(Mapping::new());
+    }
+
+    let preload_map = preload_entry.as_mapping_mut().unwrap();
+    let key = Value::String(stream_name.to_string());
+    let desired = Value::String(query.to_string());
+
+    match preload_map.get(&key) {
+        Some(existing) if existing == &desired => false,
+        _ => {
+            preload_map.insert(key, desired);
+            true
+        }
+    }
+}
+
+fn ensure_go2rtc_stream(map: &mut serde_yaml::Value, stream_name: &str, url: &str) -> bool {
+    use serde_yaml::Value;
+
+    if !map.is_mapping() {
+        *map = Value::Mapping(serde_yaml::Mapping::new());
+    }
+
+    let mut changed = false;
+    // DISABLED: Preload causes Go2RTC to crash if camera is unreachable at startup
+    // Let streams start on-demand instead of preloading
+    let should_preload = false; // was: !stream_name.contains('#') && (url.starts_with("rtsp://") || url.starts_with("rtsps://"));
+
+    // Add RTSP buffer parameter for low latency
+    // Note: Frontend controls actual latency behavior via WebRTC settings
+    // This just sets go2rtc's RTSP buffer to minimum by default
+    // DISABLED: buffer=0 can cause connection issues with some cameras
+    let optimized_url = url.to_string();
+
+    /*
+    let optimized_url = if url.starts_with("rtsp://") || url.starts_with("rtsps://") {
+        if url.contains('?') {
+            if !url.contains("buffer=") {
+                format!("{}&buffer=0", url)
+            } else {
+                url.to_string()
+            }
+        } else {
+            format!("{}?buffer=0", url)
+        }
+    } else {
+        url.to_string()
+    };
+    */
+
+    {
+        let root = map.as_mapping_mut().unwrap();
+        let streams_entry = root
+            .entry(Value::String("streams".into()))
+            .or_insert(Value::Mapping(serde_yaml::Mapping::new()));
+
+        if !streams_entry.is_mapping() {
+            *streams_entry = Value::Mapping(serde_yaml::Mapping::new());
+        }
+
+        let streams_map = streams_entry.as_mapping_mut().unwrap();
+        let key = Value::String(stream_name.to_string());
+
+        let mut insert_base = false;
+
+        match streams_map.get_mut(&key) {
+            Some(existing) => match existing {
+                Value::Sequence(sequence) => {
+                    // Replace the entire sequence with the new URL instead of appending
+                    // This prevents accumulating outdated camera URLs
+                    if sequence.len() != 1
+                        || !matches!(sequence.first(), Some(Value::String(s)) if s == &optimized_url)
+                    {
+                        *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
+                        changed = true;
+                    }
+                }
+                Value::String(current) => {
+                    if current != &optimized_url {
+                        *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
+                        changed = true;
+                    }
+                }
+                _ => {
+                    *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
+                    changed = true;
+                }
+            },
+            None => {
+                insert_base = true;
+            }
+        }
+
+        if insert_base {
+            streams_map.insert(
+                key,
+                Value::Sequence(vec![Value::String(optimized_url.clone())]),
+            );
+            changed = true;
+        }
+
+        // Ensure helper variants that request audio transcoding exist so WHEP lookups
+        // like "cam3_0#audio=opus" resolve instead of returning 404.
+        if optimized_url.starts_with("rtsp://") || optimized_url.starts_with("rtsps://") {
+            const VARIANTS: [&str; 3] = [
+                "#audio=opus",
+                "#video=h264#audio=opus",
+                "#video=copy#audio=opus",
+            ];
+
+            for suffix in VARIANTS.into_iter() {
+                let variant_name = format!("{}{}", stream_name, suffix);
+                let variant_key = Value::String(variant_name);
+
+                let mut sources: Vec<Value> = Vec::new();
+                let direct_variant = format!("{}{}", url, suffix);
+                sources.push(Value::String(direct_variant));
+
+                // Add ffmpeg-backed fallback so WebRTC always has an Opus track even when the camera lacks it.
+                let ffmpeg_variant = format!("ffmpeg:{}{}", stream_name, suffix);
+                if !sources
+                    .iter()
+                    .any(|value| matches!(value, Value::String(s) if s == &ffmpeg_variant))
+                {
+                    sources.push(Value::String(ffmpeg_variant));
+                }
+
+                let variant_value = Value::Sequence(sources);
+
+                match streams_map.get(&variant_key) {
+                    Some(existing) if existing == &variant_value => {}
+                    _ => {
+                        streams_map.insert(variant_key, variant_value);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if should_preload {
+        if ensure_go2rtc_preload(map, stream_name, "video&audio=opus") {
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn spawn_go2rtc_process(state: &mut Go2RtcState) -> Result<(), String> {
+    println!("[spawn_go2rtc_process] Starting Go2RTC process...");
+    println!("[spawn_go2rtc_process] Executable: {:?}", state.exe_path);
+    println!("[spawn_go2rtc_process] Config: {:?}", state.config_path);
+    println!(
+        "[spawn_go2rtc_process] Working directory: {:?}",
+        state.go2rtc_dir
+    );
+
+    ensure_go2rtc_files(state)?;
+
+    if !state.exe_path.exists() {
+        let error = format!("Go2RTC executable not found at {:?}", state.exe_path);
+        println!("[spawn_go2rtc_process] ERROR: {}", error);
+        return Err(error);
+    }
+
+    println!("[spawn_go2rtc_process] Building command...");
+    let mut cmd = StdCommand::new(&state.exe_path);
+    cmd.arg("-c")
+        .arg(&state.config_path)
+        .current_dir(&state.go2rtc_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW (0x08000000) - don't create a console window
+        // DETACHED_PROCESS (0x00000008) - detach from parent console
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        println!("[spawn_go2rtc_process] Set CREATE_NO_WINDOW and DETACHED_PROCESS flags");
+    }
+
+    println!("[spawn_go2rtc_process] Spawning process...");
+    let mut child = cmd.spawn().map_err(|e| {
+        let error = format!("Failed to start go2rtc: {}", e);
+        println!("[spawn_go2rtc_process] ERROR: {}", error);
+        error
+    })?;
+
+    println!(
+        "[spawn_go2rtc_process] Process spawned with PID: {:?}",
+        child.id()
+    );
+
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                println!("[go2rtc][out] {}", line);
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                eprintln!("[go2rtc][err] {}", line);
+            }
+        });
+    }
+
+    // Give Go2RTC a moment to initialize and check if it's still running
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            let error = format!("Go2RTC process exited immediately with status: {}", status);
+            println!("[spawn_go2rtc_process] ERROR: {}", error);
+            return Err(error);
+        }
+        Ok(None) => {
+            println!("[spawn_go2rtc_process] Go2RTC process is running");
+        }
+        Err(e) => {
+            println!(
+                "[spawn_go2rtc_process] Warning: Could not check process status: {}",
+                e
+            );
+        }
+    }
+
+    state.child = Some(child);
+    println!("[spawn_go2rtc_process] Go2RTC process started successfully");
+
+    // Wait for Go2RTC API to become available in a blocking thread
+    println!("[spawn_go2rtc_process] Waiting for Go2RTC API to be ready...");
+
+    // Use a simple loop with std::thread::sleep to avoid tokio blocking issues
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+    let check_interval = std::time::Duration::from_millis(100);
+
+    while start.elapsed() < timeout {
+        match std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:1984".parse().unwrap(),
+            std::time::Duration::from_millis(500),
+        ) {
+            Ok(_) => {
+                println!("[spawn_go2rtc_process] Go2RTC API is ready");
+                return Ok(());
+            }
+            Err(_) => {
+                std::thread::sleep(check_interval);
+            }
+        }
+    }
+
+    Err("Timeout waiting for Go2RTC API to become ready".to_string())
+}
+
+#[allow(dead_code)]
+fn wait_for_go2rtc_ready_deprecated() -> Result<(), String> {
+    // Deprecated: causes panic when called from async context
+    // Use TcpStream check in spawn_go2rtc_process instead
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(10);
+    let check_interval = Duration::from_millis(100);
+
+    while start.elapsed() < timeout {
+        match reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(500))
+            .build()
+        {
+            Ok(client) => {
+                if let Ok(response) = client.get("http://127.0.0.1:1984/api").send() {
+                    if response.status().is_success() {
+                        return Ok(());
+                    }
+                }
+            }
+            Err(e) => {
+                println!(
+                    "[wait_for_go2rtc_ready_deprecated] Failed to create HTTP client: {}",
+                    e
+                );
+            }
+        }
+        std::thread::sleep(check_interval);
+    }
+
+    Err("Timeout waiting for Go2RTC API to become ready".to_string())
+}
+
+// Restart Go2RTC process with updated configuration
+fn restart_go2rtc(state: &mut Go2RtcState) -> Result<(), String> {
+    println!("[restart_go2rtc] Stopping Go2RTC process...");
+    if let Some(mut child) = state.child.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    println!("[restart_go2rtc] Starting Go2RTC process...");
+    spawn_go2rtc_process(state)
+}
+
+#[allow(dead_code)]
+fn restart_go2rtc_if_running(state: &mut Go2RtcState) -> Result<(), String> {
+    if state.child.is_some() {
+        restart_go2rtc(state)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_go2rtc(
+    state: tauri::State<'_, Arc<StdMutex<Go2RtcState>>>,
+) -> Result<String, String> {
+    let arc = state.inner().clone();
+    let mut guard = arc
+        .lock()
+        .map_err(|e| format!("Failed to lock go2rtc state: {}", e))?;
+
+    // If already running, just return success
+    if guard.child.is_some() {
+        return Ok("go2rtc already running".to_string());
+    }
+
+    // Start go2rtc process
+    spawn_go2rtc_process(&mut guard)?;
+
+    Ok("go2rtc started successfully".to_string())
+}
+
+#[allow(dead_code)]
+fn ensure_webrtc_codecs(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::Value;
+
+    if !config.is_mapping() {
+        return false;
+    }
+
+    let map = config.as_mapping_mut().unwrap();
+    let removed_primary = map.remove(&Value::String("webrtcCodecs".into())).is_some();
+    let removed_additional = map
+        .remove(&Value::String("webrtcAdditionalCodecs".into()))
+        .is_some();
+
+    if removed_primary || removed_additional {
+        println!("[mediamtx] Removed unsupported webrtc codec configuration keys");
+    }
+
+    removed_primary || removed_additional
 }
 
 #[tauri::command]
@@ -1568,6 +2704,7 @@ fn sanitize_stream_key(name: &str) -> String {
     sanitize_filename(name).to_lowercase()
 }
 
+#[allow(dead_code)]
 fn ensure_paths_mapping<'a>(root: &'a mut serde_yaml::Value) -> &'a mut serde_yaml::Mapping {
     if !root.is_mapping() {
         *root = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
@@ -1575,10 +2712,12 @@ fn ensure_paths_mapping<'a>(root: &'a mut serde_yaml::Value) -> &'a mut serde_ya
     root.as_mapping_mut().unwrap()
 }
 
+#[allow(dead_code)]
 fn ensure_stream_path(
     map: &mut serde_yaml::Value,
     stream_name: &str,
     pipeline: &LiveStreamPipeline,
+    enable_on_demand: bool,
 ) -> bool {
     use serde_yaml::Value;
 
@@ -1597,7 +2736,10 @@ fn ensure_stream_path(
                 Value::String("source".into()),
                 Value::String(source_url.to_string()),
             );
-            stream_map.insert(Value::String("sourceOnDemand".into()), Value::Bool(true));
+            stream_map.insert(
+                Value::String("sourceOnDemand".into()),
+                Value::Bool(enable_on_demand),
+            );
             stream_map.insert(
                 Value::String("rtspTransport".into()),
                 Value::String("tcp".into()),
@@ -1608,15 +2750,11 @@ fn ensure_stream_path(
             );
             Value::Mapping(stream_map)
         }
-        LiveStreamPipeline::Transcode {
-            origin_url,
-            command,
-            encoder,
-        } => {
+        LiveStreamPipeline::Transcode { command, .. } => {
             let mut stream_map = serde_yaml::Mapping::new();
             stream_map.insert(
-                Value::String("originUrl".into()),
-                Value::String(origin_url.to_string()),
+                Value::String("source".into()),
+                Value::String("publisher".into()),
             );
             stream_map.insert(
                 Value::String("runOnDemand".into()),
@@ -1638,10 +2776,6 @@ fn ensure_stream_path(
                 Value::String("disablePublisherOverride".into()),
                 Value::Bool(false),
             );
-            stream_map.insert(
-                Value::String("videoEncoder".into()),
-                Value::String(encoder.to_string()),
-            );
             Value::Mapping(stream_map)
         }
     };
@@ -1658,61 +2792,393 @@ fn ensure_stream_path(
     needs_update
 }
 
-fn extract_mediamtx_source(config: &serde_yaml::Value, stream_name: &str) -> Option<String> {
-    let paths = config.get("paths")?.as_mapping()?;
-    let entry = paths.get(&serde_yaml::Value::String(stream_name.to_string()))?;
-    let entry_map = entry.as_mapping()?;
+fn extract_go2rtc_source(config: &serde_yaml::Value, stream_name: &str) -> Option<String> {
+    let streams = config.get("streams")?.as_mapping()?;
+    let entry = streams.get(&serde_yaml::Value::String(stream_name.to_string()))?;
 
-    if let Some(source) = entry_map
-        .get(&serde_yaml::Value::String("source".into()))
-        .and_then(|v| v.as_str())
-    {
-        return Some(source.to_string());
+    match entry {
+        serde_yaml::Value::String(value) if !value.trim().is_empty() => {
+            Some(value.trim().to_string())
+        }
+        serde_yaml::Value::Sequence(sequence) => {
+            for item in sequence {
+                match item {
+                    serde_yaml::Value::String(value) if !value.trim().is_empty() => {
+                        return Some(value.trim().to_string());
+                    }
+                    serde_yaml::Value::Mapping(map) => {
+                        if let Some(url) = map
+                            .get(&serde_yaml::Value::String("url".into()))
+                            .and_then(|v| v.as_str())
+                        {
+                            let trimmed = url.trim();
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        serde_yaml::Value::Mapping(map) => map
+            .get(&serde_yaml::Value::String("url".into()))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string()),
+        _ => None,
     }
-
-    entry_map
-        .get(&serde_yaml::Value::String("originUrl".into()))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
 }
 
-fn set_mediamtx_transport(
-    config: &mut serde_yaml::Value,
-    stream_name: &str,
-    transport: &str,
-) -> bool {
-    let paths_value = match config.get_mut("paths") {
-        Some(value) => value,
-        None => return false,
-    };
-    let paths_map = match paths_value.as_mapping_mut() {
-        Some(map) => map,
-        None => return false,
-    };
+#[allow(dead_code)]
+fn collect_consumer_info(value: &serde_json::Value, protocols: &mut BTreeSet<String>) -> usize {
+    if let Some(map) = value.as_object() {
+        for consumer in map.values() {
+            if let Some(proto) = consumer
+                .get("protocol")
+                .or_else(|| consumer.get("proto"))
+                .or_else(|| consumer.get("type"))
+                .and_then(|v| v.as_str())
+            {
+                protocols.insert(proto.to_string());
+            }
+        }
+        map.len()
+    } else if let Some(array) = value.as_array() {
+        for consumer in array {
+            if let Some(proto) = consumer
+                .get("protocol")
+                .or_else(|| consumer.get("proto"))
+                .or_else(|| consumer.get("type"))
+                .and_then(|v| v.as_str())
+            {
+                protocols.insert(proto.to_string());
+            } else if let Some(proto) = consumer.as_str() {
+                if !proto.is_empty() {
+                    protocols.insert(proto.to_string());
+                }
+            }
+        }
+        array.len()
+    } else if let Some(proto) = value.as_str() {
+        if !proto.is_empty() {
+            protocols.insert(proto.to_string());
+            1
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
 
-    let key = serde_yaml::Value::String(stream_name.to_string());
-    let entry_value = match paths_map.get_mut(&key) {
-        Some(value) => value,
-        None => return false,
-    };
-
-    let entry_map = match entry_value.as_mapping_mut() {
-        Some(map) => map,
-        None => return false,
-    };
-
-    let transport_key = serde_yaml::Value::String("rtspTransport".into());
-    let desired = serde_yaml::Value::String(transport.to_string());
-
-    match entry_map.get(&transport_key) {
-        Some(existing) if existing == &desired => false,
-        _ => {
-            entry_map.insert(transport_key, desired);
-            true
+#[allow(dead_code)]
+fn extract_url_from_value(value: &serde_json::Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        if !s.is_empty() {
+            return Some(s.to_string());
         }
     }
+
+    if let Some(array) = value.as_array() {
+        for entry in array {
+            if let Some(url) = extract_url_from_value(entry) {
+                return Some(url);
+            }
+        }
+    }
+
+    if let Some(map) = value.as_object() {
+        for key in ["url", "source", "input", "stream", "uri"] {
+            if let Some(url) = map.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                return Some(url);
+            }
+        }
+
+        for entry in map.values() {
+            if let Some(url) = extract_url_from_value(entry) {
+                return Some(url);
+            }
+        }
+    }
+
+    None
 }
 
+#[allow(dead_code)]
+fn map_go2rtc_stream(
+    name: &str,
+    entry: &serde_json::Value,
+    settings: &StreamingSettings,
+) -> StreamPathStatus {
+    let ready = entry
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(|s| {
+            matches!(
+                s.to_ascii_lowercase().as_str(),
+                "online" | "ready" | "active"
+            )
+        })
+        .or_else(|| {
+            entry
+                .get("state")
+                .and_then(|v| v.as_str())
+                .map(|s| matches!(s.to_ascii_lowercase().as_str(), "ok" | "online" | "ready"))
+        })
+        .or_else(|| entry.get("ready").and_then(|v| v.as_bool()))
+        .or_else(|| entry.get("online").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+
+    let mut protocols: BTreeSet<String> = BTreeSet::new();
+    let mut reader_count = 0usize;
+
+    if let Some(consumers) = entry.get("consumers") {
+        reader_count += collect_consumer_info(consumers, &mut protocols);
+    }
+
+    if let Some(clients) = entry.get("clients") {
+        reader_count += collect_consumer_info(clients, &mut protocols);
+    }
+
+    if reader_count == 0 {
+        if let Some(viewers) = entry.get("viewers") {
+            reader_count += collect_consumer_info(viewers, &mut protocols);
+        }
+    }
+
+    let publisher_kind = entry
+        .get("producer")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            entry
+                .get("producers")
+                .and_then(|v| v.as_object())
+                .and_then(|map| map.keys().next().map(|k| k.to_string()))
+        });
+
+    let source_url = entry
+        .get("source")
+        .and_then(extract_url_from_value)
+        .or_else(|| {
+            entry
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            entry
+                .get("producers")
+                .and_then(|v| v.as_object())
+                .and_then(|map| map.values().find_map(extract_url_from_value))
+        });
+
+    let on_demand = entry
+        .get("on_demand")
+        .or_else(|| entry.get("onDemand"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(settings.enable_on_demand);
+
+    StreamPathStatus {
+        name: name.to_string(),
+        ready,
+        reader_count,
+        active_protocols: protocols.into_iter().collect(),
+        publisher_kind,
+        source_url,
+        on_demand,
+    }
+}
+
+fn load_go2rtc_api_bases(
+    state: &State<'_, Arc<StdMutex<Go2RtcState>>>,
+    settings: &StreamingSettings,
+) -> Vec<String> {
+    let mut bases: BTreeSet<String> = settings
+        .go2rtc_api_bases()
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+
+    if bases.is_empty() {
+        bases.insert(GO2RTC_DEFAULT_API.to_string());
+    }
+
+    let state_guard = match state.lock() {
+        Ok(guard) => guard,
+        Err(err) => {
+            println!("[go2rtc] Failed to lock state: {}", err);
+            return bases.into_iter().collect();
+        }
+    };
+    let config_path = state_guard.config_path.clone();
+    drop(state_guard);
+
+    let config_raw = match fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(err) => {
+            println!("[go2rtc] Failed to read config {:?}: {}", config_path, err);
+            return bases.into_iter().collect();
+        }
+    };
+
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(&config_raw) {
+        Ok(value) => value,
+        Err(err) => {
+            println!("[go2rtc] Failed to parse config {:?}: {}", config_path, err);
+            return bases.into_iter().collect();
+        }
+    };
+
+    if let Some(api_node) = yaml.get("api") {
+        if let Some(addr) = api_node.as_str() {
+            if let Some(base) = parse_address_to_base(addr, "http") {
+                bases.insert(base);
+            }
+        } else if let Some(map) = api_node.as_mapping() {
+            for key in ["listen", "address", "addr"] {
+                if let Some(value) = map
+                    .get(&serde_yaml::Value::String(key.to_string()))
+                    .and_then(|v| v.as_str())
+                {
+                    if let Some(base) = parse_address_to_base(value, "http") {
+                        bases.insert(base);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(http_node) = yaml.get("http") {
+        if let Some(addr) = http_node.as_str() {
+            if let Some(base) = parse_address_to_base(addr, "http") {
+                bases.insert(base);
+            }
+        } else if let Some(map) = http_node.as_mapping() {
+            for key in ["listen", "address", "addr"] {
+                if let Some(value) = map
+                    .get(&serde_yaml::Value::String(key.to_string()))
+                    .and_then(|v| v.as_str())
+                {
+                    if let Some(base) = parse_address_to_base(value, "http") {
+                        bases.insert(base);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut list: Vec<String> = bases.into_iter().collect();
+    list.sort();
+    list
+}
+
+#[allow(dead_code)]
+async fn fetch_go2rtc_paths(
+    go2rtc_state: &State<'_, Arc<StdMutex<Go2RtcState>>>,
+    settings: &StreamingSettings,
+) -> Result<Vec<StreamPathStatus>, String> {
+    let bases = load_go2rtc_api_bases(go2rtc_state, settings);
+    if bases.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let mut last_error: Option<String> = None;
+
+    for base in bases {
+        let trimmed = base.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let endpoints = [
+            format!("{}/api/streams", trimmed),
+            format!("{}/streams", trimmed),
+            format!("{}/api/streams/list", trimmed),
+        ];
+
+        for endpoint in &endpoints {
+            match client.get(endpoint).send().await {
+                Ok(response) if response.status().is_success() => {
+                    let payload: serde_json::Value = response
+                        .json()
+                        .await
+                        .map_err(|e| format!("Failed to parse go2rtc response: {}", e))?;
+
+                    let mut result: Vec<StreamPathStatus> = Vec::new();
+
+                    if let Some(map) = payload.get("streams").and_then(|v| v.as_object()) {
+                        for (name, entry) in map {
+                            result.push(map_go2rtc_stream(name, entry, settings));
+                        }
+                    } else if let Some(map) = payload.as_object() {
+                        for (name, entry) in map {
+                            result.push(map_go2rtc_stream(name, entry, settings));
+                        }
+                    } else if let Some(array) = payload.as_array() {
+                        for entry in array {
+                            if let Some(name) = entry.get("name").and_then(|v| v.as_str()) {
+                                result.push(map_go2rtc_stream(name, entry, settings));
+                            }
+                        }
+                    }
+
+                    if !result.is_empty() {
+                        result.sort_by(|a, b| a.name.cmp(&b.name));
+                        return Ok(result);
+                    }
+                }
+                Ok(response) => {
+                    last_error = Some(format!(
+                        "go2rtc endpoint {} returned status {}",
+                        endpoint,
+                        response.status()
+                    ));
+                }
+                Err(err) => {
+                    last_error = Some(format!("Failed to query {}: {}", endpoint, err));
+                }
+            }
+        }
+    }
+
+    if let Some(err) = last_error {
+        Err(err)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+#[allow(dead_code)]
+fn parse_origin_from_run_on_demand(command: &str) -> Option<String> {
+    let mut parts = command.split("-i");
+    parts.next()?; // skip text before first -i
+
+    if let Some(after_flag) = parts.next() {
+        let trimmed = after_flag.trim_start();
+        if trimmed.starts_with('"') {
+            let remainder = &trimmed[1..];
+            if let Some(end) = remainder.find('"') {
+                return Some(remainder[..end].to_string());
+            }
+        } else if !trimmed.is_empty() {
+            let end = trimmed
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(trimmed.len());
+            return Some(trimmed[..end].to_string());
+        }
+    }
+
+    None
+}
+
+#[allow(dead_code)]
 fn infer_rtsp_transport(transport_header: &str) -> Option<&'static str> {
     let lower = transport_header.to_ascii_lowercase();
     if lower.contains("tcp") {
@@ -1736,82 +3202,14 @@ struct StreamPathStatus {
     on_demand: bool,
 }
 
-fn spawn_mediamtx_process(state: &mut MediaMtxState) -> Result<(), String> {
-    ensure_mediamtx_files(state)?;
-
-    let mut cmd = StdCommand::new(&state.exe_path);
-    cmd.arg(&state.config_path)
-        .current_dir(&state.mediamtx_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x08000000);
-    }
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start mediamtx: {}", e))?;
-
-    if let Some(stdout) = child.stdout.take() {
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                println!("[mediamtx][out] {}", line);
-            }
-        });
-    }
-
-    if let Some(stderr) = child.stderr.take() {
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().flatten() {
-                eprintln!("[mediamtx][err] {}", line);
-            }
-        });
-    }
-
-    state.child = Some(child);
-    Ok(())
-}
-
-fn restart_mediamtx(state: &mut MediaMtxState) -> Result<(), String> {
-    if let Some(mut child) = state.child.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    spawn_mediamtx_process(state)
-}
-
-fn restart_if_running(state: &mut MediaMtxState) -> Result<(), String> {
-    if state.child.is_some() {
-        restart_mediamtx(state)?;
-    }
-    Ok(())
-}
-
-fn upsert_single_stream(
-    state: &mut MediaMtxState,
-    stream_name: &str,
-    pipeline: &LiveStreamPipeline,
-) -> Result<bool, String> {
-    ensure_mediamtx_files(state)?;
-    let mut config = load_mediamtx_config(state)?;
-    let updated = ensure_stream_path(&mut config, stream_name, pipeline);
-    if updated {
-        save_mediamtx_config(state, &config)?;
-    }
-    Ok(updated)
-}
-
+#[allow(dead_code)]
 #[tauri::command]
 async fn mediamtx_start(
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<String, String> {
-    let mut guard = mediamtx_state
+    let mut guard = go2rtc_state
         .lock()
-        .map_err(|_| "Failed to lock MediaMTX state".to_string())?;
+        .map_err(|_| "Failed to lock go2rtc state".to_string())?;
 
     if let Some(child) = guard.child.as_mut() {
         match child.try_wait() {
@@ -1822,61 +3220,68 @@ async fn mediamtx_start(
         }
     }
 
-    spawn_mediamtx_process(&mut guard)?;
+    spawn_go2rtc_process(&mut guard)?;
     Ok("started".into())
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 async fn mediamtx_stop(
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<String, String> {
-    let mut guard = mediamtx_state
-        .lock()
-        .map_err(|_| "Failed to lock MediaMTX state".to_string())?;
-
-    if let Some(mut child) = guard.child.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-        Ok("stopped".into())
-    } else {
-        Ok("not running".into())
+    match go2rtc_state.lock() {
+        Ok(mut guard) => {
+            if let Some(mut child) = guard.child.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+                Ok("stopped".into())
+            } else {
+                Ok("not running".into())
+            }
+        }
+        Err(err) => Err(format!("Failed to lock go2rtc state for stop: {}", err)),
     }
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 async fn add_camera_to_mediamtx(
     name: String,
     url: String,
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<bool, String> {
     let stream_name = sanitize_stream_key(&name);
-    let pipeline = LiveStreamPipeline::Direct {
-        source_url: url.trim().to_string(),
-    };
-
-    let mut guard = mediamtx_state
+    let mut guard = go2rtc_state
         .lock()
-        .map_err(|_| "Failed to lock MediaMTX state".to_string())?;
+        .map_err(|_| "Failed to lock go2rtc state".to_string())?;
 
-    let updated = upsert_single_stream(&mut guard, &stream_name, &pipeline)?;
+    ensure_go2rtc_files(&mut guard)?;
+    let mut config = load_go2rtc_config(&guard)?;
+    let updated = ensure_go2rtc_stream(&mut config, &stream_name, url.trim());
     if updated {
-        restart_if_running(&mut guard)?;
-    } else {
+        save_go2rtc_config(&guard, &config)?;
         println!(
-            "MediaMTX stream '{}' already configured, skipping restart",
+            "go2rtc stream '{}' added to config, restarting Go2RTC...",
             stream_name
         );
+
+        // Restart Go2RTC to load the new stream
+        restart_go2rtc(&mut guard)?;
+        println!("Go2RTC restarted successfully for stream '{}'", stream_name);
+    } else {
+        println!("go2rtc stream '{}' already configured", stream_name);
     }
     Ok(true)
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 async fn mediamtx_add_camera(
     name: String,
     rtsp: String,
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<bool, String> {
-    add_camera_to_mediamtx(name, rtsp, mediamtx_state).await
+    add_camera_to_mediamtx(name, rtsp, go2rtc_state).await
 }
 
 #[tauri::command]
@@ -1884,134 +3289,93 @@ async fn add_camera_streams(
     camera_id: u32,
     hd_url: String,
     sd_url: String,
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<bool, String> {
+    let settings = load_streaming_settings().await?;
     let hd_stream = format!("cam{}_0", camera_id);
     let sd_stream = format!("cam{}_1", camera_id);
+    let warmup_streams = vec![hd_stream.clone(), sd_stream.clone()];
 
-    let hw_preference = match get_app_settings_internal().await {
-        Ok(settings) => settings
-            .get("hwAccel")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto")
-            .to_string(),
-        Err(err) => {
-            println!(
-                "Failed to load app settings for live pipeline decision ({}) using 'auto'",
-                err
-            );
-            "auto".to_string()
-        }
-    };
-
-    let ffmpeg_cmd = if cfg!(windows) {
-        "ffmpeg.exe"
-    } else {
-        "ffmpeg"
-    };
-    let hw_decision = ffmpeg::determine_hw_accel_strategy(ffmpeg_cmd, &hw_preference);
-    println!(
-        "Live streaming hardware acceleration choice: {} (encoder: {})",
-        hw_decision.message, hw_decision.config.video_codec
-    );
-
-    let hd_pipeline =
-        decide_live_pipeline(&hd_stream, &hd_url, ffmpeg_cmd, &hw_decision.config).await;
-    println!(
-        "MediaMTX stream '{}' configured for {} (source: {})",
-        hd_stream,
-        hd_pipeline.description(),
-        hd_pipeline.origin_url()
-    );
-
-    let sd_pipeline =
-        decide_live_pipeline(&sd_stream, &sd_url, ffmpeg_cmd, &hw_decision.config).await;
-    println!(
-        "MediaMTX stream '{}' configured for {} (source: {})",
-        sd_stream,
-        sd_pipeline.description(),
-        sd_pipeline.origin_url()
-    );
-
-    let mut guard = mediamtx_state
+    let mut guard = go2rtc_state
         .lock()
-        .map_err(|_| "Failed to lock MediaMTX state".to_string())?;
+        .map_err(|_| "Failed to lock go2rtc state".to_string())?;
 
-    ensure_mediamtx_files(&mut guard)?;
-
-    let mut config = load_mediamtx_config(&guard)?;
+    ensure_go2rtc_files(&mut guard)?;
+    let mut config = load_go2rtc_config(&guard)?;
     let mut updated = false;
 
-    if ensure_stream_path(&mut config, &hd_stream, &hd_pipeline) {
+    if ensure_go2rtc_stream(&mut config, &hd_stream, hd_url.trim()) {
         updated = true;
     }
-
-    if ensure_stream_path(&mut config, &sd_stream, &sd_pipeline) {
+    if ensure_go2rtc_stream(&mut config, &sd_stream, sd_url.trim()) {
         updated = true;
     }
 
     if updated {
-        save_mediamtx_config(&guard, &config)?;
-        restart_if_running(&mut guard)?;
+        save_go2rtc_config(&guard, &config)?;
+        println!(
+            "go2rtc config updated with streams '{}' and '{}', restarting Go2RTC...",
+            hd_stream, sd_stream
+        );
+
+        // Restart Go2RTC to load the new streams
+        restart_go2rtc(&mut guard)?;
+        println!("Go2RTC restarted successfully");
     } else {
         println!(
-            "MediaMTX streams '{}' and '{}' already configured, skipping restart",
+            "go2rtc streams '{}' and '{}' already configured",
             hd_stream, sd_stream
         );
     }
+
+    // Release the lock before calling load_go2rtc_api_bases to avoid deadlock
+    drop(guard);
+
+    let warmup_bases = load_go2rtc_api_bases(&go2rtc_state, &settings);
+    tauri::async_runtime::spawn(async move {
+        if warmup_bases.is_empty() {
+            return;
+        }
+        tokio_sleep(Duration::from_millis(500)).await;
+        prewarm_go2rtc_streams(warmup_bases, warmup_streams).await;
+    });
+
     Ok(true)
 }
 
-#[tauri::command]
-async fn get_mediamtx_config(
-    state: State<'_, Arc<StdMutex<MediaMtxState>>>,
-) -> Result<String, String> {
-    let mut guard = state
-        .lock()
-        .map_err(|_| "Failed to lock MediaMTX state".to_string())?;
-    ensure_mediamtx_files(&mut guard)?;
-
-    fs::read_to_string(&guard.config_path)
-        .map_err(|e| format!("Failed to read mediamtx config: {}", e))
-}
-
+#[allow(dead_code)]
 #[tauri::command]
 async fn check_mediamtx_path_ready(
     path_name: String,
-    _mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<bool, String> {
     let path = path_name.trim().to_string();
     if path.is_empty() {
         return Ok(false);
     }
-
-    let path_clone = path.clone();
-    let result = spawn_blocking(move || {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(3))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-        let url = format!("http://127.0.0.1:8888/{}/index.m3u8", path_clone);
-        match client.get(&url).send() {
-            Ok(response) if response.status().is_success() => Ok(true),
-            Ok(_) => Ok(false),
-            Err(e) => Err(format!("Failed to query MediaMTX: {}", e)),
-        }
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?;
-
-    result
+    let settings = load_streaming_settings().await?;
+    let statuses = fetch_go2rtc_paths(&go2rtc_state, &settings).await?;
+    Ok(statuses
+        .iter()
+        .any(|status| status.name == path && status.ready))
 }
 
-fn parse_address_to_base(addr: &str) -> Option<String> {
+fn parse_address_to_base(addr: &str, default_scheme: &str) -> Option<String> {
+    let mut scheme = if default_scheme.is_empty() {
+        "http"
+    } else {
+        default_scheme
+    };
+
     let mut addr = addr.trim().trim_matches('"');
     if let Some(stripped) = addr.strip_prefix("http://") {
+        scheme = "http";
         addr = stripped;
     } else if let Some(stripped) = addr.strip_prefix("https://") {
+        scheme = "https";
         addr = stripped;
     }
+
     addr = addr.trim_end_matches('/');
     if addr.is_empty() {
         return None;
@@ -2042,66 +3406,7 @@ fn parse_address_to_base(addr: &str) -> Option<String> {
         return None;
     }
 
-    Some(format!("http://{}:{}", host, port))
-}
-
-fn load_whep_base_urls(state: &State<'_, Arc<StdMutex<MediaMtxState>>>) -> Vec<String> {
-    let fallback = vec![
-        "http://127.0.0.1:8889".to_string(),
-        "http://127.0.0.1:9997".to_string(),
-    ];
-
-    let state_guard = match state.lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            println!("[whep_play] Failed to lock MediaMTX state: {}", e);
-            return fallback;
-        }
-    };
-    let config_path = state_guard.config_path.clone();
-    drop(state_guard);
-
-    let config_str = match fs::read_to_string(&config_path) {
-        Ok(content) => content,
-        Err(e) => {
-            println!(
-                "[whep_play] Failed to read MediaMTX config {:?}: {}",
-                config_path, e
-            );
-            return fallback;
-        }
-    };
-
-    let yaml: serde_yaml::Value = match serde_yaml::from_str(&config_str) {
-        Ok(doc) => doc,
-        Err(e) => {
-            println!("[whep_play] Failed to parse MediaMTX config YAML: {}", e);
-            return fallback;
-        }
-    };
-
-    let mut bases = HashSet::new();
-
-    if let Some(api_addr) = yaml.get("apiAddress").and_then(|v| v.as_str()) {
-        if let Some(base) = parse_address_to_base(api_addr) {
-            bases.insert(base);
-        }
-    }
-
-    if let Some(webrtc_addr) = yaml.get("webrtcAddress").and_then(|v| v.as_str()) {
-        if let Some(base) = parse_address_to_base(webrtc_addr) {
-            bases.insert(base);
-        }
-    }
-
-    if bases.is_empty() {
-        println!("[whep_play] No WHEP addresses found in config, using defaults");
-        return fallback;
-    }
-
-    let mut list: Vec<String> = bases.into_iter().collect();
-    list.sort();
-    list
+    Some(format!("{}://{}:{}", scheme, host, port))
 }
 
 #[tauri::command]
@@ -2110,81 +3415,54 @@ async fn whep_play(
     offer_sdp: String,
     rtsp_session: Option<String>,
     rtsp_transport: Option<String>,
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<String, String> {
+    let settings = load_streaming_settings().await?;
+    println!("[whep_play] Active streaming provider: Go2RTC");
     println!("[whep_play] Preparing WHEP endpoints for path '{}'", path);
-    if let Some(session) = rtsp_session.as_ref() {
-        println!("[whep_play] Using RTSP session hint: {}", session);
-    }
-    if let Some(transport) = rtsp_transport.as_ref() {
-        println!("[whep_play] Using RTSP transport hint: {}", transport);
-    }
 
-    if let Some(transport_header) = rtsp_transport.as_ref() {
-        if let Some(resolved_transport) = infer_rtsp_transport(transport_header) {
-            match mediamtx_state.lock() {
-                Ok(mut guard) => {
-                    if let Err(err) = ensure_mediamtx_files(&mut guard) {
-                        println!(
-                            "[whep_play] Failed to ensure MediaMTX files before transport update: {}",
-                            err
-                        );
-                    } else if let Ok(mut config) = load_mediamtx_config(&guard) {
-                        if set_mediamtx_transport(&mut config, &path, resolved_transport) {
-                            println!(
-                                "[whep_play] Updating MediaMTX transport for '{}' to {}",
-                                path, resolved_transport
-                            );
-                            if let Err(err) = save_mediamtx_config(&guard, &config) {
-                                println!(
-                                    "[whep_play] Failed to save MediaMTX config after transport update: {}",
-                                    err
-                                );
-                            } else if let Err(err) = restart_if_running(&mut guard) {
-                                println!(
-                                    "[whep_play] Failed to restart MediaMTX after transport update: {}",
-                                    err
-                                );
-                            }
-                        }
-                    }
-                }
-                Err(err) => println!(
-                    "[whep_play] Failed to lock MediaMTX state for transport update: {}",
-                    err
-                ),
-            }
-        }
-    }
-
-    let base_urls = load_whep_base_urls(&mediamtx_state);
+    let base_urls = load_go2rtc_api_bases(&go2rtc_state, &settings);
     let mut endpoints: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let path_ref = &path;
 
+    let mut src_variants: Vec<String> = Vec::new();
+    // Try with opus transcoding FIRST to ensure WebRTC-compatible audio (AAC->OPUS via ffmpeg)
+    src_variants.push(format!("{}#audio=opus", path_ref));
+    // Fallback to direct stream if transcoding not available
+    src_variants.push(path.clone());
+
     for base in base_urls {
         let normalized = base.trim_end_matches('/');
-        let candidates = [
-            format!("{}/api/webrtc?src={}&dst=whep", normalized, path_ref),
-            format!("{}/api/webrtc?src={}", normalized, path_ref),
-            format!("{}/api/webrtc?dst=whep&src={}", normalized, path_ref),
-            format!("{}/whep/{}", normalized, path_ref),
-            format!("{}/{}/whep", normalized, path_ref),
-        ];
+        if normalized.is_empty() {
+            continue;
+        }
 
-        for candidate in candidates {
-            if seen.insert(candidate.clone()) {
-                endpoints.push(candidate);
+        for variant in &src_variants {
+            let encoded = urlencoding::encode(variant);
+            let query_candidates = [
+                format!("{}/api/webrtc?src={}", normalized, encoded),
+                format!("{}/api/webrtc?src={}&dst=whep", normalized, encoded),
+                format!("{}/api/webrtc?dst=whep&src={}", normalized, encoded),
+            ];
+
+            for candidate in query_candidates {
+                if seen.insert(candidate.clone()) {
+                    endpoints.push(candidate);
+                }
             }
         }
     }
 
     if endpoints.is_empty() {
-        println!("[whep_play] No endpoints discovered; using default loopback WHEP endpoint");
-        endpoints.push(format!(
-            "http://127.0.0.1:8889/api/webrtc?src={}&dst=whep",
-            path_ref
-        ));
+        // Try without audio modifier first (camera may not have audio or may already provide Opus)
+        let encoded = urlencoding::encode(path_ref);
+        let fallback = format!("{}/api/webrtc?src={}", GO2RTC_DEFAULT_API, encoded);
+        println!(
+            "[whep_play] No endpoints discovered; using default loopback WHEP endpoint {}",
+            fallback
+        );
+        endpoints.push(fallback);
     }
 
     let client = Client::builder()
@@ -2293,10 +3571,14 @@ fn camera_rtsp_source(camera: &camera_store::Camera, variant: Option<u8>) -> Opt
     if let Some(base) = build_rtsp_base(camera) {
         if let Some(raw) = candidates.into_iter().find(|value| {
             let trimmed = value.trim();
-            !trimmed.is_empty() && !trimmed.to_ascii_lowercase().starts_with("rtsp://")
+            !trimmed.is_empty()
         }) {
             let trimmed = raw.trim();
             if !trimmed.is_empty() {
+                if trimmed.contains("://") {
+                    return Some(trimmed.to_string());
+                }
+
                 let suffix = if trimmed.starts_with('/') {
                     trimmed.to_string()
                 } else {
@@ -2306,7 +3588,12 @@ fn camera_rtsp_source(camera: &camera_store::Camera, variant: Option<u8>) -> Opt
             }
         }
 
-        return Some(format!("{}{}", base, camera_default_suffix(variant)));
+        let suffix = camera_default_suffix(variant);
+        if suffix.contains("://") {
+            return Some(suffix.to_string());
+        }
+
+        return Some(format!("{}{}", base, suffix));
     }
 
     None
@@ -2322,24 +3609,24 @@ fn resolve_camera_store_source(stream_name: &str) -> Option<String> {
 #[tauri::command]
 async fn resolve_stream_source(
     path: String,
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<Option<String>, String> {
     let stream_name = sanitize_stream_key(&path);
 
-    let mut resolved: Option<String> = match mediamtx_state.lock() {
+    let mut resolved: Option<String> = match go2rtc_state.lock() {
         Ok(mut guard) => {
-            if let Err(err) = ensure_mediamtx_files(&mut guard) {
+            if let Err(err) = ensure_go2rtc_files(&mut guard) {
                 println!(
-                    "[resolve_stream_source] Failed to ensure MediaMTX files: {}",
+                    "[resolve_stream_source] Failed to ensure go2rtc files: {}",
                     err
                 );
                 None
             } else {
-                match load_mediamtx_config(&guard) {
-                    Ok(config) => extract_mediamtx_source(&config, &stream_name),
+                match load_go2rtc_config(&guard) {
+                    Ok(config) => extract_go2rtc_source(&config, &stream_name),
                     Err(err) => {
                         println!(
-                            "[resolve_stream_source] Failed to load MediaMTX config: {}",
+                            "[resolve_stream_source] Failed to load go2rtc config: {}",
                             err
                         );
                         None
@@ -2349,7 +3636,7 @@ async fn resolve_stream_source(
         }
         Err(err) => {
             println!(
-                "[resolve_stream_source] Failed to lock MediaMTX state: {}",
+                "[resolve_stream_source] Failed to lock go2rtc state: {}",
                 err
             );
             None
@@ -2492,12 +3779,13 @@ struct HevcProbeResponse {
 async fn probe_hevc_export(
     stream_path: String,
     mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<HevcProbeResponse, String> {
     let trimmed = stream_path.trim();
     let rtsp_url = if trimmed.to_ascii_lowercase().starts_with("rtsp://") {
         trimmed.to_string()
     } else {
-        resolve_stream_source(trimmed.to_string(), mediamtx_state)
+        resolve_stream_source(trimmed.to_string(), mediamtx_state, go2rtc_state)
             .await?
             .ok_or_else(|| format!("Unable to resolve stream source for '{}'", trimmed))?
     };
@@ -2564,18 +3852,41 @@ async fn probe_hevc_export(
 
 #[cfg(not(feature = "hevc-export"))]
 #[tauri::command]
-async fn probe_hevc_export(
-    _stream_path: String,
-    _mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
-) -> Result<HevcProbeResponse, String> {
+async fn probe_hevc_export(_stream_path: String) -> Result<HevcProbeResponse, String> {
     Err("HEVC export support is disabled at build time".to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WhepEndpointDescriptor {
+    base: String,
+    provider: String,
 }
 
 #[tauri::command]
 async fn get_whep_endpoints(
-    mediamtx_state: State<'_, Arc<StdMutex<MediaMtxState>>>,
-) -> Result<Vec<String>, String> {
-    Ok(load_whep_base_urls(&mediamtx_state))
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
+) -> Result<Vec<WhepEndpointDescriptor>, String> {
+    let settings = load_streaming_settings().await?;
+    let provider_label = "go2rtc".to_string();
+    let bases = load_go2rtc_api_bases(&go2rtc_state, &settings);
+
+    let descriptors = bases
+        .into_iter()
+        .filter_map(|raw| {
+            let normalized = raw.trim().trim_end_matches('/').to_string();
+            if normalized.is_empty() {
+                None
+            } else {
+                Some(WhepEndpointDescriptor {
+                    base: normalized,
+                    provider: provider_label.clone(),
+                })
+            }
+        })
+        .collect();
+
+    Ok(descriptors)
 }
 
 #[tauri::command]
@@ -2906,21 +4217,38 @@ async fn save_app_settings(
     settings: serde_json::Value,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
-    let config_dir = app_handle
-        .path()
-        .app_config_dir()
-        .map_err(|_| "Failed to get config directory")?;
+    let config_dir = settings_root_dir();
 
     std::fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+        .map_err(|e| format!("Failed to create settings directory: {}", e))?;
 
     let config_file = config_dir.join("settings.json");
 
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
-    std::fs::write(&config_file, content)
+    std::fs::write(&config_file, &content)
         .map_err(|e| format!("Failed to write settings file: {}", e))?;
+
+    // Keep writing to the legacy location so older builds or tools reading from it keep working.
+    if let Ok(legacy_dir) = app_handle.path().app_config_dir() {
+        if legacy_dir != config_dir {
+            if let Err(err) = std::fs::create_dir_all(&legacy_dir) {
+                eprintln!(
+                    "[Settings] Failed to create legacy config directory {:?}: {}",
+                    legacy_dir, err
+                );
+            } else {
+                let legacy_file = legacy_dir.join("settings.json");
+                if let Err(err) = std::fs::write(&legacy_file, &content) {
+                    eprintln!(
+                        "[Settings] Failed to write legacy settings file {:?}: {}",
+                        legacy_file, err
+                    );
+                }
+            }
+        }
+    }
 
     Ok(true)
 }
@@ -3015,7 +4343,61 @@ fn parse_video_codec_from_sdp(sdp: &str) -> Option<StreamVideoCodec> {
     None
 }
 
-async fn detect_stream_codec(rtsp_url: &str) -> Option<StreamVideoCodec> {
+#[allow(dead_code)]
+fn parse_audio_codec_from_sdp(sdp: &str) -> Option<StreamAudioCodec> {
+    let mut in_audio_section = false;
+
+    for line in sdp.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(media) = trimmed.strip_prefix("m=") {
+            in_audio_section = media
+                .split_whitespace()
+                .next()
+                .map(|token| token.eq_ignore_ascii_case("audio"))
+                .unwrap_or(false);
+            continue;
+        }
+
+        if !in_audio_section {
+            continue;
+        }
+
+        if let Some(payload) = trimmed.strip_prefix("a=rtpmap:") {
+            if let Some((_pt, codec_part)) = payload.split_once(' ') {
+                let codec_token = codec_part
+                    .split('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+
+                let detected = if codec_token.contains("opus") {
+                    StreamAudioCodec::Opus
+                } else if codec_token.contains("pcmu") || codec_token.contains("g711u") {
+                    StreamAudioCodec::Pcmu
+                } else if codec_token.contains("pcma") || codec_token.contains("g711a") {
+                    StreamAudioCodec::Pcma
+                } else if codec_token.contains("mpeg4")
+                    || codec_token.contains("mp4a")
+                    || codec_token.contains("aac")
+                {
+                    StreamAudioCodec::Aac
+                } else {
+                    StreamAudioCodec::Unknown
+                };
+
+                return Some(detected);
+            }
+        }
+    }
+
+    None
+}
+
+async fn fetch_rtsp_sdp(rtsp_url: &str, include_audio: bool) -> Option<String> {
     let handshake = spawn_blocking({
         let url = rtsp_url.to_string();
         move || {
@@ -3024,7 +4406,7 @@ async fn detect_stream_codec(rtsp_url: &str) -> Option<StreamVideoCodec> {
                 username: None,
                 password: None,
                 transport: rtsp_client::TransportProfile::Tcp,
-                include_audio: false,
+                include_audio,
                 timeout: Duration::from_millis(2500),
             };
             rtsp_client::perform_handshake(params)
@@ -3033,7 +4415,7 @@ async fn detect_stream_codec(rtsp_url: &str) -> Option<StreamVideoCodec> {
     .await;
 
     match handshake {
-        Ok(Ok(result)) => result.sdp.as_deref().and_then(parse_video_codec_from_sdp),
+        Ok(Ok(result)) => result.sdp,
         Ok(Err(err)) => {
             println!(
                 "Failed to probe RTSP stream {} for codec information: {}",
@@ -3046,6 +4428,13 @@ async fn detect_stream_codec(rtsp_url: &str) -> Option<StreamVideoCodec> {
             None
         }
     }
+}
+
+async fn detect_stream_codec(rtsp_url: &str) -> Option<StreamVideoCodec> {
+    fetch_rtsp_sdp(rtsp_url, true)
+        .await
+        .as_deref()
+        .and_then(parse_video_codec_from_sdp)
 }
 
 async fn decide_recording_pipeline(
@@ -3158,12 +4547,8 @@ async fn start_recording(
         }
     };
 
-    let ffmpeg_cmd = if cfg!(windows) {
-        "ffmpeg.exe"
-    } else {
-        "ffmpeg"
-    };
-    let hw_decision = ffmpeg::determine_hw_accel_strategy(ffmpeg_cmd, &hw_preference);
+    let ffmpeg_cmd = resolve_ffmpeg_command();
+    let hw_decision = ffmpeg::determine_hw_accel_strategy(&ffmpeg_cmd, &hw_preference);
     println!(
         "Recording hardware acceleration choice: {} (codec: {})",
         hw_decision.message, hw_decision.config.video_codec
@@ -3192,14 +4577,18 @@ async fn start_recording(
     );
     println!("FFmpeg args for recording: {:?}", ffmpeg_args);
 
-    let mut cmd = StdCommand::new(ffmpeg_cmd);
+    let mut cmd = StdCommand::new(&ffmpeg_cmd);
     cmd.args(&ffmpeg_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
     #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+    }
 
     match cmd.spawn() {
         Ok(mut child) => {
@@ -3352,6 +4741,10 @@ fn build_segment_ffmpeg_args(
 
             args.push("-c:a".into());
             args.push("aac".into());
+            args.push("-ar".into());
+            args.push("48000".into());
+            args.push("-ac".into());
+            args.push("2".into());
         }
     }
 
@@ -3513,19 +4906,19 @@ async fn start_next_segment(
             recording.current_segment, ffmpeg_args
         );
 
-        let ffmpeg_cmd = if cfg!(windows) {
-            "ffmpeg.exe"
-        } else {
-            "ffmpeg"
-        };
-        let mut cmd = StdCommand::new(ffmpeg_cmd);
+        let ffmpeg_cmd = resolve_ffmpeg_command();
+        let mut cmd = StdCommand::new(&ffmpeg_cmd);
         cmd.args(&ffmpeg_args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
         #[cfg(windows)]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        }
 
         match cmd.spawn() {
             Ok(mut child) => {
@@ -3857,9 +5250,17 @@ async fn open_camera_file_manager(
             url.push('/');
         }
 
-        StdCommand::new(executable)
-            .arg(url)
-            .spawn()
+        let mut cmd = StdCommand::new(executable);
+        cmd.arg(url);
+
+        #[cfg(windows)]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        }
+
+        cmd.spawn()
             .map(|_| ())
             .map_err(|err| format!("Failed to launch WinSCP: {}", err))
     })
@@ -3895,8 +5296,8 @@ async fn run_camera_ssh_command(
 
     let (password_opt, password_source) =
         resolve_password_with_store(&host, password_plain, password_enc)?;
-    let password = password_opt
-        .ok_or_else(|| "Camera password is required for SSH command".to_string())?;
+    let password =
+        password_opt.ok_or_else(|| "Camera password is required for SSH command".to_string())?;
 
     println!(
         "[ssh] password resolved via {} (length={})",
@@ -4116,7 +5517,10 @@ async fn local_fs_list(path: Option<String>) -> Result<Vec<LocalFsEntry>, String
         }
 
         if !target_path.is_dir() {
-            return Err(format!("Not a directory: {}", target_path.to_string_lossy()));
+            return Err(format!(
+                "Not a directory: {}",
+                target_path.to_string_lossy()
+            ));
         }
 
         let mut entries: Vec<LocalFsEntry> = Vec::new();
@@ -4196,6 +5600,24 @@ async fn local_fs_list(path: Option<String>) -> Result<Vec<LocalFsEntry>, String
 }
 
 #[tauri::command]
+async fn local_fs_ensure_dir(path: String) -> Result<bool, String> {
+    let trimmed = path.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("path is required".to_string());
+    }
+
+    let target_path = PathBuf::from(&trimmed);
+
+    spawn_blocking(move || -> Result<bool, String> {
+        fs::create_dir_all(&target_path)
+            .map_err(|err| format!("Failed to create directory {}: {}", trimmed, err))?;
+        Ok(true)
+    })
+    .await
+    .map_err(|err| format!("Local ensure dir task join error: {}", err))?
+}
+
+#[tauri::command]
 async fn local_fs_delete(path: String) -> Result<bool, String> {
     let trimmed = path.trim().to_string();
     if trimmed.is_empty() {
@@ -4249,6 +5671,9 @@ async fn local_reveal_path(path: String) -> Result<bool, String> {
             } else {
                 command.arg(target_path.clone());
             }
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
             command
                 .status()
                 .map_err(|err| format!("Failed to open Explorer: {}", err))?;
@@ -4342,9 +5767,7 @@ async fn camera_scp_list(
 
         println!(
             "[scp:list] SSH session established host={} port={:?} path={}",
-            host_clone,
-            port_value,
-            path_clone
+            host_clone, port_value, path_clone
         );
 
         let escaped_path = shell_escape(&path_clone);
@@ -4372,10 +5795,7 @@ async fn camera_scp_list(
                     break;
                 }
                 Err(err) => {
-                    println!(
-                        "[scp:list] command '{}' failed -> {}",
-                        command, err
-                    );
+                    println!("[scp:list] command '{}' failed -> {}", command, err);
                     last_err = Some(err);
                 }
             }
@@ -4438,7 +5858,9 @@ async fn camera_scp_list(
 
         println!(
             "[scp:list] parsed {} entries for host={} path={}",
-            entries.len(), host_clone, path_clone
+            entries.len(),
+            host_clone,
+            path_clone
         );
 
         Ok(entries)
@@ -4572,7 +5994,7 @@ async fn camera_scp_upload(
         })?;
         let file_size = metadata.len();
 
-    let file_mode: i32 = if metadata.permissions().readonly() {
+        let file_mode: i32 = if metadata.permissions().readonly() {
             0o444
         } else {
             0o644
@@ -4872,6 +6294,188 @@ async fn camera_sftp_upload(
 }
 
 #[tauri::command]
+async fn camera_collect_recent_files(
+    host: String,
+    base_path: Option<String>,
+    username: Option<String>,
+    password_enc: Option<String>,
+    password_plain: Option<String>,
+    port: Option<u16>,
+    window_seconds: Option<u64>,
+    extra_margin_seconds: Option<u64>,
+    max_files: Option<u32>,
+    max_total_bytes: Option<u64>,
+) -> Result<Vec<RemoteRecentFile>, String> {
+    // Traverse the camera recordings directory and collect files that were modified recently.
+    // The frontend applies additional filters (time window, limits) before downloading files.
+    let host_trimmed = host.trim().to_string();
+    if host_trimmed.is_empty() {
+        return Err("host is required".to_string());
+    }
+
+    let mut normalized_base = base_path
+        .unwrap_or_else(|| "/".to_string())
+        .trim()
+        .to_string();
+
+    if normalized_base.is_empty() {
+        normalized_base = "/".to_string();
+    }
+
+    if normalized_base != "/" {
+        normalized_base = format!("/{}", normalized_base.trim_start_matches('/'));
+        normalized_base = normalized_base.trim_end_matches('/').to_string();
+    }
+
+    let username_clone = username.clone();
+    let password_enc_clone = password_enc.clone();
+    let password_plain_clone = password_plain.clone();
+    let port_value = port;
+
+    let effective_window = window_seconds
+        .unwrap_or(0)
+        .saturating_add(extra_margin_seconds.unwrap_or(0));
+
+    spawn_blocking(move || -> Result<Vec<RemoteRecentFile>, String> {
+        let session = build_ssh_session(
+            &host_trimmed,
+            port_value,
+            username_clone,
+            password_plain_clone,
+            password_enc_clone,
+        )?;
+
+        let sftp = session
+            .sftp()
+            .map_err(|err| format!("Failed to initialize SFTP: {}", err))?;
+
+        let base_path_buf = if normalized_base == "/" {
+            PathBuf::from("/")
+        } else {
+            PathBuf::from(&normalized_base)
+        };
+
+        let mut queue: VecDeque<PathBuf> = VecDeque::new();
+        queue.push_back(base_path_buf.clone());
+
+        let mut visited: HashSet<String> = HashSet::new();
+
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or(0);
+
+        let effective_window_i64 = if effective_window == 0 {
+            0i64
+        } else if effective_window >= i64::MAX as u64 {
+            i64::MAX
+        } else {
+            effective_window as i64
+        };
+
+        let threshold = if effective_window_i64 > 0 {
+            now_secs.saturating_sub(effective_window_i64)
+        } else {
+            i64::MIN
+        };
+
+        let mut candidates: Vec<RemoteRecentFile> = Vec::new();
+
+        while let Some(current_dir) = queue.pop_front() {
+            let dir_string = current_dir.to_string_lossy().to_string();
+            if !visited.insert(dir_string.clone()) {
+                continue;
+            }
+
+            let entries = match sftp.readdir(&current_dir) {
+                Ok(value) => value,
+                Err(err) => {
+                    println!(
+                        "[sftp:recent] failed to read dir {} -> {}",
+                        current_dir.display(),
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            for (entry_path, stat) in entries {
+                let name = match entry_path.file_name().and_then(|n| n.to_str()) {
+                    Some(value) if !value.is_empty() => value.to_string(),
+                    _ => continue,
+                };
+
+                if name == "." || name == ".." {
+                    continue;
+                }
+
+                let is_dir = is_directory_from_perm(stat.perm);
+                if is_dir {
+                    queue.push_back(entry_path.clone());
+                    continue;
+                }
+
+                let modified = stat.mtime.map(|v| v as i64);
+                if let Some(modified_ts) = modified {
+                    if threshold != i64::MIN && modified_ts < threshold {
+                        continue;
+                    }
+
+                    let absolute_path = entry_path.to_string_lossy().to_string();
+                    let relative_path = entry_path
+                        .strip_prefix(&base_path_buf)
+                        .ok()
+                        .and_then(|p| p.to_str())
+                        .map(|s| s.trim_start_matches('/').to_string())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| name.clone());
+
+                    let size = stat.size.unwrap_or(0);
+
+                    candidates.push(RemoteRecentFile {
+                        absolute_path,
+                        relative_path,
+                        size,
+                        modified: modified_ts,
+                    });
+                }
+            }
+        }
+
+        candidates.sort_by(|a, b| a.modified.cmp(&b.modified));
+
+        let mut limited: Vec<RemoteRecentFile> = Vec::new();
+        let mut accumulated_bytes: u64 = 0;
+
+        for entry in candidates.into_iter() {
+            if let Some(max_bytes) = max_total_bytes {
+                if accumulated_bytes.saturating_add(entry.size) > max_bytes {
+                    continue;
+                }
+            }
+
+            accumulated_bytes = accumulated_bytes.saturating_add(entry.size);
+            limited.push(RemoteRecentFile {
+                absolute_path: entry.absolute_path,
+                relative_path: entry.relative_path,
+                size: entry.size,
+                modified: entry.modified,
+            });
+
+            if let Some(limit) = max_files {
+                if limited.len() >= limit as usize {
+                    break;
+                }
+            }
+        }
+
+        Ok(limited)
+    })
+    .await
+    .map_err(|err| format!("Collect recent files task join error: {}", err))?
+}
+
+#[tauri::command]
 async fn get_video_info(file_path: String) -> Result<serde_json::Value, String> {
     println!("Getting video info for file: {}", file_path);
 
@@ -4889,7 +6493,9 @@ async fn get_video_info(file_path: String) -> Result<serde_json::Value, String> 
     // На Windows скрываем консольное окно
     #[cfg(windows)]
     {
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
     }
 
     match cmd.output().await {
@@ -5050,7 +6656,8 @@ async fn export_archive_clip(
         Some(source_path) => {
             // Use FFmpeg to extract the clip
             let duration = end_time - start_time;
-            let mut cmd = StdCommand::new("ffmpeg");
+            let ffmpeg_cmd = resolve_ffmpeg_command();
+            let mut cmd = StdCommand::new(&ffmpeg_cmd);
             cmd.args(&[
                 "-i",
                 source_path.to_str().unwrap(),
@@ -5068,7 +6675,9 @@ async fn export_archive_clip(
             // На Windows скрываем консольное окно
             #[cfg(windows)]
             {
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                const DETACHED_PROCESS: u32 = 0x00000008;
+                cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
             }
 
             let output = cmd.output();
@@ -5707,7 +7316,9 @@ async fn analyze_stream_with_ffprobe(stream_path: &str) -> Result<Option<String>
 
     #[cfg(windows)]
     {
-        cmd.creation_flags(0x08000000);
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
     }
 
     match cmd.output().await {
@@ -5763,46 +7374,22 @@ fn sniff_resolution_from_text(input: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 #[tauri::command]
-async fn check_mediamtx_status() -> Result<serde_json::Value, String> {
-    // Проверяем, доступен ли MediaMTX API
-    let client = reqwest::Client::new();
-    match client
-        .get("http://127.0.0.1:8889/v3/paths/list")
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-    {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        println!("MediaMTX API response: {:?}", json);
-                        Ok(json)
-                    }
-                    Err(e) => {
-                        println!("Failed to parse MediaMTX API response: {}", e);
-                        Ok(serde_json::json!({
-                            "success": false,
-                            "error": format!("Parse error: {}", e)
-                        }))
-                    }
-                }
-            } else {
-                println!("MediaMTX API returned status: {}", response.status());
-                Ok(serde_json::json!({
-                    "success": false,
-                    "error": format!("HTTP {}", response.status())
-                }))
-            }
-        }
-        Err(e) => {
-            println!("Failed to connect to MediaMTX API: {}", e);
-            Ok(serde_json::json!({
-                "success": false,
-                "error": format!("Connection error: {}", e)
-            }))
-        }
+async fn check_mediamtx_status(
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
+) -> Result<serde_json::Value, String> {
+    let settings = load_streaming_settings().await?;
+    match fetch_go2rtc_paths(&go2rtc_state, &settings).await {
+        Ok(statuses) => Ok(serde_json::json!({
+            "provider": "go2rtc",
+            "items": statuses,
+        })),
+        Err(err) => Ok(serde_json::json!({
+            "provider": "go2rtc",
+            "items": [],
+            "error": err,
+        })),
     }
 }
 
@@ -5811,13 +7398,20 @@ async fn check_rtsp_stream(url: String) -> Result<bool, String> {
     println!("Checking RTSP stream availability: {}", url);
 
     // First check if ffmpeg is available
-    match tokio::process::Command::new("ffmpeg")
-        .args(&["-version"])
+    let ffmpeg_path = resolve_ffmpeg_command();
+    let mut cmd = tokio::process::Command::new(&ffmpeg_path);
+    cmd.args(&["-version"])
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .await
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(windows)]
     {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+    }
+
+    match cmd.output().await {
         Ok(_) => {
             println!("FFmpeg is available, proceeding with RTSP check");
         }
@@ -5831,16 +7425,20 @@ async fn check_rtsp_stream(url: String) -> Result<bool, String> {
     }
 
     // Try to connect to RTSP stream using ffmpeg with timeout
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::process::Command::new("ffmpeg")
-            .args(&["-rtsp_transport", "tcp", "-i", &url, "-f", "null", "-"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .output(),
-    )
-    .await
+    let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
+    ffmpeg_cmd
+        .args(&["-rtsp_transport", "tcp", "-i", &url, "-f", "null", "-"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(windows)]
     {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(10), ffmpeg_cmd.output()).await {
         Ok(result) => match result {
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);

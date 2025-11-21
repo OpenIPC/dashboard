@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import {
   Typography,
@@ -31,23 +33,39 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
+import StorageIcon from '@mui/icons-material/Storage';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
-import type { Camera, CameraGroup } from '../types';
+import type { Camera, CameraGroup, CameraFormDraft, CameraFormValues } from '../types';
 import AddCameraDialog from './AddCameraDialog';
 import CameraSearchDialog from './CameraSearchDialog';
+import type { DiscoveredCamera } from './CameraSearchDialog';
 import SettingsModal from './SettingsModal';
 import UserDialog from './UserDialog';
 import TerminalComponent from './Terminal';
 import FileManager from './FileManager';
 import ArchiveImproved from './ArchiveImproved';
-import { useLocalization } from '../contexts/LocalizationContext';
-import { useAppState } from '../contexts/AppStateContext';
-import { useAuth } from '../contexts/AuthContext';
-import { useCameraContextMenu } from '../contexts/CameraContextMenuContext';
+import { useLocalization } from '../hooks/useLocalization';
+import { useAppState } from '../hooks/useAppState';
+import { useAuth } from '../hooks/useAuth';
+import { useCameraContextMenu } from '../hooks/useCameraContextMenu';
+import { CAMERA_STATUS_COLORS, resolveCameraStatusLabel } from '../utils/cameraStatus';
+
+type DiscoveryEventPayload = DiscoveredCamera;
+
+interface DiscoveryProgressPayload {
+  scanned?: number;
+  total?: number;
+}
+
+interface DiscoveryFinishedPayload {
+  found?: number;
+  status?: string;
+}
 
 const DevicePanel: React.FC = () => {
   const { t } = useLocalization();
+  const navigate = useNavigate();
   const {
     cameras,
     groups,
@@ -57,7 +75,9 @@ const DevicePanel: React.FC = () => {
     addGroup,
     updateGroup,
     removeGroup,
-    isLoading
+    isLoading,
+    cameraStatuses,
+    updateCameraStatus,
   } = useAppState();
   const { user, logout, hasPermission } = useAuth();
   const {
@@ -69,14 +89,66 @@ const DevicePanel: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
-  const [foundCameras, setFoundCameras] = useState<Array<{ name: string; ip: string; protocol?: string; port?: number; onvifPort?: number; detectedPort?: number }>>([]);
-  const foundCamerasRef = useRef(foundCameras);
+  const [foundCameras, setFoundCameras] = useState<DiscoveredCamera[]>([]);
+  const foundCamerasRef = useRef<DiscoveredCamera[]>(foundCameras);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState('');
-  const [addDialogData, setAddDialogData] = useState<any>(null);
+  const [addDialogData, setAddDialogData] = useState<CameraFormDraft | null>(null);
   const [showArchive, setShowArchive] = useState(false);
   const [sshTerminalCamera, setSshTerminalCamera] = useState<Camera | null>(null);
   const [fileManagerCamera, setFileManagerCamera] = useState<Camera | null>(null);
+
+  const cameraStatusesRef = useRef(cameraStatuses);
+  useEffect(() => {
+    cameraStatusesRef.current = cameraStatuses;
+  }, [cameraStatuses]);
+
+  useEffect(() => {
+    const checkAllCameras = async () => {
+      for (const camera of cameras) {
+        try {
+          let pass = camera.pass;
+          if (camera.pass_enc) {
+             pass = await invoke<string>('decrypt_password', { enc: camera.pass_enc });
+          }
+
+          const ok = await invoke<boolean>('check_camera_http', {
+            ip: camera.ip,
+            user: camera.user,
+            pass,
+            port: camera.onvifPort || 80,
+          });
+
+          const currentStatus = cameraStatusesRef.current[camera.id];
+          
+          if (ok) {
+             // If currently offline or undefined, mark as online
+             if (!currentStatus || currentStatus.status === 'offline') {
+                 updateCameraStatus(camera.id, {
+                     status: 'online',
+                     lastUpdated: Date.now()
+                 });
+             }
+          } else {
+             // If failed, mark as offline
+             if (!currentStatus || currentStatus.status !== 'offline') {
+                 updateCameraStatus(camera.id, {
+                     status: 'offline',
+                     lastUpdated: Date.now()
+                 });
+             }
+          }
+        } catch (e) {
+          console.error('Failed to check camera status', camera.id, e);
+        }
+      }
+    };
+
+    const interval = setInterval(checkAllCameras, 30000); // Check every 30s
+    checkAllCameras(); // Initial check
+
+    return () => clearInterval(interval);
+  }, [cameras, updateCameraStatus]);
 
   const handleOpenCameraInBrowser = useCallback((camera: Camera) => {
     const rawAddress = camera.ip?.trim();
@@ -113,6 +185,21 @@ const DevicePanel: React.FC = () => {
   const canViewArchive = hasPermission('view_archive');
   const canManageUsers = user?.role === 'admin';
   const canDeleteCameras = hasPermission('delete_cameras');
+
+  const mapCameraToFormDraft = useCallback((camera: Camera): CameraFormDraft => ({
+    id: camera.id,
+    name: camera.name,
+    ip: camera.ip,
+    protocol: camera.protocol,
+    port: camera.port,
+    user: camera.user,
+    pass: camera.pass,
+    pathHd: camera.path_hd,
+    pathSd: camera.path_sd,
+    onvifPort: camera.onvifPort ?? 80,
+    streamUrl: camera.streamUrl ?? camera.path_hd ?? camera.path_sd ?? '',
+    groupId: camera.groupId ?? null,
+  }), []);
 
   useEffect(() => {
     if (!canViewArchive && showArchive) {
@@ -161,14 +248,14 @@ const DevicePanel: React.FC = () => {
   // Подписываемся на события поиска камер
   useEffect(() => {
     let isActive = true;
-    const unlistenFns: Array<() => void> = [];
+  const unlistenFns: UnlistenFn[] = [];
 
     const registerListeners = async () => {
       try {
         console.log('Setting up device discovery listeners...');
 
-        const unlistenDeviceFound = await listen('device-found', (event: any) => {
-          const payload = event.payload || {};
+        const unlistenDeviceFound = await listen<DiscoveryEventPayload>('device-found', event => {
+          const payload = event.payload;
           if (!payload?.ip) {
             return;
           }
@@ -185,9 +272,9 @@ const DevicePanel: React.FC = () => {
               ? detectedPort
               : undefined;
 
-          const normalizedCamera = {
+          const normalizedCamera: DiscoveredCamera = {
             name: payload.name || `Camera ${payload.ip}`,
-            ip: payload.ip as string,
+            ip: payload.ip,
             protocol: payload.protocol || 'onvif',
             detectedPort,
             onvifPort: suggestedOnvifPort,
@@ -210,8 +297,8 @@ const DevicePanel: React.FC = () => {
         }
         unlistenFns.push(unlistenDeviceFound);
 
-        const unlistenProgress = await listen('device-discovery-progress', (event: any) => {
-          const payload = event.payload || {};
+        const unlistenProgress = await listen<DiscoveryProgressPayload>('device-discovery-progress', event => {
+          const payload = event.payload ?? {};
           const scanned = typeof payload.scanned === 'number' ? payload.scanned : undefined;
           const total = typeof payload.total === 'number' ? payload.total : undefined;
           const found = foundCamerasRef.current.length;
@@ -230,11 +317,11 @@ const DevicePanel: React.FC = () => {
         }
         unlistenFns.push(unlistenProgress);
 
-        const unlistenFinished = await listen('device-discovery-finished', (event: any) => {
+        const unlistenFinished = await listen<DiscoveryFinishedPayload>('device-discovery-finished', event => {
           clearDiscoveryTimer();
           setIsDiscovering(false);
 
-          const payload = event.payload || {};
+          const payload = event.payload ?? {};
           const found = typeof payload.found === 'number' ? payload.found : foundCamerasRef.current.length;
 
           if (found > 0) {
@@ -334,7 +421,7 @@ const DevicePanel: React.FC = () => {
       },
       onEdit: (camera: Camera) => {
         if (canEditCameras) {
-          setAddDialogData(camera);
+          setAddDialogData(mapCameraToFormDraft(camera));
           setAddOpen(true);
         } else {
           alert(t('permission_denied'));
@@ -375,11 +462,11 @@ const DevicePanel: React.FC = () => {
     canManageLayout,
     handleOpenCameraInBrowser,
     launchFileManager,
+    mapCameraToFormDraft,
     openSshTerminal,
     registerDefaultCameraContextMenuHandlers,
     removeCamera,
     t,
-    updateCamera,
     handleMoveCameraToGroup,
   ]);
 
@@ -394,8 +481,8 @@ const DevicePanel: React.FC = () => {
     setExpandedGroups(newExpanded);
   };
 
-  const handleAddCamera = async (newCamera: any) => {
-    const existingId = typeof newCamera?.id === 'number' ? newCamera.id : undefined;
+  const handleAddCamera = async (formData: CameraFormValues) => {
+    const existingId = typeof formData.id === 'number' ? formData.id : undefined;
 
     if (existingId !== undefined) {
       const currentCamera = cameras.find(cam => cam.id === existingId);
@@ -406,16 +493,17 @@ const DevicePanel: React.FC = () => {
 
       const updatedCamera: Camera = {
         ...currentCamera,
-        name: newCamera.name ?? currentCamera.name,
-        ip: newCamera.ip ?? currentCamera.ip,
-        protocol: newCamera.protocol ?? currentCamera.protocol,
-        port: typeof newCamera.port === 'number' ? newCamera.port : currentCamera.port,
-        user: newCamera.user ?? currentCamera.user,
-        pass: newCamera.pass ?? currentCamera.pass,
-        path_hd: newCamera.pathHd ?? currentCamera.path_hd,
-        path_sd: newCamera.pathSd ?? currentCamera.path_sd,
-        onvifPort: typeof newCamera.onvifPort === 'number' ? newCamera.onvifPort : currentCamera.onvifPort,
-        streamUrl: newCamera.streamUrl ?? currentCamera.streamUrl,
+        name: formData.name ?? currentCamera.name,
+        ip: formData.ip ?? currentCamera.ip,
+        protocol: formData.protocol ?? currentCamera.protocol,
+        port: formData.port ?? currentCamera.port,
+        user: formData.user ?? currentCamera.user,
+        pass: formData.pass ?? currentCamera.pass,
+        path_hd: formData.pathHd ?? currentCamera.path_hd,
+        path_sd: formData.pathSd ?? currentCamera.path_sd,
+        onvifPort: formData.onvifPort ?? currentCamera.onvifPort,
+        streamUrl: formData.streamUrl ?? currentCamera.streamUrl,
+        groupId: formData.groupId ?? currentCamera.groupId ?? null,
       };
 
       await updateCamera(updatedCamera);
@@ -424,18 +512,18 @@ const DevicePanel: React.FC = () => {
 
     const camera: Camera = {
       id: nextId.current++,
-      name: newCamera.name || 'Camera',
-      ip: newCamera.ip,
-      protocol: newCamera.protocol || 'onvif',
-      port: newCamera.port || 554,
-      user: newCamera.user || 'admin',
-      pass: newCamera.pass || '',
-      path_hd: newCamera.pathHd || '',
-      path_sd: newCamera.pathSd || '',
+      name: formData.name || 'Camera',
+      ip: formData.ip,
+      protocol: formData.protocol || 'onvif',
+      port: formData.port || 554,
+      user: formData.user || 'admin',
+      pass: formData.pass || '',
+      path_hd: formData.pathHd || formData.streamUrl || '',
+      path_sd: formData.pathSd || formData.streamUrl || '',
       status: 'offline',
-      onvifPort: newCamera.onvifPort,
-      groupId: null, // Новые камеры по умолчанию без группы
-      streamUrl: newCamera.streamUrl,
+      onvifPort: formData.onvifPort,
+      groupId: formData.groupId ?? null,
+      streamUrl: formData.streamUrl ?? formData.pathHd ?? formData.pathSd ?? '',
     };
     
     await addCamera(camera);
@@ -521,54 +609,90 @@ const DevicePanel: React.FC = () => {
         
         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
           <List sx={{ pl: 2 }}>
-            {groupCameras.map((camera) => (
-              <ListItem
-                key={camera.id}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onContextMenu={(e) => showContextMenu(e, camera)}
-                onDoubleClick={() => {
-                  // Добавление камеры в сетку при двойном клике
-                  if ((window as any).setCellCamera) {
-                    (window as any).setCellCamera(camera);
-                  }
-                }}
-                sx={{ 
-                  cursor: 'grab',
-                  borderRadius: 1,
-                  mb: 0.5,
-                  bgcolor: 'rgba(255,255,255,0.05)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.1)'
-                  }
-                }}
-              >
-                <ListItemText 
-                  primary={camera.name} 
-                  secondary={camera.ip}
-                  sx={{
-                    '& .MuiListItemText-primary': {
-                      fontSize: '0.9rem'
-                    },
-                    '& .MuiListItemText-secondary': {
-                      fontSize: '0.8rem',
-                      color: 'rgba(255,255,255,0.6)'
+            {groupCameras.map((camera) => {
+              const statusEntry = cameraStatuses[camera.id];
+              const statusKey = statusEntry?.status ?? 'offline';
+              const statusColor = CAMERA_STATUS_COLORS[statusKey] ?? CAMERA_STATUS_COLORS.offline;
+              const statusLabel = resolveCameraStatusLabel(statusKey, t);
+              const statusTooltip = statusLabel;
+
+              return (
+                <ListItem
+                  key={camera.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/x-camera-id', camera.id.toString());
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onContextMenu={(e) => showContextMenu(e, camera)}
+                  onDoubleClick={() => {
+                    // Добавление камеры в сетку при двойном клике
+                    const cameraForGrid: Camera = {
+                      ...camera,
+                      streamUrl: camera.streamUrl ?? camera.path_hd ?? camera.path_sd ?? '',
+                    };
+                    window.setCellCamera?.(cameraForGrid);
+                  }}
+                  sx={{ 
+                    cursor: 'grab',
+                    borderRadius: 1,
+                    mb: 0.5,
+                    bgcolor: 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.1)'
                     }
                   }}
-                />
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={() => handleDeleteCamera(camera.ip)}
-                  sx={{ color: 'rgba(255,255,255,0.7)' }}
                 >
-                  ×
-                </IconButton>
-              </ListItem>
-            ))}
+                  <Tooltip title={statusTooltip} placement="top">
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        p: 1,
+                        mr: 0.5,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          backgroundColor: statusColor,
+                          boxShadow: statusKey === 'online' ? `0 0 8px ${statusColor}` : 'none',
+                        }}
+                      />
+                    </Box>
+                  </Tooltip>
+                  <Box sx={{ flexGrow: 1 }}>
+                    <ListItemText 
+                      primary={camera.name} 
+                      secondary={camera.ip}
+                      sx={{
+                        '& .MuiListItemText-primary': {
+                          fontSize: '0.9rem'
+                        },
+                        '& .MuiListItemText-secondary': {
+                          fontSize: '0.8rem',
+                          color: 'rgba(255,255,255,0.6)'
+                        }
+                      }}
+                    />
+                  </Box>
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={() => handleDeleteCamera(camera.ip)}
+                    sx={{ color: 'rgba(255,255,255,0.7)' }}
+                  >
+                    ×
+                  </IconButton>
+                </ListItem>
+              );
+            })}
           </List>
         </Collapse>
       </Box>
@@ -652,14 +776,14 @@ const DevicePanel: React.FC = () => {
                 </Tooltip>
               )}
               {canViewArchive && (
-                <Tooltip title={t('open_archive')}>
+                <Tooltip title={t('plate_database')}>
                   <span>
                     <IconButton
                       size="small"
-                      sx={{ color: showArchive ? '#1976d2' : 'rgba(255,255,255,0.7)' }}
-                      onClick={() => setShowArchive(true)}
+                      sx={{ color: 'rgba(255,255,255,0.7)' }}
+                      onClick={() => navigate('/plate-database')}
                     >
-                      <ArchiveOutlinedIcon />
+                      <StorageIcon />
                     </IconButton>
                   </span>
                 </Tooltip>
@@ -751,11 +875,13 @@ const DevicePanel: React.FC = () => {
         foundCameras={foundCameras}
         isDiscovering={isDiscovering}
         discoveryProgress={discoveryProgress}
-        onAddSelected={(cameraData: any) => {
+        onAddSelected={(cameraData) => {
           setAddDialogData({
-            ...cameraData,
-            port: cameraData?.port ?? cameraData?.detectedPort ?? 554,
-            onvifPort: cameraData?.onvifPort ?? cameraData?.detectedPort ?? 80
+            name: cameraData.name,
+            ip: cameraData.ip,
+            protocol: cameraData.protocol ?? 'onvif',
+            port: cameraData.port ?? cameraData.detectedPort ?? 554,
+            onvifPort: cameraData.onvifPort ?? cameraData.detectedPort ?? 80,
           });
           setAddOpen(true);
           setSearchOpen(false);
@@ -775,7 +901,7 @@ const DevicePanel: React.FC = () => {
         TransitionComponent={Slide}
         slotProps={{
           transition: {
-            direction: 'up' as any,
+            direction: 'up',
           }
         }}
         PaperProps={{

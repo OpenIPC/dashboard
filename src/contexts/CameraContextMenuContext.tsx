@@ -1,34 +1,13 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { CameraContextMenu } from '../components/CameraContextMenu';
 import type { Camera, CameraGroup } from '../types';
-
-type CameraContextMenuAction = (camera: Camera) => void;
-type MoveToGroupAction = (camera: Camera, groupId: number | null) => void;
-
-export type CameraContextMenuHandlers = {
-  onArchive?: CameraContextMenuAction;
-  onEdit?: CameraContextMenuAction;
-  onDelete?: CameraContextMenuAction;
-  onOpenInBrowser?: CameraContextMenuAction;
-  onFileManager?: CameraContextMenuAction;
-  onSSH?: CameraContextMenuAction;
-  onMoveToGroup?: MoveToGroupAction;
-};
-
-interface OpenCameraContextMenuPayload {
-  camera: Camera;
-  anchorPosition: { left: number; top: number };
-  handlers?: CameraContextMenuHandlers;
-  groups?: CameraGroup[];
-}
-
-interface CameraContextMenuContextValue {
-  openCameraContextMenu: (payload: OpenCameraContextMenuPayload) => void;
-  closeCameraContextMenu: () => void;
-  registerDefaultCameraContextMenuHandlers: (handlers: CameraContextMenuHandlers) => void;
-  getDefaultCameraContextMenuHandlers: () => CameraContextMenuHandlers;
-}
+import { CameraContextMenuContext } from './CameraContextMenuContextData';
+import type {
+  CameraContextMenuContextValue,
+  CameraContextMenuHandlers,
+  OpenCameraContextMenuPayload,
+} from './CameraContextMenuContextData';
 
 interface CameraContextMenuState {
   camera: Camera;
@@ -36,8 +15,6 @@ interface CameraContextMenuState {
   handlers: CameraContextMenuHandlers;
   groups: CameraGroup[];
 }
-
-const CameraContextMenuContext = createContext<CameraContextMenuContextValue | undefined>(undefined);
 
 export const CameraContextMenuProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, setState] = useState<CameraContextMenuState | null>(null);
@@ -82,7 +59,7 @@ export const CameraContextMenuProvider: React.FC<{ children: ReactNode }> = ({ c
         onArchive={(camera) => state?.handlers.onArchive?.(camera)}
         onEdit={(camera) => state?.handlers.onEdit?.(camera)}
         onDelete={(camera) => state?.handlers.onDelete?.(camera)}
-        onOpenInBrowser={(camera) => state?.handlers.onOpenInBrowser?.(camera)}
+    onOpenInBrowser={(camera) => state?.handlers.onOpenInBrowser?.(camera)}
         onFileManager={(camera) => state?.handlers.onFileManager?.(camera)}
         onSSH={(camera) => state?.handlers.onSSH?.(camera)}
         groups={state?.groups ?? []}
@@ -90,12 +67,4 @@ export const CameraContextMenuProvider: React.FC<{ children: ReactNode }> = ({ c
       />
     </CameraContextMenuContext.Provider>
   );
-};
-
-export const useCameraContextMenu = (): CameraContextMenuContextValue => {
-  const context = useContext(CameraContextMenuContext);
-  if (!context) {
-    throw new Error('useCameraContextMenu must be used within a CameraContextMenuProvider');
-  }
-  return context;
 };

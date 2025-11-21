@@ -1,7 +1,7 @@
 {
   "name": "dashboard-for-openipc",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,8 @@
     "type-check": "tsc --noEmit",
     "tauri": "tauri dev",
     "tauri-build": "tauri build",
-    "download-mediamtx": "python tools/download-mediamtx.py",
+    "download-go2rtc": "python tools/download-go2rtc.py",
+    "download-ffmpeg": "python tools/download-ffmpeg.py",
     "download-gstreamer": "python tools/download-gstreamer-runtime.py",
     "build-release": "python tools/build.py",
     "build-debug": "python tools/build.py --debug",

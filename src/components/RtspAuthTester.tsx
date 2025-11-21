@@ -282,7 +282,7 @@ const RtspAuthTester: React.FC = () => {
       <div style={{ marginTop: '40px' }}>
         <h2 style={{ marginBottom: '12px' }}>Проверка HEVC / H.265 потока</h2>
         <p style={{ marginBottom: '16px', color: '#555' }}>
-          Введите название пути из MediaMTX или полный RTSP URL, чтобы выполнить RTSP рукопожатие и получить параметры HEVC потока.
+          Введите название потока из go2rtc или полный RTSP URL, чтобы выполнить RTSP рукопожатие и получить параметры HEVC потока.
         </p>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>

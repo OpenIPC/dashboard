@@ -5,8 +5,11 @@ use std::path::Path;
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
+    if target_os == "windows" {
+        println!("cargo:rustc-link-lib=Advapi32");
+    }
+
     println!("cargo:rerun-if-changed=binaries/");
-    println!("cargo:rerun-if-changed=mediamtx/");
 
     // Ensure the binaries directory exists
     let binaries_dir = Path::new("binaries");
@@ -46,34 +49,26 @@ fn main() {
         }
     }
 
-    // Copy appropriate MediaMTX binary based on target platform
+    // Copy the go2rtc binary matching the current target so runtime helpers can locate it.
     let (src_binary, dst_binary) = match target_os.as_str() {
-        "windows" => ("binaries/windows/mediamtx.exe", "binaries/mediamtx.exe"),
-        "linux" => ("binaries/linux/mediamtx", "binaries/mediamtx"),
-        "macos" => ("binaries/macos/mediamtx", "binaries/mediamtx"),
-        _ => {
+        "windows" => ("binaries/windows/go2rtc.exe", "binaries/go2rtc.exe"),
+        "linux" => ("binaries/linux/go2rtc", "binaries/go2rtc"),
+        "macos" => ("binaries/macos/go2rtc", "binaries/go2rtc"),
+        other => {
             println!(
-                "cargo:warning=Unknown target OS: {}, skipping binary copy",
-                target_os
+                "cargo:warning=Unknown target OS: {}, skipping go2rtc bundling",
+                other
             );
             tauri_build::build();
             return;
         }
     };
 
-    // Copy binary if source exists
-    if Path::new(src_binary).exists() {
-        if let Err(e) = fs::copy(src_binary, dst_binary) {
-            println!("cargo:warning=Failed to copy MediaMTX binary: {}", e);
-        } else {
-            println!("cargo:rustc-env=MEDIAMTX_BINARY_PATH={}", dst_binary);
-        }
-    } else {
+    if let Err(err) = fs::copy(src_binary, dst_binary) {
         println!(
-            "cargo:warning=MediaMTX binary not found for {}: {}",
-            target_os, src_binary
+            "cargo:warning=Failed to copy go2rtc binary from {} to {}: {}",
+            src_binary, dst_binary, err
         );
-        println!("cargo:warning=Run 'npm run download-mediamtx' to download required binaries");
     }
 
     tauri_build::build()

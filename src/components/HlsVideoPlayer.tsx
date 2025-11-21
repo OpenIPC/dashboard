@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
+import Hls, { type ErrorData } from 'hls.js';
 import EnsureHttpServer from './EnsureHttpServer';
 
 interface HlsVideoPlayerProps {
@@ -45,10 +45,10 @@ const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           enableWorker: true,
           lowLatencyMode: true,
           backBufferLength: 60,
-          xhrSetup: (xhr) => {
+          xhrSetup: (xhr: XMLHttpRequest) => {
             // Add custom headers if needed
-            xhr.addEventListener('error', (e) => {
-              console.error('XHR Error:', e);
+            xhr.addEventListener('error', (event: ProgressEvent<EventTarget>) => {
+              console.error('XHR Error:', event);
               setError(`Network error loading stream: ${src}`);
             });
           }
@@ -62,14 +62,16 @@ const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           setIsLoading(false);
           if (autoPlay) {
             video.play().catch(err => {
+              const message = err instanceof Error ? err.message : String(err);
               console.error('Error playing video:', err);
-              setError(`Error playing video: ${err.message}`);
+              setError(`Error playing video: ${message}`);
             });
           }
         });
         
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
+        hls.on(Hls.Events.ERROR, (_event, payload) => {
+          const data = payload as ErrorData;
+          if (data?.fatal) {
             console.error('Fatal HLS error:', data.type, data.details);
             setError(`HLS Error: ${data.type} - ${data.details}`);
             
@@ -87,7 +89,7 @@ const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
                 hls?.destroy();
                 break;
             }
-          } else {
+          } else if (data) {
             console.warn('Non-fatal HLS error:', data.type, data.details);
           }
         });
@@ -99,8 +101,9 @@ const HlsVideoPlayer: React.FC<HlsVideoPlayerProps> = ({
           setIsLoading(false);
           if (autoPlay) {
             video.play().catch(err => {
+              const message = err instanceof Error ? err.message : String(err);
               console.error('Error playing video:', err);
-              setError(`Error playing video: ${err.message}`);
+              setError(`Error playing video: ${message}`);
             });
           }
         });

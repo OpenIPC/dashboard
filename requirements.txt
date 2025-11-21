@@ -1,1 +1,8 @@
+# General dependencies
 requests>=2.25.0
+
+# ANPR OCR dependencies (for anpr_ocr.py)
+opencv-python>=4.8.0
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0

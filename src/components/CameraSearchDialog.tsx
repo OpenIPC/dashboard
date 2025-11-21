@@ -1,19 +1,22 @@
 import React from 'react';
 import { Dialog, DialogTitle, DialogContent, Box, Typography, Button, Paper, Stack } from '@mui/material';
 import { invoke } from '@tauri-apps/api/core';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 
-interface FoundCamera {
+export interface DiscoveredCamera {
   name: string;
   ip: string;
   protocol?: string;
+  port?: number;
+  onvifPort?: number;
+  detectedPort?: number;
 }
 
 const CameraSearchDialog: React.FC<{
   open: boolean;
   onClose: () => void;
-  foundCameras: FoundCamera[];
-  onAddSelected?: (cam: FoundCamera) => void;
+  foundCameras: DiscoveredCamera[];
+  onAddSelected?: (cam: DiscoveredCamera) => void;
   isDiscovering?: boolean;
   discoveryProgress?: string;
 }> = ({ open, onClose, foundCameras, onAddSelected, isDiscovering = false, discoveryProgress = '' }) => {

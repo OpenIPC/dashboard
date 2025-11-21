@@ -1,10 +1,12 @@
 use std::process::{Command, Stdio};
 use tauri::command;
 
+use crate::resolve_ffmpeg_command;
+
 #[command]
 pub async fn start_stream(_rtsp_url: String, _output_path: String) -> Result<(), String> {
-    // Deprecated: streaming is handled by local MediaMTX. Call mediamtx_add_camera + mediamtx_start instead from the frontend.
-    Err("start_stream is deprecated; use mediamtx_add_camera and mediamtx_start instead".into())
+    // Deprecated: streaming is handled by go2rtc. Register streams through add_camera_streams instead.
+    Err("start_stream is deprecated; use add_camera_streams/go2rtc helpers instead".into())
 }
 
 #[command]
@@ -78,8 +80,8 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
     // Это поможет избежать ошибок типа "Cannot drop a runtime in a context where blocking is not allowed"
     let result = task::spawn_blocking(move || -> Result<String, String> {
         // Создаем базовую директорию для временных файлов
-        let temp_dir = std::env::temp_dir().join("mediamtx_streams");
-        println!("Using temporary directory: {:?}", temp_dir);
+    let temp_dir = crate::default_recordings_dir().join("streams");
+    println!("Using HLS output directory: {:?}", temp_dir);
 
         if !temp_dir.exists() {
             println!("Creating temp directory");
@@ -101,12 +103,12 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
         let _output_path_str = output_path.to_str().unwrap().to_string(); // Сохраняем с подчеркиванием для обозначения неиспользуемой переменной
 
         // Проверяем наличие FFmpeg
-        let ffmpeg_cmd = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+        let ffmpeg_cmd = resolve_ffmpeg_command();
         println!("Using FFmpeg command: {}", ffmpeg_cmd);
 
         // Сначала проверим, есть ли ffmpeg в системе
         println!("Checking if FFmpeg is installed");
-        let mut version_cmd = Command::new(ffmpeg_cmd);
+        let mut version_cmd = Command::new(&ffmpeg_cmd);
         version_cmd
             .arg("-version")
             .stdout(Stdio::piped())
@@ -136,7 +138,7 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
             return Err("FFmpeg не установлен или не найден в PATH. Установите FFmpeg для конвертации RTSP потоков.".to_string());
         }
 
-    let hw_decision = determine_hw_accel_strategy(ffmpeg_cmd, &hw_preference);
+    let hw_decision = determine_hw_accel_strategy(&ffmpeg_cmd, &hw_preference);
         println!("{}", hw_decision.message);
         println!("FFmpeg video encoder selected: {}", hw_decision.config.video_codec);
 
@@ -210,6 +212,10 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
             }
             ffmpeg_args.push("-c:a".into());
             ffmpeg_args.push("aac".into());
+            ffmpeg_args.push("-ar".into());
+            ffmpeg_args.push("48000".into());
+            ffmpeg_args.push("-ac".into());
+            ffmpeg_args.push("2".into());
             ffmpeg_args.push("-f".into());
             ffmpeg_args.push("hls".into());
             ffmpeg_args.push("-hls_time".into());
@@ -231,7 +237,7 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
                 ffmpeg_args
             );
 
-            let mut cmd = Command::new(ffmpeg_cmd);
+            let mut cmd = Command::new(&ffmpeg_cmd);
             cmd.args(&ffmpeg_args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -355,11 +361,21 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
         println!("HLS stream URL: {}", http_url);
         println!("NOTE: Make sure http server is running on port 8080 to serve HLS content");
 
-        // Пробуем использовать MediaMTX HLS URL как альтернативный вариант, если доступно
-        if let Some(camera_name) = file_path.strip_prefix("rtsp://localhost:8554/") {
-            let mediamtx_hls_url = format!("http://localhost:8888/{}/index.m3u8", camera_name);
-            println!("Alternative MediaMTX HLS URL: {}", mediamtx_hls_url);
-            return Ok(mediamtx_hls_url);
+        // Пробуем использовать go2rtc HLS URL как альтернативный вариант, если доступно
+        if let Some(camera_name) = file_path
+            .strip_prefix("rtsp://localhost:8554/")
+            .or_else(|| file_path.strip_prefix("rtsp://127.0.0.1:8554/"))
+        {
+            let normalized = camera_name.trim_matches('/');
+            if !normalized.is_empty() {
+                let encoded = urlencoding::encode(normalized);
+                let go2rtc_hls_url = format!(
+                    "http://127.0.0.1:1984/api/hls/{}/index.m3u8",
+                    encoded
+                );
+                println!("Alternative go2rtc HLS URL: {}", go2rtc_hls_url);
+                return Ok(go2rtc_hls_url);
+            }
         }
 
         // Проверяем, есть ли какие-либо существующие файлы m3u8 в каталоге

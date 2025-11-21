@@ -437,7 +437,7 @@ pub fn perform_handshake(params: RtspHandshakeParams) -> RtspResult<RtspHandshak
 
     let audio_result = if params.include_audio {
         if let Some(audio_uri) = audio_control {
-            let (_status, audio_headers) = perform_setup(
+            match perform_setup(
                 &mut stream,
                 &audio_uri,
                 cseq,
@@ -445,13 +445,23 @@ pub fn perform_handshake(params: RtspHandshakeParams) -> RtspResult<RtspHandshak
                 params.transport.transport_header_audio(),
                 &common_headers,
                 &mut log,
-            )?;
-            cseq += 1;
-            Some(RtspTrackResult {
-                control_uri: audio_uri,
-                response_status: 200,
-                response_headers: audio_headers,
-            })
+            ) {
+                Ok((_status, audio_headers)) => {
+                    cseq += 1;
+                    Some(RtspTrackResult {
+                        control_uri: audio_uri,
+                        response_status: 200,
+                        response_headers: audio_headers,
+                    })
+                }
+                Err(err) => {
+                    log_push(
+                        &mut log,
+                        format!("Audio SETUP skipped due to error: {}", err),
+                    );
+                    None
+                }
+            }
         } else {
             log_push(&mut log, "SDP missing audio control attribute");
             None

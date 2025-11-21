@@ -92,8 +92,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: download MediaMTX binaries
-        run: python tools/download-mediamtx.py
+      - name: download go2rtc binaries
+        run: python tools/download-go2rtc.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

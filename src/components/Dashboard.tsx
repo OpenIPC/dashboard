@@ -1,16 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { buildCameraRtspUrls } from '../utils/cameraStreams';
-// appLocalDataDir removed; MediaMTX will be used for streaming
-import { Box, Dialog, Typography } from '@mui/material';
-import { useLocalization } from '../contexts/LocalizationContext';
-import { useAppState } from '../contexts/AppStateContext';
+// appLocalDataDir removed; go2rtc handles all streaming duties now
+import { Box, Dialog, Typography, IconButton } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import { useLocalization } from '../hooks/useLocalization';
+import { useAppState } from '../hooks/useAppState';
 import LayoutTabs from './LayoutTabs';
 import LayoutTemplateDialog from './LayoutTemplateDialog';
 import VideoStreamPlayer from './VideoStreamPlayer';
+import DualQualityStreamPlayer from './DualQualityStreamPlayer';
+import GridCell from './GridCell';
 import CellControls from './CellControls';
-import { useCameraContextMenu } from '../contexts/CameraContextMenuContext';
-import type { CameraContextMenuHandlers } from '../contexts/CameraContextMenuContext';
+import DetectionOverlay from './DetectionOverlay';
+import { useCameraContextMenu } from '../hooks/useCameraContextMenu';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { useToast } from '../hooks/useToast';
+import { Toast } from './Toast';
+import { streamPrewarmingService } from '../services/streamPrewarming';
+import type { CameraContextMenuHandlers } from '../contexts/CameraContextMenuContextData';
 import type {
   LayoutTemplate,
   LayoutTemplatePreview,
@@ -23,6 +32,12 @@ import type {
   StoredLayoutTab,
 } from '../types';
 import { MAX_DASHBOARD_CELLS } from '../types';
+import type {
+  AnalyticsModuleStatus,
+  AnalyticsDetectionResponse,
+  AnalyticsDetectionBox,
+} from '../services/analytics';
+import type { CameraStatusEntry } from '../contexts/AppStateContextData';
 
 // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Глобальная инициализация аудио контекста
 let globalAudioInitialized = false;
@@ -54,6 +69,31 @@ if (typeof window !== 'undefined') {
 
 const MAX_CELLS = MAX_DASHBOARD_CELLS;
 const GRID_PRESETS = [1, 4, 6, 8, 9, 12, 16, 20, 25, 32, 36, 49, 64].filter(size => size <= MAX_CELLS);
+const ANALYSIS_LOOP_DELAY_MS = 2000;
+const ANALYSIS_WARMUP_RETRY_MS = 1000;
+const CAMERA_STATUS_OFFLINE_TIMEOUT_MS = 8000;
+const CAMERA_STATUS_LAG_FPS = 12;
+const CAMERA_STATUS_LAG_BITRATE = 400;
+
+const MODULE_ICON_MAP: Record<string, string> = {
+  'face-detector': 'tag_faces',
+  'object-counter': 'analytics',
+  'person-detector': 'directions_walk',
+  'vehicle-detector': 'directions_car',
+  'license-plate-detector': 'local_parking',
+};
+
+const resolveModuleIcon = (moduleId: string): string => {
+  return MODULE_ICON_MAP[moduleId] ?? 'sensors';
+};
+
+type VideoRefScope = 'grid' | 'fullscreen' | 'hd';
+
+interface VideoElementEntry {
+  grid: HTMLVideoElement | null;
+  fullscreen: HTMLVideoElement | null;
+  hd: HTMLVideoElement | null;
+}
 
 interface StreamInfo {
   cameraId: number;
@@ -68,6 +108,29 @@ interface StreamStatEntry {
   frameRate?: number;
   width?: number;
   height?: number;
+  lastUpdated?: number;
+}
+
+interface CaptureContext {
+  module: AnalyticsModuleStatus;
+  camera: Camera;
+  video: HTMLVideoElement;
+  index: number;
+}
+
+interface CellDetectionState {
+  cameraId: string;
+  moduleId: string;
+  detections: AnalyticsDetectionBox[];
+  processedAt: string;
+  frameWidth: number;
+  frameHeight: number;
+}
+
+interface ProcessedFrameResult {
+  response: AnalyticsDetectionResponse;
+  frameWidth: number;
+  frameHeight: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -78,16 +141,85 @@ const Dashboard: React.FC = () => {
     isLoading: appStateLoading,
     dashboardState,
     updateDashboardState,
+    streamingProvider,
+    ensureStreamingBackendStarted,
+    cameraStatuses,
+    updateCameraStatus,
+    settings,
   } = useAppState();
   const {
     openCameraContextMenu,
     getDefaultCameraContextMenuHandlers,
   } = useCameraContextMenu();
+
+  // Load go2rtc enhanced settings from localStorage
+  const [go2rtcSettings, setGo2rtcSettings] = useState({
+    showMonitor: false,
+    enableSnapshot: true,
+    enable2WayAudio: false,
+    enableAdaptiveBitrate: true,
+  });
+
+  // Load stream optimization settings
+  const [streamOptSettings, setStreamOptSettings] = useState({
+    enableFastStart: true,
+    enablePrewarming: true,
+    prewarmBothQualities: true,
+    enableConnectionCaching: true,
+    maxCachedConnections: 10,
+    keepAliveInterval: 30,
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('go2rtcSettings');
+    if (saved) {
+      try {
+        setGo2rtcSettings(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load go2rtc settings:', e);
+      }
+    }
+
+    const optSaved = localStorage.getItem('streamOptimizationSettings');
+    if (optSaved) {
+      try {
+        const parsed = JSON.parse(optSaved);
+        setStreamOptSettings(parsed);
+        
+        // Apply settings to prewarming service
+        streamPrewarmingService.saveConfig({
+          enabled: parsed.enablePrewarming,
+          prewarmBothQualities: parsed.prewarmBothQualities,
+          keepAliveInterval: parsed.keepAliveInterval * 1000, // Convert to ms
+          maxConcurrentPrewarms: parsed.maxCachedConnections,
+        });
+      } catch (e) {
+        console.error('Failed to load stream optimization settings:', e);
+      }
+    }
+  }, []);
+
   const [gridSize, setGridSize] = useState<number>(4);
   const [cellCameras, setCellCameras] = useState<(Camera | null)[]>(() => Array.from({ length: MAX_CELLS }, () => null));
   const [cellStreams, setCellStreams] = useState<(StreamInfo | null)[]>(() => Array.from({ length: MAX_CELLS }, () => null));
-  const [hoveredCell, setHoveredCell] = useState<number | null>(null);
+  const cellStreamsRef = useRef<(StreamInfo | null)[]>(cellStreams); // Ref для избежания зависимости в useMemo
+  const [hoveredCell, setHoveredCellState] = useState<number | null>(null);
   const [fullscreenCell, setFullscreenCell] = useState<number | null>(null);
+  const [fullscreenPortalElement, setFullscreenPortalElement] = useState<HTMLDivElement | null>(null);
+  
+  // Callback ref to capture Portal container as soon as it's mounted
+  const handlePortalRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      console.log('[Dashboard] Portal ref callback fired! Node:', node, 'dimensions:', {
+        width: node.offsetWidth,
+        height: node.offsetHeight
+      });
+      setFullscreenPortalElement(node);
+    } else {
+      console.log('[Dashboard] Portal ref callback: node is NULL');
+      setFullscreenPortalElement(null);
+    }
+  }, []);
   
   // Новые состояния для управления ячейками
   const [cellPaused, setCellPaused] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
@@ -96,11 +228,101 @@ const Dashboard: React.FC = () => {
   const [recordingPending, setRecordingPending] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
   
   // Состояние для статистики потоков
-  const [streamStats, setStreamStats] = useState<Record<string, StreamStatEntry>>({});
+  const streamStatsRef = React.useRef<Record<string, StreamStatEntry>>({});
+  const deriveCameraStatus = useCallback(
+    (cameraId: number): CameraStatusEntry => {
+      const baseName = `cam${cameraId}`;
+      const statKeys = [`${baseName}_0`, `${baseName}_1`];
+      const entries = statKeys
+        .map(key => streamStatsRef.current[key])
+        .filter((entry): entry is StreamStatEntry => Boolean(entry))
+        .sort((a, b) => (b.lastUpdated ?? 0) - (a.lastUpdated ?? 0));
+
+      const latest = entries[0];
+      const lastUpdated = latest?.lastUpdated ?? null;
+      const now = Date.now();
+
+      if (!lastUpdated || now - lastUpdated > CAMERA_STATUS_OFFLINE_TIMEOUT_MS) {
+        return { status: 'offline', lastUpdated };
+      }
+
+      const frameRate = latest?.frameRate;
+      const bitrateKbps = latest?.bitrateKbps;
+      
+      // User requested to ignore latency for status indication
+      // const lagging = ...
+
+      return {
+        status: 'online',
+        lastUpdated,
+        frameRate,
+        bitrateKbps,
+      };
+    },
+    [],
+  );
+
+  const refreshCameraStatus = useCallback(
+    (cameraId: number) => {
+      if (typeof cameraId !== 'number' || cameraId <= 0) {
+        return;
+      }
+      updateCameraStatus(cameraId, deriveCameraStatus(cameraId));
+    },
+    [deriveCameraStatus, updateCameraStatus],
+  );
+  const [cellDetections, setCellDetections] = useState<(CellDetectionState | null)[]>(
+    () => Array.from({ length: MAX_CELLS }, () => null),
+  );
   const cellCamerasRef = useRef<(Camera | null)[]>(cellCameras);
   const hoveredCellRef = useRef<number | null>(hoveredCell);
   const restoringLayoutRef = useRef(false);
   const hasRestoredLayoutRef = useRef(false);
+  const dragSourceCellRef = useRef<number | null>(null);
+  const dragCameraIdRef = useRef<number | null>(null);
+  const pointerDragState = useRef<{ sourceIndex: number | null; cameraId: number | null; active: boolean }>({
+    sourceIndex: null,
+    cameraId: null,
+    active: false,
+  });
+  const pointerUpHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const pointerMoveHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const pointerKeyHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
+  const pointerListenersAttachedRef = useRef(false);
+  const videoElementRefs = useRef<VideoElementEntry[]>(
+    Array.from({ length: MAX_CELLS }, () => ({ grid: null, fullscreen: null, hd: null }))
+  );
+  const [frameCapturePending, setFrameCapturePending] = useState<boolean[]>(
+    () => Array.from({ length: MAX_CELLS }, () => false)
+  );
+  const [frameAnalysisActive, setFrameAnalysisActive] = useState<boolean[]>(
+    () => Array.from({ length: MAX_CELLS }, () => false)
+  );
+  const frameAnalysisActiveRef = useRef<boolean[]>(Array.from({ length: MAX_CELLS }, () => false));
+  const analysisLoopTimersRef = useRef<(number | null)[]>(Array.from({ length: MAX_CELLS }, () => null));
+  const analysisModuleRef = useRef<(string | null)[]>(Array.from({ length: MAX_CELLS }, () => null));
+  const { toast, showToast, hideToast } = useToast();
+  const { modules: analyticsModules, processFrame, processingModuleIds, detections: analyticsDetections } = useAnalytics();
+  const readyAnalyticsModules = useMemo(
+    () => analyticsModules.filter(module => module.enabled && module.state === 'ready'),
+    [analyticsModules],
+  );
+  const hasReadyAnalyticsModule = readyAnalyticsModules.length > 0;
+  const processingModuleSet = useMemo(() => new Set(processingModuleIds), [processingModuleIds]);
+
+  const getLocalizedModuleNameById = useCallback(
+    (moduleId: string, fallback?: string) => {
+      const key = `module_${moduleId}_name`;
+      const translated = t(key);
+      return translated === key ? fallback ?? moduleId : translated;
+    },
+    [t],
+  );
+
+  const getLocalizedModuleName = useCallback(
+    (module: AnalyticsModuleStatus) => getLocalizedModuleNameById(module.id, module.name),
+    [getLocalizedModuleNameById],
+  );
 
 
   useEffect(() => {
@@ -108,8 +330,773 @@ const Dashboard: React.FC = () => {
   }, [cellCameras]);
 
   useEffect(() => {
+    cellStreamsRef.current = cellStreams;
+  }, [cellStreams]);
+
+  useEffect(() => {
+    setCellDetections(prev => {
+      let changed = false;
+      const next = prev.map((entry, idx) => {
+        const camera = cellCameras[idx];
+        if (!camera) {
+          if (entry) {
+            changed = true;
+          }
+          return null;
+        }
+
+        const cameraId = String(camera.id);
+        if (entry && entry.cameraId === cameraId) {
+          return entry;
+        }
+
+        if (entry) {
+          changed = true;
+        }
+        return null;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [cellCameras]);
+
+  useEffect(() => {
     hoveredCellRef.current = hoveredCell;
   }, [hoveredCell]);
+
+  useEffect(() => {
+    frameAnalysisActiveRef.current = frameAnalysisActive;
+  }, [frameAnalysisActive]);
+
+  // Track last processed detection event ID to avoid reprocessing
+  const lastProcessedDetectionKeyRef = useRef<string | null>(null);
+
+  // Process incoming detection events from analytics context
+  useEffect(() => {
+    if (!analyticsDetections || analyticsDetections.length === 0) {
+      return;
+    }
+
+    const latestDetection = analyticsDetections[0];
+    
+    // Create unique key from processedAt + moduleId + cameraId to avoid reprocessing same detection
+    const detectionKey = `${latestDetection.processedAt}_${latestDetection.moduleId}_${latestDetection.cameraId || 'unknown'}`;
+    
+    // Skip if we already processed this exact detection
+    if (lastProcessedDetectionKeyRef.current === detectionKey) {
+      return;
+    }
+    
+    lastProcessedDetectionKeyRef.current = detectionKey;
+
+    // Find which cell is analyzing this camera with this module
+    const targetCellIndex = cellCamerasRef.current.findIndex((camera, idx) => {
+      if (!camera) return false;
+      const cameraId = String(camera.id);
+      const activeModuleId = analysisModuleRef.current[idx];
+      const isAnalyzing = frameAnalysisActiveRef.current[idx];
+      
+      return (
+        isAnalyzing &&
+        activeModuleId === latestDetection.moduleId &&
+        (latestDetection.cameraId === cameraId || latestDetection.cameraId === undefined)
+      );
+    });
+
+    if (targetCellIndex === -1) {
+      return;
+    }
+
+    // Update cell detections with new detection data
+    setCellDetections(prev => {
+      const next = [...prev];
+
+      const newDetectionState = {
+        cameraId: latestDetection.cameraId || String(cellCamerasRef.current[targetCellIndex]?.id || ''),
+        moduleId: latestDetection.moduleId,
+        detections: latestDetection.detections,
+        processedAt: latestDetection.processedAt,
+        frameWidth: latestDetection.frameWidth,
+        frameHeight: latestDetection.frameHeight,
+      };
+
+      next[targetCellIndex] = newDetectionState;
+
+      return next;
+    });
+  }, [analyticsDetections]);  // ✅ Only analyticsDetections dependency!
+
+
+  const setFrameCapturePendingState = useCallback((index: number, value: boolean) => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return;
+    }
+
+    setFrameCapturePending(prev => {
+      if (prev[index] === value) {
+        return prev;
+      }
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  }, []);
+
+  const setFrameAnalysisActiveState = useCallback((index: number, value: boolean) => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return;
+    }
+
+    frameAnalysisActiveRef.current[index] = value;
+    setFrameAnalysisActive(prev => {
+      if (prev[index] === value) {
+        return prev;
+      }
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  }, []);
+
+  const clearAnalysisTimer = useCallback((index: number) => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return;
+    }
+
+    const timer = analysisLoopTimersRef.current[index];
+    if (timer != null) {
+      clearTimeout(timer);
+      analysisLoopTimersRef.current[index] = null;
+    }
+  }, []);
+
+  const stopFrameAnalysis = useCallback(
+    (index: number, options?: { silent?: boolean }) => {
+      if (index < 0 || index >= MAX_CELLS) {
+        return;
+      }
+
+      const activeModuleId = analysisModuleRef.current[index];
+      const activeModule = activeModuleId
+        ? analyticsModules.find(module => module.id === activeModuleId)
+        : null;
+      const localizedModuleName = activeModuleId
+        ? getLocalizedModuleNameById(activeModuleId, activeModule?.name ?? activeModuleId)
+        : null;
+
+      setCellDetections(prev => {
+        if (!prev[index]) {
+          return prev;
+        }
+        const updated = [...prev];
+        updated[index] = null;
+        return updated;
+      });
+
+      if (!frameAnalysisActiveRef.current[index]) {
+        return;
+      }
+
+      clearAnalysisTimer(index);
+      analysisModuleRef.current[index] = null;
+      setFrameAnalysisActiveState(index, false);
+      setFrameCapturePendingState(index, false);
+
+      if (!options?.silent && localizedModuleName) {
+        showToast(t('module_toggle_stopped', { module: localizedModuleName }), 'info');
+      }
+    },
+    [
+      analyticsModules,
+      clearAnalysisTimer,
+      getLocalizedModuleNameById,
+      setCellDetections,
+      setFrameAnalysisActiveState,
+      setFrameCapturePendingState,
+      showToast,
+      t,
+    ],
+  );
+
+
+  const updateVideoElementRef = useCallback(
+    (index: number, element: HTMLVideoElement | null, scope: VideoRefScope) => {
+      if (index < 0 || index >= MAX_CELLS) {
+        return;
+      }
+
+      const entry = videoElementRefs.current[index];
+      if (!entry) {
+        videoElementRefs.current[index] = { grid: null, fullscreen: null, hd: null };
+      }
+      videoElementRefs.current[index][scope] = element;
+    },
+    [],
+  );
+
+  const resolveVideoElement = useCallback((index: number): HTMLVideoElement | null => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return null;
+    }
+
+    const entry = videoElementRefs.current[index];
+    if (!entry) {
+      return null;
+    }
+
+    return entry.fullscreen ?? entry.grid;
+  }, []);
+
+  const resolveAnalysisVideoElement = useCallback((index: number): HTMLVideoElement | null => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return null;
+    }
+
+    const entry = videoElementRefs.current[index];
+    if (!entry) {
+      return null;
+    }
+
+    return entry.hd ?? entry.fullscreen ?? entry.grid;
+  }, []);
+
+  const isVideoElementReady = useCallback((element: HTMLVideoElement | null) => {
+    if (!element) {
+      return false;
+    }
+
+    if (element.videoWidth > 0 && element.videoHeight > 0) {
+      return true;
+    }
+
+    return element.readyState >= 2;
+  }, []);
+
+  const getCapturePrerequisites = useCallback(
+    (
+      index: number,
+      moduleId: string,
+      options: { suppressToast?: boolean } = {},
+    ): CaptureContext | null => {
+      const { suppressToast = false } = options;
+
+      if (index < 0 || index >= MAX_CELLS) {
+        return null;
+      }
+
+      const knownModule = analyticsModules.find(module => module.id === moduleId) ?? null;
+      const moduleName = getLocalizedModuleNameById(moduleId, knownModule?.name ?? moduleId);
+
+      if (!hasReadyAnalyticsModule) {
+        if (!suppressToast) {
+          showToast(t('module_toggle_disabled', { module: moduleName }), 'warning');
+        }
+        return null;
+      }
+
+      const targetModule = readyAnalyticsModules.find(module => module.id === moduleId);
+      if (!targetModule) {
+        if (!suppressToast) {
+          showToast(t('module_toggle_disabled', { module: moduleName }), 'warning');
+        }
+        return null;
+      }
+
+      if (processingModuleSet.has(moduleId)) {
+        if (!suppressToast) {
+          showToast(t('module_toggle_busy', { module: moduleName }), 'info');
+        }
+        return null;
+      }
+
+      const camera = cellCamerasRef.current[index];
+      if (!camera) {
+        if (!suppressToast) {
+          showToast(t('module_toggle_no_video', { module: moduleName }), 'warning');
+        }
+        return null;
+      }
+
+      const streamInfo = cellStreams[index] ?? null;
+      const entry = videoElementRefs.current[index];
+      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
+      let videoEl: HTMLVideoElement | null = null;
+
+      if (requiresHd) {
+        videoEl = entry?.hd ?? null;
+        if (!videoEl || !isVideoElementReady(videoEl)) {
+          if (!suppressToast) {
+            showToast(t('module_toggle_hd_warmup', { module: moduleName }), 'info');
+          }
+          return null;
+        }
+      } else {
+        videoEl = resolveAnalysisVideoElement(index);
+        if (!videoEl || !isVideoElementReady(videoEl)) {
+          if (!suppressToast) {
+            showToast(t('module_toggle_no_video', { module: moduleName }), 'warning');
+          }
+          return null;
+        }
+      }
+
+      return {
+        module: targetModule,
+        camera,
+        video: videoEl,
+        index,
+      };
+    },
+    [
+      cellStreams,
+  analyticsModules,
+      hasReadyAnalyticsModule,
+      isVideoElementReady,
+      processingModuleSet,
+      readyAnalyticsModules,
+  getLocalizedModuleNameById,
+      resolveAnalysisVideoElement,
+      showToast,
+      t,
+    ],
+  );
+
+  const captureAndProcessFrame = useCallback(
+    async (context: CaptureContext): Promise<ProcessedFrameResult | null> => {
+      try {
+        const { video, module, camera } = context;
+        let width = video.videoWidth || video.clientWidth;
+        let height = video.videoHeight || video.clientHeight;
+
+        if (!width || !height) {
+          return null;
+        }
+
+        // Apply resize if configured
+        const resizeWidth = settings.analytics_resize_width;
+        if (resizeWidth > 0 && width > resizeWidth) {
+          const scale = resizeWidth / width;
+          width = resizeWidth;
+          height = Math.round(height * scale);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return null;
+        }
+
+        ctx.drawImage(video, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const base64 = dataUrl.split(',')[1];
+        if (!base64) {
+          return null;
+        }
+
+        const options: Record<string, any> = {};
+        if (settings.anpr_detection_confidence > 0) {
+          options.confidence_threshold = settings.anpr_detection_confidence;
+        }
+
+        const response = await processFrame({
+          moduleId: module.id,
+          cameraId: String(camera.id),
+          frameBase64: base64,
+          frameWidth: width,
+          frameHeight: height,
+          options,
+        });
+
+        if (!response) {
+          return null;
+        }
+
+        return {
+          response,
+          frameWidth: width,
+          frameHeight: height,
+        };
+      } catch (error) {
+        console.error('[Dashboard] Failed to capture analytics frame:', error);
+        return null;
+      }
+    },
+    [processFrame],
+  );
+
+  const runAnalysisIteration = useCallback(
+    async (
+      index: number,
+      options: { initial?: boolean; showSuccessToast?: boolean } = {},
+    ) => {
+      clearAnalysisTimer(index);
+
+      if (!frameAnalysisActiveRef.current[index]) {
+        return;
+      }
+
+      const activeModuleId = analysisModuleRef.current[index];
+      if (!activeModuleId) {
+        stopFrameAnalysis(index, { silent: true });
+        return;
+      }
+
+      const context = getCapturePrerequisites(index, activeModuleId, {
+        suppressToast: !options.initial,
+      });
+
+      if (!context) {
+        if (!frameAnalysisActiveRef.current[index]) {
+          stopFrameAnalysis(index, { silent: true });
+          return;
+        }
+
+        const timer = window.setTimeout(() => {
+          void runAnalysisIteration(index, { initial: false });
+        }, ANALYSIS_WARMUP_RETRY_MS);
+        analysisLoopTimersRef.current[index] = timer;
+        return;
+      }
+
+      setFrameCapturePendingState(index, true);
+
+      const result = await captureAndProcessFrame(context);
+
+      setFrameCapturePendingState(index, false);
+
+      if (!result) {
+        const moduleName = getLocalizedModuleName(context.module);
+        stopFrameAnalysis(index, { silent: true });
+        showToast(t('module_toggle_error', { module: moduleName }), 'error');
+        return;
+      }
+
+      const { response, frameWidth, frameHeight } = result;
+      const cameraId = response.cameraId ?? String(context.camera.id);
+
+      setCellDetections(prev => {
+        const next = [...prev];
+
+        if (!response.detections.length || !frameWidth || !frameHeight) {
+          if (next[index]) {
+            next[index] = null;
+            return next;
+          }
+          return prev;
+        }
+
+        next[index] = {
+          cameraId,
+          moduleId: response.moduleId,
+          detections: response.detections,
+          processedAt: response.processedAt,
+          frameWidth,
+          frameHeight,
+        };
+
+        return next;
+      });
+
+      if (options.showSuccessToast) {
+        const moduleName = getLocalizedModuleName(context.module);
+        showToast(t('module_toggle_started', { module: moduleName }), 'success');
+      }
+
+      if (frameAnalysisActiveRef.current[index]) {
+        const fps = settings.fps || 20;
+        const skip = settings.analytics_frame_skip ?? 5;
+        // Calculate delay: skip frames * frame duration. Min 50ms to avoid UI freeze.
+        const delay = Math.max(50, (skip * 1000) / fps);
+
+        const timer = window.setTimeout(() => {
+          void runAnalysisIteration(index, { initial: false });
+        }, delay);
+        analysisLoopTimersRef.current[index] = timer;
+      }
+    },
+    [
+      captureAndProcessFrame,
+      clearAnalysisTimer,
+      getCapturePrerequisites,
+  getLocalizedModuleName,
+      setCellDetections,
+      setFrameCapturePendingState,
+      showToast,
+      stopFrameAnalysis,
+      t,
+      settings,
+    ],
+  );
+
+  useEffect(() => {
+    if (hasReadyAnalyticsModule) {
+      return;
+    }
+
+    frameAnalysisActiveRef.current.forEach((active, idx) => {
+      if (active) {
+        stopFrameAnalysis(idx, { silent: true });
+      }
+    });
+  }, [hasReadyAnalyticsModule, stopFrameAnalysis]);
+
+  useEffect(() => {
+    frameAnalysisActiveRef.current.forEach((active, idx) => {
+      if (active && !cellCameras[idx]) {
+        stopFrameAnalysis(idx, { silent: true });
+      }
+    });
+  }, [cellCameras, stopFrameAnalysis]);
+
+  useEffect(() => () => {
+    analysisLoopTimersRef.current.forEach(timer => {
+      if (timer != null) {
+        clearTimeout(timer);
+      }
+    });
+  }, []);
+
+  const isModuleButtonDisabled = useCallback(
+    (index: number, moduleId: string) => {
+      if (index < 0 || index >= MAX_CELLS) {
+        return true;
+      }
+
+      const isActive =
+        frameAnalysisActive[index] && analysisModuleRef.current[index] === moduleId;
+      if (isActive) {
+        return false;
+      }
+
+      if (!hasReadyAnalyticsModule) {
+        return true;
+      }
+
+      if (!readyAnalyticsModules.some(module => module.id === moduleId)) {
+        return true;
+      }
+
+      if (processingModuleSet.has(moduleId)) {
+        return true;
+      }
+
+      if (frameCapturePending[index]) {
+        return true;
+      }
+
+      const camera = cellCamerasRef.current[index];
+      if (!camera) {
+        return true;
+      }
+
+      const streamInfo = cellStreams[index] ?? null;
+      const entry = videoElementRefs.current[index];
+      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
+      const hdVideo = entry?.hd ?? null;
+      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+        return false;
+      }
+
+      const analysisVideo = resolveAnalysisVideoElement(index);
+      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
+        return true;
+      }
+
+      return false;
+    },
+    [
+      cellStreams,
+      frameAnalysisActive,
+      frameCapturePending,
+      hasReadyAnalyticsModule,
+      isVideoElementReady,
+      processingModuleSet,
+      readyAnalyticsModules,
+      resolveAnalysisVideoElement,
+    ],
+  );
+
+  const getModuleButtonTooltip = useCallback(
+    (index: number, module: AnalyticsModuleStatus, moduleName: string) => {
+      if (index < 0 || index >= MAX_CELLS) {
+        return t('module_toggle_no_video', { module: moduleName });
+      }
+
+      const isActive =
+        frameAnalysisActive[index] && analysisModuleRef.current[index] === module.id;
+      if (isActive) {
+        return frameCapturePending[index]
+          ? t('module_toggle_running', { module: moduleName })
+          : t('module_toggle_stop', { module: moduleName });
+      }
+
+      if (!hasReadyAnalyticsModule) {
+        return t('module_toggle_disabled', { module: moduleName });
+      }
+
+      if (processingModuleSet.has(module.id)) {
+        return t('module_toggle_busy', { module: moduleName });
+      }
+
+      const camera = cellCamerasRef.current[index];
+      if (!camera) {
+        return t('module_toggle_no_video', { module: moduleName });
+      }
+
+      const streamInfo = cellStreams[index] ?? null;
+      const entry = videoElementRefs.current[index];
+      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
+      const hdVideo = entry?.hd ?? null;
+      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+        return t('module_toggle_hd_warmup', { module: moduleName });
+      }
+
+      const analysisVideo = resolveAnalysisVideoElement(index);
+      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
+        return t('module_toggle_no_video', { module: moduleName });
+      }
+
+      if (frameCapturePending[index]) {
+        return t('module_toggle_busy', { module: moduleName });
+      }
+
+      return t('module_toggle_start', { module: moduleName });
+    },
+    [
+      cellStreams,
+      frameAnalysisActive,
+      frameCapturePending,
+      hasReadyAnalyticsModule,
+      isVideoElementReady,
+      processingModuleSet,
+      resolveAnalysisVideoElement,
+      t,
+    ],
+  );
+
+  const handleModuleToggle = useCallback(
+    (index: number, moduleId: string) => {
+      if (index < 0 || index >= MAX_CELLS) {
+        return;
+      }
+
+      const activeModule = analysisModuleRef.current[index];
+      const isActive = frameAnalysisActiveRef.current[index] && activeModule === moduleId;
+      if (isActive) {
+        stopFrameAnalysis(index);
+        return;
+      }
+
+      const knownModule =
+        analyticsModules.find(module => module.id === moduleId) ?? null;
+      const localizedName = getLocalizedModuleNameById(moduleId, knownModule?.name ?? moduleId);
+
+      if (!hasReadyAnalyticsModule) {
+        showToast(t('module_toggle_disabled', { module: localizedName }), 'warning');
+        return;
+      }
+
+      const targetModule = readyAnalyticsModules.find(module => module.id === moduleId);
+      if (!targetModule) {
+        showToast(t('module_toggle_disabled', { module: localizedName }), 'warning');
+        return;
+      }
+
+      if (processingModuleSet.has(moduleId) || frameCapturePending[index]) {
+        showToast(t('module_toggle_busy', { module: localizedName }), 'info');
+        return;
+      }
+
+      const camera = cellCamerasRef.current[index];
+      if (!camera) {
+        showToast(t('module_toggle_no_video', { module: localizedName }), 'warning');
+        return;
+      }
+
+      const streamInfo = cellStreams[index] ?? null;
+      const entry = videoElementRefs.current[index];
+      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
+      const hdVideo = entry?.hd ?? null;
+      const analysisVideo = requiresHd ? hdVideo : resolveAnalysisVideoElement(index);
+
+      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+        showToast(t('module_toggle_hd_warmup', { module: localizedName }), 'info');
+        analysisModuleRef.current[index] = moduleId;
+        setFrameAnalysisActiveState(index, true);
+        void runAnalysisIteration(index, { initial: true, showSuccessToast: true });
+        return;
+      }
+
+      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
+        showToast(t('module_toggle_no_video', { module: localizedName }), 'warning');
+        return;
+      }
+
+      analysisModuleRef.current[index] = moduleId;
+      setFrameAnalysisActiveState(index, true);
+
+      void runAnalysisIteration(index, { initial: true, showSuccessToast: true });
+    },
+    [
+      analyticsModules,
+      cellStreams,
+      frameCapturePending,
+      getLocalizedModuleNameById,
+      hasReadyAnalyticsModule,
+      isVideoElementReady,
+      processingModuleSet,
+      readyAnalyticsModules,
+      resolveAnalysisVideoElement,
+      runAnalysisIteration,
+      setFrameAnalysisActiveState,
+      showToast,
+      stopFrameAnalysis,
+      t,
+    ],
+  );
+
+  const updateHoveredCell = useCallback((index: number | null) => {
+    hoveredCellRef.current = index;
+    setHoveredCellState(index);
+  }, []);
+
+  const resetDragState = useCallback(() => {
+    dragSourceCellRef.current = null;
+    dragCameraIdRef.current = null;
+    pointerDragState.current = { sourceIndex: null, cameraId: null, active: false };
+
+    if (pointerListenersAttachedRef.current) {
+      if (pointerUpHandlerRef.current) {
+        document.removeEventListener('mouseup', pointerUpHandlerRef.current);
+        pointerUpHandlerRef.current = null;
+      }
+      if (pointerMoveHandlerRef.current) {
+        document.removeEventListener('mousemove', pointerMoveHandlerRef.current);
+        pointerMoveHandlerRef.current = null;
+      }
+      if (pointerKeyHandlerRef.current) {
+        document.removeEventListener('keydown', pointerKeyHandlerRef.current);
+        pointerKeyHandlerRef.current = null;
+      }
+      pointerListenersAttachedRef.current = false;
+    }
+
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.grid-cell.drag-over').forEach(element => {
+        element.classList.remove('drag-over');
+      });
+    }
+
+    updateHoveredCell(null);
+  }, [updateHoveredCell]);
+
+  useEffect(() => {
+    return () => {
+      resetDragState();
+    };
+  }, [resetDragState]);
 
   const setCellQuality = (index: number, quality: StreamQuality) => {
     if (index < 0 || index >= MAX_CELLS) {
@@ -240,62 +1227,71 @@ const Dashboard: React.FC = () => {
 
   const applyStreamStatsUpdate = useCallback((stream: StreamInfo | null, metrics: Partial<StreamStatEntry>) => {
     if (!stream) return;
-    const statsKey = `${stream.baseName}_${stream.quality}`;
+    const streamId = stream.quality === 'hd' ? 0 : 1;
+    const statsKey = `${stream.baseName}_${streamId}`;
 
-    setStreamStats(prev => {
-      const prevEntry = prev[statsKey] ?? {};
-      const nextEntry: StreamStatEntry = { ...prevEntry };
-      let changed = false;
+    const prev = streamStatsRef.current;
+    const prevEntry = prev[statsKey] ?? {};
+    const nextEntry: StreamStatEntry = { ...prevEntry };
+    let changed = false;
 
-      if (metrics.codec && metrics.codec !== prevEntry.codec) {
-        nextEntry.codec = metrics.codec;
+    if (metrics.codec && metrics.codec !== prevEntry.codec) {
+      nextEntry.codec = metrics.codec;
+      changed = true;
+    }
+
+    if (metrics.bitrateKbps !== undefined && metrics.bitrateKbps !== prevEntry.bitrateKbps) {
+      nextEntry.bitrateKbps = metrics.bitrateKbps;
+      changed = true;
+    }
+
+    if (metrics.frameRate !== undefined && metrics.frameRate !== prevEntry.frameRate) {
+      nextEntry.frameRate = metrics.frameRate;
+      changed = true;
+    }
+
+    if (metrics.width !== undefined && metrics.height !== undefined) {
+      if (metrics.width !== prevEntry.width || metrics.height !== prevEntry.height) {
+        nextEntry.width = metrics.width;
+        nextEntry.height = metrics.height;
+        nextEntry.resolution = `${metrics.width}x${metrics.height}`;
         changed = true;
       }
+    } else if (metrics.resolution && metrics.resolution !== prevEntry.resolution) {
+      nextEntry.resolution = metrics.resolution;
+      changed = true;
+    }
 
-      if (metrics.bitrateKbps !== undefined && metrics.bitrateKbps !== prevEntry.bitrateKbps) {
-        nextEntry.bitrateKbps = metrics.bitrateKbps;
-        changed = true;
-      }
+    const now = Date.now();
+    if (nextEntry.lastUpdated !== now) {
+      nextEntry.lastUpdated = now;
+      changed = true;
+    }
 
-      if (metrics.frameRate !== undefined && metrics.frameRate !== prevEntry.frameRate) {
-        nextEntry.frameRate = metrics.frameRate;
-        changed = true;
-      }
-
-      if (metrics.width !== undefined && metrics.height !== undefined) {
-        if (metrics.width !== prevEntry.width || metrics.height !== prevEntry.height) {
-          nextEntry.width = metrics.width;
-          nextEntry.height = metrics.height;
-          nextEntry.resolution = `${metrics.width}x${metrics.height}`;
-          changed = true;
-        }
-      } else if (metrics.resolution && metrics.resolution !== prevEntry.resolution) {
-        nextEntry.resolution = metrics.resolution;
-        changed = true;
-      }
-
-      if (!changed) {
-        return prev;
-      }
-
-      return {
+    if (changed) {
+      streamStatsRef.current = {
         ...prev,
         [statsKey]: nextEntry,
       };
-    });
-  }, []);
+      refreshCameraStatus(stream.cameraId);
+    }
+  }, [refreshCameraStatus]);
 
   const enterFullscreen = (index: number) => {
     if (!cellCameras[index]) {
       return;
     }
+    console.log('[Dashboard] Entering fullscreen for cell', index);
+    // Switch cell to HD
     setCellQuality(index, 'hd');
+    // Set fullscreen state (will trigger position:fixed on GridCell)
     setFullscreenCell(index);
   };
 
   const exitFullscreen = () => {
     setFullscreenCell(prevIndex => {
       if (prevIndex !== null) {
+        // Return cell to SD quality after exiting fullscreen
         setCellQuality(prevIndex, 'sd');
       }
       return null;
@@ -351,7 +1347,13 @@ const Dashboard: React.FC = () => {
   const createEmptyStreamArray = () => Array.from({ length: MAX_CELLS }, () => null as StreamInfo | null);
 
   const assignCameraToCell = useCallback(async (camera: Camera, cellIndex: number) => {
-    console.log('Dashboard: assigning camera to cell', { cameraId: camera.id, cellIndex });
+    console.log('Dashboard: assigning camera to cell', {
+      cameraId: camera.id,
+      cellIndex,
+      streamingProvider,
+    });
+
+    stopFrameAnalysis(cellIndex, { silent: true });
 
     setCellStreams(prev => {
       const next = [...prev];
@@ -366,45 +1368,57 @@ const Dashboard: React.FC = () => {
     });
 
     try {
-  const { hdUrl, sdUrl } = await buildCameraRtspUrls(camera);
-      console.log('Dashboard: Registering camera streams', { cameraId: camera.id, hdUrl, sdUrl });
-      await invoke('add_camera_streams', {
+      const { hdUrl, sdUrl } = await buildCameraRtspUrls(camera);
+      console.log('Dashboard: Registering camera streams', {
+        cameraId: camera.id,
+        hdUrl,
+        sdUrl,
+        streamingProvider,
+      });
+      console.log('Dashboard: Calling add_camera_streams...');
+      
+      // Add timeout to detect if invoke hangs
+      const addStreamsPromise = invoke('add_camera_streams', {
         cameraId: camera.id,
         hdUrl,
         sdUrl,
       });
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('add_camera_streams timeout after 10s')), 10000)
+      );
+      
+      await Promise.race([addStreamsPromise, timeoutPromise]);
       console.log('Dashboard: add_camera_streams completed for camera', camera.id);
     } catch (error) {
-      console.error('Dashboard: Failed to configure MediaMTX for camera', camera.id, error);
+      console.error('Dashboard: Failed to configure streaming backend for camera', camera.id, error);
       throw error;
     }
 
-    try {
-      await invoke('mediamtx_start');
-    } catch (error) {
-      console.warn('Dashboard: mediamtx_start failed or already running', error);
-    }
+    console.log('Dashboard: After try-catch, calling ensureStreamingBackendStarted...');
+    await ensureStreamingBackendStarted();
+    console.log('Dashboard: ensureStreamingBackendStarted completed');
 
     const baseName = `cam${camera.id}`;
-    const sdPath = `${baseName}_1`;
+    console.log('Dashboard: baseName =', baseName);
 
-    void (async () => {
-      const ready = await waitForMediaMtxPath(sdPath, 12, 1000);
-      if (!ready) {
-        console.warn(`Dashboard: Stream path ${sdPath} not confirmed ready after polling`);
-      }
-    })();
+    // Prewarm stream if enabled
+    if (streamOptSettings.enablePrewarming) {
+      console.log(`[Dashboard] Prewarming stream for camera: ${baseName}`);
+      void streamPrewarmingService.prewarmStream(baseName, true); // Priority = true for user action
+    }
 
     setCellStreams(prev => {
       const next = [...prev];
       const nextQuality: StreamQuality = fullscreenCell === cellIndex ? 'hd' : 'sd';
       next[cellIndex] = { cameraId: camera.id, baseName, quality: nextQuality };
+      console.log(`[Dashboard] Updated cellStreams: cellIndex=${cellIndex}, baseName=${baseName}, quality=${nextQuality}`);
       return next;
     });
-  }, [fullscreenCell]);
+  }, [fullscreenCell, stopFrameAnalysis, ensureStreamingBackendStarted, streamOptSettings.enablePrewarming]);
 
   useEffect(() => {
-    if (appStateLoading || hasRestoredLayoutRef.current) {
+    if (appStateLoading || restoringLayoutRef.current || hasRestoredLayoutRef.current) {
       return;
     }
 
@@ -593,21 +1607,21 @@ const Dashboard: React.FC = () => {
       try {
         await assignCameraToCell(camera, targetCell);
         if (preferredCell === null) {
-          setHoveredCell(targetCell);
+          updateHoveredCell(targetCell);
         }
       } catch (error) {
         console.error('Dashboard: Ошибка при добавлении камеры в ячейку через двойной клик', error);
       }
     };
 
-    (window as any).setCellCamera = handler;
+    window.setCellCamera = handler;
 
     return () => {
-      if ((window as any).setCellCamera === handler) {
-        delete (window as any).setCellCamera;
+      if (window.setCellCamera === handler) {
+        window.setCellCamera = undefined;
       }
     };
-  }, [assignCameraToCell]);
+  }, [assignCameraToCell, updateHoveredCell]);
 
   const generateDefaultLayoutName = useCallback(() => {
     const fallbackLayoutName = 'Раскладка';
@@ -1169,31 +2183,494 @@ const Dashboard: React.FC = () => {
   };
 
   const { cols, rows } = calculateGridDimensions(gridSize);
+
+  const swapCellContents = useCallback((sourceIndex: number, targetIndex: number) => {
+    if (sourceIndex === targetIndex) {
+      return;
+    }
+
+    setCellCameras(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setCellStreams(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setCellPaused(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setCellMuted(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setCellRecording(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setRecordingPending(prev => {
+      const next = [...prev];
+      [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+      return next;
+    });
+
+    setFullscreenCell(prev => {
+      if (prev === sourceIndex) {
+        return targetIndex;
+      }
+      if (prev === targetIndex) {
+        return sourceIndex;
+      }
+      return prev;
+    });
+  }, [setCellCameras, setCellStreams, setCellPaused, setCellMuted, setCellRecording, setRecordingPending, setFullscreenCell]);
+
+  const finalizeDragFallback = useCallback(() => {
+    const sourceIndex = dragSourceCellRef.current;
+    const targetIndex = hoveredCellRef.current;
+
+    const isValidIndex = (value: number | null): value is number =>
+      typeof value === 'number' && value >= 0 && value < MAX_CELLS;
+
+    if (
+      isValidIndex(sourceIndex) &&
+      isValidIndex(targetIndex) &&
+      sourceIndex !== targetIndex &&
+      cellCamerasRef.current[sourceIndex]
+    ) {
+      swapCellContents(sourceIndex, targetIndex);
+    }
+
+    resetDragState();
+  }, [resetDragState, swapCellContents]);
+
+  const finalizePointerDrag = useCallback((targetIndex: number | null) => {
+    const { active, sourceIndex } = pointerDragState.current;
+    if (!active || sourceIndex === null) {
+      resetDragState();
+      return;
+    }
+
+    if (
+      typeof targetIndex === 'number' &&
+      targetIndex >= 0 &&
+      targetIndex < MAX_CELLS &&
+      targetIndex !== sourceIndex &&
+      cellCamerasRef.current[sourceIndex]
+    ) {
+      swapCellContents(sourceIndex, targetIndex);
+    }
+
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.grid-cell.drag-over').forEach(element => {
+        element.classList.remove('drag-over');
+      });
+    }
+
+    resetDragState();
+  }, [resetDragState, swapCellContents]);
+
+  const attachPointerListeners = useCallback(() => {
+    if (pointerListenersAttachedRef.current) {
+      return;
+    }
+
+    const resolveCellIndexFromEvent = (event: MouseEvent): number | null => {
+      if (!(event.target instanceof HTMLElement)) {
+        return null;
+      }
+
+      const cellElement = event.target.closest('[data-cell-index]') as HTMLElement | null;
+      if (!cellElement) {
+        return null;
+      }
+
+      const attr = cellElement.getAttribute('data-cell-index');
+      if (!attr) {
+        return null;
+      }
+
+      const parsed = Number.parseInt(attr, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const pointerMoveHandler = (event: MouseEvent) => {
+      if (!pointerDragState.current.active) {
+        return;
+      }
+
+      if (typeof document === 'undefined') {
+        return;
+      }
+
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      const cellElement = element instanceof HTMLElement ? element.closest('[data-cell-index]') : null;
+
+      let targetIndex: number | null = null;
+      if (cellElement instanceof HTMLElement) {
+        const attr = cellElement.getAttribute('data-cell-index');
+        if (attr) {
+          const parsed = Number.parseInt(attr, 10);
+          if (!Number.isNaN(parsed)) {
+            targetIndex = parsed;
+          }
+        }
+      }
+
+      if (targetIndex !== null && targetIndex !== hoveredCellRef.current) {
+        if (hoveredCellRef.current !== null) {
+          const previous = document.querySelector(`[data-cell-index="${hoveredCellRef.current}"]`);
+          previous?.classList.remove('drag-over');
+        }
+        updateHoveredCell(targetIndex);
+        (cellElement as HTMLElement | null)?.classList.add('drag-over');
+        return;
+      }
+
+      if (targetIndex === null && hoveredCellRef.current !== null) {
+        const previous = document.querySelector(`[data-cell-index="${hoveredCellRef.current}"]`);
+        previous?.classList.remove('drag-over');
+        updateHoveredCell(null);
+      }
+    };
+
+    const pointerUpHandler = (event: MouseEvent) => {
+      if (!pointerDragState.current.active) {
+        return;
+      }
+
+      let targetIndex = resolveCellIndexFromEvent(event);
+
+      if (targetIndex === null && hoveredCellRef.current !== null) {
+        targetIndex = hoveredCellRef.current;
+      }
+
+      finalizePointerDrag(targetIndex);
+    };
+
+    const keyHandler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && pointerDragState.current.active) {
+        event.preventDefault();
+        resetDragState();
+      }
+    };
+
+    pointerUpHandlerRef.current = pointerUpHandler;
+    pointerMoveHandlerRef.current = pointerMoveHandler;
+    pointerKeyHandlerRef.current = keyHandler;
+
+    document.addEventListener('mouseup', pointerUpHandler);
+    document.addEventListener('mousemove', pointerMoveHandler);
+    document.addEventListener('keydown', keyHandler);
+
+    pointerListenersAttachedRef.current = true;
+  }, [finalizePointerDrag, resetDragState, updateHoveredCell]);
+
+  // Helper function for taking snapshots
+  const takeSnapshot = async (streamBaseName: string, quality: string) => {
+    try {
+      // Build full stream name with quality suffix
+      const streamSuffix = quality === 'hd' ? '_1' : '_0';
+      const fullStreamName = `${streamBaseName}${streamSuffix}`;
+      
+      // Get snapshot from go2rtc
+      const imageData = await invoke<number[]>('get_go2rtc_snapshot', {
+        streamName: fullStreamName,
+      });
+
+      // Convert to base64
+      const uint8Array = new Uint8Array(imageData);
+      let binary = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      const base64Data = btoa(binary);
+
+      // Get screenshots directory from settings
+      let screenshotsDir: string | null = null;
+      try {
+        const settings = await invoke<any>('get_app_settings');
+        if (settings?.screenshotsPath) {
+          screenshotsDir = settings.screenshotsPath;
+        }
+      } catch (e) {
+        console.warn('[Snapshot] Could not load settings, using default directory');
+      }
+
+      // Save screenshot
+      const savedPath = await invoke<string>('save_screenshot', {
+        args: {
+          imageData: `data:image/jpeg;base64,${base64Data}`,
+          directory: screenshotsDir,
+          cameraName: streamBaseName,
+          streamName: streamBaseName,
+          quality: quality,
+        }
+      });
+
+      console.log(`[Snapshot] Saved: ${savedPath}`);
+      showToast(t('snapshot_saved') || 'Snapshot saved successfully', 'success');
+    } catch (error) {
+      console.error('[Snapshot] Failed:', error);
+      showToast(t('snapshot_failed') || 'Failed to save snapshot', 'error');
+    }
+  };
+
+  // Создаём стабильные коллбеки для GridCell через useMemo чтобы избежать ремаунтов
+  // КРИТИЧНО: Используем ref для cellStreams чтобы НЕ пересоздавать callbacks при каждом setCellStreams
+  const gridCellCallbacks = React.useMemo(() => {
+    const callbacks: Array<{
+      onStatsUpdateSD: (stats: any) => void;
+      onStatsUpdateHD: (stats: any) => void;
+      onVideoRefSD: (ref: HTMLVideoElement | null) => void;
+      onVideoRefHD: (ref: HTMLVideoElement | null) => void;
+    }> = [];
+
+    for (let idx = 0; idx < MAX_CELLS; idx++) {
+      callbacks.push({
+        // Separate callback for SD stream - always uses 'sd' quality
+        onStatsUpdateSD: (stats: any) => {
+          const streamInfo = cellStreamsRef.current[idx];
+          if (streamInfo) {
+            // Force SD quality for this callback
+            applyStreamStatsUpdate({ ...streamInfo, quality: 'sd' }, stats);
+          }
+        },
+        // Separate callback for HD stream - always uses 'hd' quality
+        onStatsUpdateHD: (stats: any) => {
+          const streamInfo = cellStreamsRef.current[idx];
+          if (streamInfo) {
+            // Force HD quality for this callback
+            applyStreamStatsUpdate({ ...streamInfo, quality: 'hd' }, stats);
+          }
+        },
+        onVideoRefSD: (ref: HTMLVideoElement | null) => {
+          const streamInfo = cellStreamsRef.current[idx]; // Читаем из ref
+          // Update grid ref if SD is the active quality, otherwise still register for fallback
+          if (streamInfo && streamInfo.quality === 'sd') {
+            updateVideoElementRef(idx, ref, 'grid');
+          } else if (ref) {
+            // Still register SD video element even if not active quality (for fallback)
+            const entry = videoElementRefs.current[idx];
+            if (entry && !entry.grid && !entry.hd) {
+              updateVideoElementRef(idx, ref, 'grid');
+            }
+          }
+        },
+        onVideoRefHD: (ref: HTMLVideoElement | null) => {
+          const streamInfo = cellStreamsRef.current[idx]; // Читаем из ref
+          // ALWAYS update hd ref
+          updateVideoElementRef(idx, ref, 'hd');
+          // Update grid ref if HD is the active quality
+          if (streamInfo && streamInfo.quality === 'hd') {
+            updateVideoElementRef(idx, ref, 'grid');
+          }
+        },
+      });
+    }
+    return callbacks;
+  }, [applyStreamStatsUpdate]); // ТОЛЬКО applyStreamStatsUpdate в зависимостях!
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      // Only update status for cameras that are currently in the grid
+      const activeCameraIds = new Set(
+        cellCamerasRef.current
+          .filter((c): c is Camera => c !== null)
+          .map(c => c.id)
+      );
+      activeCameraIds.forEach(cameraId => refreshCameraStatus(cameraId));
+    }, 5000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshCameraStatus]);
+
   const gridCells = Array.from({ length: cols * rows }).map((_, idx) => {
     const cam = cellCameras[idx];
     const streamInfo = cellStreams[idx];
+    const moduleToggles = readyAnalyticsModules.map(module => {
+      const displayName = getLocalizedModuleName(module);
+      return {
+        moduleId: module.id,
+        label: displayName,
+        icon: resolveModuleIcon(module.id),
+        tooltip: getModuleButtonTooltip(idx, module, displayName),
+        active: frameAnalysisActive[idx] && analysisModuleRef.current[idx] === module.id,
+        disabled: isModuleButtonDisabled(idx, module.id),
+        onToggle: () => handleModuleToggle(idx, module.id),
+      };
+    });
+
+    const handlePointerMouseDown = (e: React.MouseEvent) => {
+      if (e.button !== 0 || !cam) {
+        return;
+      }
+
+      const targetEl = e.target as HTMLElement | null;
+      if (targetEl?.closest('[data-prevent-drag]')) {
+        return;
+      }
+
+      e.preventDefault();
+      if (window.getSelection) {
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+      }
+
+      pointerDragState.current = {
+        sourceIndex: idx,
+        cameraId: cam.id,
+        active: true,
+      };
+
+      dragSourceCellRef.current = idx;
+      dragCameraIdRef.current = cam.id;
+
+      updateHoveredCell(idx);
+      attachPointerListeners();
+      e.currentTarget.classList.add('drag-over');
+    };
+
+    const handlePointerMouseUp = (e: React.MouseEvent) => {
+      if (!pointerDragState.current.active) {
+        return;
+      }
+
+      finalizePointerDrag(idx);
+      e.currentTarget.classList.remove('drag-over');
+    };
 
     const handleDrop = async (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const cameraIdStr = e.dataTransfer.getData('application/x-camera-id');
-      if (!cameraIdStr) return;
 
-      const cameraId = Number.parseInt(cameraIdStr, 10);
-      if (Number.isNaN(cameraId)) return;
+      try {
+        const payloadRaw =
+          e.dataTransfer.getData('application/x-camera-drag') ||
+          e.dataTransfer.getData('text/plain');
 
-      const targetCamera = appCameras.find(c => c && c.id === cameraId);
+        let sharedPayload: { type?: string; cameraId?: number; sourceIndex?: number } | null = null;
+        if (payloadRaw) {
+          try {
+            sharedPayload = JSON.parse(payloadRaw);
+          } catch {
+            sharedPayload = null;
+          }
+        }
 
-      if (!targetCamera) {
-        console.error('Dashboard: Camera not found in state:', cameraId);
+        const sourceCellStr =
+          e.dataTransfer.getData('application/x-source-cell') ||
+          e.dataTransfer.getData('application/x-source-cell-id');
+        let sourceIndex: number | undefined;
+        if (sourceCellStr) {
+          const parsed = Number.parseInt(sourceCellStr, 10);
+          if (!Number.isNaN(parsed)) {
+            sourceIndex = parsed;
+          }
+        } else if (sharedPayload?.type === 'dashboard-camera-drag' && typeof sharedPayload.sourceIndex === 'number') {
+          sourceIndex = sharedPayload.sourceIndex;
+        } else if (dragSourceCellRef.current !== null) {
+          sourceIndex = dragSourceCellRef.current;
+        }
+
+        if (sourceIndex !== undefined && sourceIndex >= 0 && sourceIndex < MAX_CELLS && sourceIndex !== idx) {
+          if (cellCameras[sourceIndex]) {
+            swapCellContents(sourceIndex, idx);
+            return;
+          }
+        }
+
+        const cameraIdStr = e.dataTransfer.getData('application/x-camera-id');
+        let cameraId: number | undefined;
+        if (cameraIdStr) {
+          const parsed = Number.parseInt(cameraIdStr, 10);
+          if (!Number.isNaN(parsed)) {
+            cameraId = parsed;
+          }
+        } else if (sharedPayload?.type === 'dashboard-camera-drag' && typeof sharedPayload.cameraId === 'number') {
+          cameraId = sharedPayload.cameraId;
+        } else if (dragCameraIdRef.current !== null) {
+          cameraId = dragCameraIdRef.current;
+        }
+
+        if (cameraId === undefined) {
+          return;
+        }
+
+        const targetCamera = appCameras.find(c => c && c.id === cameraId);
+
+        if (!targetCamera) {
+          console.error('Dashboard: Camera not found in state:', cameraId);
+          return;
+        }
+
+        await assignCameraToCell(targetCamera, idx);
+      } catch (error) {
+        console.error(`Dashboard: Failed to handle drop on cell ${idx}`, error);
+      } finally {
+        resetDragState();
+      }
+    };
+
+    const handleDragStart = (e: React.DragEvent) => {
+      if (!cam) {
+        e.preventDefault();
         return;
       }
 
-      try {
-        await assignCameraToCell(targetCamera, idx);
-      } catch (error) {
-        console.error(`Dashboard: Failed to assign camera ${cameraId} to cell ${idx}`, error);
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-prevent-drag]')) {
+        e.preventDefault();
+        return;
       }
+
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = 'move';
+
+      dragSourceCellRef.current = idx;
+      dragCameraIdRef.current = cam.id;
+      updateHoveredCell(idx);
+
+      const payload = JSON.stringify({
+        type: 'dashboard-camera-drag',
+        cameraId: cam.id,
+        sourceIndex: idx,
+      });
+
+      const sourceIndexStr = idx.toString();
+      const cameraIdStr = cam.id.toString();
+
+      e.dataTransfer.setData('application/x-camera-drag', payload);
+      e.dataTransfer.setData('application/x-camera-id', cameraIdStr);
+      e.dataTransfer.setData('application/x-source-cell', sourceIndexStr);
+      e.dataTransfer.setData('application/x-source-cell-id', sourceIndexStr);
+      e.dataTransfer.setData('text/plain', payload);
+
+      const dragImage = (target?.closest('.grid-cell') ?? e.currentTarget) as HTMLElement;
+      if (dragImage) {
+        try {
+          const rect = dragImage.getBoundingClientRect();
+          e.dataTransfer.setDragImage(dragImage, rect.width / 2, rect.height / 2);
+        } catch {
+          // WebView may throw if drag images are unsupported; ignore.
+        }
+      }
+    };
+
+    const handleDragEnd = () => {
+      finalizeDragFallback();
     };
 
     const handleClearCell = async () => {
@@ -1205,12 +2682,26 @@ const Dashboard: React.FC = () => {
         exitFullscreen();
       }
 
+      stopFrameAnalysis(idx, { silent: true });
+      setFrameCapturePendingState(idx, false);
+      updateVideoElementRef(idx, null, 'grid');
+      updateVideoElementRef(idx, null, 'fullscreen');
+    updateVideoElementRef(idx, null, 'hd');
+
       setCellCameras(prev => {
         const copy = [...prev];
         copy[idx] = null;
         return copy;
       });
       setCellStreams(prev => {
+        const copy = [...prev];
+        copy[idx] = null;
+        return copy;
+      });
+      setCellDetections(prev => {
+        if (!prev[idx]) {
+          return prev;
+        }
         const copy = [...prev];
         copy[idx] = null;
         return copy;
@@ -1237,40 +2728,92 @@ const Dashboard: React.FC = () => {
       void toggleRecordingForCell(idx);
     };
 
-    const handleCellArchive = () => {
-      openCellArchive(idx, cam);
+    const handleCellSnapshot = () => {
+      if (streamInfo) {
+        void takeSnapshot(streamInfo.baseName, streamInfo.quality);
+      }
     };
+
+    const detectionState = cellDetections[idx];
+    const videoEntry = videoElementRefs.current[idx];
+    // When in fullscreen, prefer fullscreen video element; otherwise use grid/hd
+    const isInFullscreen = fullscreenCell === idx;
+    const gridVideoElement = isInFullscreen
+      ? (videoEntry?.fullscreen ?? videoEntry?.hd ?? videoEntry?.grid ?? null)
+      : (videoEntry?.grid ?? videoEntry?.hd ?? videoEntry?.fullscreen ?? null);
+    const hasDetections = !!(detectionState && detectionState.detections.length > 0);
 
     return (
       <Box
         key={`cell-${idx}`}
         className={`grid-cell ${cellPaused[idx] ? 'paused-state' : ''} ${cellRecording[idx] ? 'recording' : ''} ${fullscreenCell === idx ? 'fullscreen' : ''}`}
+        draggable={!!cam}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onMouseDown={handlePointerMouseDown}
+        onMouseUp={handlePointerMouseUp}
+        data-cell-index={idx}
         tabIndex={0}
         sx={{
           position: 'relative',
           overflow: 'hidden',
           width: '100%',
           height: '100%',
-          minHeight: gridSize > 32 ? 60 : gridSize > 16 ? 120 : gridSize > 9 ? 150 : 180,
-          maxHeight: gridSize === 1 ? '100%' : gridSize === 4 ? 400 : gridSize === 9 ? 300 : gridSize <= 25 ? 200 : 150,
+          maxHeight: '100%',
+          minHeight: 0,
           border: '1px solid #31353a',
           borderRadius: gridSize > 32 ? 1 : 2,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: '#36393f',
-          cursor: 'move',
-          aspectRatio: '16/9',
+          cursor: cam ? 'grab' : 'default',
           '&.drag-over': { boxShadow: '0 0 0 2px #1976d2' }
         }}
-        onMouseEnter={() => setHoveredCell(idx)}
-        onMouseLeave={() => setHoveredCell(null)}
-        onDragEnter={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
-        onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }}
-        onDragLeave={e => { e.currentTarget.classList.remove('drag-over'); }}
-        onDrop={e => { e.currentTarget.classList.remove('drag-over'); handleDrop(e); }}
+        onMouseEnter={(event) => {
+          updateHoveredCell(idx);
+          if (pointerDragState.current.active) {
+            event.currentTarget.classList.add('drag-over');
+          }
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.classList.remove('drag-over');
+          if (!pointerDragState.current.active) {
+            updateHoveredCell(null);
+          }
+        }}
+        onDragEnter={e => {
+          e.preventDefault();
+          updateHoveredCell(idx);
+          e.currentTarget.classList.add('drag-over');
+        }}
+        onDragOver={e => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          if (hoveredCellRef.current !== idx) {
+            updateHoveredCell(idx);
+          }
+        }}
+        onDragLeave={e => {
+          const nextTarget = e.relatedTarget as Node | null;
+          if (nextTarget && e.currentTarget.contains(nextTarget)) {
+            return;
+          }
+          e.currentTarget.classList.remove('drag-over');
+          if (!pointerDragState.current.active && hoveredCellRef.current === idx) {
+            updateHoveredCell(null);
+          }
+        }}
+        onDrop={e => {
+          e.currentTarget.classList.remove('drag-over');
+          handleDrop(e);
+        }}
         onDoubleClick={() => {
           if (cellCameras[idx]) {
+            // Switch to HD quality before opening fullscreen
+            // This ensures DualQualityStreamPlayer shows HD stream immediately
+            setCellQuality(idx, 'hd');
             enterFullscreen(idx);
           }
         }}
@@ -1301,40 +2844,176 @@ const Dashboard: React.FC = () => {
           <>
             {streamInfo ? (
               <>
-                <VideoStreamPlayer
-                  key={`${streamInfo.baseName}-cell-${idx}-${streamInfo.quality}`}
-                  streamName={streamInfo.baseName}
-                  useHdQuality={streamInfo.quality === 'hd'}
-                  controls={false}
-                  autoPlay
-                  muted={cellMuted[idx]}
-                  width="100%"
-                  height="100%"
-                  style={{ borderRadius: 2 }}
-                  onStatsUpdate={(stats) => applyStreamStatsUpdate(streamInfo, stats)}
-                />
-                {streamInfo.quality !== 'hd' && (
-                  <VideoStreamPlayer
-                    key={`${streamInfo.baseName}-cell-${idx}-hd-preload`}
-                    streamName={streamInfo.baseName}
-                    useHdQuality
-                    controls={false}
-                    autoPlay
-                    muted
-                    width={1}
-                    height={1}
-                    className="hd-preload-player"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: 1,
-                      height: 1,
-                      opacity: 0,
-                      pointerEvents: 'none',
-                    }}
+                {/* GridCell - use position:fixed when fullscreen to cover screen without remounting */}
+                <Box 
+                  sx={{ 
+                    // When fullscreen: break out of grid cell and cover entire screen
+                    position: fullscreenCell === idx ? 'fixed' : 'absolute',
+                    inset: 0,
+                    // When fullscreen: highest z-index to be above everything
+                    zIndex: fullscreenCell === idx ? 9999 : 'auto',
+                    // When fullscreen: dark background
+                    backgroundColor: fullscreenCell === idx ? '#000' : 'transparent',
+                  }}
+                  // Double-click to exit fullscreen
+                  onDoubleClick={(e) => {
+                    if (fullscreenCell === idx) {
+                      e.stopPropagation();
+                      console.log('[Dashboard] Exiting fullscreen via double-click');
+                      exitFullscreen();
+                    }
+                  }}
+                >
+                  {/* Close button when fullscreen */}
+                  {fullscreenCell === idx && (
+                    <>
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('[Dashboard] Exiting fullscreen via close button');
+                          exitFullscreen();
+                        }}
+                        sx={{
+                          position: 'absolute',
+                          top: 16,
+                          right: 16,
+                          zIndex: 10000,
+                          color: '#fff',
+                          backgroundColor: 'rgba(0,0,0,0.5)',
+                          '&:hover': { backgroundColor: 'rgba(0,0,0,0.8)' }
+                        }}
+                      >
+                        <CloseIcon />
+                      </IconButton>
+                      
+                      {/* Fullscreen controls */}
+                      <Box 
+                        data-prevent-drag
+                        sx={{
+                          position: 'absolute',
+                          top: 16,
+                          left: 16,
+                          zIndex: 10000
+                        }}
+                      >
+                        <CellControls
+                          isFullscreen={true}
+                          isRecording={cellRecording[idx]}
+                          isRecordingPending={recordingPending[idx]}
+                          isMuted={cellMuted[idx]}
+                          streamId={streamInfo?.quality === 'hd' ? 0 : 1}
+                          streamName={streamInfo?.baseName}
+                          enableSnapshot={go2rtcSettings.enableSnapshot}
+                          onStreamSwitch={handleCellStreamSwitch}
+                          onAudio={() => toggleCellMuted(idx)}
+                          onRecord={() => { void toggleRecordingForCell(idx); }}
+                          onSnapshot={async () => {
+                            if (streamInfo?.baseName) {
+                              await takeSnapshot(streamInfo.baseName, streamInfo.quality);
+                            }
+                          }}
+                          onClose={() => exitFullscreen()}
+                          moduleToggles={moduleToggles}
+                        />
+                      </Box>
+                      
+                      {/* Camera name overlay in fullscreen */}
+                      <div
+                        className="cell-name"
+                        style={{
+                          position: 'absolute',
+                          bottom: 32,
+                          right: 32,
+                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          color: 'white',
+                          padding: '8px 16px',
+                          borderRadius: 8,
+                          fontSize: 18,
+                          fontWeight: 500,
+                          zIndex: 10000,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {cam?.name || `Camera ${cam?.id}`} · {streamInfo?.quality.toUpperCase()}
+                      </div>
+                      
+                      {/* Stats overlay in fullscreen */}
+                      <div
+                        className="cell-stats"
+                        style={{
+                          position: 'absolute',
+                          bottom: 32,
+                          left: 32,
+                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          color: 'white',
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          fontSize: 14,
+                          fontFamily: 'monospace',
+                          zIndex: 10000,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {(() => {
+                          // Read current stream info from state, not closure variable
+                          const currentStreamInfo = cellStreams[idx];
+                          if (!currentStreamInfo) {
+                            return `${t('connecting_stream') || 'Подключение...'}`;
+                          }
+                          const streamId = currentStreamInfo.quality === 'hd' ? 0 : 1;
+                          const statsKey = `${currentStreamInfo.baseName}_${streamId}`;
+                          const stats = streamStatsRef.current[statsKey];
+                          
+                          // Debug logging
+                          if (fullscreenCell === idx) {
+                            console.log('[Dashboard] Fullscreen stats lookup:', {
+                              idx,
+                              statsKey,
+                              stats,
+                              allStatsKeys: Object.keys(streamStatsRef.current),
+                              currentStreamInfo
+                            });
+                          }
+                          
+                          if (stats) {
+                            const segments: string[] = [];
+                            if (stats.codec) segments.push(stats.codec);
+                            if (stats.resolution) {
+                              segments.push(stats.resolution);
+                            } else if (stats.width && stats.height) {
+                              segments.push(`${stats.width}x${stats.height}`);
+                            }
+                            if (stats.bitrateKbps !== undefined) {
+                              segments.push(`${stats.bitrateKbps} kbps`);
+                            }
+                            if (stats.frameRate !== undefined) {
+                              segments.push(`${stats.frameRate} fps`);
+                            }
+                            return segments.length > 0 ? segments.join(' | ') : currentStreamInfo.quality.toUpperCase();
+                          }
+                          return `${currentStreamInfo.quality.toUpperCase()} | ${t('connecting_stream') || 'Подключение...'}`;
+                        })()}
+                      </div>
+                    </>
+                  )}
+                  <GridCell
+                    streamBaseName={cellStreams[idx]?.baseName || streamInfo.baseName}
+                    quality={cellStreams[idx]?.quality || streamInfo.quality}
+                    cellMuted={cellMuted[idx]}
+                    cellIndex={idx}
+                    onStatsUpdateSD={gridCellCallbacks[idx].onStatsUpdateSD}
+                    onStatsUpdateHD={gridCellCallbacks[idx].onStatsUpdateHD}
+                    onVideoRefSD={gridCellCallbacks[idx].onVideoRefSD}
+                    onVideoRefHD={gridCellCallbacks[idx].onVideoRefHD}
+                    go2rtcSettings={go2rtcSettings}
+                    streamOptSettings={streamOptSettings}
+                    detections={detectionState?.detections ?? []}
+                    detectionFrameWidth={detectionState?.frameWidth ?? 0}
+                    detectionFrameHeight={detectionState?.frameHeight ?? 0}
+                    videoElement={gridVideoElement}
+                    hasDetections={hasDetections}
                   />
-                )}
+                </Box>
                 {/* Название камеры - правый нижний угол */}
                 <div 
                   className="cell-name"
@@ -1348,8 +3027,6 @@ const Dashboard: React.FC = () => {
                     borderRadius: 4, 
                     fontSize: 12, 
                     fontWeight: 500,
-                    opacity: 1,
-                    transition: 'opacity 0.3s ease-in-out',
                     zIndex: 10,
                     whiteSpace: 'nowrap',
                     maxWidth: 'fit-content'
@@ -1370,16 +3047,15 @@ const Dashboard: React.FC = () => {
                     borderRadius: 3, 
                     fontSize: 10, 
                     fontFamily: 'monospace',
-                    opacity: 1,
-                    transition: 'opacity 0.3s ease-in-out',
                     zIndex: 10,
                     whiteSpace: 'nowrap',
                     maxWidth: 'fit-content'
                   }}
                 >
                   {(() => {
-                    const statsKey = `${streamInfo.baseName}_${streamInfo.quality}`;
-                    const stats = streamStats[statsKey];
+                    const streamId = streamInfo.quality === 'hd' ? 0 : 1;
+                    const statsKey = `${streamInfo.baseName}_${streamId}`;
+                    const stats = streamStatsRef.current[statsKey];
                     if (stats) {
                       const segments: string[] = [];
                       if (stats.codec) {
@@ -1413,21 +3089,26 @@ const Dashboard: React.FC = () => {
               </Box>
             )}
             {/* Контроллы ячейки - всегда присутствуют, но скрыты через CSS */}
-            <CellControls
-              isFullscreen={fullscreenCell === idx}
-              isRecording={cellRecording[idx]}
-              isRecordingPending={recordingPending[idx]}
-              isMuted={cellMuted[idx]}
-              streamId={streamInfo?.quality === 'hd' ? 0 : 1}
-              onStreamSwitch={handleCellStreamSwitch}
-              onAudio={handleCellAudio}
-              onRecord={handleCellRecord}
-              onClose={() => { void handleClearCell(); }}
-              onArchive={handleCellArchive}
-            />
+            <Box data-prevent-drag>
+              <CellControls
+                isFullscreen={fullscreenCell === idx}
+                isRecording={cellRecording[idx]}
+                isRecordingPending={recordingPending[idx]}
+                isMuted={cellMuted[idx]}
+                streamId={streamInfo?.quality === 'hd' ? 0 : 1}
+                streamName={streamInfo?.baseName}
+                enableSnapshot={go2rtcSettings.enableSnapshot}
+                onStreamSwitch={handleCellStreamSwitch}
+                onAudio={handleCellAudio}
+                onRecord={handleCellRecord}
+                onSnapshot={handleCellSnapshot}
+                onClose={() => { void handleClearCell(); }}
+                moduleToggles={moduleToggles}
+              />
+            </Box>
           </>
         ) : (
-          <Box sx={{ 
+            <Box sx={{ 
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center', 
@@ -1457,8 +3138,28 @@ const Dashboard: React.FC = () => {
   const fullscreenMuted = fullscreenIndex >= 0 ? cellMuted[fullscreenIndex] : true;
   const fullscreenRecording = fullscreenIndex >= 0 ? cellRecording[fullscreenIndex] : false;
   const fullscreenRecordingPending = fullscreenIndex >= 0 ? recordingPending[fullscreenIndex] : false;
+  const fullscreenModuleToggles = fullscreenIndex >= 0
+    ? readyAnalyticsModules.map(module => {
+        const displayName = getLocalizedModuleName(module);
+        return {
+          moduleId: module.id,
+          label: displayName,
+          icon: resolveModuleIcon(module.id),
+          tooltip: getModuleButtonTooltip(fullscreenIndex, module, displayName),
+          active:
+            frameAnalysisActive[fullscreenIndex] &&
+            analysisModuleRef.current[fullscreenIndex] === module.id,
+          disabled: isModuleButtonDisabled(fullscreenIndex, module.id),
+          onToggle: () => handleModuleToggle(fullscreenIndex, module.id),
+        };
+      })
+    : [];
   const fullscreenStatsKey = fullscreenStream ? `${fullscreenStream.baseName}_${fullscreenStream.quality}` : null;
-  const fullscreenStats = fullscreenStatsKey ? streamStats[fullscreenStatsKey] : undefined;
+  const fullscreenStats = fullscreenStatsKey ? streamStatsRef.current[fullscreenStatsKey] : undefined;
+  const fullscreenDetection = fullscreenIndex >= 0 ? cellDetections[fullscreenIndex] : null;
+  const fullscreenVideoEntry = fullscreenIndex >= 0 ? videoElementRefs.current[fullscreenIndex] : undefined;
+  const fullscreenVideoElement = fullscreenVideoEntry?.fullscreen ?? null;
+  const fullscreenHasDetections = !!(fullscreenDetection && fullscreenDetection.detections.length > 0);
 
   const dialogLayout = templateDialog.layoutId
     ? layoutTabs.find(tab => tab.id === templateDialog.layoutId) ?? null
@@ -1467,29 +3168,11 @@ const Dashboard: React.FC = () => {
   const dialogGridSize = dialogLayout?.template.gridSize ?? gridSize;
   const dialogLayoutName = dialogLayout?.name ?? generateDefaultLayoutName();
 
-  // Polling-функция для ожидания появления потока camera_{idx} в MediaMTX
-  async function waitForMediaMtxPath(pathName: string, maxAttempts = 5, intervalMs = 1000): Promise<boolean> {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        // Используем Tauri команду вместо прямого fetch для избежания CORS
-        const isReady = await invoke('check_mediamtx_path_ready', { pathName });
-        console.log(`MediaMTX path ${pathName} readiness check (attempt ${attempt + 1}):`, isReady);
-        
-        if (isReady) {
-          console.log(`MediaMTX: path ${pathName} ready (attempt ${attempt + 1})`);
-          return true;
-        }
-      } catch (err) {
-        console.warn(`MediaMTX polling error (attempt ${attempt + 1}):`, err);
-      }
-      await new Promise(r => setTimeout(r, intervalMs));
-    }
-    console.warn(`MediaMTX: path ${pathName} not ready after ${maxAttempts} attempts`);
-    return false;
-  }
+  // go2rtc is the sole streaming provider; no readiness polling is required here.
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#23272b' }}>
+    <>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#23272b' }}>
       {/* Layout Tabs */}
       <LayoutTabs
         tabs={layoutTabs}
@@ -1514,17 +3197,16 @@ const Dashboard: React.FC = () => {
         <Box sx={{ 
           flex: 1, 
           display: 'grid', 
-          gridTemplateColumns: `repeat(${cols}, 1fr)`, 
-          gridTemplateRows: `repeat(${rows}, 1fr)`, 
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, 
+          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`, 
           gap: gridSize > 25 ? 1 : 2, // Меньшие отступы для больших сеток
           p: 0, 
           minHeight: 0,
           width: '100%',
           height: '100%',
           '& > div': {
-            minWidth: gridSize > 32 ? '60px' : gridSize > 16 ? '80px' : '120px',
-            minHeight: gridSize > 32 ? '45px' : gridSize > 16 ? '60px' : '90px',
-            maxHeight: 'none'
+            minWidth: 0,
+            minHeight: 0,
           }
         }}>
           {gridCells}
@@ -1546,113 +3228,15 @@ const Dashboard: React.FC = () => {
         }}
       />
 
-      <Dialog
-        open={fullscreenCell !== null}
-        onClose={exitFullscreen}
-        fullScreen
-        PaperProps={{
-          sx: {
-            backgroundColor: '#000',
-          }
-        }}
-      >
-        <Box sx={{ position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#000', display: 'flex', flexDirection: 'column' }}>
-          {fullscreenCamera && fullscreenStream ? (
-            <>
-              <Box
-                className="fullscreen-dialog"
-                sx={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: { xs: 1, md: 3 }, cursor: 'zoom-out' }}
-                onDoubleClick={(event) => {
-                  const target = event.target as HTMLElement | null;
-                  if (target?.closest('.cell-controls')) {
-                    return;
-                  }
-                  exitFullscreen();
-                }}
-              >
-                <VideoStreamPlayer
-                  key={`fullscreen-${fullscreenStream.baseName}-${fullscreenStream.quality}`}
-                  streamName={fullscreenStream.baseName}
-                  useHdQuality={fullscreenStream.quality === 'hd'}
-                  controls={false}
-                  autoPlay
-                  muted={fullscreenMuted}
-                  width="100%"
-                  height="100%"
-                  objectFit="contain"
-                  style={{ maxWidth: '100%', maxHeight: '100%' }}
-                  onStatsUpdate={(stats) => applyStreamStatsUpdate(fullscreenStream, stats)}
-                />
-                <div
-                  className="cell-name"
-                  style={{
-                    opacity: 1,
-                    bottom: 32,
-                    right: 32,
-                    fontSize: 18,
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    backgroundColor: 'rgba(0, 0, 0, 0.75)'
-                  }}
-                >
-                  {`${fullscreenCamera.name || `Camera ${fullscreenCamera.id}`}`} · {fullscreenStream.quality.toUpperCase()}
-                </div>
-                <div
-                  className="cell-stats"
-                  style={{
-                    opacity: 1,
-                    bottom: 32,
-                    left: 32,
-                    fontSize: 14,
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    backgroundColor: 'rgba(0, 0, 0, 0.75)'
-                  }}
-                >
-                  {fullscreenStats ? (() => {
-                    const segments: string[] = [];
-                    if (fullscreenStats.codec) {
-                      segments.push(fullscreenStats.codec);
-                    }
-                    if (fullscreenStats.resolution) {
-                      segments.push(fullscreenStats.resolution);
-                    } else if (fullscreenStats.width && fullscreenStats.height) {
-                      segments.push(`${fullscreenStats.width}x${fullscreenStats.height}`);
-                    }
-                    if (fullscreenStats.bitrateKbps !== undefined) {
-                      segments.push(`${fullscreenStats.bitrateKbps} kbps`);
-                    }
-                    if (fullscreenStats.frameRate !== undefined) {
-                      segments.push(`${fullscreenStats.frameRate} fps`);
-                    }
-                    return segments.length > 0
-                      ? segments.join(' | ')
-                      : `${fullscreenStream.quality.toUpperCase()} | ${t('connecting_stream') || 'Подключение...'}`;
-                  })()
-                    : `${fullscreenStream.quality.toUpperCase()} | ${t('connecting_stream') || 'Подключение...'}`}
-                </div>
-                <CellControls
-                  isFullscreen
-                  isRecording={fullscreenRecording}
-                  isRecordingPending={fullscreenRecordingPending}
-                  isMuted={fullscreenMuted}
-                  streamId={fullscreenStream.quality === 'hd' ? 0 : 1}
-                  onStreamSwitch={() => toggleCellQuality(fullscreenIndex)}
-                  onAudio={() => toggleCellMuted(fullscreenIndex)}
-                  onRecord={() => { void toggleRecordingForCell(fullscreenIndex); }}
-                  onClose={() => {}}
-                  onArchive={() => openCellArchive(fullscreenIndex, fullscreenCamera)}
-                />
-              </Box>
-            </>
-          ) : (
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-              <Typography variant="h6">{t('no_stream_selected') || 'Нет доступного HD-потока'}</Typography>
-            </Box>
-          )}
-        </Box>
-      </Dialog>
-    </Box>
+      {/* Dialog removed - using position:fixed for fullscreen instead */}
+      </Box>
+      <Toast
+        message={toast.message}
+        severity={toast.severity}
+        open={toast.open}
+        onClose={hideToast}
+      />
+    </>
   );
 };
 

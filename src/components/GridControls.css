@@ -40,26 +40,33 @@
   z-index: 15;
   display: flex;
   gap: 2px;
-  pointer-events: all;
+  pointer-events: none;
   padding: 4px;
-  opacity: 0; /* Возвращаем скрытие по умолчанию */
-  transition: opacity 0.3s ease-in-out;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  visibility: visible;
+  visibility: hidden;
+  transform: translateY(-4px);
 }
 
-/* Показываем контроллы при наведении на ячейку */
+/* Показываем контроллы/лейблы при наведении */
 .grid-cell:hover .cell-controls,
 .grid-cell:hover .cell-name,
-.grid-cell:hover .cell-stats {
+.grid-cell:focus-within .cell-controls,
+.grid-cell:focus-within .cell-name {
   opacity: 1;
+  visibility: visible;
+  pointer-events: all;
+  transform: translateY(0);
 }
 
 /* В полноэкранном режиме показываем все элементы */
 .grid-cell.fullscreen .cell-name,
 .grid-cell.fullscreen .cell-stats {
   opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
 }
 
 .grid-cell:hover .cell-controls {
@@ -80,16 +87,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   display: flex !important;
   visibility: visible !important;
-}
-
-/* ОТЛАДКА: Временно делаем контроллы всегда видимыми */
-.cell-controls {
-  opacity: 0.7 !important;
-}
-
-.grid-cell:hover .cell-controls,
-.grid-cell.fullscreen .cell-controls {
-  opacity: 1 !important;
+  pointer-events: all;
 }
 
 /* В полноэкранном режиме показываем все элементы */
@@ -104,6 +102,7 @@
 .grid-cell.fullscreen .cell-controls .close-btn {
   display: none;
 }
+
 
 .fullscreen-dialog {
   position: relative;
@@ -184,11 +183,33 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .icon-button.recording {
   color: #f44336;
   background-color: rgba(244, 67, 54, 0.2);
   border-color: rgba(244, 67, 54, 0.4);
   animation: pulse-rec 1.5s infinite;
+}
+
+.icon-button.capture-btn {
+  cursor: pointer;
+}
+
+.icon-button.capture-btn.active {
+  color: #4caf50;
+  background-color: rgba(76, 175, 80, 0.2);
+  border-color: rgba(76, 175, 80, 0.45);
+  box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.35);
+}
+
+.icon-button.capture-btn.active:hover {
+  background-color: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.6);
 }
 
 .icon-button.stream-switch-btn .material-icons {
@@ -211,6 +232,12 @@
   100% { opacity: 1; transform: scale(1); }
 }
 
+.icon-button.module-btn.active {
+  background-color: rgba(25, 118, 210, 0.25);
+  border-color: rgba(144, 202, 249, 0.6);
+  color: #90caf9;
+}
+
 .cell-name {
   position: absolute;
   bottom: 8px;
@@ -223,9 +250,10 @@
   font-weight: 500;
   z-index: 9998;
   pointer-events: none;
-  opacity: 1;
-  transition: opacity 0.3s ease-in-out;
-  visibility: visible;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  transform: translateY(4px);
 }
 
 .cell-stats {
@@ -240,13 +268,10 @@
   font-family: monospace;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.3s ease-in-out;
-  z-index: 9998;
   visibility: visible;
-}
-
-.grid-cell:hover .cell-stats {
-  opacity: 1;
+  transition: opacity 0.2s ease-in-out;
+  transform: none;
+  z-index: 9998;
 }
 
 .grid-cell.fullscreen .cell-name,

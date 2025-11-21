@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Development & Secrets
+.venv-anpr/
+artifacts/
+playground/
+release-anpr/
+test-hd-stream.html
+check-go2rtc-debug.ps1
+src-tauri/cameras.json
+
+# Binaries (downloaded by tools)
+src-tauri/binaries/

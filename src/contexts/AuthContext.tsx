@@ -1,7 +1,5 @@
 import React, {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -13,19 +11,8 @@ import {
   login as loginRequest,
   logout as logoutRequest,
 } from '../services/auth';
-
-interface AuthContextValue {
-  user: AuthUser | null;
-  initializing: boolean;
-  authenticating: boolean;
-  error: string | null;
-  login: (username: string, password: string, rememberMe: boolean) => Promise<void>;
-  logout: () => Promise<void>;
-  clearError: () => void;
-  hasPermission: (permission: keyof UserPermissions) => boolean;
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { AuthContext } from './AuthContextData';
+import type { AuthContextValue } from './AuthContextData';
 
 const extractErrorMessage = (error: unknown): string => {
   if (!error) {
@@ -154,12 +141,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = (): AuthContextValue => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 };

@@ -21,9 +21,17 @@
 ### 📹 **Camera Management**
 - **Automatic ONVIF camera discovery** in local network
 - **Multiple protocols support**: ONVIF, RTSP, OpenIPC, Hikvision, Dahua
-- **Two connection modes**: direct RTSP and MediaMTX integration
+- **Two connection modes**: direct RTSP and go2rtc integration
 - **Camera grouping and organization**
 - **Secure credential storage** with encryption
+
+### 🎬 **Advanced go2rtc Integration** ⭐ NEW
+- **Multiple transport protocols**: WebRTC (ultra-low latency), HLS, MSE, MJPEG with automatic fallback
+- **Two-way audio support**: bidirectional communication for intercoms and interactive cameras
+- **Real-time monitoring**: live bitrate, codec info, viewer count, and latency metrics
+- **Adaptive bitrate streaming**: automatic quality switching based on network conditions
+- **Quick snapshots**: instant frame capture via `/api/frame.jpeg` without full stream loading
+- **Smart transport selection**: automatically chooses optimal protocol for best performance
 
 ### 🖥️ **Professional Monitoring Interface**
 - **Multi-grid layouts**: from 1 to 64 cameras simultaneously
@@ -31,6 +39,7 @@
 - **Drag & Drop** camera management
 - **Fullscreen mode** and detailed viewing
 - **Individual cell settings** (audio, pause, recording)
+- **Stream statistics overlay**: real-time quality indicators
 
 ### 📊 **Archive & Analytics**
 - **Interactive timeline** for recording navigation
@@ -39,11 +48,30 @@
 - **Activity statistics and charts**
 - **Event log** with filtering and search
 
-### 🛡️ **Security & Performance**
+### � **ANPR (License Plate Recognition)** ⭐ NEW
+- **Automatic plate detection** using YOLOv8 AI model
+- **OCR with perspective correction** for accurate text recognition
+- **Cyrillic transliteration** for Russian license plates
+- **Real-time processing** with smart caching
+- **Hybrid approach**: Python subprocess (primary) + Rust ONNX (fallback)
+- **Easy toggle** between Python/Rust OCR modes
+- **GPU acceleration** via DirectML for 2-5x faster processing (Windows 10/11) ✨
+
+### 🚀 **GPU Acceleration** ⭐ NEW
+- **DirectML support** for NVIDIA, AMD, and Intel GPUs
+- **Automatic GPU detection** with CPU fallback
+- **60-90% CPU usage reduction** during ANPR analytics
+- **2-5x faster inference** for YOLO detection and OCR
+- **Easy configuration**: Auto/GPU/CPU selection in settings
+- **Bundled ONNX Runtime 1.23.0** with DirectML (no system dependencies)
+- **System requirements**: Windows 10 1903+ with DirectX 12 compatible GPU
+
+### �🛡️ **Security & Performance**
 - **Native application** without browser limitations
 - **Local data processing** without cloud dependencies
 - **AES-256 password encryption**
 - **Low resource consumption** thanks to Rust/Tauri
+- **Hardware acceleration** support for video processing
 
 ---
 
@@ -86,8 +114,17 @@ cd dashboard
 # Install dependencies
 npm install
 
-# Download MediaMTX binaries (required for builds)
-npm run download-mediamtx
+# Install Python dependencies (for ANPR)
+pip install -r requirements.txt
+
+# Run integration test (optional)
+python test_anpr_integration.py
+
+# Download go2rtc binaries (required for builds)
+npm run download-go2rtc
+
+# Download ffmpeg binaries (optional, bundled with installer)
+python tools/download-ffmpeg.py
 
 # (Optional) Download bundled GStreamer runtime for Linux AppImage builds
 npm run download-gstreamer
@@ -113,8 +150,8 @@ npm run build-macos
 # Build debug version
 npm run build-debug
 
-# Only download MediaMTX binaries
-npm run download-mediamtx
+# Only download go2rtc binaries
+npm run download-go2rtc
 
 # Only download the optional GStreamer runtime bundle
 npm run download-gstreamer
@@ -146,7 +183,7 @@ python tools/build.py --platform macos --debug
 For creating distributable releases:
 ```bash
 # Prepare all platform binaries
-npm run download-mediamtx
+npm run download-go2rtc
 
 # Build release installers
 npm run build-release
@@ -188,17 +225,42 @@ dashboard/
 │   ├── components/         # UI components
 │   ├── contexts/           # React contexts
 │   ├── services/           # API services
+│   ├── hooks/              # React hooks (useEnhancedVideoStream)
 │   └── types/              # TypeScript types
 ├── src-tauri/              # Rust backend
 │   ├── src/                # Core code
-│   ├── mediamtx/           # MediaMTX integration
+│   ├── binaries/           # go2rtc runtime
 │   └── capabilities/       # Tauri permissions
 └── docs/                   # Documentation
+    ├── go2rtc-enhanced-guide.md       # Complete go2rtc guide
+    ├── GO2RTC_QUICK_START.md          # Quick start guide
+    └── GO2RTC_IMPLEMENTATION_SUMMARY.md  # Implementation details
 ```
 
+---
 
+## 📚 Documentation
 
-## 📊 System Requirements
+### User Guides
+- [Getting Started](./docs/build-guide.md) - Installation and setup
+- [go2rtc Enhanced Features](./docs/GO2RTC_QUICK_START.md) - **NEW** Advanced streaming capabilities
+- [Camera Configuration](./docs/platform-requirements.md) - Camera setup guide
+- [Analytics Setup](./docs/analytics-overview.md) - Video analytics configuration
+
+### Developer Guides
+- [Build Guide](./docs/build-guide.md) - Building from source
+- [go2rtc API Reference](./docs/go2rtc-enhanced-guide.md) - Complete API documentation
+- [Release Process](./docs/release-process.md) - Release workflow
+
+### Feature Documentation
+- **go2rtc Integration**:
+  - Multiple transports (WebRTC, HLS, MSE, MJPEG)
+  - Two-way audio for intercoms
+  - Real-time stream monitoring
+  - Adaptive bitrate streaming
+  - Quick snapshots without full stream loading
+
+---## 📊 System Requirements
 
 ### Minimum
 - **OS**: Windows 10, macOS 10.15, Ubuntu 18.04
@@ -253,7 +315,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 - [OpenIPC](https://openipc.org/) for project support
 - [Tauri](https://tauri.app/) for cross-platform framework
-- [MediaMTX](https://github.com/bluenviron/mediamtx) for streaming server
+- [go2rtc](https://github.com/AlexxIT/go2rtc) for streaming server
 - Community for testing and feedback
 
 ---

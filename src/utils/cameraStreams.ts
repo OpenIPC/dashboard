@@ -11,15 +11,31 @@ export interface CameraRtspUrls {
   sdUrl: string;
 }
 
-const ensureLeadingSlash = (path: string): string => {
-  if (!path) {
+const ensureLeadingPath = (value: string): string => {
+  if (!value) {
     return '';
   }
-  return path.startsWith('/') ? path : `/${path}`;
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('rtsp://') || lower.startsWith('http://') || lower.startsWith('https://')) {
+    return trimmed;
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 };
 
 const deriveSdPathFromHd = (hdPath: string): string => {
-  const normalized = ensureLeadingSlash(hdPath || '/stream=0') || '/stream=0';
+  const normalized = ensureLeadingPath(hdPath || '/stream=0') || '/stream=0';
+
+  if (normalized.toLowerCase().startsWith('rtsp://')) {
+    return normalized;
+  }
+
   const candidates = [
     normalized.replace(/stream=0/gi, 'stream=1'),
     normalized.replace(/stream0/gi, 'stream1'),
@@ -30,7 +46,7 @@ const deriveSdPathFromHd = (hdPath: string): string => {
 
   for (const candidate of candidates) {
     if (candidate !== normalized) {
-      return ensureLeadingSlash(candidate);
+      return ensureLeadingPath(candidate);
     }
   }
 
@@ -42,9 +58,9 @@ export const resolveCameraStreamPaths = (
   hdFallback?: string,
 ): CameraStreamPaths => {
   const hdCandidate = (camera.path_hd && camera.path_hd.trim()) || hdFallback || '/stream=0';
-  const hdPath = ensureLeadingSlash(hdCandidate);
+  const hdPath = ensureLeadingPath(hdCandidate);
   const sdPath = camera.path_sd && camera.path_sd.trim()
-    ? ensureLeadingSlash(camera.path_sd.trim())
+    ? ensureLeadingPath(camera.path_sd.trim())
     : deriveSdPathFromHd(hdPath);
 
   return { hdPath, sdPath };
@@ -55,11 +71,26 @@ export const buildCameraRtspUrls = async (camera: Camera): Promise<CameraRtspUrl
     try {
       const baseUrl = new URL(camera.streamUrl);
       const { hdPath, sdPath } = resolveCameraStreamPaths(camera, baseUrl.pathname);
-      const hdUrl = new URL(camera.streamUrl);
-      hdUrl.pathname = hdPath;
-      const sdUrl = new URL(camera.streamUrl);
-      sdUrl.pathname = sdPath;
-      return { hdUrl: hdUrl.toString(), sdUrl: sdUrl.toString() };
+
+      const absolutize = (path: string, fallback: string): string => {
+        const trimmed = path?.trim() ?? '';
+        if (!trimmed) {
+          return fallback;
+        }
+
+        if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+          return trimmed;
+        }
+
+        const next = new URL(baseUrl.toString());
+        next.pathname = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        return next.toString();
+      };
+
+      const hdUrl = absolutize(hdPath, camera.streamUrl);
+      const sdUrl = absolutize(sdPath, absolutize(deriveSdPathFromHd(baseUrl.pathname), camera.streamUrl));
+
+      return { hdUrl, sdUrl };
     } catch (error) {
       console.warn('cameraStreams: Failed to parse streamUrl, falling back to manual construction', error);
     }
@@ -88,8 +119,18 @@ export const buildCameraRtspUrls = async (camera: Camera): Promise<CameraRtspUrl
   const base = `rtsp://${authPart}${camera.ip}${portPart}`;
   const { hdPath, sdPath } = resolveCameraStreamPaths(camera);
 
+  const buildUrl = (path: string, fallback: string): string => {
+    if (!path) {
+      return `${base}${fallback}`;
+    }
+    if (path.toLowerCase().startsWith('rtsp://')) {
+      return path;
+    }
+    return `${base}${path}`;
+  };
+
   return {
-    hdUrl: `${base}${hdPath}`,
-    sdUrl: `${base}${sdPath}`,
+    hdUrl: buildUrl(hdPath, '/stream=0'),
+    sdUrl: buildUrl(sdPath, deriveSdPathFromHd('/stream=0')),
   };
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import Hls from 'hls.js';
+import Hls, { type ErrorData } from 'hls.js';
 
 interface VideoPlayerProps {
   src: string;
@@ -45,12 +45,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (autoPlay) {
-            video.play().catch(err => console.error('Error playing video:', err));
+            video.play().catch(err => {
+              console.error('Error playing video:', err);
+            });
           }
         });
         
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
+        hls.on(Hls.Events.ERROR, (_event, payload) => {
+          const data = payload as ErrorData;
+          if (data?.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
                 console.error('Network error', data);
@@ -72,7 +75,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         video.src = src;
         video.addEventListener('loadedmetadata', () => {
           if (autoPlay) {
-            video.play().catch(err => console.error('Error playing video:', err));
+            video.play().catch(err => {
+              console.error('Error playing video:', err);
+            });
           }
         });
       }

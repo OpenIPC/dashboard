@@ -22,7 +22,7 @@ import {
   Visibility as PreviewIcon,
   Add as AddIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import type { LayoutTemplatePreview, Camera } from '../types';
 
 interface LayoutManagerDialogProps {

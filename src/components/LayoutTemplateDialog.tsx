@@ -13,7 +13,7 @@ import {
   Close as CloseIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 
 interface LayoutTemplateDialogProps {
   open: boolean;

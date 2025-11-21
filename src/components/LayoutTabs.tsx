@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef } from 'react';
+﻿import React, { useCallback, useEffect, useRef } from 'react';
 import {
   Box,
   IconButton,
@@ -7,7 +7,7 @@ import {
 import {
   Add as AddIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import type { LayoutTab } from '../types';
 
 interface LayoutTabsProps {
@@ -29,20 +29,21 @@ const LayoutTabs: React.FC<LayoutTabsProps> = ({
 }) => {
   const { t } = useLocalization();
   const tabsContainerRef = useRef<HTMLDivElement>(null);
+  const tabCount = tabs.length;
 
-  const handleTabClick = (tabId: string) => {
+  const handleTabClick = useCallback((tabId: string) => {
     onTabChange(tabId);
-  };
+  }, [onTabChange]);
 
-  const handleTabClose = (e: React.MouseEvent, tabId: string) => {
-    e.stopPropagation();
-    if (tabs.length <= 1) {
+  const handleTabClose = useCallback((event: React.MouseEvent | MouseEvent, tabId: string) => {
+    event.stopPropagation();
+    if (tabCount <= 1) {
       return; // Не разрешаем удалять последнюю вкладку
     }
     if (window.confirm(t('confirm_delete_layout') || 'Вы уверены, что хотите удалить эту вкладку?')) {
       onTabClose(tabId);
     }
-  };
+  }, [onTabClose, t, tabCount]);
 
   // Обновляем DOM при изменении вкладок
   useEffect(() => {
@@ -71,17 +72,17 @@ const LayoutTabs: React.FC<LayoutTabsProps> = ({
       });
 
       // Обработчик закрытия вкладки
-      const closeBtn = tabElement.querySelector('.close-tab-btn');
+      const closeBtn = tabElement.querySelector<HTMLElement>('.close-tab-btn');
       if (closeBtn) {
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handleTabClose(e as any, tab.id);
+        closeBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          handleTabClose(event, tab.id);
         });
       }
 
       container.appendChild(tabElement);
     });
-  }, [tabs, activeTabId, t]);
+  }, [tabs, activeTabId, t, handleTabClick, handleTabClose]);
 
   return (
     <Box

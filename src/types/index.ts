@@ -26,6 +26,36 @@ export interface Camera {
   streamUrl?: string;
 }
 
+export interface CameraFormValues {
+  id?: number;
+  name: string;
+  ip: string;
+  protocol: string;
+  port: number;
+  user: string;
+  pass: string;
+  pathHd: string;
+  pathSd: string;
+  onvifPort: number;
+  streamUrl: string;
+  groupId?: number | null;
+}
+
+export type CameraFormDraft = Partial<CameraFormValues>;
+
+export interface RemoteRecentFile {
+  absolutePath: string;
+  relativePath: string;
+  size: number;
+  modified: number;
+}
+
+export interface WindowCameraBridge {
+  __VMS_CAMERAS?: Camera[];
+  __peerConnection?: RTCPeerConnection | null;
+  setCellCamera?: (camera: Camera) => void | Promise<void>;
+}
+
 export interface CameraStats {
   codec?: string;
   bitrate?: string;

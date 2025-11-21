@@ -15,12 +15,13 @@ import {
   VideoCall as VideoCallIcon,
   VideoLibrary as VideoLibraryIcon,
   Analytics as AnalyticsIcon,
+  Storage as StorageIcon,
   TerminalOutlined as TerminalIcon,
   FolderOpen as FolderIcon,
   Settings as SettingsIcon,
   BugReport as BugReportIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 
 const SideNavigation: React.FC = () => {
   const location = useLocation();
@@ -36,7 +37,7 @@ const SideNavigation: React.FC = () => {
     { 
       path: '/cameras', 
       icon: <VideocamIcon />, 
-      label: t('cameras_mediamtx') 
+      label: t('cameras_go2rtc') 
     },
     { 
       path: '/direct-cameras', 
@@ -52,6 +53,11 @@ const SideNavigation: React.FC = () => {
       path: '/analytics', 
       icon: <AnalyticsIcon />, 
       label: t('analytics') 
+    },
+    { 
+      path: '/plate-database', 
+      icon: <StorageIcon />, 
+      label: t('plate_database') 
     },
     { 
       path: '/terminal', 

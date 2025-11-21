@@ -1,6 +1,6 @@
 #!/bin/bash
 # VMS Dashboard Build Script for Linux/macOS
-# Downloads MediaMTX binaries and builds the application
+# Downloads go2rtc binaries and builds the application
 
 set -e
 
@@ -58,23 +58,23 @@ show_help() {
     echo -e "${YELLOW}Examples:${NC}"
     echo "  npm run build-release                 # Build release"
     echo "  npm run build-debug                   # Build debug"
-    echo "  npm run download-mediamtx             # Download MediaMTX"
+    echo "  npm run download-go2rtc               # Download go2rtc"
     echo "  npm run download-gstreamer            # Download optional GStreamer bundle"
     echo ""
 }
 
 check_command() {
     if command -v "$1" &> /dev/null; then
-        echo -e "${GREEN}✅ $1 found: $(command -v $1)${NC}"
+        echo -e "${GREEN}[OK] $1 found: $(command -v $1)${NC}"
         return 0
     else
-        echo -e "${RED}❌ $1 not found${NC}"
+        echo -e "${RED}[ERROR] $1 not found${NC}"
         return 1
     fi
 }
 
 check_prerequisites() {
-    echo -e "${YELLOW}🔍 Checking prerequisites...${NC}"
+    echo -e "${YELLOW}Checking prerequisites...${NC}"
     
     local python_ok=true
     local node_ok=true
@@ -99,7 +99,7 @@ check_prerequisites() {
     
     if [[ "$python_ok" == false || "$node_ok" == false || "$rust_ok" == false ]]; then
         echo ""
-        echo -e "${RED}❌ Missing prerequisites. Please install the required tools.${NC}"
+        echo -e "${RED}[ERROR] Missing prerequisites. Please install the required tools.${NC}"
         exit 1
     fi
 }
@@ -110,7 +110,7 @@ main() {
         return
     fi
 
-    echo -e "${CYAN}🚀 VMS Dashboard Build Script${NC}"
+    echo -e "${CYAN}VMS Dashboard Build Script${NC}"
     echo -e "${CYAN}=============================${NC}"
     echo ""
 
@@ -118,7 +118,7 @@ main() {
     check_prerequisites
 
     echo ""
-    echo -e "${YELLOW}🔧 Starting build process...${NC}"
+    echo -e "${YELLOW}Starting build process...${NC}"
 
     # Prepare Python command
     local python_cmd="python3"
@@ -143,13 +143,13 @@ main() {
     # Run Python build script
     if "$python_cmd" "${args[@]}"; then
         echo ""
-        echo -e "${GREEN}🎉 Build completed successfully!${NC}"
+        echo -e "${GREEN}Build completed successfully.${NC}"
         echo ""
-        echo -e "${YELLOW}📁 Build outputs can be found in:${NC}"
+        echo -e "${YELLOW}Build outputs can be found in:${NC}"
         echo -e "   src-tauri/target/release/bundle/"
     else
         echo ""
-        echo -e "${RED}❌ Build failed${NC}"
+        echo -e "${RED}[ERROR] Build failed${NC}"
         exit 1
     fi
 }

@@ -147,11 +147,11 @@ rustup target add aarch64-apple-darwin
 
 ## Runtime Dependencies
 
-### MediaMTX Integration
-VMS Dashboard includes MediaMTX streaming server:
-- **Version**: 1.15.1 (automatically downloaded)
-- **Platforms**: Windows, Linux x86_64, macOS x86_64
-- **Purpose**: RTSP proxy, format conversion, stream management
+### go2rtc Integration
+VMS Dashboard bundles the go2rtc streaming server:
+- **Version**: Latest stable release (automatically downloaded)
+- **Platforms**: Windows, Linux x86_64, macOS universal
+- **Purpose**: RTSP/WebRTC proxy, format conversion, stream management
 
 ### Network Configuration
 - **Firewall**: Allow inbound connections on configured ports
@@ -160,7 +160,7 @@ VMS Dashboard includes MediaMTX streaming server:
 - **Camera Discovery**: UDP multicast for ONVIF discovery
 
 ### Security Considerations
-- **Antivirus**: May need to whitelist VMS Dashboard and MediaMTX
+- **Antivirus**: May need to whitelist VMS Dashboard and go2rtc
 - **Windows Defender**: Automatic exclusions for signed binaries
 - **Network Security**: Consider VPN access for remote camera management
 

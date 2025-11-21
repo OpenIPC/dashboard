@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { invoke } from '@tauri-apps/api/core';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
+import { useWebRTCStatsContext } from '../contexts/WebRTCStatsContext';
 import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
 import AppStatus from './AppStatus';
 
@@ -28,6 +29,7 @@ const AppFooter: React.FC = () => {
   const [usage, setUsage] = useState<AppResourceUsage | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [statusOpen, setStatusOpen] = useState(false);
+  const { getAllStats } = useWebRTCStatsContext(); // Getter функция вместо массива
 
   useEffect(() => {
     let isMounted = true;
@@ -121,7 +123,11 @@ const AppFooter: React.FC = () => {
           </Typography>
         </Box>
       </Box>
-      <AppStatus open={statusOpen} onClose={() => setStatusOpen(false)} />
+      <AppStatus 
+        open={statusOpen} 
+        onClose={() => setStatusOpen(false)}
+        webrtcStatsData={getAllStats()} // Вызываем getter для получения актуальных stats
+      />
     </>
   );
 };

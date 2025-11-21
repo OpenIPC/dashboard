@@ -1,27 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { List, ListItem, ListItemText, ListItemSecondaryAction, IconButton, Typography, Button, Paper, Box, CircularProgress } from '@mui/material';
 import { PlayArrow, Stop, Add, Search, Delete, Videocam } from '@mui/icons-material';
-import RTSPPlayer from './RTSPPlayer';
+import VideoStreamPlayer from './VideoStreamPlayer';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import AddCameraDialog from './AddCameraDialog';
 import CameraSearchDialog from './CameraSearchDialog';
 import { CameraContextMenu } from './CameraContextMenu';
-import type { Camera } from '../types';
+import type { Camera, CameraFormDraft, CameraFormValues } from '../types';
 import TerminalComponent from './Terminal';
 import FileManager from './FileManager';
+
+interface DiscoveryEventPayload {
+  ip: string;
+  name: string;
+  protocol?: string;
+}
 
 const Cameras: React.FC = () => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  const [foundCameras, setFoundCameras] = useState<{name: string; ip: string; protocol?: string}[]>([]);
+  const [foundCameras, setFoundCameras] = useState<{ name: string; ip: string; protocol?: string }[]>([]);
   const [streamingCameraId, setStreamingCameraId] = useState<number | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [initialData, setInitialData] = useState<any>(null);
-  const [streamUrl, setStreamUrl] = useState<string>('');
+  const [initialData, setInitialData] = useState<CameraFormDraft | null>(null);
+  const [streamBaseName, setStreamBaseName] = useState<string | null>(null);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [go2rtcSettings, setGo2rtcSettings] = useState({
+    showMonitor: false,
+    enableSnapshot: true,
+    enable2WayAudio: false,
+    enableAdaptiveBitrate: true,
+  });
+
+  // Load go2rtc settings from localStorage
+  useEffect(() => {
+    try {
+      const savedSettings = localStorage.getItem('go2rtcSettings');
+      if (savedSettings) {
+        setGo2rtcSettings(JSON.parse(savedSettings));
+      }
+    } catch (error) {
+      console.error('Failed to load go2rtc settings:', error);
+    }
+  }, []);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [connectionError, setConnectionError] = useState<string>('');
   
@@ -30,37 +54,6 @@ const Cameras: React.FC = () => {
   const [contextMenuPosition, setContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [sshTerminalCamera, setSshTerminalCamera] = useState<Camera | null>(null);
   const [fileManagerCamera, setFileManagerCamera] = useState<Camera | null>(null);
-
-  useEffect(() => {
-    console.log('🎥 CAMERAS COMPONENT LOADED 🎥');
-    // Загрузка камер при монтировании компонента
-    loadCameras();
-    
-    // Подписка на событие device-found для поиска камер
-    const unlisten = listen('device-found', (event) => {
-      const camera = event.payload as { ip: string; name: string; protocol: string };
-      setFoundCameras(prev => {
-        if (prev.find(c => c.ip === camera.ip)) return prev;
-        return [...prev, camera];
-      });
-    });
-
-    return () => {
-      // Очистка при размонтировании
-      unlisten.then(unlistenFn => unlistenFn());
-      
-      // Закрываем WebRTC соединение при размонтировании компонента
-      if ((window as any).__peerConnection) {
-        (window as any).__peerConnection.close();
-        (window as any).__peerConnection = null;
-      }
-      
-      // Останавливаем MediaMTX при выходе
-      if (isStreaming) {
-        invoke('mediamtx_stop').catch(console.error);
-      }
-    };
-  }, [isStreaming]);
 
   // Отладочный useEffect для контекстного меню
   useEffect(() => {
@@ -97,21 +90,71 @@ const Cameras: React.FC = () => {
   }, []);
 
   // Загрузка камер из бэкенда
-  const loadCameras = async () => {
+  const checkStatusFor = useCallback(async (camera: Camera) => {
+    try {
+      const pass = await invoke<string>('decrypt_password', { enc: camera.pass_enc });
+      const ok = await invoke<boolean>('check_camera_http', {
+        ip: camera.ip,
+        user: camera.user,
+        pass,
+        port: camera.onvifPort || 80,
+      });
+      const status = ok ? 'online' : 'offline';
+      const updated = cameras.map(c => (c.ip === camera.ip ? { ...c, status } : c));
+      setCameras(updated);
+      window.__VMS_CAMERAS = updated;
+      await invoke('save_cameras', { cameras: updated });
+    } catch (error) {
+      console.warn('Status check failed for', camera.ip, error);
+    }
+  }, [cameras]);
+
+  const checkAllStatuses = useCallback(async (list?: Camera[]) => {
+    const arr = list || cameras;
+    for (const cam of arr) {
+      await checkStatusFor(cam);
+    }
+  }, [cameras, checkStatusFor]);
+
+  const loadCameras = useCallback(async () => {
     console.log('📡 Loading cameras from backend...');
     try {
-      const loaded = await invoke('load_cameras');
-      const list = loaded as Camera[];
+      const list = await invoke<Camera[]>('load_cameras');
       console.log('📡 Loaded cameras:', list);
       setCameras(list);
       // Экспортируем в window, чтобы Dashboard DnD мог найти камеры
-      (window as any).__VMS_CAMERAS = list;
+      window.__VMS_CAMERAS = list;
       // После загрузки проверим статусы камер
       checkAllStatuses(list).catch(console.error);
     } catch (err) {
       console.error('Failed to load cameras:', err);
     }
-  };
+  }, [checkAllStatuses]);
+
+  useEffect(() => {
+    console.log('🎥 CAMERAS COMPONENT LOADED 🎥');
+    loadCameras();
+
+    const unlisten = listen<DiscoveryEventPayload>('device-found', event => {
+      const camera = event.payload;
+      setFoundCameras(prev => {
+        if (prev.find(c => c.ip === camera.ip)) {
+          return prev;
+        }
+        return [...prev, camera];
+      });
+    });
+
+    return () => {
+      unlisten.then(unlistenFn => unlistenFn());
+
+      if (window.__peerConnection) {
+        window.__peerConnection.close();
+        window.__peerConnection = null;
+      }
+
+    };
+  }, [isStreaming, loadCameras]);
 
   // Функция для запуска поиска камер
   const startDiscovery = async () => {
@@ -125,9 +168,9 @@ const Cameras: React.FC = () => {
   };
 
   // Обработчик добавления камеры
-  const handleAddCamera = async (data: any) => {
+  const handleAddCamera = async (data: CameraFormValues) => {
     try {
-      const encryptedPass = await invoke('encrypt_password', { password: data.pass });
+      const encryptedPass = await invoke<string>('encrypt_password', { password: data.pass });
       const newCamera: Camera = {
         id: cameras.length ? Math.max(...cameras.map(c => c.id)) + 1 : 1,
         name: data.name,
@@ -136,7 +179,7 @@ const Cameras: React.FC = () => {
         port: data.port,
         user: data.user,
         pass: data.pass,
-        pass_enc: encryptedPass as string,
+        pass_enc: encryptedPass,
         path_hd: data.pathHd || data.streamUrl || '',
         path_sd: data.pathSd || data.streamUrl || '',
         status: 'offline',
@@ -145,9 +188,10 @@ const Cameras: React.FC = () => {
       
       const updatedCameras = [...cameras, newCamera];
       setCameras(updatedCameras);
-      (window as any).__VMS_CAMERAS = updatedCameras;
+      window.__VMS_CAMERAS = updatedCameras;
       await invoke('save_cameras', { cameras: updatedCameras });
       setAddDialogOpen(false);
+      setInitialData(null);
       // Проверка статуса для новой камеры
       await checkStatusFor(newCamera);
     } catch (err) {
@@ -162,30 +206,24 @@ const Cameras: React.FC = () => {
       const camera = cameras.find(c => c.ip === ip);
       if (camera && streamingCameraId === camera.id) {
         // Закрываем WebRTC соединение, если оно существует
-        if ((window as any).__peerConnection) {
-          (window as any).__peerConnection.close();
-          (window as any).__peerConnection = null;
+        if (window.__peerConnection) {
+          window.__peerConnection.close();
+          window.__peerConnection = null;
         }
         
-        // Останавливаем MediaMTX
-        try {
-          await invoke('mediamtx_stop');
-          setStreamingCameraId(null);
-          setIsStreaming(false);
-          setStreamUrl('');
-          setSelectedCamera(null);
-        } catch (err) {
-          console.error('Failed to stop stream:', err);
-        }
+        setStreamingCameraId(null);
+        setIsStreaming(false);
+        setStreamBaseName(null);
+        setSelectedCamera(null);
       }
       
       // Удаляем камеру из бэкенда
       await invoke('remove_camera', { ip });
       
       // Обновляем состояние
-  const updatedCameras = cameras.filter(c => c.ip !== ip);
+      const updatedCameras = cameras.filter(c => c.ip !== ip);
       setCameras(updatedCameras);
-  (window as any).__VMS_CAMERAS = updatedCameras;
+      window.__VMS_CAMERAS = updatedCameras;
       
       // Сохраняем обновленный список камер
       await invoke('save_cameras', { cameras: updatedCameras });
@@ -200,62 +238,38 @@ const Cameras: React.FC = () => {
       setIsConnecting(true);
       setConnectionError('');
       
-      // Название пути для MediaMTX
-  const cameraPathName = `camera_${camera.id}`;
-      
-      // Используем path_hd, который должен содержать полный RTSP URL
-  const rtspUrl = camera.path_hd || camera.path_sd;
-      console.log('Starting stream for', camera.name, 'with RTSP URL:', rtspUrl);
-      
-      // Проверяем, что путь камеры содержит корректный RTSP URL
-      if (!rtspUrl || !rtspUrl.startsWith('rtsp://')) {
-        console.error('Invalid RTSP URL:', rtspUrl);
-        setConnectionError('Неправильный формат RTSP URL. URL должен начинаться с rtsp://');
+      const baseName = `cam${camera.id}`;
+      const primaryUrl = camera.path_hd?.trim() || camera.path_sd?.trim() || '';
+      const fallbackUrl = camera.path_sd?.trim() || camera.path_hd?.trim() || '';
+
+      if (!primaryUrl.startsWith('rtsp://')) {
+        console.error('Invalid RTSP URL:', primaryUrl);
+        setConnectionError('Камера должна иметь корректный RTSP URL (rtsp://...).');
         setIsConnecting(false);
         return;
       }
-      
-      console.log('Adding camera to MediaMTX...');
-      // Добавляем камеру в MediaMTX
-      const addResult = await invoke('add_camera_to_mediamtx', { 
-        name: cameraPathName,
-        url: rtspUrl
+
+      const hdUrl = primaryUrl;
+      const sdUrl = fallbackUrl && fallbackUrl.startsWith('rtsp://') ? fallbackUrl : primaryUrl;
+
+      console.log('Configuring go2rtc stream for', camera.name, {
+        cameraId: camera.id,
+        hdUrl,
+        sdUrl,
       });
-      console.log('MediaMTX add camera result:', addResult);
-      
-      // Запускаем MediaMTX
-      console.log('Starting MediaMTX...');
-      const result = await invoke('mediamtx_start');
-      console.log('MediaMTX start result:', result);
-      
-      // Проверяем статус потока через некоторое время
-      setTimeout(async () => {
-        try {
-          console.log('Checking stream status...');
-          const status = await invoke('check_stream_status', { name: cameraPathName });
-          console.log('Stream status:', status);
-        } catch (error) {
-          console.error('Failed to check stream status:', error);
-        }
-      }, 3000);
-      
-      // Сохраняем информацию о выбранной камере
+
+      await invoke('add_camera_streams', {
+        cameraId: camera.id,
+        hdUrl,
+        sdUrl,
+      });
+
+      await invoke('start_go2rtc');
+
       setSelectedCamera(camera);
       setStreamingCameraId(camera.id);
+      setStreamBaseName(baseName);
       setIsStreaming(true);
-
-      // В MediaMTX потоки доступны через порт RTSP 8554
-      const streamPath = `rtsp://localhost:8554/${cameraPathName}`;
-      console.log('Stream path:', streamPath);
-      setStreamUrl(streamPath);
-      
-      // Выводим справочную информацию для отладки
-      console.log('MediaMTX should be rebroadcasting the stream now.');
-      console.log('Source RTSP URL:', camera.path_hd);
-      console.log('Local RTSP URL:', streamPath);
-      console.log('HLS URL should be available at:', `http://localhost:8888/${cameraPathName}`);
-      
-      // RTSPPlayer компонент сам обработает отображение потока
       setIsConnecting(false);
     } catch (err) {
       console.error('Failed to start stream:', err);
@@ -263,24 +277,11 @@ const Cameras: React.FC = () => {
       setIsConnecting(false);
       setIsStreaming(false);
       setStreamingCameraId(null);
+      setStreamBaseName(null);
       setSelectedCamera(null);
     }
   };
   // Проверка HTTP-доступности/авторизации камеры
-  const checkStatusFor = async (camera: Camera) => {
-    try {
-      const pass = await invoke('decrypt_password', { enc: camera.pass_enc }) as string;
-      const ok = await invoke('check_camera_http', { ip: camera.ip, user: camera.user, pass, port: camera.onvifPort || 80 });
-      const status = ok ? 'online' : 'offline';
-      const updated = cameras.map(c => c.ip === camera.ip ? { ...c, status } : c);
-      setCameras(updated);
-      (window as any).__VMS_CAMERAS = updated;
-      await invoke('save_cameras', { cameras: updated });
-    } catch (e) {
-      console.warn('Status check failed for', camera.ip, e);
-    }
-  };
-
   // Обработчики для контекстного меню
   const handleContextMenu = (event: React.MouseEvent, camera: Camera) => {
     console.log('=== Context menu triggered ===');
@@ -327,11 +328,13 @@ const Cameras: React.FC = () => {
       ip: camera.ip,
       port: camera.port,
       user: camera.user,
-      pass: camera.pass || '', // Если пароль зашифрован, нужна функция расшифровки
-      path_hd: camera.path_hd,
-      path_sd: camera.path_sd,
+      pass: camera.pass || '',
+      pathHd: camera.path_hd,
+      pathSd: camera.path_sd,
       protocol: camera.protocol,
       onvifPort: camera.onvifPort,
+      streamUrl: camera.path_hd || camera.path_sd || '',
+      groupId: camera.groupId ?? null,
     });
     setAddDialogOpen(true);
   };
@@ -376,33 +379,16 @@ const Cameras: React.FC = () => {
     setSshTerminalCamera(camera);
   };
 
-  const checkAllStatuses = async (list?: Camera[]) => {
-    const arr = list || cameras;
-    for (const cam of arr) {
-      // не блокируем UI: микропаузой снижаем нагрузку
-      // eslint-disable-next-line no-await-in-loop
-      await checkStatusFor(cam);
-    }
-  };
-
 
 
 
   // Обработчик для остановки стрима
-  const handleStopStream = async () => {
-    try {
-      // Останавливаем MediaMTX
-      await invoke('mediamtx_stop');
-      
-      // Сбрасываем состояния
-      setStreamingCameraId(null);
-      setIsStreaming(false);
-      setStreamUrl('');
-      setSelectedCamera(null);
-      setConnectionError('');
-    } catch (err) {
-      console.error('Failed to stop stream:', err);
-    }
+  const handleStopStream = () => {
+    setStreamingCameraId(null);
+    setIsStreaming(false);
+    setStreamBaseName(null);
+    setSelectedCamera(null);
+    setConnectionError('');
   };
 
   return (
@@ -454,15 +440,11 @@ const Cameras: React.FC = () => {
                     }
                   }}
                   onDoubleClick={() => {
-                    const cameraForGrid: any = {
-                      id: camera.id,
-                      name: camera.name,
-                      ip: camera.ip,
-                      user: camera.user,
-                      pass_enc: camera.pass_enc,
-                      streamUrl: camera.path_hd || camera.path_sd || '',
+                    const cameraForGrid: Camera = {
+                      ...camera,
+                      streamUrl: camera.streamUrl ?? camera.path_hd ?? camera.path_sd ?? '',
                     };
-                    (window as any).setCellCamera?.(cameraForGrid);
+                    window.setCellCamera?.(cameraForGrid);
                   }}
                   draggable
                   onDragStart={e => {
@@ -519,7 +501,7 @@ const Cameras: React.FC = () => {
         </Box>
         
         {/* Правая часть - видеоплеер */}
-        {isStreaming && streamUrl && (
+        {isStreaming && streamBaseName && (
           <Box sx={{ flex: 1, width: '100%' }}>
             <Paper 
               elevation={3} 
@@ -576,24 +558,25 @@ const Cameras: React.FC = () => {
                   </Box>
                 )}
                 
-                {selectedCamera && streamUrl ? (
-                  <RTSPPlayer
-                    cameraName={selectedCamera.name}
-                    src={streamUrl}
+                {selectedCamera && streamBaseName ? (
+                  <VideoStreamPlayer
+                    streamName={streamBaseName}
+                    useHdQuality
                     autoPlay
                     muted
                     controls
                     width="100%"
                     height="100%"
-                    style={{ 
-                      borderRadius: '8px',
-                      objectFit: 'contain' 
-                    }}
-                    onError={(error) => {
-                      console.error('RTSP Player error:', error);
+                    objectFit="contain"
+                    onError={error => {
+                      console.error('VideoStreamPlayer error:', error);
                       setConnectionError(`Ошибка воспроизведения: ${error.message}`);
                       setIsConnecting(false);
                     }}
+                    showMonitor={go2rtcSettings.showMonitor}
+                    enableSnapshot={go2rtcSettings.enableSnapshot}
+                    enable2WayAudio={go2rtcSettings.enable2WayAudio}
+                    enableAdaptiveBitrate={go2rtcSettings.enableAdaptiveBitrate}
                   />
                 ) : null}
               </Box>

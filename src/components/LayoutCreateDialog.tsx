@@ -9,7 +9,7 @@ import {
   Typography
 } from '@mui/material';
 import { Close as CloseIcon, Check as CheckIcon } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 
 interface LayoutCreateDialogProps {
   open: boolean;

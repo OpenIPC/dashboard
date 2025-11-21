@@ -16,7 +16,7 @@ import {
   Save as SaveIcon,
   FolderOpen as LoadIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import type { LayoutTab } from '../types';
 
 interface LayoutTabsProps {

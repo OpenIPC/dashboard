@@ -1,5 +1,5 @@
 # VMS Dashboard Build Script for Windows
-# Downloads MediaMTX binaries and builds the application
+# Downloads go2rtc binaries and builds the application
 
 param(
     [Parameter(HelpMessage="Target platform: windows, linux, macos")]
@@ -9,7 +9,7 @@ param(
     [Parameter(HelpMessage="Build in debug mode")]
     [switch]$Debug,
     
-    [Parameter(HelpMessage="Only download MediaMTX binaries")]
+    [Parameter(HelpMessage="Only download go2rtc binaries")]
     [switch]$DownloadOnly,
     
     [Parameter(HelpMessage="Show help")]
@@ -31,7 +31,7 @@ function Show-Help {
     Write-Host "Examples:" -ForegroundColor Yellow
     Write-Host "  npm run build-release                # Build release"
     Write-Host "  npm run build-debug                  # Build debug"
-    Write-Host "  npm run download-mediamtx            # Download MediaMTX"
+    Write-Host "  npm run download-go2rtc              # Download go2rtc"
     Write-Host "  npm run download-gstreamer           # Download optional GStreamer bundle"
     Write-Host ""
 }
@@ -40,12 +40,12 @@ function Test-Python {
     try {
         $pythonVersion = python --version 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Python found: $pythonVersion" -ForegroundColor Green
+            Write-Host "[OK] Python found: $pythonVersion" -ForegroundColor Green
             return $true
         }
     }
     catch {
-        Write-Host "❌ Python not found. Please install Python 3.6+" -ForegroundColor Red
+        Write-Host "[ERROR] Python not found. Please install Python 3.6+" -ForegroundColor Red
         Write-Host "   Download from: https://www.python.org/downloads/" -ForegroundColor Yellow
         return $false
     }
@@ -56,12 +56,12 @@ function Test-Node {
     try {
         $nodeVersion = node --version 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Node.js found: $nodeVersion" -ForegroundColor Green
+            Write-Host "[OK] Node.js found: $nodeVersion" -ForegroundColor Green
             return $true
         }
     }
     catch {
-        Write-Host "❌ Node.js not found. Please install Node.js 18+" -ForegroundColor Red
+        Write-Host "[ERROR] Node.js not found. Please install Node.js 18+" -ForegroundColor Red
         Write-Host "   Download from: https://nodejs.org/" -ForegroundColor Yellow
         return $false
     }
@@ -72,12 +72,12 @@ function Test-Rust {
     try {
         $rustVersion = rustc --version 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Rust found: $rustVersion" -ForegroundColor Green
+            Write-Host "[OK] Rust found: $rustVersion" -ForegroundColor Green
             return $true
         }
     }
     catch {
-        Write-Host "❌ Rust not found. Please install Rust" -ForegroundColor Red
+        Write-Host "[ERROR] Rust not found. Please install Rust" -ForegroundColor Red
         Write-Host "   Install from: https://rustup.rs/" -ForegroundColor Yellow
         return $false
     }
@@ -90,12 +90,12 @@ function Main {
         return
     }
 
-    Write-Host "🚀 VMS Dashboard Build Script" -ForegroundColor Cyan
+    Write-Host "VMS Dashboard Build Script" -ForegroundColor Cyan
     Write-Host "=============================" -ForegroundColor Cyan
     Write-Host ""
 
     # Check prerequisites
-    Write-Host "🔍 Checking prerequisites..." -ForegroundColor Yellow
+    Write-Host "Checking prerequisites..." -ForegroundColor Yellow
     
     $pythonOk = Test-Python
     $nodeOk = Test-Node
@@ -103,12 +103,12 @@ function Main {
 
     if (-not ($pythonOk -and $nodeOk -and $rustOk)) {
         Write-Host ""
-        Write-Host "❌ Missing prerequisites. Please install the required tools." -ForegroundColor Red
+        Write-Host "[ERROR] Missing prerequisites. Please install the required tools." -ForegroundColor Red
         exit 1
     }
 
     Write-Host ""
-    Write-Host "🔧 Starting build process..." -ForegroundColor Yellow
+    Write-Host "Starting build process..." -ForegroundColor Yellow
 
     # Prepare Python command
     $pythonArgs = @("tools\build.py")
@@ -131,19 +131,19 @@ function Main {
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host ""
-            Write-Host "🎉 Build completed successfully!" -ForegroundColor Green
+            Write-Host "Build completed successfully." -ForegroundColor Green
             Write-Host ""
-            Write-Host "📁 Build outputs can be found in:" -ForegroundColor Yellow
+            Write-Host "Build outputs can be found in:" -ForegroundColor Yellow
             Write-Host "   src-tauri\target\release\bundle\" -ForegroundColor Gray
         } else {
             Write-Host ""
-            Write-Host "❌ Build failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+            Write-Host "[ERROR] Build failed with exit code: $LASTEXITCODE" -ForegroundColor Red
             exit $LASTEXITCODE
         }
     }
     catch {
         Write-Host ""
-        Write-Host "❌ Build failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[ERROR] Build failed: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }

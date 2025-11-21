@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 
 interface LoadingOverlayProps {
   isVisible: boolean;

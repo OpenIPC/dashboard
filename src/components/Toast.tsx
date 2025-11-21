@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Alert, Snackbar } from '@mui/material';
+import type { ToastSeverity } from '../hooks/useToast';
 
 interface ToastProps {
   message: string;
-  severity?: 'success' | 'error' | 'warning' | 'info';
+  severity?: ToastSeverity;
   open: boolean;
   onClose: () => void;
   autoHideDuration?: number;
@@ -32,36 +33,4 @@ export const Toast: React.FC<ToastProps> = ({
       </Alert>
     </Snackbar>
   );
-};
-
-interface ToastState {
-  open: boolean;
-  message: string;
-  severity: 'success' | 'error' | 'warning' | 'info';
-}
-
-export const useToast = () => {
-  const [toast, setToast] = useState<ToastState>({
-    open: false,
-    message: '',
-    severity: 'success'
-  });
-
-  const showToast = (message: string, severity: ToastState['severity'] = 'success') => {
-    setToast({
-      open: true,
-      message,
-      severity
-    });
-  };
-
-  const hideToast = () => {
-    setToast(prev => ({ ...prev, open: false }));
-  };
-
-  return {
-    toast,
-    showToast,
-    hideToast
-  };
 };

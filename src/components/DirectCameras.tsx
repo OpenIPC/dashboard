@@ -6,6 +6,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import AddCameraDialog from './AddCameraDialog';
 import CameraSearchDialog from './CameraSearchDialog';
+import type { CameraFormDraft, CameraFormValues } from '../types';
+import type { DiscoveredCamera } from './CameraSearchDialog';
 
 interface Camera {
   id: number;
@@ -21,14 +23,19 @@ interface Camera {
   onvifPort?: number;
 }
 
+interface OnvifProfile {
+  token: string;
+  name?: string;
+}
+
 const DirectCameras: React.FC = () => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  const [foundCameras, setFoundCameras] = useState<{name: string; ip: string; protocol?: string}[]>([]);
+  const [foundCameras, setFoundCameras] = useState<DiscoveredCamera[]>([]);
   const [streamingCameraId, setStreamingCameraId] = useState<number | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [initialData, setInitialData] = useState<any>(null);
+  const [initialData, setInitialData] = useState<CameraFormDraft | null>(null);
   const [streamUrl, setStreamUrl] = useState<string>('');
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
@@ -39,8 +46,8 @@ const DirectCameras: React.FC = () => {
     loadCameras();
     
     // Подписка на событие device-found для поиска камер
-    const unlisten = listen('device-found', (event) => {
-      const camera = event.payload as { ip: string; name: string; protocol: string };
+    const unlisten = listen<DiscoveredCamera>('device-found', (event) => {
+      const camera = event.payload;
       setFoundCameras(prev => {
         if (prev.find(c => c.ip === camera.ip)) return prev;
         return [...prev, camera];
@@ -56,8 +63,8 @@ const DirectCameras: React.FC = () => {
   // Загрузка камер из бэкенда
   const loadCameras = async () => {
     try {
-      const loaded = await invoke('load_cameras');
-      setCameras(loaded as Camera[]);
+      const loaded = await invoke<Camera[]>('load_cameras');
+      setCameras(Array.isArray(loaded) ? loaded : []);
     } catch (err) {
       console.error('Failed to load cameras:', err);
     }
@@ -75,7 +82,7 @@ const DirectCameras: React.FC = () => {
   };
 
   // Обработчик добавления камеры
-  const handleAddCamera = async (data: any) => {
+  const handleAddCamera = async (data: CameraFormValues) => {
     try {
       const encryptedPass = await invoke('encrypt_password', { password: data.pass });
       const newCamera: Camera = {
@@ -84,12 +91,12 @@ const DirectCameras: React.FC = () => {
         ip: data.ip,
         port: data.port,
         user: data.user,
-        pass_enc: encryptedPass as string,
-        path_hd: data.streamUrl || '',
-        path_sd: data.streamUrl || '',
+        pass_enc: String(encryptedPass ?? ''),
+        path_hd: data.pathHd,
+        path_sd: data.pathSd,
         status: 'offline',
         protocol: data.protocol || 'onvif',
-        onvifPort: data.onvifPort || 80,
+        onvifPort: data.onvifPort ?? 80,
       };
       
       const updatedCameras = [...cameras, newCamera];
@@ -145,16 +152,16 @@ const DirectCameras: React.FC = () => {
         
         try {
           // Получаем профили ONVIF камеры
-          const profiles = await invoke('get_onvif_profiles', {
+          const profiles = await invoke<OnvifProfile[]>('get_onvif_profiles', {
             ip: camera.ip,
             port: camera.onvifPort || 80,
             user: camera.user,
             pass: password
-          }) as any[];
+          });
           
           console.log('ONVIF profiles:', profiles);
           
-          if (profiles && profiles.length > 0) {
+          if (Array.isArray(profiles) && profiles.length > 0) {
             // Берем первый профиль по умолчанию
             const profileToken = profiles[0].token;
             
@@ -186,7 +193,7 @@ const DirectCameras: React.FC = () => {
       console.log('Final RTSP URL for direct playback:', rtspUrl.replace(/:[^:@]+@/, ':****@'));
       
       // Используем функцию для очистки URL от проблем с форматированием
-      const fixedUrl = await invoke('play_direct_rtsp', { sdp: rtspUrl }) as string;
+  const fixedUrl = await invoke<string>('play_direct_rtsp', { sdp: rtspUrl });
       
       // Сохраняем информацию о выбранной камере и URL
       setSelectedCamera(camera);
@@ -393,7 +400,9 @@ const DirectCameras: React.FC = () => {
             user: 'admin',
             pass: '',
             onvifPort: 80,
-            streamUrl: ''
+            streamUrl: '',
+            pathHd: '',
+            pathSd: ''
           });
           // Теперь передаем initialData в AddCameraDialog через состояние
           setAddDialogOpen(true);

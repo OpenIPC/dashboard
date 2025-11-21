@@ -23,11 +23,8 @@ export default defineConfig({
       }
     },
     rollupOptions: {
-      preserveEntrySignatures: 'exports-only',
       output: {
-        manualChunks: undefined,
-        preserveModules: true,
-        preserveModulesRoot: 'src'
+        manualChunks: undefined
       }
     }
   },

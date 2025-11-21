@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-// @ts-ignore - игнорируем ошибки типов для hls.js
 import Hls from 'hls.js';
+import { isHlsErrorData } from '../utils/hls';
 
 interface DirectRTSPPlayerProps {
   src: string;
@@ -15,10 +15,6 @@ interface DirectRTSPPlayerProps {
   onError?: (error: Error) => void;
 }
 
-/**
- * Компонент для прямого воспроизведения RTSP-потоков без использования MediaMTX
- * Использует напрямую RTSP URL с коррекцией форматов URL
- */
 const DirectRTSPPlayer: React.FC<DirectRTSPPlayerProps> = ({
   src,
   width = '100%',
@@ -38,6 +34,7 @@ const DirectRTSPPlayer: React.FC<DirectRTSPPlayerProps> = ({
     if (!src) return;
     
     let isActive = true;
+    const videoElement = videoRef.current;
     
     const setupStream = async () => {
       try {
@@ -124,10 +121,13 @@ const DirectRTSPPlayer: React.FC<DirectRTSPPlayerProps> = ({
                     hls.loadSource(hlsUrl as string);
                   });
                   
-                  hls.on(Hls.Events.ERROR, (_, data) => {
+                  hls.on(Hls.Events.ERROR, (_event, data) => {
                     console.error('HLS error:', data);
-                    if (data.fatal) {
-                      switch (data.type) {
+                    if (!isHlsErrorData(data) || !data.fatal) {
+                      return;
+                    }
+
+                    switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
                           console.error('Fatal network error');
                           hls.startLoad(); // try to recover
@@ -140,12 +140,11 @@ const DirectRTSPPlayer: React.FC<DirectRTSPPlayerProps> = ({
                           if (onError) onError(new Error(`HLS fatal error: ${data.type}`));
                           hls.destroy();
                           break;
-                      }
                     }
                   });
                   
-                  hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-                    console.log('HLS manifest parsed, playing...', data);
+                  hls.on(Hls.Events.MANIFEST_PARSED, (_event, parsedData) => {
+                    console.log('HLS manifest parsed, playing...', parsedData);
                     
                     if (videoRef.current) {
                       console.log('Starting video playback');
@@ -209,15 +208,16 @@ const DirectRTSPPlayer: React.FC<DirectRTSPPlayerProps> = ({
     return () => {
       isActive = false;
       // Очищаем HLS при размонтировании
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
+      const hlsInstance = hlsRef.current;
+      if (hlsInstance) {
+        hlsInstance.destroy();
         hlsRef.current = null;
       }
-      
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.src = '';
-        videoRef.current.load();
+
+      if (videoElement) {
+        videoElement.pause();
+        videoElement.src = '';
+        videoElement.load();
       }
     };
   }, [src, autoPlay, onError]);

@@ -22,7 +22,7 @@ import {
   PlaylistPlay as ManageIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import type { LayoutTemplatePreview } from '../types';
 
 const QUICK_LAYOUTS = [1, 4, 9, 16, 25, 32, 64];

@@ -5,15 +5,20 @@ use std::sync::Arc;
 use tauri::command;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio::task;
 use urlencoding::decode;
 
 // Global state to track if HTTP server is running
 static HTTP_SERVER_RUNNING: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+static HTTP_SERVER_LOCK: Lazy<Arc<Mutex<()>>> = Lazy::new(|| Arc::new(Mutex::new(())));
 
 // Simple HTTP server using tokio
 #[command]
 pub async fn start_http_server() -> Result<bool, String> {
+    // Prevent concurrent start attempts that can race the port bind
+    let _guard = HTTP_SERVER_LOCK.lock().await;
+
     // Check if server is already running
     if HTTP_SERVER_RUNNING.load(Ordering::Relaxed) {
         println!("HTTP server already running");
@@ -151,6 +156,9 @@ async fn handle_http_request(
             // Парсим заголовки
             let mut range_header: Option<&str> = None;
             for line in &lines[1..] {
+                if !line.is_empty() {
+                    println!("HTTP header: {}", line);
+                }
                 if line.to_lowercase().starts_with("range:") {
                     range_header = Some(line);
                     break;
@@ -160,8 +168,12 @@ async fn handle_http_request(
             if method == "GET" || method == "HEAD" {
                 if path == "/" {
                     // Root path - return simple message
-                    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\n\r\nHTTP Server for VMS recordings is running";
-                    socket.write_all(response.as_bytes()).await?;
+                    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\nHTTP Server for VMS recordings is running";
+                    if write_all_with_client_check(socket, response.as_bytes(), "root message")
+                        .await?
+                    {
+                        return Ok(());
+                    }
                 } else {
                     // File request
                     let file_path = path.trim_start_matches('/');
@@ -202,14 +214,22 @@ async fn handle_http_request(
                         .await?;
                     } else {
                         println!("File not found: {}", file_path);
-                        let response = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\n\r\nFile not found";
-                        socket.write_all(response.as_bytes()).await?;
+                        let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\nFile not found";
+                        if write_all_with_client_check(socket, response.as_bytes(), "404 response")
+                            .await?
+                        {
+                            return Ok(());
+                        }
                     }
                 }
             } else if method == "OPTIONS" {
                 // CORS preflight
-                let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\nAccept-Ranges: bytes\r\n\r\n";
-                socket.write_all(response.as_bytes()).await?;
+                let response = "HTTP/1.1 200 OK\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\nAccept-Ranges: bytes\r\n\r\n";
+                if write_all_with_client_check(socket, response.as_bytes(), "OPTIONS response")
+                    .await?
+                {
+                    return Ok(());
+                }
             }
         }
     }
@@ -255,11 +275,20 @@ async fn serve_file_with_range(
 
                     // Отправляем 206 Partial Content
                     let response = format!(
-                        "HTTP/1.1 206 Partial Content\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Expose-Headers: Content-Range\r\nAccept-Ranges: bytes\r\n\r\n",
+                        "HTTP/1.1 206 Partial Content\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges\r\nAccept-Ranges: bytes\r\n\r\n",
                         mime_type, content_length, start, end, file_size
                     );
 
-                    socket.write_all(response.as_bytes()).await?;
+                    println!(
+                        "Serving range {}-{} ({} bytes) for {}",
+                        start, end, content_length, filename
+                    );
+
+                    if write_all_with_client_check(socket, response.as_bytes(), "range headers")
+                        .await?
+                    {
+                        return Ok(());
+                    }
 
                     if !head_only {
                         // Читаем и отправляем нужный диапазон
@@ -273,7 +302,11 @@ async fn serve_file_with_range(
                             if bytes_read == 0 {
                                 break;
                             }
-                            socket.write_all(&buffer[..bytes_read]).await?;
+                            if write_all_with_client_check(socket, &buffer[..bytes_read], filename)
+                                .await?
+                            {
+                                return Ok(());
+                            }
                             remaining -= bytes_read as u64;
                         }
                     }
@@ -290,11 +323,13 @@ async fn serve_file_with_range(
 
     // Обычный запрос без Range
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccept-Ranges: bytes\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Expose-Headers: Content-Length, Accept-Ranges\r\nAccept-Ranges: bytes\r\n\r\n",
         mime_type, file_size
     );
 
-    socket.write_all(response.as_bytes()).await?;
+    if write_all_with_client_check(socket, response.as_bytes(), "full file headers").await? {
+        return Ok(());
+    }
 
     if !head_only {
         // Отправляем весь файл
@@ -304,12 +339,46 @@ async fn serve_file_with_range(
             if bytes_read == 0 {
                 break;
             }
-            socket.write_all(&buffer[..bytes_read]).await?;
+            if write_all_with_client_check(socket, &buffer[..bytes_read], filename).await? {
+                return Ok(());
+            }
         }
     }
 
     println!("Served full file: {} ({} bytes)", filename, file_size);
+    let _ = socket.shutdown().await;
     Ok(())
+}
+
+async fn write_all_with_client_check(
+    socket: &mut tokio::net::TcpStream,
+    data: &[u8],
+    context: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if let Err(err) = socket.write_all(data).await {
+        if is_connection_closed_error(&err) {
+            println!(
+                "Client closed connection early while sending {} ({})",
+                context, err
+            );
+            return Ok(true);
+        }
+        return Err(err.into());
+    }
+
+    Ok(false)
+}
+
+fn is_connection_closed_error(err: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+
+    matches!(
+        err.kind(),
+        ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::NotConnected
+    )
 }
 
 // Helper function to check if HTTP server is running without starting it

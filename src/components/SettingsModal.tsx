@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
-import { useLocalization } from '../contexts/LocalizationContext';
-import type { SupportedLanguage } from '../contexts/LocalizationContext';
-import { Toast, useToast } from './Toast';
+import { useLocalization } from '../hooks/useLocalization';
+import type { SupportedLanguage } from '../contexts/LocalizationContextData';
+import { Toast } from './Toast';
+import { useToast } from '../hooks/useToast';
+import { useAnalytics } from '../hooks/useAnalytics';
+import type { AnalyticsModuleStatus } from '../services/analytics';
 import './SettingsModal.css';
 
 interface SettingsModalProps {
@@ -13,14 +16,21 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+type StreamingProvider = 'go2rtc';
+
+const STREAMING_PROVIDERS: StreamingProvider[] = ['go2rtc'];
+
+const isStreamingProvider = (value: unknown): value is StreamingProvider =>
+  typeof value === 'string' && STREAMING_PROVIDERS.includes(value as StreamingProvider);
+
 interface StreamingBackendSettings {
-  provider: 'mediamtx';
+  provider: StreamingProvider;
   enableOnDemand: boolean;
   restartOnConfigChange: boolean;
 }
 
 const DEFAULT_STREAMING_SETTINGS: StreamingBackendSettings = {
-  provider: 'mediamtx',
+  provider: 'go2rtc',
   enableOnDemand: true,
   restartOnConfigChange: true,
 };
@@ -28,6 +38,70 @@ const DEFAULT_STREAMING_SETTINGS: StreamingBackendSettings = {
 const createDefaultStreamingSettings = (): StreamingBackendSettings => ({
   ...DEFAULT_STREAMING_SETTINGS,
 });
+
+interface Go2RtcEnhancedSettings {
+  showMonitor: boolean;
+  enableSnapshot: boolean;
+  enable2WayAudio: boolean;
+  enableAdaptiveBitrate: boolean;
+}
+
+const DEFAULT_GO2RTC_ENHANCED: Go2RtcEnhancedSettings = {
+  showMonitor: false,
+  enableSnapshot: true,
+  enable2WayAudio: false,
+  enableAdaptiveBitrate: true,
+};
+
+interface StreamOptimizationSettings {
+  enableFastStart: boolean; // Быстрый старт с минимальными задержками
+  enablePrewarming: boolean; // Прогрев потоков в фоне
+  prewarmBothQualities: boolean; // Прогревать SD и HD одновременно
+  enableConnectionCaching: boolean; // Кэширование WebRTC соединений
+  maxCachedConnections: number; // Максимум кэшированных соединений
+  keepAliveInterval: number; // Интервал keep-alive (секунды)
+  
+  // Мгновенное переключение качества
+  keepHdStreamAlive: boolean; // Держать HD поток всегда активным для мгновенного переключения
+  
+  // Low-latency настройки WebRTC
+  enableLowLatency: boolean; // Включить режим минимальной задержки
+  playoutDelayHint: number; // Задержка воспроизведения (0-2000 мс)
+  jitterBufferTarget: number; // Размер джиттер-буфера (0-1000 мс)
+  
+  // Автоматическая коррекция задержки
+  enableLatencyMonitoring: boolean; // Мониторинг и коррекция задержки
+  maxBufferedLatency: number; // Макс. задержка перед прыжком на live (секунды)
+  latencyCheckInterval: number; // Интервал проверки задержки (секунды)
+  
+  // RTSP оптимизации
+  rtspBufferSize: number; // Размер RTSP буфера (0 = минимум)
+}
+
+const DEFAULT_STREAM_OPTIMIZATION: StreamOptimizationSettings = {
+  enableFastStart: true,
+  enablePrewarming: true,
+  prewarmBothQualities: true,
+  enableConnectionCaching: true,
+  maxCachedConnections: 10,
+  keepAliveInterval: 30,
+  
+  // Мгновенное переключение включено по умолчанию
+  keepHdStreamAlive: true,
+  
+  // Low-latency по умолчанию включено
+  enableLowLatency: true,
+  playoutDelayHint: 0, // Минимальная задержка
+  jitterBufferTarget: 0, // Минимальный джиттер-буфер
+  
+  // Автоматическая коррекция включена
+  enableLatencyMonitoring: true,
+  maxBufferedLatency: 1.0, // 1 секунда
+  latencyCheckInterval: 2, // Проверка каждые 2 секунды
+  
+  // RTSP с минимальным буфером
+  rtspBufferSize: 0,
+};
 
 interface AppSettings {
   language: string;
@@ -41,8 +115,15 @@ interface AppSettings {
   analytics_frame_skip: number;
   analytics_record_duration: number;
   analytics_provider: string;
+  anpr_detection_confidence: number;
+  anpr_crop_expansion: number;
+  anpr_crnn_confidence: number;
+  anpr_python_confidence: number;
+  anpr_enable_python: boolean;
   enabledModules: string[];
   streaming: StreamingBackendSettings;
+  go2rtcEnhanced: Go2RtcEnhancedSettings;
+  streamOptimization: StreamOptimizationSettings;
 }
 
 interface ModuleInfo {
@@ -53,9 +134,44 @@ interface ModuleInfo {
   author: string;
 }
 
+const MODULE_METADATA: Record<string, ModuleInfo> = {
+  'face-detector': {
+    id: 'face-detector',
+    name: 'Face Detector',
+    version: '0.0.1',
+    description: 'Обнаруживает и сохраняет лица людей из видеопотока.',
+    author: 'Rinibr',
+  },
+  'license-plate-detector': {
+    id: 'license-plate-detector',
+    name: 'License Plate Detector',
+    version: '0.0.1',
+    description: 'Сохраняет обрезанные изображения обнаруженных номерных знаков и уведомляет интерфейс.',
+    author: 'Rinibr',
+  },
+  'object-counter': {
+    id: 'object-counter',
+    name: 'Object Counter',
+    version: '0.0.1',
+    description: 'Отображает счетчик обнаруженных объектов в ячейке.',
+    author: 'Rinibr',
+  },
+};
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every(item => typeof item === 'string');
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const { currentLanguage, setLanguage, t } = useLocalization();
   const { toast, showToast, hideToast } = useToast();
+  const {
+    modules,
+    isLoadingModules,
+    moduleOperationId,
+    refreshModules,
+    toggleModule,
+    updateModuleSnapshotsDir,
+  } = useAnalytics();
   const [activeTab, setActiveTab] = useState('tab-general');
   const [appVersion, setAppVersion] = useState('Loading...');
   const [settings, setSettings] = useState<AppSettings>({
@@ -70,20 +186,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     analytics_frame_skip: 5,
     analytics_record_duration: 30,
     analytics_provider: 'auto',
+    anpr_detection_confidence: 0.5,
+    anpr_crop_expansion: 1.2,
+    anpr_crnn_confidence: 0.75,
+    anpr_python_confidence: 0.90,
+    anpr_enable_python: true,
     enabledModules: [],
-    streaming: createDefaultStreamingSettings()
+    streaming: createDefaultStreamingSettings(),
+    go2rtcEnhanced: DEFAULT_GO2RTC_ENHANCED,
+    streamOptimization: DEFAULT_STREAM_OPTIMIZATION,
   });
 
-  const normalizeStreamingSettings = (input?: unknown): StreamingBackendSettings => {
+  // Safe settings with guaranteed defaults - prevents crashes when accessing nested properties
+  const safeSettings = useMemo(() => ({
+    ...settings,
+    go2rtcEnhanced: settings.go2rtcEnhanced ?? DEFAULT_GO2RTC_ENHANCED,
+    streamOptimization: settings.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION,
+  }), [settings]);
+
+  const normalizeStreamingSettings = useCallback((input?: unknown): StreamingBackendSettings => {
     const base = createDefaultStreamingSettings();
-    if (!input || typeof input !== 'object') {
+    if (!input || typeof input !== 'object' || input === null) {
       return base;
     }
 
     const source = input as Record<string, unknown>;
 
     return {
-      provider: 'mediamtx',
+      provider:
+        isStreamingProvider(source.provider) ? source.provider : base.provider,
       enableOnDemand:
         typeof source.enableOnDemand === 'boolean'
           ? source.enableOnDemand
@@ -93,7 +224,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           ? source.restartOnConfigChange
           : base.restartOnConfigChange,
     };
-  };
+  }, []);
+
+  const mergeAppSettings = useCallback(
+    (prev: AppSettings, incoming?: Partial<AppSettings> | null): AppSettings => {
+      if (!incoming) {
+        return {
+          ...prev,
+          language: currentLanguage,
+          streaming: normalizeStreamingSettings(prev.streaming),
+          go2rtcEnhanced: prev.go2rtcEnhanced ?? DEFAULT_GO2RTC_ENHANCED,
+          streamOptimization: prev.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION,
+        };
+      }
+
+  const incomingSafe: Partial<AppSettings> = incoming ?? {};
+  const { streaming, enabledModules, go2rtcEnhanced, streamOptimization, ...rest } = incomingSafe;
+
+      const resolvedModules = isStringArray(enabledModules)
+        ? enabledModules
+        : prev.enabledModules;
+
+      const next = {
+        ...prev,
+        ...rest,
+        streaming: normalizeStreamingSettings(streaming ?? prev.streaming),
+        enabledModules: resolvedModules,
+        language: currentLanguage,
+        go2rtcEnhanced: go2rtcEnhanced ? { ...DEFAULT_GO2RTC_ENHANCED, ...go2rtcEnhanced } : (prev.go2rtcEnhanced ?? DEFAULT_GO2RTC_ENHANCED),
+        streamOptimization: streamOptimization ? { ...DEFAULT_STREAM_OPTIMIZATION, ...streamOptimization } : (prev.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION),
+      } as AppSettings;
+
+      return next;
+    },
+    [currentLanguage, normalizeStreamingSettings],
+  );
 
   const handleStreamingSettingChange = (
     key: keyof StreamingBackendSettings,
@@ -106,7 +271,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
       switch (key) {
         case 'provider':
-          nextStreaming.provider = 'mediamtx';
+          nextStreaming.provider = isStreamingProvider(value)
+            ? value
+            : DEFAULT_STREAMING_SETTINGS.provider;
           break;
         case 'enableOnDemand':
           nextStreaming.enableOnDemand = Boolean(value);
@@ -127,34 +294,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const prepareStreamingForSave = (
     streaming: StreamingBackendSettings
   ): StreamingBackendSettings => ({
-    provider: 'mediamtx',
+    provider: isStreamingProvider(streaming.provider)
+      ? streaming.provider
+      : DEFAULT_STREAMING_SETTINGS.provider,
     enableOnDemand: Boolean(streaming.enableOnDemand),
     restartOnConfigChange: Boolean(streaming.restartOnConfigChange),
   });
   const [updateStatus, setUpdateStatus] = useState('idle');
-  const [availableModules] = useState<ModuleInfo[]>([
-    {
-      id: 'face-detector',
-      name: 'Face Detector',
-      version: '0.0.1',
-      description: 'Обнаруживает и сохраняет лица людей из видеопотока.',
-      author: 'Rinibr'
-    },
-    {
-      id: 'license-plate-detector',
-      name: 'License Plate Detector',
-      version: '0.0.1',
-      description: 'Сохраняет обрезанные изображения обнаруженных номерных знаков и уведомляет интерфейс.',
-      author: 'OpenIPC'
-    },
-    {
-      id: 'object-counter',
-      name: 'Object Counter',
-      version: '0.0.1',
-      description: 'Отображает счетчик обнаруженных объектов в ячейке.',
-      author: 'Rinibr'
-    }
-  ]);
 
   useEffect(() => {
     // Load app version
@@ -171,40 +317,126 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     // Load settings from Tauri backend
     const loadSettings = async () => {
       try {
-        const savedSettings = await invoke('get_app_settings');
-        const saved = savedSettings as Record<string, unknown>;
-        setSettings(prev => {
-          const mergedStreaming = normalizeStreamingSettings(saved['streaming'] ?? prev.streaming);
-          const merged = {
-            ...prev,
-            ...(saved as any),
-            language: currentLanguage,
-            streaming: mergedStreaming
-          } as AppSettings;
-          return merged;
-        });
+        const savedSettings = await invoke<Partial<AppSettings> | null>('get_app_settings');
+        const merged = mergeAppSettings(settings, savedSettings);
+        
+        // Ensure go2rtcEnhanced has default values if not present
+        if (!merged.go2rtcEnhanced) {
+          merged.go2rtcEnhanced = DEFAULT_GO2RTC_ENHANCED;
+        }
+        
+        // Ensure streamOptimization has default values if not present
+        if (!merged.streamOptimization) {
+          merged.streamOptimization = DEFAULT_STREAM_OPTIMIZATION;
+        }
+        
+        // Load ANPR config from backend
+        try {
+          const anprConfig = await invoke<{
+            detection_confidence: number;
+            crop_expansion_factor: number;
+            crnn_confidence_threshold: number;
+            python_confidence_threshold: number;
+            enable_python_ocr: boolean;
+          }>('get_anpr_config');
+          
+          merged.anpr_detection_confidence = anprConfig.detection_confidence;
+          merged.anpr_crop_expansion = anprConfig.crop_expansion_factor;
+          merged.anpr_crnn_confidence = anprConfig.crnn_confidence_threshold;
+          merged.anpr_python_confidence = anprConfig.python_confidence_threshold;
+          merged.anpr_enable_python = anprConfig.enable_python_ocr;
+        } catch (e) {
+          console.error('Failed to load ANPR config:', e);
+        }
+        
+        // Load go2rtc settings from localStorage if available (overrides backend)
+        const go2rtcSettingsStr = localStorage.getItem('go2rtcSettings');
+        if (go2rtcSettingsStr) {
+          try {
+            const go2rtcSettings = JSON.parse(go2rtcSettingsStr);
+            merged.go2rtcEnhanced = {
+              ...DEFAULT_GO2RTC_ENHANCED,
+              ...go2rtcSettings
+            };
+          } catch (e) {
+            console.error('Failed to parse go2rtc settings:', e);
+          }
+        }
+        
+        // Load stream optimization settings from localStorage
+        const streamOptSettingsStr = localStorage.getItem('streamOptimizationSettings');
+        if (streamOptSettingsStr) {
+          try {
+            const streamOptSettings = JSON.parse(streamOptSettingsStr);
+            merged.streamOptimization = {
+              ...DEFAULT_STREAM_OPTIMIZATION,
+              ...streamOptSettings
+            };
+          } catch (e) {
+            console.error('Failed to parse stream optimization settings:', e);
+          }
+        }
+        
+        setSettings(merged);
       } catch (error) {
         console.error('Failed to load settings:', error);
         // Fallback to localStorage
         const localSettings = localStorage.getItem('appSettings');
         if (localSettings) {
-          const parsed = JSON.parse(localSettings) as Record<string, unknown>;
-          setSettings(prev => {
-            const mergedStreaming = normalizeStreamingSettings(parsed['streaming'] ?? prev.streaming);
-            const merged = {
-              ...prev,
-              ...(parsed as any),
-              language: currentLanguage,
-              streaming: mergedStreaming
-            } as AppSettings;
-            return merged;
-          });
+          try {
+            const parsed = JSON.parse(localSettings) as Partial<AppSettings>;
+            const merged = mergeAppSettings(settings, parsed);
+            
+            // Ensure go2rtcEnhanced has default values if not present
+            if (!merged.go2rtcEnhanced) {
+              merged.go2rtcEnhanced = DEFAULT_GO2RTC_ENHANCED;
+            }
+            
+            // Ensure streamOptimization has default values if not present
+            if (!merged.streamOptimization) {
+              merged.streamOptimization = DEFAULT_STREAM_OPTIMIZATION;
+            }
+            
+            // Load go2rtc settings from localStorage if available
+            const go2rtcSettingsStr = localStorage.getItem('go2rtcSettings');
+            if (go2rtcSettingsStr) {
+              try {
+                const go2rtcSettings = JSON.parse(go2rtcSettingsStr);
+                merged.go2rtcEnhanced = {
+                  ...DEFAULT_GO2RTC_ENHANCED,
+                  ...go2rtcSettings
+                };
+              } catch (e) {
+                console.error('Failed to parse go2rtc settings:', e);
+              }
+            }
+            
+            // Load stream optimization settings from localStorage
+            const streamOptSettingsStr = localStorage.getItem('streamOptimizationSettings');
+            if (streamOptSettingsStr) {
+              try {
+                const streamOptSettings = JSON.parse(streamOptSettingsStr);
+                merged.streamOptimization = {
+                  ...DEFAULT_STREAM_OPTIMIZATION,
+                  ...streamOptSettings
+                };
+              } catch (e) {
+                console.error('Failed to parse stream optimization settings:', e);
+              }
+            }
+            
+            setSettings(merged);
+          } catch (parseError) {
+            console.error('Failed to parse local settings:', parseError);
+          }
         } else {
-          // If no saved settings, use current language
+          // If no saved settings, use current language and defaults
           setSettings(prev => ({
             ...prev,
             language: currentLanguage,
-            streaming: prev.streaming ?? createDefaultStreamingSettings()
+            streaming: prev.streaming ?? createDefaultStreamingSettings(),
+            go2rtcEnhanced: prev.go2rtcEnhanced ?? DEFAULT_GO2RTC_ENHANCED,
+            streamOptimization: prev.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION
           }));
         }
       }
@@ -213,19 +445,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     if (isOpen) {
       loadAppVersion();
       loadSettings();
+      void refreshModules();
     }
-  }, [isOpen]);
+  }, [isOpen, currentLanguage, refreshModules, mergeAppSettings]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'tab-modules') {
+      void refreshModules();
+    }
+  }, [isOpen, activeTab, refreshModules]);
+
+  useEffect(() => {
+    const enabledFromModules = modules
+      .filter(module => module.enabled)
+      .map(module => module.id)
+      .sort();
+
+    setSettings(prev => {
+      const current = [...prev.enabledModules].sort();
+      if (
+        current.length === enabledFromModules.length &&
+        current.every((value, index) => value === enabledFromModules[index])
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        enabledModules: enabledFromModules,
+      };
+    });
+  }, [modules, setSettings]);
+
+  const modulesReady = modules.length > 0;
+  const modulesToRender: AnalyticsModuleStatus[] = modulesReady
+    ? modules
+    : Object.values(MODULE_METADATA).map(meta => ({
+        id: meta.id,
+        name: meta.name,
+        version: meta.version,
+        description: meta.description,
+        enabled: settings.enabledModules.includes(meta.id),
+        state: settings.enabledModules.includes(meta.id) ? 'ready' : 'disabled',
+        progress: undefined,
+        message: undefined,
+        lastActivatedAt: undefined,
+        lastErrorAt: undefined,
+        config: undefined,
+      }));
 
   const handleTabClick = (tabId: string) => {
     setActiveTab(tabId);
   };
 
-  const handleSettingChange = (key: keyof AppSettings, value: any) => {
+  const handleSettingChange = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     if (key === 'streaming') {
       console.warn('Use handleStreamingSettingChange for streaming updates');
       return;
     }
-    setSettings(prev => ({ ...prev, [key]: value }));
+    setSettings(prev => ({
+      ...prev,
+      [key]: value,
+    }));
     
     // Special handling for language change - don't apply immediately
     // We'll apply it only when saving
@@ -246,8 +527,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       // Save settings via Tauri backend
       await invoke('save_app_settings', { settings: payload });
       
+      // Save ANPR config separately
+      try {
+        await invoke('save_anpr_config', {
+          config: {
+            detection_confidence: payload.anpr_detection_confidence,
+            crop_expansion_factor: payload.anpr_crop_expansion,
+            crnn_confidence_threshold: payload.anpr_crnn_confidence,
+            python_confidence_threshold: payload.anpr_python_confidence,
+            enable_python_ocr: payload.anpr_enable_python,
+          }
+        });
+      } catch (e) {
+        console.error('Failed to save ANPR config:', e);
+      }
+      
       // Also save to localStorage as backup
       localStorage.setItem('appSettings', JSON.stringify(payload));
+      
+      // Save go2rtc settings separately for VideoStreamPlayer components
+      localStorage.setItem('go2rtcSettings', JSON.stringify(payload.go2rtcEnhanced));
+      
+      // Save stream optimization settings separately
+      localStorage.setItem('streamOptimizationSettings', JSON.stringify(payload.streamOptimization));
 
       // Update local state with sanitized payload
       setSettings(payload);
@@ -320,35 +622,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     console.log('selectDirectory called with:', settingKey);
     
     try {
+      const tauriWindow =
+        typeof window !== 'undefined'
+          ? (window as Window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown })
+          : null;
+
       // Check if we're in Tauri environment using a more reliable method
       console.log('Checking Tauri environment...');
-      console.log('window.__TAURI__:', typeof window !== 'undefined' && (window as any).__TAURI__);
-      console.log('window.__TAURI_INTERNALS__:', typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__);
+      console.log('window.__TAURI__:', tauriWindow?.__TAURI__);
+      console.log('window.__TAURI_INTERNALS__:', tauriWindow?.__TAURI_INTERNALS__);
       console.log('User agent:', navigator.userAgent);
-      
-      // Check if we're in Tauri environment
-      const isTauri = typeof window !== 'undefined' && 
-                     ((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-      
-      console.log('Is Tauri detected:', isTauri);
-      
-      if (isTauri) {
-  console.log('Attempting to use Tauri dialog API...');
 
-  const selected = await openDialog({
+      // Check if we're in Tauri environment
+      const isTauri = Boolean(tauriWindow?.__TAURI__ ?? tauriWindow?.__TAURI_INTERNALS__);
+
+      console.log('Is Tauri detected:', isTauri);
+
+      if (isTauri) {
+        console.log('Attempting to use Tauri dialog API...');
+
+        const selected = await openDialog({
           directory: true,
           multiple: false,
-          title: settingKey === 'recordingsPath' 
+          title: settingKey === 'recordingsPath'
             ? t('settings_recordings_folder')
             : t('settings_screenshots_folder')
         });
-        
+
         console.log('Dialog result:', selected);
-        
+
         if (selected && typeof selected === 'string') {
           console.log('Setting path:', selected);
           handleSettingChange(settingKey, selected);
-          
+
           // Show success toast
           const toast = document.getElementById('app-toast');
           if (toast) {
@@ -410,18 +716,148 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleModuleToggle = (moduleId: string, enabled: boolean) => {
-    const newEnabledModules = enabled 
-      ? [...settings.enabledModules, moduleId]
-      : settings.enabledModules.filter(id => id !== moduleId);
-    handleSettingChange('enabledModules', newEnabledModules);
+  const handleModuleToggle = async (moduleId: string, enabled: boolean) => {
+    const pendingMessage = enabled
+      ? currentLanguage === 'ru'
+        ? 'Загрузка…'
+        : 'Preparing…'
+      : undefined;
+
+    try {
+      const success = await toggleModule(moduleId, enabled, pendingMessage);
+
+      if (!success) {
+        const errorMessage = currentLanguage === 'ru'
+          ? 'Не удалось обновить модуль'
+          : 'Failed to update module';
+        showToast(errorMessage, 'error');
+        return;
+      }
+
+      if (!modulesReady) {
+        setSettings(prev => {
+          const nextEnabled = enabled
+            ? Array.from(new Set([...prev.enabledModules, moduleId]))
+            : prev.enabledModules.filter(id => id !== moduleId);
+          return {
+            ...prev,
+            enabledModules: nextEnabled,
+          };
+        });
+      }
+
+      const successMessage = enabled
+        ? currentLanguage === 'ru'
+          ? 'Модуль включён'
+          : 'Module enabled'
+        : currentLanguage === 'ru'
+          ? 'Модуль отключён'
+          : 'Module disabled';
+      showToast(successMessage, 'success');
+    } catch (error) {
+      console.error('Failed to toggle module state:', error);
+      const errorMessage = currentLanguage === 'ru'
+        ? 'Не удалось обновить модуль'
+        : 'Failed to update module';
+      showToast(errorMessage, 'error');
+    }
   };
+
+  const pickSnapshotsDirectory = useCallback(
+    async (initialPath?: string): Promise<string | undefined> => {
+      const tauriWindow =
+        typeof window !== 'undefined'
+          ? (window as Window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown })
+          : null;
+      const isTauri = Boolean(tauriWindow?.__TAURI__ ?? tauriWindow?.__TAURI_INTERNALS__);
+
+      const promptLabel =
+        currentLanguage === 'ru'
+          ? 'Выберите каталог для сохранения снимков'
+          : 'Choose folder for snapshots';
+
+      if (!isTauri) {
+        const fallback = prompt(promptLabel, initialPath ?? '');
+        return fallback && fallback.trim().length > 0 ? fallback.trim() : undefined;
+      }
+
+      try {
+        const result = await openDialog({
+          directory: true,
+          defaultPath: initialPath && initialPath.length > 0 ? initialPath : undefined,
+        });
+
+        if (!result || Array.isArray(result)) {
+          return undefined;
+        }
+
+        return result;
+      } catch (error) {
+        console.error('Failed to open snapshots directory dialog:', error);
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось открыть диалог выбора каталога'
+            : 'Unable to open folder dialog';
+        showToast(message, 'error');
+        return undefined;
+      }
+    },
+    [currentLanguage, showToast],
+  );
+
+  const handleSnapshotsDirectoryUpdate = useCallback(
+    async (moduleId: string, initialPath?: string) => {
+      const selected = await pickSnapshotsDirectory(initialPath);
+      if (!selected) {
+        return;
+      }
+
+      const updated = await updateModuleSnapshotsDir(moduleId, selected);
+      if (updated) {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Каталог для снимков обновлён'
+            : 'Snapshots directory updated';
+        showToast(message, 'success');
+      } else {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось обновить каталог для снимков'
+            : 'Failed to update snapshots directory';
+        showToast(message, 'error');
+      }
+    },
+    [pickSnapshotsDirectory, updateModuleSnapshotsDir, currentLanguage, showToast],
+  );
+
+  const handleSnapshotsDirectoryReset = useCallback(
+    async (moduleId: string) => {
+      const updated = await updateModuleSnapshotsDir(moduleId, undefined);
+      if (updated) {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Каталог для снимков сброшен на значение по умолчанию'
+            : 'Snapshots directory reset to default';
+        showToast(message, 'success');
+      } else {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось сбросить каталог для снимков'
+            : 'Failed to reset snapshots directory';
+        showToast(message, 'error');
+      }
+    },
+    [updateModuleSnapshotsDir, currentLanguage, showToast],
+  );
 
   const handleExportConfig = async () => {
     try {
       // Check if we're in Tauri environment
-      const isTauri = typeof window !== 'undefined' && 
-                     ((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+      const tauriWindow =
+        typeof window !== 'undefined'
+          ? (window as Window & { __TAURI__?: unknown; __TAURI_INTERNALS__?: unknown })
+          : null;
+      const isTauri = Boolean(tauriWindow?.__TAURI__ ?? tauriWindow?.__TAURI_INTERNALS__);
       
       const config = JSON.stringify(settings, null, 2);
       
@@ -491,14 +927,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
+    input.onchange = event => {
+      const file = (event.target as HTMLInputElement).files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = loadEvent => {
           try {
-            const config = JSON.parse(e.target?.result as string);
-            setSettings(prev => ({ ...prev, ...config }));
+            const rawContent = loadEvent.target?.result;
+            if (typeof rawContent !== 'string') {
+              throw new Error('Configuration payload is not a string');
+            }
+
+            const config = JSON.parse(rawContent) as Partial<AppSettings>;
+            setSettings(prev => mergeAppSettings(prev, config));
             
             const toast = document.getElementById('app-toast');
             if (toast) {
@@ -508,7 +949,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 toast.className = 'toast-notification';
               }, 3000);
             }
-          } catch (error) {
+          } catch (importError) {
+            console.error('Failed to import configuration:', importError);
             alert('Ошибка при импорте конфигурации');
           }
         };
@@ -636,30 +1078,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 <span>{t('settings_hw_accel')}</span>
-                <select 
-                  id="app-settings-hw-accel"
-                  value={settings.hwAccel}
-                  onChange={(e) => handleSettingChange('hwAccel', e.target.value)}
-                >
-                  <option value="auto">{t('settings_hw_accel_auto')}</option>
-                  <option value="nvidia">{t('settings_hw_accel_nvidia')}</option>
-                  <option value="intel">{t('settings_hw_accel_intel')}</option>
-                  <option value="none">{t('settings_hw_accel_none')}</option>
-                </select>
-              </div>
-
-              <div className="intellect-only">
-                <div className="form-grid simple with-button">
-                  <span>{t('settings_analytics_provider')}</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <select 
-                    id="app-settings-analytics-provider"
-                    value={settings.analytics_provider}
-                    onChange={(e) => handleSettingChange('analytics_provider', e.target.value)}
+                    id="app-settings-hw-accel"
+                    value={settings.hwAccel}
+                    onChange={(e) => handleSettingChange('hwAccel', e.target.value)}
+                    style={{ width: '100%' }}
                   >
-                    <option value="auto">{t('analytics_provider_auto')}</option>
-                    <option value="dml">{t('analytics_provider_dml')}</option>
-                    <option value="cpu">{t('analytics_provider_cpu')}</option>
+                    <option value="auto">{t('settings_hw_accel_auto')}</option>
+                    <option value="nvidia">{t('settings_hw_accel_nvidia')}</option>
+                    <option value="intel">{t('settings_hw_accel_intel')}</option>
+                    <option value="none">{t('settings_hw_accel_none')}</option>
                   </select>
+                  <span style={{ fontSize: '11px', color: '#888', marginTop: '4px', lineHeight: '1.2' }}>
+                    {t('settings_hw_accel_hint')}
+                  </span>
                 </div>
               </div>
 
@@ -724,10 +1157,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 {t('streaming_settings_desc')}
               </p>
 
+              {/* 
+                  Legacy Streaming Settings (Hidden as they are not currently functional in Direct Copy mode)
+                  These settings (qscale, fps, onDemand) are preserved in state for future transcoding support
+                  but hidden from UI to avoid user confusion.
+              */}
+              {/* 
               <div className="form-grid simple">
-                <span>{t('streaming_provider_label')}</span>
-                <span style={{ fontWeight: 500 }}>{t('streaming_provider_mediamtx')}</span>
-
                 <span>{t('streaming_on_demand_label')}</span>
                 <div className="form-check-inline">
                   <input
@@ -794,6 +1230,431 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   style={{ width: '100px', justifySelf: 'start' }}
                 />
               </div>
+              */}
+
+              {/* go2rtc Enhanced Features Section */}
+              <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#252525', borderRadius: '8px', border: '1px solid #333' }}>
+                <h4 style={{ marginTop: 0, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⭐</span>
+                  <span>{t('go2rtc_enhanced_header')}</span>
+                </h4>
+                <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+                  {t('go2rtc_enhanced_desc')}
+                </p>
+
+                <div className="form-grid simple">
+                  <span>{t('go2rtc_monitor_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="go2rtc-show-monitor"
+                      checked={safeSettings.go2rtcEnhanced.showMonitor}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          go2rtcEnhanced: { ...prev.go2rtcEnhanced, showMonitor: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="go2rtc-show-monitor" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('go2rtc_monitor_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('go2rtc_snapshot_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="go2rtc-enable-snapshot"
+                      checked={safeSettings.go2rtcEnhanced.enableSnapshot}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          go2rtcEnhanced: { ...prev.go2rtcEnhanced, enableSnapshot: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="go2rtc-enable-snapshot" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('go2rtc_snapshot_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('go2rtc_2way_audio_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="go2rtc-enable-2way-audio"
+                      checked={safeSettings.go2rtcEnhanced.enable2WayAudio}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          go2rtcEnhanced: { ...prev.go2rtcEnhanced, enable2WayAudio: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="go2rtc-enable-2way-audio" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('go2rtc_2way_audio_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('go2rtc_adaptive_bitrate_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="go2rtc-adaptive-bitrate"
+                      checked={safeSettings.go2rtcEnhanced.enableAdaptiveBitrate}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          go2rtcEnhanced: { ...prev.go2rtcEnhanced, enableAdaptiveBitrate: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="go2rtc-adaptive-bitrate" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('go2rtc_adaptive_bitrate_help')}
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#1a3a52', borderRadius: '4px', fontSize: '12px', color: '#a8d5ff' }}>
+                  <strong>ℹ️ Info:</strong> {t('go2rtc_info_note')}
+                </div>
+              </div>
+
+              {/* Stream Optimization Section */}
+              <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#252525', borderRadius: '8px', border: '1px solid #333' }}>
+                <h4 style={{ marginTop: 0, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🚀</span>
+                  <span>{t('stream_optimization_header')}</span>
+                </h4>
+                <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+                  {t('stream_optimization_desc')}
+                </p>
+
+                <div className="form-grid simple">
+                  <span>{t('stream_fast_start_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="stream-fast-start"
+                      checked={safeSettings.streamOptimization.enableFastStart}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...(prev.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION), enableFastStart: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="stream-fast-start" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('stream_fast_start_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('stream_prewarming_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="stream-prewarming"
+                      checked={safeSettings.streamOptimization.enablePrewarming}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, enablePrewarming: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="stream-prewarming" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('stream_prewarming_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('stream_prewarm_both_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="stream-prewarm-both"
+                      checked={safeSettings.streamOptimization.prewarmBothQualities}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, prewarmBothQualities: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                      disabled={!safeSettings.streamOptimization.enablePrewarming}
+                    />
+                    <label htmlFor="stream-prewarm-both" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('stream_prewarm_both_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('stream_caching_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="stream-caching"
+                      checked={safeSettings.streamOptimization.enableConnectionCaching}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, enableConnectionCaching: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="stream-caching" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('stream_caching_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('stream_keep_hd_alive_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="stream-keep-hd-alive"
+                      checked={safeSettings.streamOptimization.keepHdStreamAlive}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, keepHdStreamAlive: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="stream-keep-hd-alive" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('stream_keep_hd_alive_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('stream_keepalive_label')}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <input
+                      type="number"
+                      id="stream-keepalive"
+                      value={safeSettings.streamOptimization.keepAliveInterval}
+                      onChange={e => {
+                        const value = parseInt(e.target.value, 10);
+                        if (!isNaN(value) && value >= 10 && value <= 300) {
+                          setSettings(prev => ({
+                            ...prev,
+                            streamOptimization: { ...prev.streamOptimization, keepAliveInterval: value }
+                          }));
+                        }
+                      }}
+                      min="10"
+                      max="300"
+                      disabled={!safeSettings.streamOptimization.enablePrewarming}
+                      style={{ width: '100px' }}
+                    />
+                    <label htmlFor="stream-keepalive" style={{ color: '#aaa', fontSize: '12px', marginTop: '4px' }}>
+                      {t('stream_keepalive_help')}
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#2d4a2d', borderRadius: '4px', fontSize: '12px', color: '#a8ffa8' }}>
+                  <strong>✓ Рекомендуется:</strong> {t('stream_optimization_recommendation')}
+                </div>
+              </div>
+
+              {/* Low-Latency Settings Section */}
+              <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#252525', borderRadius: '8px', border: '1px solid #ff6b35' }}>
+                <h4 style={{ marginTop: 0, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚡</span>
+                  <span>{t('low_latency_header')}</span>
+                </h4>
+                <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+                  {t('low_latency_desc')}
+                </p>
+
+                <div className="form-grid simple">
+                  <span>{t('low_latency_enable_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="low-latency-enable"
+                      checked={safeSettings.streamOptimization.enableLowLatency}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, enableLowLatency: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="low-latency-enable" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('low_latency_enable_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('low_latency_playout_delay_label')}</span>
+                  <div className="form-input-wrapper">
+                    <input 
+                      type="range" 
+                      id="playout-delay"
+                      min="0" 
+                      max="2000" 
+                      step="100"
+                      value={safeSettings.streamOptimization.playoutDelayHint}
+                      onChange={(e) => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, playoutDelayHint: parseInt(e.target.value) }
+                        }));
+                      }}
+                      disabled={!safeSettings.streamOptimization.enableLowLatency}
+                      style={{ flexGrow: 1 }}
+                    />
+                    <span className="range-value" style={{ minWidth: '60px', textAlign: 'center' }}>
+                      {safeSettings.streamOptimization.playoutDelayHint} мс
+                    </span>
+                  </div>
+                  <div style={{ gridColumn: '2', fontSize: '11px', color: '#888', marginTop: '-5px', marginBottom: '5px' }}>
+                    {t('low_latency_playout_delay_hint')}
+                  </div>
+
+                  <span>{t('low_latency_jitter_buffer_label')}</span>
+                  <div className="form-input-wrapper">
+                    <input 
+                      type="range" 
+                      id="jitter-buffer"
+                      min="0" 
+                      max="1000" 
+                      step="50"
+                      value={safeSettings.streamOptimization.jitterBufferTarget}
+                      onChange={(e) => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, jitterBufferTarget: parseInt(e.target.value) }
+                        }));
+                      }}
+                      disabled={!safeSettings.streamOptimization.enableLowLatency}
+                      style={{ flexGrow: 1 }}
+                    />
+                    <span className="range-value" style={{ minWidth: '60px', textAlign: 'center' }}>
+                      {safeSettings.streamOptimization.jitterBufferTarget} мс
+                    </span>
+                  </div>
+                  <div style={{ gridColumn: '2', fontSize: '11px', color: '#888', marginTop: '-5px', marginBottom: '5px' }}>
+                    {t('low_latency_jitter_buffer_hint')}
+                  </div>
+                </div>
+
+                <h5 style={{ marginTop: '25px', marginBottom: '15px', color: '#ff9a76', fontSize: '14px' }}>
+                  {t('low_latency_monitoring_header')}
+                </h5>
+
+                <div className="form-grid simple">
+                  <span>{t('low_latency_monitoring_enable_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="latency-monitoring-enable"
+                      checked={safeSettings.streamOptimization.enableLatencyMonitoring}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, enableLatencyMonitoring: e.target.checked }
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="latency-monitoring-enable" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('low_latency_monitoring_enable_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('low_latency_max_buffered_label')}</span>
+                  <div className="form-input-wrapper">
+                    <input 
+                      type="range" 
+                      id="max-buffered-latency"
+                      min="0.5" 
+                      max="5.0" 
+                      step="0.5"
+                      value={safeSettings.streamOptimization.maxBufferedLatency}
+                      onChange={(e) => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, maxBufferedLatency: parseFloat(e.target.value) }
+                        }));
+                      }}
+                      disabled={!safeSettings.streamOptimization.enableLatencyMonitoring}
+                      style={{ flexGrow: 1 }}
+                    />
+                    <span className="range-value" style={{ minWidth: '60px', textAlign: 'center' }}>
+                      {safeSettings.streamOptimization.maxBufferedLatency.toFixed(1)} с
+                    </span>
+                  </div>
+                  <div style={{ gridColumn: '2', fontSize: '11px', color: '#888', marginTop: '-5px', marginBottom: '5px' }}>
+                    {t('low_latency_max_buffered_hint')}
+                  </div>
+
+                  <span>{t('low_latency_check_interval_label')}</span>
+                  <div className="form-input-wrapper">
+                    <input 
+                      type="range" 
+                      id="latency-check-interval"
+                      min="1" 
+                      max="10" 
+                      step="1"
+                      value={safeSettings.streamOptimization.latencyCheckInterval}
+                      onChange={(e) => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, latencyCheckInterval: parseInt(e.target.value) }
+                        }));
+                      }}
+                      disabled={!safeSettings.streamOptimization.enableLatencyMonitoring}
+                      style={{ flexGrow: 1 }}
+                    />
+                    <span className="range-value" style={{ minWidth: '60px', textAlign: 'center' }}>
+                      {safeSettings.streamOptimization.latencyCheckInterval} с
+                    </span>
+                  </div>
+                  <div style={{ gridColumn: '2', fontSize: '11px', color: '#888', marginTop: '-5px', marginBottom: '5px' }}>
+                    {t('low_latency_check_interval_hint')}
+                  </div>
+                </div>
+
+                <h5 style={{ marginTop: '25px', marginBottom: '15px', color: '#ff9a76', fontSize: '14px' }}>
+                  {t('low_latency_rtsp_header')}
+                </h5>
+
+                <div className="form-grid simple">
+                  <span>{t('low_latency_rtsp_buffer_label')}</span>
+                  <div className="form-input-wrapper">
+                    <input 
+                      type="range" 
+                      id="rtsp-buffer-size"
+                      min="0" 
+                      max="10" 
+                      step="1"
+                      value={safeSettings.streamOptimization.rtspBufferSize}
+                      onChange={(e) => {
+                        setSettings(prev => ({
+                          ...prev,
+                          streamOptimization: { ...prev.streamOptimization, rtspBufferSize: parseInt(e.target.value) }
+                        }));
+                      }}
+                      style={{ flexGrow: 1 }}
+                    />
+                    <span className="range-value" style={{ minWidth: '60px', textAlign: 'center' }}>
+                      {settings.streamOptimization.rtspBufferSize === 0 ? t('minimum') : settings.streamOptimization.rtspBufferSize}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#4a2d2d', borderRadius: '4px', fontSize: '12px', color: '#ffb3a8' }}>
+                  <strong>⚠️ {t('warning_label')}</strong> {t('low_latency_warning')}
+                </div>
+              </div>
             </div>
           )}
 
@@ -804,7 +1665,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               <p style={{ color: '#666', fontSize: '13px' }}>
                 {t('global_analytics_settings_desc')}
               </p>
+
+              {/* GPU/CPU Provider Info */}
+              <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#1a3a52', borderRadius: '6px', border: '1px solid #2563eb' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>⚡</span>
+                  <strong style={{ color: '#60a5fa' }}>{currentLanguage === 'ru' ? 'Ускорение вычислений' : 'Compute Acceleration'}</strong>
+                </div>
+                <p style={{ margin: '8px 0', fontSize: '13px', color: '#93c5fd' }}>
+                  {currentLanguage === 'ru' 
+                    ? 'DirectML использует GPU для значительного ускорения распознавания и снижения нагрузки на CPU. Рекомендуется для систем с дискретной видеокартой.'
+                    : 'DirectML uses GPU for significant acceleration of recognition and reduces CPU load. Recommended for systems with discrete graphics card.'}
+                </p>
+                <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#0f2a3f', borderRadius: '4px', fontSize: '12px' }}>
+                  <div style={{ color: '#94a3b8' }}>
+                    <strong>{currentLanguage === 'ru' ? 'Режимы работы:' : 'Operation modes:'}</strong>
+                  </div>
+                  <ul style={{ margin: '8px 0', paddingLeft: '20px', color: '#cbd5e1' }}>
+                    <li><strong>Авто / Auto:</strong> {currentLanguage === 'ru' ? 'Автоматически использует GPU (DirectML), если доступен' : 'Automatically uses GPU (DirectML) if available'}</li>
+                    <li><strong>GPU (DirectML):</strong> {currentLanguage === 'ru' ? 'Принудительно использует GPU (Windows 10+)' : 'Forces GPU usage (Windows 10+)'}</li>
+                    <li><strong>CPU:</strong> {currentLanguage === 'ru' ? 'Только процессор (для совместимости или отладки)' : 'CPU only (for compatibility or debugging)'}</li>
+                  </ul>
+                </div>
+              </div>
+
               <div className="form-grid simple">
+                <label htmlFor="app-settings-analytics-provider">{t('settings_analytics_provider')}</label>
+                <select
+                  id="app-settings-analytics-provider"
+                  value={settings.analytics_provider}
+                  onChange={(e) => handleSettingChange('analytics_provider', e.target.value)}
+                >
+                  <option value="auto">{t('analytics_provider_auto')}</option>
+                  <option value="dml">{t('analytics_provider_dml')}</option>
+                  <option value="cpu">{t('analytics_provider_cpu')}</option>
+                </select>
+
                 <label htmlFor="app-settings-analytics-resize-width">{t('analytics_resize_width_label')}</label>
                 <input 
                   type="number" 
@@ -841,6 +1737,112 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   style={{ width: '100px', justifySelf: 'start' }}
                 />
               </div>
+
+              {/* ANPR Settings Section */}
+              <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#252525', borderRadius: '8px', border: '1px solid #333' }}>
+                <h4 style={{ marginTop: 0, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🚗</span>
+                  <span>{t('anpr_settings_header')}</span>
+                </h4>
+                <p style={{ color: '#888', fontSize: '13px', marginBottom: '20px' }}>
+                  {t('anpr_settings_desc')}
+                </p>
+
+                <div className="form-grid simple">
+                  <label htmlFor="anpr-detection-confidence">{t('anpr_detection_confidence_label')}</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <input 
+                      type="number" 
+                      id="anpr-detection-confidence"
+                      min="0.1" 
+                      max="1.0" 
+                      step="0.05"
+                      value={settings.anpr_detection_confidence}
+                      onChange={(e) => handleSettingChange('anpr_detection_confidence', parseFloat(e.target.value))}
+                      style={{ width: '100px' }}
+                    />
+                    <label htmlFor="anpr-detection-confidence" style={{ color: '#aaa', fontSize: '11px', lineHeight: '1.3' }}>
+                      {t('anpr_detection_confidence_help')}
+                    </label>
+                  </div>
+
+                  <label htmlFor="anpr-crop-expansion">{t('anpr_crop_expansion_label')}</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <input 
+                      type="number" 
+                      id="anpr-crop-expansion"
+                      min="1.0" 
+                      max="2.0" 
+                      step="0.1"
+                      value={settings.anpr_crop_expansion}
+                      onChange={(e) => handleSettingChange('anpr_crop_expansion', parseFloat(e.target.value))}
+                      style={{ width: '100px' }}
+                    />
+                    <label htmlFor="anpr-crop-expansion" style={{ color: '#aaa', fontSize: '11px', lineHeight: '1.3' }}>
+                      {t('anpr_crop_expansion_help')}
+                    </label>
+                  </div>
+
+                  <label htmlFor="anpr-crnn-confidence">{t('anpr_crnn_confidence_label')}</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <input 
+                      type="number" 
+                      id="anpr-crnn-confidence"
+                      min="0.5" 
+                      max="1.0" 
+                      step="0.05"
+                      value={settings.anpr_crnn_confidence}
+                      onChange={(e) => handleSettingChange('anpr_crnn_confidence', parseFloat(e.target.value))}
+                      style={{ width: '100px' }}
+                    />
+                    <label htmlFor="anpr-crnn-confidence" style={{ color: '#aaa', fontSize: '11px', lineHeight: '1.3' }}>
+                      {t('anpr_crnn_confidence_help')}
+                    </label>
+                  </div>
+
+                  <label htmlFor="anpr-python-confidence">{t('anpr_python_confidence_label')}</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <input 
+                      type="number" 
+                      id="anpr-python-confidence"
+                      min="0.5" 
+                      max="1.0" 
+                      step="0.05"
+                      value={settings.anpr_python_confidence}
+                      onChange={(e) => handleSettingChange('anpr_python_confidence', parseFloat(e.target.value))}
+                      style={{ width: '100px' }}
+                    />
+                    <label htmlFor="anpr-python-confidence" style={{ color: '#aaa', fontSize: '11px', lineHeight: '1.3' }}>
+                      {t('anpr_python_confidence_help')}
+                    </label>
+                  </div>
+
+                  <span>{t('anpr_enable_python_label')}</span>
+                  <div className="form-check-inline">
+                    <input
+                      type="checkbox"
+                      id="anpr-enable-python"
+                      checked={settings.anpr_enable_python}
+                      onChange={e => {
+                        setSettings(prev => ({
+                          ...prev,
+                          anpr_enable_python: e.target.checked
+                        }));
+                      }}
+                      className="form-check-input"
+                    />
+                    <label htmlFor="anpr-enable-python" style={{ color: '#aaa', fontSize: '12px' }}>
+                      {t('anpr_enable_python_help')}
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '15px', padding: '12px', backgroundColor: '#2d4a2d', borderRadius: '4px', fontSize: '12px', color: '#a8ffa8' }}>
+                  <strong>💡 {currentLanguage === 'ru' ? 'Совет' : 'Tip'}:</strong> {currentLanguage === 'ru' 
+                    ? 'Для дальних камер увеличьте расширение обрезки до 1.4-1.5. Для камер под углом включите Python OCR.'
+                    : 'For distant cameras, increase crop expansion to 1.4-1.5. For angled cameras, enable Python OCR.'}
+                </div>
+              </div>
             </div>
           )}
 
@@ -851,40 +1853,173 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               <p style={{ color: '#6c757d', fontSize: '13px' }}>
                 {t('modules_description')}
               </p>
+              {isLoadingModules && (
+                <p style={{ color: '#6c757d', fontSize: '13px' }}>
+                  {currentLanguage === 'ru' ? 'Обновляем статус модулей…' : 'Refreshing module status…'}
+                </p>
+              )}
+              {!modulesReady && !isLoadingModules && (
+                <p style={{ color: '#6c757d', fontSize: '13px' }}>
+                  {currentLanguage === 'ru'
+                    ? 'Информация о модулях загружается из бэкенда…'
+                    : 'Module information is loading from backend…'}
+                </p>
+              )}
               <div id="modules-list" style={{ marginTop: '15px' }}>
-                {availableModules.map(module => (
-                  <div key={module.id} className="form-check-inline" style={{ 
-                    marginBottom: '15px', 
-                    borderBottom: '1px solid #eee', 
-                    paddingBottom: '10px', 
-                    width: '100%', 
-                    alignItems: 'flex-start',
-                    flexDirection: 'column'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                      <input 
-                        type="checkbox" 
-                        id={`module-${module.id}`}
-                        data-id={module.id}
-                        className="form-check-input module-checkbox"
-                        checked={settings.enabledModules.includes(module.id)}
-                        onChange={(e) => handleModuleToggle(module.id, e.target.checked)}
-                        style={{ marginTop: '5px' }}
-                      />
-                      <div style={{ flexGrow: 1, marginLeft: '10px' }}>
-                        <label htmlFor={`module-${module.id}`} style={{ fontWeight: 'bold', fontSize: '1.1em' }}>
-                          {module.name} <span style={{ fontSize: '0.8em', color: '#666' }}>v{module.version}</span>
-                        </label>
-                        <p style={{ margin: '5px 0 0 0', fontSize: '0.9em', color: '#333' }}>
-                          {t(`module_${module.id}_description`)}
-                        </p>
-                        <p style={{ margin: '5px 0 0 0', fontSize: '0.8em', color: '#888' }}>
-                          {t('author_prefix')}: {t(`module_${module.id}_author`)}
-                        </p>
+                {modulesToRender.map(module => {
+                  const meta = MODULE_METADATA[module.id];
+                  const baseName = meta?.name ?? module.name;
+                  const baseDescription = meta?.description ?? module.description;
+                  const baseAuthor = meta?.author ?? '—';
+
+                  const nameKey = `module_${module.id}_name`;
+                  const translatedName = t(nameKey);
+                  const displayName = translatedName === nameKey ? baseName : translatedName;
+
+                  const descriptionKey = `module_${module.id}_description`;
+                  const translatedDescription = t(descriptionKey);
+                  const descriptionText = translatedDescription === descriptionKey ? baseDescription : translatedDescription;
+
+                  const authorKey = `module_${module.id}_author`;
+                  const translatedAuthor = t(authorKey);
+                  const authorText = translatedAuthor === authorKey ? baseAuthor : translatedAuthor;
+
+                  const statusColor =
+                    module.state === 'error'
+                      ? '#dc3545'
+                      : module.state === 'ready'
+                        ? '#28a745'
+                        : '#6c757d';
+
+                  const statusLabel = (() => {
+                    if (module.state === 'ready') {
+                      return currentLanguage === 'ru' ? 'Готов' : 'Ready';
+                    }
+                    if (module.state === 'loading') {
+                      return module.message ?? (currentLanguage === 'ru' ? 'Загрузка…' : 'Loading…');
+                    }
+                    if (module.state === 'error') {
+                      return module.message ?? (currentLanguage === 'ru' ? 'Ошибка' : 'Error');
+                    }
+                    return currentLanguage === 'ru' ? 'Отключён' : 'Disabled';
+                  })();
+
+                  const progressValue = Math.max(0, Math.min(1, module.progress ?? 0));
+                  const progressPercent = Math.min(100, Math.max(0, Math.round(progressValue * 100)));
+                  const isBusy = moduleOperationId === module.id;
+                  const isDisabled = !modulesReady || isLoadingModules || isBusy;
+                  const lastActivatedLabel = module.lastActivatedAt && modulesReady
+                    ? (currentLanguage === 'ru'
+                        ? `Активирован: ${new Date(module.lastActivatedAt).toLocaleString()}`
+                        : `Activated: ${new Date(module.lastActivatedAt).toLocaleString()}`)
+                    : null;
+                  const lastErrorLabel = module.lastErrorAt && modulesReady
+                    ? (currentLanguage === 'ru'
+                        ? `Последняя ошибка: ${new Date(module.lastErrorAt).toLocaleString()}`
+                        : `Last error: ${new Date(module.lastErrorAt).toLocaleString()}`)
+                    : null;
+                  const snapshotsDir = module.config?.snapshotsDir;
+                  const snapshotsDisplay = snapshotsDir ?? (currentLanguage === 'ru'
+                    ? 'Каталог по умолчанию'
+                    : 'Default directory');
+
+                  return (
+                    <div key={module.id} className="form-check-inline" style={{ 
+                      marginBottom: '15px', 
+                      borderBottom: '1px solid #eee', 
+                      paddingBottom: '10px', 
+                      width: '100%', 
+                      alignItems: 'flex-start',
+                      flexDirection: 'column'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                        <input 
+                          type="checkbox" 
+                          id={`module-${module.id}`}
+                          data-id={module.id}
+                          className="form-check-input module-checkbox"
+                          checked={module.enabled}
+                          disabled={isDisabled}
+                          onChange={async (e) => {
+                            await handleModuleToggle(module.id, e.target.checked);
+                          }}
+                          style={{ marginTop: '5px' }}
+                        />
+                        <div style={{ flexGrow: 1, marginLeft: '10px' }}>
+                          <label htmlFor={`module-${module.id}`} style={{ fontWeight: 'bold', fontSize: '1.1em' }}>
+                            {displayName} <span style={{ fontSize: '0.8em', color: '#666' }}>v{module.version}</span>
+                          </label>
+                          <p style={{ margin: '5px 0 0 0', fontSize: '0.9em', color: '#d8dee9' }}>
+                            {descriptionText}
+                          </p>
+                          <p style={{ margin: '5px 0 0 0', fontSize: '0.8em', color: '#b5c1d6' }}>
+                            {t('author_prefix')}: {authorText}
+                          </p>
+                          <div style={{ marginTop: '8px', width: '100%' }}>
+                            {module.state === 'loading' && (
+                              <div className="module-progress-bar">
+                                <div
+                                  className={`module-progress-fill${isBusy ? ' is-loading' : ''}`}
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            )}
+                            <div style={{ fontSize: '0.8em', color: statusColor }}>
+                              {statusLabel}
+                            </div>
+                            {lastActivatedLabel && (
+                              <div style={{ fontSize: '0.75em', color: '#6c757d', marginTop: '2px' }}>
+                                {lastActivatedLabel}
+                              </div>
+                            )}
+                            {module.state === 'error' && lastErrorLabel && (
+                              <div style={{ fontSize: '0.75em', color: '#dc3545', marginTop: '2px' }}>
+                                {lastErrorLabel}
+                              </div>
+                            )}
+                            {['face-detector', 'license-plate-detector'].includes(module.id) && (
+                              <div className="module-config-block">
+                                <div className="module-config-label">
+                                  {module.id === 'license-plate-detector'
+                                    ? currentLanguage === 'ru'
+                                      ? 'Каталог снимков номеров'
+                                      : 'License plate snapshots'
+                                    : currentLanguage === 'ru'
+                                      ? 'Каталог для снимков лиц'
+                                      : 'Snapshots directory'}
+                                </div>
+                                <div className="module-config-controls">
+                                  <span
+                                    className="module-config-value"
+                                    title={snapshotsDisplay}
+                                  >
+                                    {snapshotsDisplay}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="module-config-button primary"
+                                    onClick={() => handleSnapshotsDirectoryUpdate(module.id, snapshotsDir)}
+                                    disabled={isDisabled}
+                                  >
+                                    {currentLanguage === 'ru' ? 'Выбрать…' : 'Choose…'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="module-config-button secondary"
+                                    onClick={() => handleSnapshotsDirectoryReset(module.id)}
+                                    disabled={isDisabled}
+                                  >
+                                    {currentLanguage === 'ru' ? 'По умолчанию' : 'Use default'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

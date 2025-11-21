@@ -63,15 +63,33 @@
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 
-                log(`${streamName}: Created offer, sending to MediaMTX...`);
-                
-                // Отправляем offer на MediaMTX
-                const endpoints = [
-                    `http://localhost:8889/whep/cam${streamId}`,
-                    `http://localhost:8889/cam${streamId}/whep`,
-                    `http://localhost:9997/whep/cam${streamId}`,
-                    `http://localhost:9997/cam${streamId}/whep`
+                log(`${streamName}: Created offer, sending to go2rtc...`);
+
+                const streamBaseKeys = [
+                    `cam${streamId}`,
+                    `cam${streamId}_0`,
+                    `cam${streamId}_1`
                 ];
+
+                const srcVariants = new Set();
+                streamBaseKeys.forEach(key => {
+                    srcVariants.add(key);
+                    srcVariants.add(`${key}#audio=opus`);
+                    srcVariants.add(`${key}#video=h264#audio=opus`);
+                    srcVariants.add(`${key}#video=copy#audio=opus`);
+                });
+
+                const apiBases = [`http://127.0.0.1:1984`, `http://localhost:1984`];
+                const endpoints = [];
+                for (const base of apiBases) {
+                    const normalizedBase = base.replace(/\/$/, '');
+                    srcVariants.forEach(variant => {
+                        const encoded = encodeURIComponent(variant);
+                        endpoints.push(`${normalizedBase}/api/webrtc?src=${encoded}`);
+                        endpoints.push(`${normalizedBase}/api/webrtc?src=${encoded}&dst=whep`);
+                        endpoints.push(`${normalizedBase}/api/webrtc?dst=whep&src=${encoded}`);
+                    });
+                }
 
                 let connected = false;
                 for (const endpoint of endpoints) {

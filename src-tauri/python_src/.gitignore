@@ -1,0 +1,14 @@
+# Python scripts for ANPR are now downloaded on-demand from GitHub releases
+# Do not commit large files here
+
+# Main OCR script (downloaded)
+anpr_ocr.py
+
+# ANPR subdirectory models
+anpr/*.onnx
+anpr/*.pth
+anpr/*.pt
+
+# Python cache
+__pycache__/
+*.pyc

@@ -12,6 +12,126 @@
   --input-text: #ffffff;
 }
 
+.module-config-block {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 8px;
+}
+
+.module-config-label {
+  font-size: 0.85em;
+  color: #a0aec0;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.module-config-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.module-config-value {
+  font-size: 0.8em;
+  background-color: #1f2733;
+  border: 1px solid #4a5568;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #e2e8f0;
+  min-width: 200px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+}
+
+.module-config-button {
+  padding: 8px 14px;
+  font-size: 0.8em;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.module-config-button.primary {
+  background-color: #4299e1;
+  border-color: #4299e1;
+  color: #ffffff;
+}
+
+.module-config-button.primary:hover:not(:disabled) {
+  background-color: #3182ce;
+  border-color: #3182ce;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(66, 153, 225, 0.2);
+}
+
+.module-config-button.secondary {
+  background-color: transparent;
+  border-color: #4a5568;
+  color: #e2e8f0;
+}
+
+.module-config-button.secondary:hover:not(:disabled) {
+  background-color: rgba(74, 85, 104, 0.4);
+  border-color: #5a6578;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.35);
+}
+
+.module-config-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.module-progress-bar {
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  height: 8px;
+  margin-bottom: 6px;
+  position: relative;
+}
+
+.module-progress-fill {
+  background-color: #007bff;
+  height: 100%;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.module-progress-fill.is-loading {
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.35) 25%,
+    rgba(255, 255, 255, 0) 25%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0.35) 75%,
+    rgba(255, 255, 255, 0) 75%,
+    rgba(255, 255, 255, 0)
+  );
+  background-size: 30px 30px;
+  animation: module-progress-indeterminate 1s linear infinite;
+}
+
+@keyframes module-progress-indeterminate {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 60px 0;
+  }
+}
+
 .modal-backdrop {
   position: fixed;
   top: 0;

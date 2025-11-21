@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   Dialog,
@@ -18,6 +18,10 @@ import {
   Alert,
   IconButton,
   Tooltip,
+  TextField,
+  Switch,
+  FormControlLabel,
+  MenuItem,
 } from '@mui/material';
 import {
   Folder as FolderIcon,
@@ -34,8 +38,8 @@ import {
   FolderOpen as FolderOpenIcon,
 } from '@mui/icons-material';
 import { homeDir, dirname, join } from '@tauri-apps/api/path';
-import type { Camera } from '../types';
-import { useLocalization } from '../contexts/LocalizationContext';
+import type { Camera, RemoteRecentFile } from '../types';
+import { useLocalization } from '../hooks/useLocalization';
 
 interface FileManagerProps {
   open: boolean;
@@ -73,9 +77,17 @@ type ToastState = {
 };
 
 type TransportMode = 'scp' | 'sftp';
+type AutoSyncTransport = 'auto' | TransportMode;
+
+type AutoSyncStats = {
+  lastRun: number | null;
+  downloaded: number;
+  totalBytes: number;
+};
 
 const LOCAL_DRAG_TYPE = 'application/x-local-entry';
 const REMOTE_DRAG_TYPE = 'application/x-remote-entry';
+const DEFAULT_REMOTE_RECORDINGS_PATH = '/mnt/mmcblk0p1';
 
 const sanitizeRemotePath = (value: string): string =>
   `/${value.replace(/^\/+/g, '').replace(/\/+$/g, '')}`;
@@ -144,6 +156,7 @@ const getErrorMessage = (err: unknown): string => {
 
 const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
   const { t } = useLocalization();
+
   const [remoteEntries, setRemoteEntries] = useState<RemoteEntry[]>([]);
   const [remotePath, setRemotePath] = useState<string>('/');
   const [remoteLoading, setRemoteLoading] = useState(false);
@@ -160,6 +173,29 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
   const [transport, setTransport] = useState<TransportMode>('scp');
   const [transferBusy, setTransferBusy] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [autoSyncBusy, setAutoSyncBusy] = useState(false);
+  const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
+  const [autoSyncRemotePath, setAutoSyncRemotePath] = useState<string>(
+    DEFAULT_REMOTE_RECORDINGS_PATH
+  );
+  const [autoSyncLocalPath, setAutoSyncLocalPath] = useState<string>('');
+  const [autoSyncInterval, setAutoSyncInterval] = useState<number>(30);
+  const [autoSyncWindowMinutes, setAutoSyncWindowMinutes] = useState<number>(10);
+  const [autoSyncMaxFiles, setAutoSyncMaxFiles] = useState<number>(0);
+  const [autoSyncMaxSizeMb, setAutoSyncMaxSizeMb] = useState<number>(0);
+  const [autoSyncTransport, setAutoSyncTransport] = useState<AutoSyncTransport>('auto');
+  const [autoSyncStats, setAutoSyncStats] = useState<AutoSyncStats>({
+    lastRun: null,
+    downloaded: 0,
+    totalBytes: 0,
+  });
+
+  const autoSyncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSyncEnabledRef = useRef(false);
+  const autoSyncBusyRef = useRef(false);
+  const downloadedPathsRef = useRef(new Set<string>());
 
   const remoteSegments = useMemo(() => {
     const crumbs: Array<{ label: string; path: string }> = [{ label: '/', path: '/' }];
@@ -278,6 +314,28 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
     [switchTransport, t, transport]
   );
 
+  const clearAutoSyncTimer = useCallback(() => {
+    if (autoSyncTimerRef.current) {
+      clearInterval(autoSyncTimerRef.current);
+      autoSyncTimerRef.current = null;
+    }
+  }, []);
+
+  const buildLocalFullPath = useCallback(async (base: string, relative: string) => {
+    const segments = relative.split('/').filter(Boolean);
+    let current = base;
+    for (const segment of segments) {
+      current = await join(current, segment);
+    }
+    return current;
+  }, []);
+
+  const ensureLocalDirectory = useCallback(async (targetFilePath: string) => {
+    const directory = await dirname(targetFilePath);
+    await invoke<boolean>('local_fs_ensure_dir', { path: directory });
+  }, []);
+
+
   const loadRemote = useCallback(
     async (target: string) => {
       if (!camera) {
@@ -353,7 +411,7 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
         console.debug('[FileManager] loadRemote done', { target: normalizedTarget });
       }
     },
-    [camera, withTransport]
+    [camera, transport, withTransport]
   );
 
   const loadLocal = useCallback(async (target: string) => {
@@ -422,6 +480,162 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
     }
   }, []);
 
+  const downloadViaMode = useCallback(
+    async (mode: AutoSyncTransport, remoteFullPath: string, localFullPath: string) => {
+      if (!camera) {
+        throw new Error('Camera not available');
+      }
+
+      if (mode === 'auto') {
+        await withTransport((transportMode) => {
+          const command = transportMode === 'scp' ? 'camera_scp_download' : 'camera_sftp_download';
+          return invoke<boolean>(command, {
+            host: camera.ip,
+            remotePath: remoteFullPath,
+            localPath: localFullPath,
+            username: camera.user || null,
+            passwordPlain: camera.pass || null,
+            passwordEnc: camera.pass_enc || null,
+            port: camera.port ?? null,
+          });
+        });
+        return;
+      }
+
+      const command = mode === 'scp' ? 'camera_scp_download' : 'camera_sftp_download';
+      await invoke<boolean>(command, {
+        host: camera.ip,
+        remotePath: remoteFullPath,
+        localPath: localFullPath,
+        username: camera.user || null,
+        passwordPlain: camera.pass || null,
+        passwordEnc: camera.pass_enc || null,
+        port: camera.port ?? null,
+      });
+    },
+    [camera, withTransport]
+  );
+
+  // Periodically pull recent recordings from the camera while auto-sync is enabled.
+  const runAutoSync = useCallback(
+    async () => {
+      if (!autoSyncEnabledRef.current || autoSyncBusyRef.current) {
+        return;
+      }
+
+      if (!camera) {
+        setAutoSyncError(t('fileManager.autoSync.cameraUnavailable'));
+        setAutoSyncEnabled(false);
+        return;
+      }
+
+      const baseRemotePath = sanitizeRemotePath(
+        autoSyncRemotePath || DEFAULT_REMOTE_RECORDINGS_PATH
+      );
+
+      const targetLocalBase = autoSyncLocalPath || localPath;
+      if (!targetLocalBase) {
+        setAutoSyncError(t('fileManager.autoSync.localPathRequired'));
+        setAutoSyncEnabled(false);
+        return;
+      }
+
+      if (transferBusy) {
+        return;
+      }
+
+      autoSyncBusyRef.current = true;
+      setAutoSyncBusy(true);
+      setAutoSyncError(null);
+
+      try {
+        const windowSeconds = Math.max(autoSyncWindowMinutes, 0) * 60;
+        const maxFiles = autoSyncMaxFiles > 0 ? autoSyncMaxFiles : undefined;
+        const maxTotalBytes = autoSyncMaxSizeMb > 0 ? Math.floor(autoSyncMaxSizeMb * 1024 * 1024) : undefined;
+
+        const recentFiles = await invoke<RemoteRecentFile[]>(
+          'camera_collect_recent_files',
+          {
+            host: camera.ip,
+            basePath: baseRemotePath,
+            username: camera.user || null,
+            passwordPlain: camera.pass || null,
+            passwordEnc: camera.pass_enc || null,
+            port: camera.port ?? null,
+            windowSeconds: windowSeconds > 0 ? windowSeconds : null,
+            extraMarginSeconds: 60,
+            maxFiles: maxFiles ?? null,
+            maxTotalBytes: maxTotalBytes ?? null,
+          }
+        );
+
+        const candidates = Array.isArray(recentFiles) ? recentFiles : [];
+        let downloadedCount = 0;
+        let totalBytes = 0;
+
+        for (const file of candidates) {
+          if (!autoSyncEnabledRef.current) {
+            break;
+          }
+
+          if (!file || !file.absolutePath) {
+            continue;
+          }
+
+          if (downloadedPathsRef.current.has(file.absolutePath)) {
+            continue;
+          }
+
+          const relative = file.relativePath || file.absolutePath;
+          try {
+            const localFullPath = await buildLocalFullPath(targetLocalBase, relative);
+            await ensureLocalDirectory(localFullPath);
+
+            await downloadViaMode(autoSyncTransport, file.absolutePath, localFullPath);
+
+            downloadedPathsRef.current.add(file.absolutePath);
+            downloadedCount += 1;
+            totalBytes += Number.isFinite(file.size) ? Number(file.size) : 0;
+          } catch (err) {
+            setAutoSyncError(getErrorMessage(err));
+            break;
+          }
+        }
+
+        setAutoSyncStats({
+          lastRun: Date.now(),
+          downloaded: downloadedCount,
+          totalBytes,
+        });
+
+        if (downloadedCount > 0 && localPath && localPath === targetLocalBase) {
+          await loadLocal(targetLocalBase);
+        }
+      } catch (err) {
+        setAutoSyncError(getErrorMessage(err));
+      } finally {
+        autoSyncBusyRef.current = false;
+        setAutoSyncBusy(false);
+      }
+    },
+    [
+      autoSyncLocalPath,
+      autoSyncTransport,
+      autoSyncMaxFiles,
+      autoSyncMaxSizeMb,
+      autoSyncRemotePath,
+      autoSyncWindowMinutes,
+      buildLocalFullPath,
+      camera,
+      downloadViaMode,
+      ensureLocalDirectory,
+      loadLocal,
+      localPath,
+      t,
+      transferBusy,
+    ]
+  );
+
   useEffect(() => {
     if (!open) {
       return;
@@ -431,10 +645,12 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
       setRemoteEntries([]);
       setRemotePath('/');
       setRemoteSelected(null);
+      setAutoSyncRemotePath(DEFAULT_REMOTE_RECORDINGS_PATH);
       return;
     }
 
     setRemoteSelected(null);
+    setAutoSyncRemotePath((current) => (current ? current : DEFAULT_REMOTE_RECORDINGS_PATH));
     void loadRemote('/');
   }, [open, camera, loadRemote]);
 
@@ -453,6 +669,10 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
         }
         setLocalHome(home);
         await loadLocal(home);
+        if (cancelled) {
+          return;
+        }
+        setAutoSyncLocalPath((current) => (current ? current : home));
       } catch (err) {
         if (!cancelled) {
           setLocalEntries([]);
@@ -468,13 +688,55 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
 
   useEffect(() => {
     setTransport('scp');
+    setAutoSyncTransport('scp');
+  }, [camera?.id]);
+
+  useEffect(() => {
+    downloadedPathsRef.current.clear();
+    setAutoSyncEnabled(false);
   }, [camera?.id]);
 
   useEffect(() => {
     if (!open) {
+      setAutoSyncEnabled(false);
+      clearAutoSyncTimer();
+      downloadedPathsRef.current.clear();
+      setAutoSyncStats({ lastRun: null, downloaded: 0, totalBytes: 0 });
+      setAutoSyncError(null);
       setToast(null);
     }
-  }, [open]);
+  }, [clearAutoSyncTimer, open]);
+
+  useEffect(() => {
+    downloadedPathsRef.current.clear();
+  }, [autoSyncRemotePath, autoSyncLocalPath, autoSyncTransport]);
+
+  useEffect(() => {
+    autoSyncEnabledRef.current = autoSyncEnabled;
+
+    if (!autoSyncEnabled) {
+      clearAutoSyncTimer();
+      autoSyncBusyRef.current = false;
+      setAutoSyncBusy(false);
+      return;
+    }
+
+    downloadedPathsRef.current.clear();
+    setAutoSyncStats({ lastRun: null, downloaded: 0, totalBytes: 0 });
+    setAutoSyncError(null);
+
+    void runAutoSync();
+
+    clearAutoSyncTimer();
+    const intervalMs = Math.max(autoSyncInterval, 5) * 1000;
+    autoSyncTimerRef.current = setInterval(() => {
+      void runAutoSync();
+    }, intervalMs);
+
+    return () => {
+      clearAutoSyncTimer();
+    };
+  }, [autoSyncEnabled, autoSyncInterval, clearAutoSyncTimer, runAutoSync]);
 
   const remoteSelectedEntry = useMemo(
     () => remoteEntries.find((entry) => entry.name === remoteSelected) ?? null,
@@ -669,7 +931,7 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
     } finally {
       setTransferBusy(false);
     }
-  }, [dirname, loadLocal, localPath, localSelectedEntry, t]);
+  }, [loadLocal, localPath, localSelectedEntry, t]);
 
   const handleRevealLocal = useCallback(async () => {
     if (!localSelectedEntry) {
@@ -876,6 +1138,87 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
     }
   }, [localHome, loadLocal]);
 
+  const handleAutoSyncToggle = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const next = event.target.checked;
+      if (next && !camera) {
+        setAutoSyncError(t('fileManager.autoSync.cameraUnavailable'));
+        return;
+      }
+      if (next && !(autoSyncLocalPath || localPath)) {
+        setAutoSyncError(t('fileManager.autoSync.localPathRequired'));
+        return;
+      }
+      setAutoSyncEnabled(next);
+    },
+    [autoSyncLocalPath, camera, localPath, t]
+  );
+
+  const handleAutoSyncRunNow = useCallback(() => {
+    if (!autoSyncEnabled || autoSyncBusy) {
+      return;
+    }
+    void runAutoSync();
+  }, [autoSyncBusy, autoSyncEnabled, runAutoSync]);
+
+  const handleRemotePathBlur = useCallback(() => {
+    setAutoSyncRemotePath((current) =>
+      sanitizeRemotePath(current || DEFAULT_REMOTE_RECORDINGS_PATH)
+    );
+  }, []);
+
+  const applyCurrentRemotePath = useCallback(() => {
+    setAutoSyncRemotePath(
+      sanitizeRemotePath(remotePath || DEFAULT_REMOTE_RECORDINGS_PATH)
+    );
+  }, [remotePath]);
+
+  const applyCurrentLocalPath = useCallback(() => {
+    if (localPath) {
+      setAutoSyncLocalPath(localPath);
+    }
+  }, [localPath]);
+
+  const handleIntervalChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setAutoSyncInterval(Math.max(5, Math.floor(value)));
+  }, []);
+
+  const handleWindowChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setAutoSyncWindowMinutes(Math.max(0, Math.floor(value)));
+  }, []);
+
+  const handleMaxFilesChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setAutoSyncMaxFiles(Math.max(0, Math.floor(value)));
+  }, []);
+
+  const handleMaxSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setAutoSyncMaxSizeMb(Math.max(0, Math.floor(value)));
+  }, []);
+
+  const handleRemotePathChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setAutoSyncRemotePath(event.target.value);
+  }, []);
+
+  const handleLocalPathChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setAutoSyncLocalPath(event.target.value);
+  }, []);
+
   const handleToastClose = useCallback(
     (_event?: React.SyntheticEvent | Event, reason?: string) => {
       if (reason === 'clickaway') {
@@ -896,6 +1239,15 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
     ? t('fileManager.titleWithCamera', { name: camera.name })
     : t('fileManager.title');
   const transportLabel = t('fileManager.transportMode', { mode: transport.toUpperCase() });
+  const autoSyncStatusText = autoSyncError
+    ? t('fileManager.autoSync.lastError', { message: autoSyncError })
+    : autoSyncStats.lastRun
+    ? t('fileManager.autoSync.lastRun', {
+        time: new Date(autoSyncStats.lastRun).toLocaleTimeString(),
+        count: autoSyncStats.downloaded,
+        size: formatSize(autoSyncStats.totalBytes),
+      })
+    : t('fileManager.autoSync.idle');
 
   return (
     <Dialog
@@ -950,19 +1302,19 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
               zIndex: 2,
               backgroundColor: (theme) => theme.palette.background.paper,
               borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-              px: 2,
-              py: 1,
+              px: 1.5,
+              py: 0.75,
             }}
           >
             <Box
               sx={{
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                gap: 2,
+                gap: 1.25,
               }}
             >
               <Box sx={{ minWidth: 0 }}>
-                <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Box display="flex" alignItems="center" gap={0.75} mb={0.75}>
                   <CloudIcon color="primary" fontSize="small" />
                   <Typography variant="subtitle1">{t('fileManager.remoteAccess')}</Typography>
                   <Typography variant="caption" color="text.secondary">
@@ -975,6 +1327,7 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
                         size="small"
                         onClick={handleRemoteHome}
                         disabled={!camera || remoteLoading || transferBusy}
+                        sx={{ p: 0.5 }}
                       >
                         <HomeIcon fontSize="small" />
                       </IconButton>
@@ -986,6 +1339,7 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
                         size="small"
                         onClick={handleRemoteUp}
                         disabled={!camera || remoteLoading || transferBusy || remotePath === '/'}
+                      sx={{ p: 0.5 }}
                       >
                         <UpIcon fontSize="small" />
                       </IconButton>
@@ -997,6 +1351,7 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
                         size="small"
                         onClick={() => void loadRemote(remotePath)}
                         disabled={!camera || remoteLoading}
+                      sx={{ p: 0.5 }}
                       >
                         <RefreshIcon fontSize="small" />
                       </IconButton>
@@ -1106,6 +1461,154 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
                 )}
               </Box>
             </Box>
+
+            <Box
+              sx={{
+                mt: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1.5,
+                borderTop: (theme) => `1px dashed ${theme.palette.divider}`,
+                pt: 2,
+              }}
+            >
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={autoSyncEnabled}
+                      onChange={handleAutoSyncToggle}
+                      disabled={!camera || transferBusy}
+                    />
+                  }
+                  label={t('fileManager.autoSync.enable')}
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleAutoSyncRunNow}
+                  disabled={!autoSyncEnabled || autoSyncBusy}
+                >
+                  {t('fileManager.autoSync.runNow')}
+                </Button>
+                <Typography
+                  variant="caption"
+                  color={autoSyncError ? 'error.main' : 'text.secondary'}
+                  sx={{ maxWidth: 420 }}
+                >
+                  {autoSyncStatusText}
+                </Typography>
+                {autoSyncBusy && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t('fileManager.autoSync.inProgress')}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(3, minmax(0, 1fr))',
+                  },
+                  gap: 1,
+                }}
+              >
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <TextField
+                    label={t('fileManager.autoSync.remotePath')}
+                    size="small"
+                    value={autoSyncRemotePath}
+                    onChange={handleRemotePathChange}
+                    onBlur={handleRemotePathBlur}
+                    disabled={!camera || autoSyncBusy}
+                  />
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={applyCurrentRemotePath}
+                    disabled={!camera || autoSyncBusy}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    {t('fileManager.autoSync.useCurrentRemote')}
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <TextField
+                    label={t('fileManager.autoSync.localPath')}
+                    size="small"
+                    value={autoSyncLocalPath}
+                    onChange={handleLocalPathChange}
+                    disabled={autoSyncBusy}
+                  />
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={applyCurrentLocalPath}
+                    disabled={!localPath || autoSyncBusy}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    {t('fileManager.autoSync.useCurrentLocal')}
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}>
+                  <TextField
+                    label={t('fileManager.autoSync.transport')}
+                    size="small"
+                    select
+                    value={autoSyncTransport}
+                    onChange={(event) =>
+                      setAutoSyncTransport(event.target.value as AutoSyncTransport)
+                    }
+                    disabled={autoSyncBusy}
+                  >
+                    <MenuItem value="auto">{t('fileManager.autoSync.transportAuto')}</MenuItem>
+                    <MenuItem value="scp">{t('fileManager.autoSync.transportScp')}</MenuItem>
+                    <MenuItem value="sftp">{t('fileManager.autoSync.transportSftp')}</MenuItem>
+                  </TextField>
+                  <TextField
+                    label={t('fileManager.autoSync.intervalSeconds')}
+                    size="small"
+                    type="number"
+                    value={autoSyncInterval}
+                    onChange={handleIntervalChange}
+                    inputProps={{ min: 5 }}
+                    disabled={autoSyncBusy}
+                  />
+                  <TextField
+                    label={t('fileManager.autoSync.windowMinutes')}
+                    size="small"
+                    type="number"
+                    value={autoSyncWindowMinutes}
+                    onChange={handleWindowChange}
+                    inputProps={{ min: 0 }}
+                    disabled={autoSyncBusy}
+                  />
+                  <TextField
+                    label={t('fileManager.autoSync.maxFiles')}
+                    size="small"
+                    type="number"
+                    value={autoSyncMaxFiles}
+                    onChange={handleMaxFilesChange}
+                    inputProps={{ min: 0 }}
+                    disabled={autoSyncBusy}
+                  />
+                  <TextField
+                    label={t('fileManager.autoSync.maxSizeMb')}
+                    size="small"
+                    type="number"
+                    value={autoSyncMaxSizeMb}
+                    onChange={handleMaxSizeChange}
+                    inputProps={{ min: 0 }}
+                    disabled={autoSyncBusy}
+                  />
+                </Box>
+              </Box>
+            </Box>
           </Box>
 
           <Box
@@ -1203,13 +1706,13 @@ const FileManager: React.FC<FileManagerProps> = ({ open, camera, onClose }) => {
               </Box>
 
               <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
-                {transferBusy ? (
-                  <Typography variant="caption" color="text.secondary">
-                    {t('fileManager.transferInProgress')}
-                  </Typography>
-                ) : (
-                  <span />
-                )}
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {transferBusy
+                    ? t('fileManager.transferInProgress')
+                    : remoteSelectedEntry
+                    ? remoteSelectedEntry.name
+                    : ' '}
+                </Typography>
                 <Box display="flex" gap={1}>
                   <Button
                     variant="outlined"

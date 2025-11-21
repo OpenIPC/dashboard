@@ -9,8 +9,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useLocalization } from '../contexts/LocalizationContext';
-import { useAuth } from '../contexts/AuthContext';
+import { useLocalization } from '../hooks/useLocalization';
+import { useAuth } from '../hooks/useAuth';
 
 const LoginScreen: React.FC = () => {
   const { t } = useLocalization();

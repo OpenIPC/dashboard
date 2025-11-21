@@ -3,9 +3,16 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import Dashboard from './components/Dashboard';
+import Cameras from './components/Cameras';
+import Analytics from './components/Analytics';
+import Settings from './components/Settings';
+import PlateDatabase from './components/PlateDatabase';
 import { LocalizationProvider } from './contexts/LocalizationContext';
 import { AppStateProvider } from './contexts/AppStateContext';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AnalyticsProvider } from './contexts/AnalyticsContext';
+import { AuthProvider } from './contexts/AuthContext';
+import { WebRTCStatsProvider } from './contexts/WebRTCStatsContext';
+import { useAuth } from './hooks/useAuth';
 import Layout from './components/Layout';
 import LoginScreen from './components/LoginScreen';
 import { useEffect, useState } from 'react';
@@ -76,13 +83,19 @@ const AuthGate: React.FC = () => {
 
   return (
     <AppStateProvider>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-          </Routes>
-        </Layout>
-      </Router>
+      <AnalyticsProvider>
+        <Router>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/cameras" element={<Cameras />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/plate-database" element={<PlateDatabase />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Layout>
+        </Router>
+      </AnalyticsProvider>
     </AppStateProvider>
   );
 };
@@ -157,10 +170,12 @@ function App() {
   return (
     <LocalizationProvider>
       <AuthProvider>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <AuthGate />
-        </ThemeProvider>
+        <WebRTCStatsProvider>
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <AuthGate />
+          </ThemeProvider>
+        </WebRTCStatsProvider>
       </AuthProvider>
     </LocalizationProvider>
   );

@@ -1,12 +1,13 @@
 [package]
 name = "dashboard"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["Rinibr"]
 license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+default-run = "dashboard"
 
 [features]
 default = []
@@ -17,6 +18,18 @@ hevc-export = ["minimp4", "scuffle-h265"]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 path = "src/lib.rs"
+
+[[bin]]
+name = "dashboard"
+path = "src/main.rs"
+
+[[bin]]
+name = "ffmpeg-silent"
+path = "src/bin/ffmpeg_silent.rs"
+
+[[bin]]
+name = "ffmpeg-silent-launcher"
+path = "src/bin/ffmpeg_silent_launcher.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.4.1", features = [] }
@@ -54,3 +67,14 @@ minimp4 = { version = "0.1.2", optional = true }
 scuffle-h265 = { version = "0.2.2", optional = true }
 ssh2 = { version = "0.9", default-features = false, features = ["vendored-openssl"] }
 libc = "0.2"
+parking_lot = "0.12"
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["load-dynamic", "directml"] }
+image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
+ndarray = "0.15"
+thiserror = "1.0"
+itertools = "0.12"
+flate2 = { version = "1.0", features = ["miniz_oxide"] }
+tar = "0.4"
+rusqlite = { version = "0.31", features = ["bundled"] }
+lazy_static = "1.4"
+dirs = "5.0"

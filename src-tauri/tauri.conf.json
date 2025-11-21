@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Dashboard for OpenIPC",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "identifier": "com.openipc.dashboard",
   "build": {
     "frontendDist": "../dist",
@@ -22,7 +22,8 @@
         "theme": "Dark",
         "devtools": true,
         "visible": true,
-        "transparent": false
+        "transparent": false,
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {
@@ -41,15 +42,30 @@
       "icons/icon.ico"
     ],
     "resources": [
+<<<<<<< HEAD
       "mediamtx/mediamtx.yml",
       "mediamtx/mediamtx.yml.template",
       "binaries/mediamtx*",
+=======
+      "binaries/go2rtc*",
+      "binaries/ffmpeg-silent-launcher.exe",
+      "binaries/ffmpeg-silent.exe",
+      "binaries/ffmpeg.exe",
+      "binaries/ffplay.exe",
+>>>>>>> 8e95cac2 (v0.1.3: Release with GitHub Actions and fixes)
       "resources/gstreamer"
     ],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "displayLanguageSelector": false
+      },
+      "allowDowngrades": true
     },
     "linux": {
       "deb": {

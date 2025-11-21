@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useLocalization } from '../contexts/LocalizationContext';
+import { useLocalization } from '../hooks/useLocalization';
 import VideoJSPlayer from './VideoJSPlayer';
 import EnsureHttpServer from './EnsureHttpServer';
 import { 
@@ -109,12 +109,13 @@ const ArchiveImproved: React.FC<ArchiveImprovedProps> = ({ cameras, onClose }) =
 
   // Cleanup blob URLs when component unmounts
   useEffect(() => {
+    const sourceToRevoke = videoSource;
     return () => {
-      if (videoSource && videoSource.startsWith('blob:')) {
-        URL.revokeObjectURL(videoSource);
+      if (sourceToRevoke && sourceToRevoke.startsWith('blob:')) {
+        URL.revokeObjectURL(sourceToRevoke);
       }
     };
-  }, []);
+  }, [videoSource]);
 
   // Cleanup old blob URL when video source changes
   useEffect(() => {
@@ -197,7 +198,7 @@ const ArchiveImproved: React.FC<ArchiveImprovedProps> = ({ cameras, onClose }) =
       
       // Video.js отлично работает с HTTP Range requests,
       // поэтому всегда используем HTTP streaming
-      const httpUrl = `http://127.0.0.1:8080/${recording.filename}`;
+  const httpUrl = `http://127.0.0.1:8080/${encodeURIComponent(recording.filename)}`;
       console.log('ArchiveImproved: Generated HTTP URL:', httpUrl);
       console.log('ArchiveImproved: Starting HTTP availability check...');
       
@@ -265,15 +266,17 @@ const ArchiveImproved: React.FC<ArchiveImprovedProps> = ({ cameras, onClose }) =
   // Format time удалено - используется Video.js
 
   // Format timeline time display
-  const formatTimelineTime = (seconds: number): string => {
-    const date = new Date(selectedDate);
+  const selectedDateBase = useMemo(() => new Date(selectedDate), [selectedDate]);
+
+  const formatTimelineTime = useCallback((seconds: number): string => {
+    const date = new Date(selectedDateBase);
     date.setSeconds(seconds);
     return date.toLocaleTimeString('ru-RU', { 
       hour: '2-digit', 
       minute: '2-digit',
       second: ZOOM_LEVELS[zoomLevel].seconds <= 600 ? '2-digit' : undefined
     });
-  };
+  }, [selectedDateBase, zoomLevel]);
 
   // Draw timeline
   const drawTimeline = useCallback(() => {
@@ -413,7 +416,7 @@ const ArchiveImproved: React.FC<ArchiveImprovedProps> = ({ cameras, onClose }) =
     
     // Selection drawing удалено - теперь используется Video.js
     
-  }, [zoomLevel, viewStartTime, timelineSegments, events, selectedTimelineTime, selectedDate]);
+  }, [zoomLevel, viewStartTime, timelineSegments, events, selectedTimelineTime, formatTimelineTime]);
 
   // Video control handlers удалены - теперь управляется Video.js
 
@@ -750,7 +753,7 @@ const ArchiveImproved: React.FC<ArchiveImprovedProps> = ({ cameras, onClose }) =
               ) : (
                 <VideoJSPlayer
                   src={videoSource}
-                  onReady={(_player) => {
+                  onReady={() => {
                     console.log('Video.js player ready');
                     setIsVideoLoading(false);
                   }}

@@ -35,7 +35,7 @@ This document outlines the complete process for creating and distributing releas
 ### Testing
 - [ ] Manual testing on target platforms
 - [ ] Camera connectivity tests
-- [ ] MediaMTX integration tests
+- [ ] go2rtc integration tests
 - [ ] UI/UX testing complete
 - [ ] Performance testing
 
@@ -79,7 +79,7 @@ git tag v1.2.3
 # Clean workspace
 git clean -fd
 npm install
-npm run download-mediamtx
+npm run download-go2rtc
 ```
 
 #### 2. Build All Platforms
@@ -153,7 +153,7 @@ git push origin v1.2.3
 ## 🔧 Improvements  
 - Better error handling for ONVIF discovery
 - Performance optimizations for video streaming
-- Updated MediaMTX to latest version
+- Updated go2rtc to latest version
 
 ## 🐛 Bug Fixes
 - Fixed camera connection timeout issues
@@ -327,7 +327,7 @@ ls -lh src-tauri/target/release/bundle/
 
 ### Supply Chain Security
 - Dependency vulnerability scanning
-- MediaMTX binary verification
+- go2rtc binary verification
 - Build environment security
 - Artifact integrity checks
 

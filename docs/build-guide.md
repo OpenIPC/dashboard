@@ -1,11 +1,11 @@
 # VMS Dashboard - Build Guide
 
-This guide explains how to build VMS Dashboard for all supported platforms (Windows, Linux, macOS) with integrated MediaMTX binaries.
+This guide explains how to build VMS Dashboard for all supported platforms (Windows, Linux, macOS) with integrated go2rtc binaries.
 
 ## Overview
 
 VMS Dashboard uses a multi-platform build system that:
-- Automatically downloads MediaMTX binaries for target platforms
+- Automatically downloads go2rtc binaries for target platforms
 - Includes the correct binary in each build
 - Creates native installers for each platform
 - Supports cross-platform building (with limitations)
@@ -32,8 +32,8 @@ git clone https://github.com/OpenIPC/dashboard.git
 cd dashboard
 npm install
 
-# Download MediaMTX binaries (required)
-npm run download-mediamtx
+# Download go2rtc binaries (required)
+npm run download-go2rtc
 
 # (Optional) Download bundled GStreamer runtime for Linux AppImage builds
 npm run download-gstreamer
@@ -46,8 +46,8 @@ npm run build-release
 
 ### NPM Scripts
 ```bash
-# Download MediaMTX binaries for all platforms
-npm run download-mediamtx
+# Download go2rtc binaries for all platforms
+npm run download-go2rtc
 
 # Download the optional GStreamer runtime bundle (Linux packaging)
 npm run download-gstreamer
@@ -134,7 +134,7 @@ python tools/build.py --download-only
 ### Windows
 - **Location**: `src-tauri/target/release/bundle/msi/`
 - **Format**: `.msi` installer
-- **Includes**: MediaMTX executable, application files
+- **Includes**: go2rtc executable, application files
 - **Installation**: Double-click to install
 
 ### Linux
@@ -149,7 +149,7 @@ python tools/build.py --download-only
 ### macOS
 - **Location**: `src-tauri/target/release/bundle/dmg/`
 - **Format**: `.dmg` disk image
-- **Includes**: Application bundle with MediaMTX
+- **Includes**: Application bundle with go2rtc
 - **Installation**: Drag to Applications folder
 
 ## Cross-Platform Building
@@ -168,30 +168,30 @@ rustup target add x86_64-apple-darwin       # macOS Intel
 rustup target add aarch64-apple-darwin      # macOS Apple Silicon
 ```
 
-## MediaMTX Integration
+## go2rtc Integration
 
 ### Automatic Download
-The build system automatically downloads MediaMTX binaries:
-- **Windows**: `mediamtx.exe` from latest GitHub release
-- **Linux**: `mediamtx` (x86_64)
-- **macOS**: `mediamtx` (x86_64)
+The build system automatically downloads go2rtc binaries:
+- **Windows**: `go2rtc.exe` from latest GitHub release
+- **Linux**: `go2rtc` (x86_64)
+- **macOS**: `go2rtc` (universal where available)
 
 ### Manual Download
 ```bash
 # Download all platform binaries
-npm run download-mediamtx
+npm run download-go2rtc
 
 # Or use Python script directly
-python tools/download-mediamtx.py
+python tools/download-go2rtc.py
 ```
 
 ### Binary Locations
 ```
 src-tauri/binaries/
-├── windows/mediamtx.exe
-├── linux/mediamtx
-├── macos/mediamtx
-└── mediamtx[.exe]  # Current platform binary
+├── windows/go2rtc.exe
+├── linux/go2rtc
+├── macos/go2rtc
+└── go2rtc[.exe]  # Current platform binary
 ```
 
 ## GStreamer Runtime (Linux)
@@ -225,11 +225,11 @@ with `--force` after supplying a custom archive to retry bundling.
 
 ### Common Issues
 
-#### Missing MediaMTX Binary
+#### Missing go2rtc Binary
 ```
-Error: MediaMTX binary not found for windows
+Error: go2rtc binary not found for windows
 ```
-**Solution**: Run `npm run download-mediamtx`
+**Solution**: Run `npm run download-go2rtc`
 
 #### Build Prerequisites Missing
 ```
@@ -244,7 +244,7 @@ Error: Permission denied
 **Solution**: 
 ```bash
 chmod +x tools/build.sh
-chmod +x src-tauri/binaries/linux/mediamtx
+chmod +x src-tauri/binaries/linux/go2rtc
 ```
 
 #### Node.js Version Issues
@@ -277,8 +277,8 @@ cargo clean
 rm -rf node_modules package-lock.json
 npm install
 
-# Re-download MediaMTX binaries
-npm run download-mediamtx
+# Re-download go2rtc binaries
+npm run download-go2rtc
 ```
 
 ## CI/CD Integration

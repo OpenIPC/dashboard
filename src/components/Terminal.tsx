@@ -303,14 +303,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({ open, camera, onClose }) =
         {chunks.map((chunk, index) => (
           <Box
             component="div"
-            // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{ __html: ansi.ansi_to_html(chunk || ' ') }}
             key={`terminal-chunk-${index}`}
           />
         ))}
         <Box
           component="span"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: `${inputHtml}${caretHtml}` }}
           className="terminal-input-line"
           sx={{ display: 'inline' }}

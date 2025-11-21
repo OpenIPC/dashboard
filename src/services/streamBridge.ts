@@ -2,11 +2,11 @@ import { invoke } from '@tauri-apps/api/core';
 import type { StreamPathStatus } from '../types';
 
 /**
- * Fetch current MediaMTX path status list. Used as a foundation for a unified stream bridge dashboard.
+ * Получает список статусов потоков из go2rtc.
  */
 export async function fetchStreamPathStatuses(): Promise<StreamPathStatus[]> {
   try {
-    const result = await invoke<StreamPathStatus[]>('list_mediamtx_paths');
+    const result = await invoke<StreamPathStatus[]>('list_go2rtc_paths');
     return result;
   } catch (error) {
     console.error('[streamBridge] Failed to fetch stream path statuses', error);

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-// @ts-ignore - hls.js is not typed
 import Hls from 'hls.js';
+import { isHlsErrorData } from '../utils/hls';
 
 interface RTSPPlayerProps {
   src: string;
@@ -37,18 +36,24 @@ const RTSPPlayer: React.FC<RTSPPlayerProps> = ({
       if (!src || !cameraName) return;
 
       try {
-        // 1. Add camera to MediaMTX
-        await invoke('add_camera_to_mediamtx', { name: cameraName, url: src });
-        console.log(`Camera ${cameraName} with src ${src} added to MediaMTX.`);
+        const trimmedSource = src.trim();
+        if (!trimmedSource) {
+          throw new Error('Stream key is required for go2rtc playback');
+        }
 
-        // 2. Construct the HLS URL
-        const sanitizedName = cameraName.replace(/ /g, '_').toLowerCase();
-        const url = `http://localhost:8888/${sanitizedName}/index.m3u8`;
-        setHlsUrl(url);
-        console.log(`Generated HLS URL: ${url}`);
+        const apiBases = ['http://127.0.0.1:1984', 'http://localhost:1984'];
+        const encoded = encodeURIComponent(trimmedSource);
+
+        const urls = apiBases.map(base => {
+          const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
+          return `${normalizedBase}/api/hls/${encoded}/index.m3u8`;
+        });
+
+        setHlsUrl(urls[0]);
+        console.log(`go2rtc HLS endpoints prepared: ${urls.join(', ')}`);
 
       } catch (error) {
-        console.error('Failed to setup MediaMTX stream:', error);
+        console.error('Failed to setup go2rtc stream:', error);
         if (onError) {
           onError(error as Error);
         }
@@ -63,8 +68,7 @@ const RTSPPlayer: React.FC<RTSPPlayerProps> = ({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
-      // Optional: You might want a command to remove the camera from MediaMTX on cleanup
-      // invoke('mediamtx_remove_camera', { name: cameraName });
+  // go2rtc streams are configured via config files; no dynamic cleanup needed here.
     };
   }, [src, cameraName, onError]);
 
@@ -93,23 +97,25 @@ const RTSPPlayer: React.FC<RTSPPlayerProps> = ({
               video.play().catch(e => console.error('HLS autoplay failed:', e));
             }
           });
-          hls.on(Hls.Events.ERROR, (_, data) => {
-            if (data.fatal) {
-              console.error('HLS fatal error:', data);
-              switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                  console.error('HLS network error, trying to recover...');
-                  hls.startLoad();
-                  break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                  console.error('HLS media error, trying to recover...');
-                  hls.recoverMediaError();
-                  break;
-                default:
-                  console.error('Unrecoverable HLS error, destroying HLS.');
-                  hls.destroy();
-                  break;
-              }
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (!isHlsErrorData(data) || !data.fatal) {
+              return;
+            }
+
+            console.error('HLS fatal error:', data);
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.error('HLS network error, trying to recover...');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.error('HLS media error, trying to recover...');
+                hls.recoverMediaError();
+                break;
+              default:
+                console.error('Unrecoverable HLS error, destroying HLS.');
+                hls.destroy();
+                break;
             }
           });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -125,7 +131,7 @@ const RTSPPlayer: React.FC<RTSPPlayerProps> = ({
         }
       };
       
-      // Add a delay before initializing HLS to give MediaMTX time to start the stream
+  // Add a short delay before initializing HLS to give go2rtc time to spin up segments
       const timer = setTimeout(initializeHls, 2000); // 2-second delay
 
       return () => clearTimeout(timer);
