@@ -18,15 +18,15 @@ API_URL = "https://api.github.com/repos/AlexxIT/go2rtc/releases/latest"
 
 TARGETS: Dict[str, Dict[str, Iterable[str]]] = {
     "windows": {
-        "patterns": ["go2rtc-windows-amd64.zip", "go2rtc-windows-x64.zip"],
+        "patterns": ["go2rtc_win64.zip"],
         "binary": "go2rtc.exe",
     },
     "linux": {
-        "patterns": ["go2rtc-linux-amd64.tar.gz", "go2rtc-linux-x64.tar.gz"],
+        "patterns": ["go2rtc_linux_amd64"],
         "binary": "go2rtc",
     },
     "macos": {
-        "patterns": ["go2rtc-darwin-amd64.tar.gz", "go2rtc-macos-amd64.tar.gz"],
+        "patterns": ["go2rtc_mac_amd64.zip"],
         "binary": "go2rtc",
     },
 }
@@ -79,6 +79,10 @@ def main() -> int:
         print("[ERROR] No assets found in the latest go2rtc release", file=sys.stderr)
         return 1
 
+    print("[INFO] Available assets:")
+    for a in assets:
+        print(f" - {a.get('name')}")
+
     processed = 0
     for platform, info in TARGETS.items():
         patterns = info["patterns"]
@@ -106,8 +110,8 @@ def main() -> int:
         elif asset["name"].endswith(".zip"):
             binary_data = extract_from_zip(payload, binary_name)
         else:
-            print(f"[WARN] Unsupported archive format for {asset['name']}, skipped")
-            continue
+            # Assume raw binary
+            binary_data = payload
 
         destination = BINARY_ROOT / platform / binary_name
         ensure_destination(destination)
