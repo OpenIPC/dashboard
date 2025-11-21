@@ -42,17 +42,11 @@
       "icons/icon.ico"
     ],
     "resources": [
-<<<<<<< HEAD
-      "mediamtx/mediamtx.yml",
-      "mediamtx/mediamtx.yml.template",
-      "binaries/mediamtx*",
-=======
       "binaries/go2rtc*",
       "binaries/ffmpeg-silent-launcher.exe",
       "binaries/ffmpeg-silent.exe",
       "binaries/ffmpeg.exe",
       "binaries/ffplay.exe",
->>>>>>> 8e95cac2 (v0.1.3: Release with GitHub Actions and fixes)
       "resources/gstreamer"
     ],
     "windows": {
