@@ -1717,6 +1717,7 @@ pub fn run() {
             probe_hevc_export,
             get_whep_endpoints,
             ensure_path_ready,
+            get_go2rtc_snapshot,
             camera_store::save_cameras,
             camera_store::load_cameras,
             camera_store::save_groups,
@@ -2651,6 +2652,37 @@ async fn start_go2rtc(
     spawn_go2rtc_process(&mut guard)?;
 
     Ok("go2rtc started successfully".to_string())
+}
+
+#[tauri::command]
+async fn get_go2rtc_snapshot(stream_name: String) -> Result<Vec<u8>, String> {
+    let api_url = format!("{}/api/frame.jpeg?src={}", GO2RTC_DEFAULT_API, stream_name);
+    
+    println!("[get_go2rtc_snapshot] Fetching snapshot from: {}", api_url);
+    
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    let response = client
+        .get(&api_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch snapshot: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+    
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    
+    println!("[get_go2rtc_snapshot] Received {} bytes", bytes.len());
+    
+    Ok(bytes.to_vec())
 }
 
 #[allow(dead_code)]

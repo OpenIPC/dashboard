@@ -2381,7 +2381,7 @@ const Dashboard: React.FC = () => {
   const takeSnapshot = async (streamBaseName: string, quality: string) => {
     try {
       // Build full stream name with quality suffix
-      const streamSuffix = quality === 'hd' ? '_1' : '_0';
+      const streamSuffix = quality === 'hd' ? '_0' : '_1';
       const fullStreamName = `${streamBaseName}${streamSuffix}`;
       
       // Get snapshot from go2rtc
