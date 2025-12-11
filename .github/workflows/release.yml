@@ -103,26 +103,25 @@ jobs:
       - name: build helper binaries
         run: |
           cd src-tauri
+          
+          # Create dummy files to satisfy tauri-build resource check
+          echo "Creating dummy binaries..."
+          New-Item -ItemType File -Force -Path binaries/ffmpeg-silent-launcher.exe
+          New-Item -ItemType File -Force -Path binaries/ffmpeg-silent.exe
+          
+          echo "Building binaries..."
           cargo build --release --bin ffmpeg-silent-launcher --bin ffmpeg-silent
           
-          echo "Locating binaries..."
-          $launcher = Get-ChildItem -Path target -Recurse -Filter ffmpeg-silent-launcher.exe | Select-Object -First 1
-          $silent = Get-ChildItem -Path target -Recurse -Filter ffmpeg-silent.exe | Select-Object -First 1
-          
-          if ($launcher) {
-            echo "Found launcher at $($launcher.FullName)"
-            Copy-Item $launcher.FullName binaries/
+          echo "Copying real binaries..."
+          if (Test-Path target/release/ffmpeg-silent-launcher.exe) {
+            Copy-Item target/release/ffmpeg-silent-launcher.exe binaries/ -Force
+            Copy-Item target/release/ffmpeg-silent.exe binaries/ -Force
+          } elseif (Test-Path target/x86_64-pc-windows-msvc/release/ffmpeg-silent-launcher.exe) {
+            Copy-Item target/x86_64-pc-windows-msvc/release/ffmpeg-silent-launcher.exe binaries/ -Force
+            Copy-Item target/x86_64-pc-windows-msvc/release/ffmpeg-silent.exe binaries/ -Force
           } else {
-            echo "Error: ffmpeg-silent-launcher.exe not found in target folder"
-            Get-ChildItem -Path target -Recurse
-            exit 1
-          }
-
-          if ($silent) {
-            echo "Found silent wrapper at $($silent.FullName)"
-            Copy-Item $silent.FullName binaries/
-          } else {
-            echo "Error: ffmpeg-silent.exe not found in target folder"
+            echo "Error: Built binaries not found in target directory"
+            Get-ChildItem target -Recurse
             exit 1
           }
 
