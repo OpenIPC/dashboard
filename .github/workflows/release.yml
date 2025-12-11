@@ -104,8 +104,27 @@ jobs:
         run: |
           cd src-tauri
           cargo build --release --bin ffmpeg-silent-launcher --bin ffmpeg-silent
-          copy target/release/ffmpeg-silent-launcher.exe binaries/
-          copy target/release/ffmpeg-silent.exe binaries/
+          
+          echo "Locating binaries..."
+          $launcher = Get-ChildItem -Path target -Recurse -Filter ffmpeg-silent-launcher.exe | Select-Object -First 1
+          $silent = Get-ChildItem -Path target -Recurse -Filter ffmpeg-silent.exe | Select-Object -First 1
+          
+          if ($launcher) {
+            echo "Found launcher at $($launcher.FullName)"
+            Copy-Item $launcher.FullName binaries/
+          } else {
+            echo "Error: ffmpeg-silent-launcher.exe not found in target folder"
+            Get-ChildItem -Path target -Recurse
+            exit 1
+          }
+
+          if ($silent) {
+            echo "Found silent wrapper at $($silent.FullName)"
+            Copy-Item $silent.FullName binaries/
+          } else {
+            echo "Error: ffmpeg-silent.exe not found in target folder"
+            exit 1
+          }
 
       - name: lint frontend (continue on error)
         run: npm run lint
