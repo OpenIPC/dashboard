@@ -75,9 +75,17 @@ def main() -> int:
         # Check if already exists
         if ffmpeg_path.exists():
             print(f"ffmpeg.exe already exists at {ffmpeg_path}")
-            response = input("Download again? (y/N): ").strip().lower()
-            if response != 'y':
-                print("Skipping download.")
+            if os.environ.get("CI"):
+                print("CI environment detected, skipping download.")
+                return 0
+            
+            try:
+                response = input("Download again? (y/N): ").strip().lower()
+                if response != 'y':
+                    print("Skipping download.")
+                    return 0
+            except EOFError:
+                print("Non-interactive mode detected, skipping download.")
                 return 0
         
         # Download
@@ -88,7 +96,7 @@ def main() -> int:
         extract_ffmpeg_binaries(archive_bytes, dest_dir)
 
         print(
-            "\n✓ ffmpeg binaries installed. Silent wrappers are now built automatically "
+            "\n[SUCCESS] ffmpeg binaries installed. Silent wrappers are now built automatically "
             "via cargo and bundled with the app."
         )
         return 0
