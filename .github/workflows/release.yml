@@ -97,6 +97,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: download ffmpeg binaries
+        run: python tools/download-ffmpeg.py
+
+      - name: build helper binaries
+        run: |
+          cd src-tauri
+          cargo build --release --bin ffmpeg-silent-launcher --bin ffmpeg-silent
+          copy target/release/ffmpeg-silent-launcher.exe binaries/
+          copy target/release/ffmpeg-silent.exe binaries/
+
       - name: lint frontend (continue on error)
         run: npm run lint
         continue-on-error: true
