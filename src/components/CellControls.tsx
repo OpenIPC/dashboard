@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './GridControls.css';
 import { useLocalization } from '../hooks/useLocalization';
 
@@ -7,14 +7,18 @@ interface CellControlsProps {
   isRecording: boolean;
   isRecordingPending?: boolean;
   isMuted: boolean;
+  volume?: number;
   streamId: number;
   streamName?: string;
   enableSnapshot?: boolean;
   onStreamSwitch: () => void;
   onAudio: () => void;
+  onVolumeChange?: (value: number) => void;
   onRecord: () => void;
   onClose: () => void;
   onSnapshot?: () => void;
+  onPTZ?: () => void;
+  isPTZActive?: boolean;
   moduleToggles?: ModuleToggleProps[];
 }
 
@@ -33,17 +37,24 @@ const CellControls: React.FC<CellControlsProps> = ({
   isRecording,
   isRecordingPending = false,
   isMuted,
+  volume = 1,
   streamId,
   streamName,
   enableSnapshot = false,
   onStreamSwitch,
   onAudio,
+  onVolumeChange,
   onRecord,
   onClose,
   onSnapshot,
+  onPTZ,
+  isPTZActive = false,
   moduleToggles = [],
 }) => {
   const { t } = useLocalization();
+  const [audioHover, setAudioHover] = useState(false);
+  const sliderVolume = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1));
+  const sliderVisible = Boolean(!isMuted && onVolumeChange && audioHover);
   return (
     <div className="cell-controls">
       {/* Кнопка переключения качества */}
@@ -60,19 +71,59 @@ const CellControls: React.FC<CellControlsProps> = ({
         </i>
       </button>
 
-      {/* Кнопка звука */}
-      <button 
-        className="icon-button audio-btn" 
-        title={isMuted ? t('enable_audio') : t('disable_audio')}
-        onClick={(e) => {
-          e.stopPropagation();
-          onAudio();
-        }}
+      {/* Группа контролов звука (кнопка + ползунок) */}
+      <div
+        className={`audio-control-group${sliderVisible ? ' show-slider' : ''}`}
+        onMouseEnter={() => setAudioHover(true)}
+        onMouseLeave={() => setAudioHover(false)}
       >
-        <i className="material-icons">
-          {isMuted ? 'volume_off' : 'volume_up'}
-        </i>
-      </button>
+        <button 
+          className="icon-button audio-btn" 
+          title={isMuted ? t('enable_audio') : t('disable_audio')}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAudio();
+          }}
+        >
+          <i className="material-icons">
+            {isMuted ? 'volume_off' : 'volume_up'}
+          </i>
+        </button>
+
+        {!isMuted && onVolumeChange && (
+          <div
+            className="volume-slider"
+            title={t('volume') || 'Volume'}
+            onClick={event => event.stopPropagation()}
+            onMouseDown={event => event.stopPropagation()}
+            onTouchStart={event => event.stopPropagation()}
+          >
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={sliderVolume}
+              aria-label={t('volume') || 'Volume'}
+              onChange={event => onVolumeChange(Number(event.target.value))}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Кнопка PTZ */}
+      {onPTZ && (
+        <button 
+          className={`icon-button ptz-btn ${isPTZActive ? 'active' : ''}`}
+          title={t('toggle_ptz') || 'PTZ Control'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPTZ();
+          }}
+        >
+          <i className="material-icons">open_with</i>
+        </button>
+      )}
 
       {/* Кнопки модулей аналитики */}
       {moduleToggles.map(toggle => (

@@ -7,11 +7,18 @@ import {
   type Translations,
   type TranslationValue,
 } from './LocalizationContextData';
+import enTranslations from '../locales/en.json';
+import ruTranslations from '../locales/ru.json';
 
-const isTranslationValue = (value: TranslationValue | string): value is TranslationValue =>
-  typeof value === 'object' && value !== null;
+const isTranslationObject = (
+  value: TranslationValue,
+): value is Exclude<TranslationValue, string> => typeof value === 'object' && value !== null;
 
 const STORAGE_KEY = 'vms_dashboard_language';
+const STATIC_TRANSLATIONS: Record<SupportedLanguage, Translations> = {
+  en: enTranslations,
+  ru: ruTranslations,
+};
 
 export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>(() => {
@@ -19,31 +26,19 @@ export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     return (saved as SupportedLanguage) || 'en';
   });
   
-  const [translations, setTranslations] = useState<Translations>({});
+  const [translations, setTranslations] = useState<Translations>(
+    STATIC_TRANSLATIONS[currentLanguage] ?? STATIC_TRANSLATIONS.en,
+  );
 
   // Load translations
   useEffect(() => {
-    const loadTranslations = async () => {
-      try {
-        const response = await fetch(`/locales/${currentLanguage}.json`);
-        const translationData = await response.json();
-        setTranslations(translationData);
-      } catch (error) {
-        console.error(`Failed to load translations for ${currentLanguage}:`, error);
-        // Fallback to English if loading fails and not already English
-        if (currentLanguage !== 'en') {
-          try {
-            const fallbackResponse = await fetch('/locales/en.json');
-            const fallbackData = await fallbackResponse.json();
-            setTranslations(fallbackData);
-          } catch (fallbackError) {
-            console.error('Failed to load fallback translations:', fallbackError);
-          }
-        }
-      }
-    };
-
-    loadTranslations();
+    const nextTranslations = STATIC_TRANSLATIONS[currentLanguage];
+    if (nextTranslations) {
+      setTranslations(nextTranslations);
+    } else {
+      console.warn(`Missing translations for ${currentLanguage}, falling back to English.`);
+      setTranslations(STATIC_TRANSLATIONS.en);
+    }
   }, [currentLanguage]);
 
   const setLanguage = (language: SupportedLanguage) => {
@@ -54,14 +49,14 @@ export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Translation function with parameter substitution
   const t = (key: string, params?: Record<string, string | number>): string => {
     const keys = key.split('.');
-    let current: TranslationValue | string = translations;
+    let current: TranslationValue = translations;
 
     for (const k of keys) {
-      if (!isTranslationValue(current)) {
+      if (!isTranslationObject(current)) {
         return `[${key}]`;
       }
 
-  const next: string | TranslationValue | undefined = current[k];
+      const next: TranslationValue | undefined = current[k];
       if (next === undefined) {
         // Return key if translation not found (development mode indicator)
         return `[${key}]`;

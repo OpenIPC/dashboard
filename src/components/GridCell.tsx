@@ -14,6 +14,7 @@ interface GridCellProps {
   streamBaseName: string;
   quality: StreamQuality;
   cellMuted: boolean;
+  volume: number;
   cellIndex: number;
   onStatsUpdateSD: (stats: any) => void;
   onStatsUpdateHD: (stats: any) => void;
@@ -39,6 +40,7 @@ const GridCell: React.FC<GridCellProps> = memo(({
   streamBaseName,
   quality,
   cellMuted,
+  volume,
   cellIndex,
   onStatsUpdateSD,
   onStatsUpdateHD,
@@ -59,6 +61,7 @@ const GridCell: React.FC<GridCellProps> = memo(({
           streamName={streamBaseName}
           activeQuality={quality}
           cellMuted={cellMuted}
+          volume={volume}
           onStatsUpdateSD={onStatsUpdateSD}
           onStatsUpdateHD={onStatsUpdateHD}
           onVideoRefSD={onVideoRefSD}
@@ -83,6 +86,7 @@ const GridCell: React.FC<GridCellProps> = memo(({
     prevProps.streamBaseName === nextProps.streamBaseName &&
     prevProps.quality === nextProps.quality &&
     prevProps.cellMuted === nextProps.cellMuted &&
+    prevProps.volume === nextProps.volume &&
     prevProps.cellIndex === nextProps.cellIndex &&
     prevProps.go2rtcSettings.showMonitor === nextProps.go2rtcSettings.showMonitor &&
     prevProps.go2rtcSettings.enableSnapshot === nextProps.go2rtcSettings.enableSnapshot &&

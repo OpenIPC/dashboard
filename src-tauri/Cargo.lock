@@ -938,8 +938,10 @@ dependencies = [
  "flate2",
  "futures-util",
  "get_if_addrs",
+ "hex",
  "hyper 0.14.32",
  "image",
+ "ipconfig",
  "itertools",
  "lazy_static",
  "libc",
@@ -959,6 +961,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha1",
  "sha2",
  "ssh2",
  "sysinfo",
@@ -2122,6 +2125,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21dec9db110f5f872ed9699c3ecf50cf16f423502706ba5c72462e28d3157573"
+
+[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2446,6 +2455,18 @@ dependencies = [
  "bitflags 2.9.4",
  "cfg-if",
  "libc",
+]
+
+[[package]]
+name = "ipconfig"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b58db92f96b720de98181bbbe63c831e87005ab460c1bf306eb2622b4707997f"
+dependencies = [
+ "socket2 0.5.10",
+ "widestring",
+ "windows-sys 0.48.0",
+ "winreg 0.50.0",
 ]
 
 [[package]]
@@ -5475,6 +5496,7 @@ dependencies = [
  "gtk",
  "heck 0.5.0",
  "http 1.3.1",
+ "http-range",
  "jni",
  "libc",
  "log",
@@ -6840,6 +6862,12 @@ dependencies = [
  "once_cell",
  "rustix 0.38.44",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

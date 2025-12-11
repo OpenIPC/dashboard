@@ -1,306 +1,153 @@
-import React, { useCallback, useMemo } from 'react';
-import {
-  Typography,
-  Box,
-  Button,
-  Stack,
-  Alert,
-  CircularProgress,
-  Paper,
-  Chip,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-} from '@mui/material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { useAnalytics } from '../hooks/useAnalytics';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Box, Button, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import FaceSnapshotsPanel from './analytics/FaceSnapshotsPanel';
+import ObjectCounterPanel from './analytics/ObjectCounterPanel';
+import LicensePlatePanel from './analytics/LicensePlatePanel';
+import { useLocalization } from '../hooks/useLocalization';
 
-interface StateChartDatum {
-  state: string;
-  count: number;
-}
+type TabValue = 'face' | 'objects' | 'plates';
 
-interface ProgressChartDatum {
-  name: string;
-  progress: number;
-}
-
-const STATE_LABELS: Record<string, string> = {
-  ready: 'Ready',
-  disabled: 'Disabled',
-  error: 'Error',
-  loading: 'Loading',
-  other: 'Other',
-};
-
-const formatPercentage = (value: number): string => `${Math.round(value * 100)}%`;
+const TAB_VALUES: TabValue[] = ['face', 'objects', 'plates'];
 
 const Analytics: React.FC = () => {
-  const {
-    modules,
-    isLoadingModules,
-    lastError,
-    lastUpdatedAt,
-    refreshModules,
-    detections,
-    processingModuleIds,
-    clearDetections,
-  } = useAnalytics();
+  const { t } = useLocalization();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = (searchParams.get('view') as TabValue) ?? 'objects';
+  const [tab, setTab] = useState<TabValue>(TAB_VALUES.includes(initialTab) ? initialTab : 'face');
 
-  const handleRefresh = useCallback(() => {
-    void refreshModules();
-  }, [refreshModules]);
+  useEffect(() => {
+    const viewParam = searchParams.get('view');
+    if (viewParam && TAB_VALUES.includes(viewParam as TabValue) && viewParam !== tab) {
+      setTab(viewParam as TabValue);
+    }
+  }, [searchParams, tab]);
 
-  const modulesReady = modules.length > 0;
+  useEffect(() => {
+    if (!searchParams.get('view')) {
+      const next = new URLSearchParams(searchParams);
+      next.set('view', tab);
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, tab]);
 
-  const enabledCount = useMemo(
-    () => modules.filter(module => module.enabled).length,
-    [modules],
+  const handleTabChange = (_event: React.SyntheticEvent, value: TabValue) => {
+    setTab(value);
+    const next = new URLSearchParams(searchParams);
+    next.set('view', value);
+    setSearchParams(next, { replace: true });
+  };
+
+  const tabs = useMemo(
+    () => [
+      {
+        value: 'face' as TabValue,
+        label: t('analytics_face_tab'),
+        description: t('analytics_face_tab_hint'),
+      },
+      {
+        value: 'objects' as TabValue,
+        label: t('analytics_object_tab'),
+        description: t('analytics_object_tab_hint'),
+      },
+      {
+        value: 'plates' as TabValue,
+        label: t('analytics_plate_tab'),
+        description: t('analytics_plate_tab_hint'),
+      },
+    ],
+    [t],
   );
 
-  const errorCount = useMemo(
-    () => modules.filter(module => module.state === 'error').length,
-    [modules],
-  );
-
-  const stateChartData: StateChartDatum[] = useMemo(() => {
-    if (!modulesReady) {
-      return [];
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
     }
-
-    const totals: Record<string, number> = {
-      ready: 0,
-      disabled: 0,
-      error: 0,
-      loading: 0,
-      other: 0,
-    };
-
-    modules.forEach(module => {
-      if (module.state === 'ready' || module.state === 'disabled' || module.state === 'error') {
-        totals[module.state] += 1;
-      } else if (module.state === 'loading') {
-        totals.loading += 1;
-      } else {
-        totals.other += 1;
-      }
-    });
-
-    return Object.entries(totals)
-      .filter(([, count]) => count > 0)
-      .map(([state, count]) => ({
-        state: STATE_LABELS[state] ?? state,
-        count,
-      }));
-  }, [modules, modulesReady]);
-
-  const progressChartData: ProgressChartDatum[] = useMemo(() => {
-    if (!modulesReady) {
-      return [];
-    }
-
-    return modules.map(module => ({
-      name: module.name,
-      progress: module.progress ?? (module.enabled ? 1 : 0),
-    }));
-  }, [modules, modulesReady]);
-
-  const moduleNameLookup = useMemo(() => {
-    const map = new Map<string, string>();
-    modules.forEach(module => {
-      map.set(module.id, module.name);
-    });
-    return map;
-  }, [modules]);
-
-  const recentDetections = useMemo(() => detections.slice(0, 10), [detections]);
-
-  const isProcessing = processingModuleIds.length > 0;
-
-  const formattedUpdatedAt = useMemo(() => {
-    if (!lastUpdatedAt) {
-      return '—';
-    }
-
-    const timestamp = Date.parse(lastUpdatedAt);
-    if (Number.isNaN(timestamp)) {
-      return lastUpdatedAt;
-    }
-
-    return new Date(timestamp).toLocaleString();
-  }, [lastUpdatedAt]);
+    navigate('/');
+  };
 
   return (
-    <Box display="flex" flexDirection="column" gap={3}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Analytics
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Last updated: {formattedUpdatedAt}
-          </Typography>
-        </Box>
-        <Button variant="contained" onClick={handleRefresh} disabled={isLoadingModules}>
-          {isLoadingModules ? 'Refreshing…' : 'Refresh'}
+    <Box sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        <Button
+          variant="text"
+          color="inherit"
+          startIcon={<ArrowBackIcon />}
+          onClick={handleBack}
+          sx={{ textTransform: 'none', minWidth: 0, px: 0.5 }}
+        >
+          {t('snapshots_back_button')}
         </Button>
-      </Stack>
-
-      {lastError && (
-        <Alert severity="warning">
-          {lastError}
-        </Alert>
-      )}
-
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-        <Paper sx={{ p: 2, flex: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Total Modules
-          </Typography>
-          <Typography variant="h5">{modules.length}</Typography>
-        </Paper>
-        <Paper sx={{ p: 2, flex: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Enabled
-          </Typography>
-          <Typography variant="h5">{enabledCount}</Typography>
-        </Paper>
-        <Paper sx={{ p: 2, flex: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Errors
-          </Typography>
-          <Typography variant="h5">{errorCount}</Typography>
-        </Paper>
-      </Stack>
-
-      {isLoadingModules && !modulesReady ? (
-        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={6}>
-          <CircularProgress />
-          <Typography variant="body2" color="text.secondary" mt={2}>
-            Loading module data…
-          </Typography>
-        </Box>
-      ) : modulesReady ? (
-        <Box display="flex" flexDirection="column" gap={3}>
-          {isProcessing && (
-            <Alert severity="info">
-              Processing analytics for modules: {processingModuleIds.map(id => moduleNameLookup.get(id) ?? id).join(', ')}
-            </Alert>
-          )}
-
-          {stateChartData.length > 0 && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Module States
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={stateChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="state" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count" fill="#8884d8" name="Modules" />
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          )}
-
-          {progressChartData.length > 0 && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Module Progress
-              </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={progressChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" interval={0} angle={-15} textAnchor="end" height={80} />
-                  <YAxis tickFormatter={formatPercentage} domain={[0, 1]} />
-                  <Tooltip formatter={value => formatPercentage(Number(value))} />
-                  <Legend />
-                  <Bar dataKey="progress" fill="#82ca9d" name="Progress" />
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          )}
-
-          <Paper sx={{ p: 2 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-              <Box>
-                <Typography variant="h6">Recent Detections</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Showing up to the 10 most recent detection events.
-                </Typography>
-              </Box>
-              <Button variant="outlined" size="small" onClick={clearDetections} disabled={detections.length === 0}>
-                Clear
-              </Button>
-            </Stack>
-
-            {recentDetections.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No detections recorded yet.
-              </Typography>
-            ) : (
-              <List disablePadding>
-                {recentDetections.map((event, index) => {
-                  const moduleLabel = moduleNameLookup.get(event.moduleId) ?? event.moduleId;
-                  const cameraLabel = event.cameraId ?? 'Unknown camera';
-                  const detectionCount = event.detections.length;
-                  const processedAt = new Date(event.processedAt).toLocaleString();
-                  const receivedAt = new Date(event.receivedAt).toLocaleTimeString();
-
-                  return (
-                    <React.Fragment key={event.id}>
-                      {index > 0 && <Divider component="li" />}
-                      <ListItem alignItems="flex-start">
-                        <ListItemText
-                          primary={
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Typography variant="subtitle1">{moduleLabel}</Typography>
-                              <Chip label={`${detectionCount} detections`} size="small" color={detectionCount > 0 ? 'success' : 'default'} />
-                            </Stack>
-                          }
-                          secondary={
-                            <Stack spacing={0.5} mt={1}>
-                              <Typography variant="body2" color="text.secondary">
-                                Camera: {cameraLabel}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Processed: {processedAt} • Received: {receivedAt}
-                              </Typography>
-                              {event.detections.slice(0, 3).map(detection => (
-                                <Typography key={detection.id} variant="body2">
-                                  • {detection.label} ({Math.round(detection.confidence * 100)}%)
-                                </Typography>
-                              ))}
-                              {event.detections.length > 3 && (
-                                <Typography variant="body2" color="text.secondary">
-                                  +{event.detections.length - 3} more…
-                                </Typography>
-                              )}
-                            </Stack>
-                          }
-                        />
-                      </ListItem>
-                    </React.Fragment>
-                  );
-                })}
-              </List>
-            )}
-          </Paper>
-        </Box>
-      ) : (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="subtitle1" gutterBottom>
-            No analytics module data available yet.
+        <Box>
+          <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+            {t('analytics_viewer_title')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Enable analytics modules in Settings → Modules to see analytics insights here.
+            {t('analytics_viewer_subtitle')}
           </Typography>
-        </Paper>
-      )}
+        </Box>
+      </Stack>
+
+      <Paper variant="outlined" sx={{ px: 1.5 }}>
+        <Tabs
+          value={tab}
+          onChange={handleTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{
+            minHeight: 44,
+            '& .MuiTabs-flexContainer': {
+              gap: 0.5,
+            },
+          }}
+        >
+          {tabs.map(tabConfig => (
+            <Tab
+              key={tabConfig.value}
+              value={tabConfig.value}
+              disableRipple
+              sx={{
+                textTransform: 'none',
+                minHeight: 44,
+                alignItems: 'flex-start',
+                px: 1.25,
+                py: 0.75,
+              }}
+              label={
+                <Box sx={{ textAlign: 'left', lineHeight: 1.2 }}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {tabConfig.label}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {tabConfig.description}
+                  </Typography>
+                </Box>
+              }
+            />
+          ))}
+        </Tabs>
+      </Paper>
+
+      <Box sx={{ flex: 1, minHeight: 0 }}>
+        {tab === 'face' && (
+          <Box sx={{ height: '100%', p: 2, pt: 0 }}>
+            <FaceSnapshotsPanel variant="embedded" />
+          </Box>
+        )}
+        {tab === 'objects' && (
+          <Box sx={{ height: '100%', p: 2, pt: 0 }}>
+            <ObjectCounterPanel />
+          </Box>
+        )}
+        {tab === 'plates' && (
+          <Box sx={{ height: '100%', p: 2, pt: 0 }}>
+            <LicensePlatePanel />
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 };

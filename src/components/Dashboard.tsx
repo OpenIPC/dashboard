@@ -13,6 +13,7 @@ import VideoStreamPlayer from './VideoStreamPlayer';
 import DualQualityStreamPlayer from './DualQualityStreamPlayer';
 import GridCell from './GridCell';
 import CellControls from './CellControls';
+import PTZControls from './PTZControls';
 import DetectionOverlay from './DetectionOverlay';
 import { useCameraContextMenu } from '../hooks/useCameraContextMenu';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -43,8 +44,10 @@ import type { CameraStatusEntry } from '../contexts/AppStateContextData';
 let globalAudioInitialized = false;
 
 const initializeGlobalAudio = async (): Promise<void> => {
-  if (globalAudioInitialized) return;
-  
+  if (globalAudioInitialized) {
+    return;
+  }
+
   try {
     if (typeof window !== 'undefined' && window.AudioContext) {
       const audioContext = new AudioContext();
@@ -74,6 +77,16 @@ const ANALYSIS_WARMUP_RETRY_MS = 1000;
 const CAMERA_STATUS_OFFLINE_TIMEOUT_MS = 8000;
 const CAMERA_STATUS_LAG_FPS = 12;
 const CAMERA_STATUS_LAG_BITRATE = 400;
+const DEFAULT_CELL_VOLUME = 0.75;
+const MIN_AUDIBLE_VOLUME = 0.01;
+
+const createInitialVolumeArray = () => Array.from({ length: MAX_CELLS }, () => DEFAULT_CELL_VOLUME);
+const clampVolume = (value?: number | null): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return DEFAULT_CELL_VOLUME;
+  }
+  return Math.min(1, Math.max(0, value));
+};
 
 const MODULE_ICON_MAP: Record<string, string> = {
   'face-detector': 'tag_faces',
@@ -132,6 +145,10 @@ interface ProcessedFrameResult {
   frameWidth: number;
   frameHeight: number;
 }
+
+const getHdStreamKey = (stream: StreamInfo): string => {
+  return `${stream.baseName}_0`;
+};
 
 const Dashboard: React.FC = () => {
   const { t } = useLocalization();
@@ -224,8 +241,10 @@ const Dashboard: React.FC = () => {
   // Новые состояния для управления ячейками
   const [cellPaused, setCellPaused] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
   const [cellMuted, setCellMuted] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => true));
+  const [cellVolume, setCellVolume] = useState<number[]>(createInitialVolumeArray);
   const [cellRecording, setCellRecording] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
   const [recordingPending, setRecordingPending] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
+  const [cellPTZActive, setCellPTZActive] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
   
   // Состояние для статистики потоков
   const streamStatsRef = React.useRef<Record<string, StreamStatEntry>>({});
@@ -305,6 +324,10 @@ const Dashboard: React.FC = () => {
   const { modules: analyticsModules, processFrame, processingModuleIds, detections: analyticsDetections } = useAnalytics();
   const readyAnalyticsModules = useMemo(
     () => analyticsModules.filter(module => module.enabled && module.state === 'ready'),
+    [analyticsModules],
+  );
+  const visibleAnalyticsModules = useMemo(
+    () => analyticsModules.filter(module => module.enabled),
     [analyticsModules],
   );
   const hasReadyAnalyticsModule = readyAnalyticsModules.length > 0;
@@ -547,19 +570,6 @@ const Dashboard: React.FC = () => {
     return entry.fullscreen ?? entry.grid;
   }, []);
 
-  const resolveAnalysisVideoElement = useCallback((index: number): HTMLVideoElement | null => {
-    if (index < 0 || index >= MAX_CELLS) {
-      return null;
-    }
-
-    const entry = videoElementRefs.current[index];
-    if (!entry) {
-      return null;
-    }
-
-    return entry.hd ?? entry.fullscreen ?? entry.grid;
-  }, []);
-
   const isVideoElementReady = useCallback((element: HTMLVideoElement | null) => {
     if (!element) {
       return false;
@@ -617,27 +627,13 @@ const Dashboard: React.FC = () => {
         return null;
       }
 
-      const streamInfo = cellStreams[index] ?? null;
       const entry = videoElementRefs.current[index];
-      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
-      let videoEl: HTMLVideoElement | null = null;
-
-      if (requiresHd) {
-        videoEl = entry?.hd ?? null;
-        if (!videoEl || !isVideoElementReady(videoEl)) {
-          if (!suppressToast) {
-            showToast(t('module_toggle_hd_warmup', { module: moduleName }), 'info');
-          }
-          return null;
+      const videoEl = entry?.hd ?? null;
+      if (!videoEl || !isVideoElementReady(videoEl)) {
+        if (!suppressToast) {
+          showToast(t('module_toggle_hd_warmup', { module: moduleName }), 'info');
         }
-      } else {
-        videoEl = resolveAnalysisVideoElement(index);
-        if (!videoEl || !isVideoElementReady(videoEl)) {
-          if (!suppressToast) {
-            showToast(t('module_toggle_no_video', { module: moduleName }), 'warning');
-          }
-          return null;
-        }
+        return null;
       }
 
       return {
@@ -648,14 +644,12 @@ const Dashboard: React.FC = () => {
       };
     },
     [
-      cellStreams,
   analyticsModules,
       hasReadyAnalyticsModule,
       isVideoElementReady,
       processingModuleSet,
       readyAnalyticsModules,
-  getLocalizedModuleNameById,
-      resolveAnalysisVideoElement,
+      getLocalizedModuleNameById,
       showToast,
       t,
     ],
@@ -672,9 +666,10 @@ const Dashboard: React.FC = () => {
           return null;
         }
 
-        // Apply resize if configured
+        const forceFullResolution = module.id === 'face-detector';
+        // Apply resize if configured (skip for face-detector to preserve snapshot quality)
         const resizeWidth = settings.analytics_resize_width;
-        if (resizeWidth > 0 && width > resizeWidth) {
+        if (!forceFullResolution && resizeWidth > 0 && width > resizeWidth) {
           const scale = resizeWidth / width;
           width = resizeWidth;
           height = Math.round(height * scale);
@@ -891,30 +886,21 @@ const Dashboard: React.FC = () => {
         return true;
       }
 
-      const streamInfo = cellStreams[index] ?? null;
       const entry = videoElementRefs.current[index];
-      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
       const hdVideo = entry?.hd ?? null;
-      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+      if (!hdVideo || !isVideoElementReady(hdVideo)) {
         return false;
-      }
-
-      const analysisVideo = resolveAnalysisVideoElement(index);
-      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
-        return true;
       }
 
       return false;
     },
     [
-      cellStreams,
       frameAnalysisActive,
       frameCapturePending,
       hasReadyAnalyticsModule,
       isVideoElementReady,
       processingModuleSet,
       readyAnalyticsModules,
-      resolveAnalysisVideoElement,
     ],
   );
 
@@ -945,17 +931,10 @@ const Dashboard: React.FC = () => {
         return t('module_toggle_no_video', { module: moduleName });
       }
 
-      const streamInfo = cellStreams[index] ?? null;
       const entry = videoElementRefs.current[index];
-      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
       const hdVideo = entry?.hd ?? null;
-      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+      if (!hdVideo || !isVideoElementReady(hdVideo)) {
         return t('module_toggle_hd_warmup', { module: moduleName });
-      }
-
-      const analysisVideo = resolveAnalysisVideoElement(index);
-      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
-        return t('module_toggle_no_video', { module: moduleName });
       }
 
       if (frameCapturePending[index]) {
@@ -965,13 +944,11 @@ const Dashboard: React.FC = () => {
       return t('module_toggle_start', { module: moduleName });
     },
     [
-      cellStreams,
       frameAnalysisActive,
       frameCapturePending,
       hasReadyAnalyticsModule,
       isVideoElementReady,
       processingModuleSet,
-      resolveAnalysisVideoElement,
       t,
     ],
   );
@@ -1015,22 +992,14 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      const streamInfo = cellStreams[index] ?? null;
       const entry = videoElementRefs.current[index];
-      const requiresHd = streamInfo ? streamInfo.quality !== 'hd' : false;
       const hdVideo = entry?.hd ?? null;
-      const analysisVideo = requiresHd ? hdVideo : resolveAnalysisVideoElement(index);
 
-      if (requiresHd && (!hdVideo || !isVideoElementReady(hdVideo))) {
+      if (!hdVideo || !isVideoElementReady(hdVideo)) {
         showToast(t('module_toggle_hd_warmup', { module: localizedName }), 'info');
         analysisModuleRef.current[index] = moduleId;
         setFrameAnalysisActiveState(index, true);
         void runAnalysisIteration(index, { initial: true, showSuccessToast: true });
-        return;
-      }
-
-      if (!analysisVideo || !isVideoElementReady(analysisVideo)) {
-        showToast(t('module_toggle_no_video', { module: localizedName }), 'warning');
         return;
       }
 
@@ -1041,14 +1010,12 @@ const Dashboard: React.FC = () => {
     },
     [
       analyticsModules,
-      cellStreams,
       frameCapturePending,
       getLocalizedModuleNameById,
       hasReadyAnalyticsModule,
       isVideoElementReady,
       processingModuleSet,
       readyAnalyticsModules,
-      resolveAnalysisVideoElement,
       runAnalysisIteration,
       setFrameAnalysisActiveState,
       showToast,
@@ -1135,10 +1102,73 @@ const Dashboard: React.FC = () => {
     }
     setCellMuted(prev => {
       const updated = [...prev];
+      const nextMuted = !updated[index];
+      updated[index] = nextMuted;
+
+      if (!nextMuted) {
+        setCellVolume(prevVolume => {
+          const current = prevVolume[index];
+          if (current > MIN_AUDIBLE_VOLUME) {
+            return prevVolume;
+          }
+          const nextVolume = [...prevVolume];
+          nextVolume[index] = DEFAULT_CELL_VOLUME;
+          return nextVolume;
+        });
+        void initializeGlobalAudio();
+      }
+
+      return updated;
+    });
+  };
+
+  const toggleCellPTZ = (index: number) => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return;
+    }
+    setCellPTZActive(prev => {
+      const updated = [...prev];
       updated[index] = !updated[index];
       return updated;
     });
   };
+
+  const handleCellVolumeChange = useCallback((index: number, value: number) => {
+    if (index < 0 || index >= MAX_CELLS) {
+      return;
+    }
+    const clamped = clampVolume(value);
+
+    setCellVolume(prev => {
+      if (prev[index] === clamped) {
+        return prev;
+      }
+      const next = [...prev];
+      next[index] = clamped;
+      return next;
+    });
+
+    if (clamped <= MIN_AUDIBLE_VOLUME) {
+      setCellMuted(prev => {
+        if (prev[index]) {
+          return prev;
+        }
+        const next = [...prev];
+        next[index] = true;
+        return next;
+      });
+    } else {
+      setCellMuted(prev => {
+        if (!prev[index]) {
+          return prev;
+        }
+        const next = [...prev];
+        next[index] = false;
+        return next;
+      });
+      void initializeGlobalAudio();
+    }
+  }, []);
 
   const setCellRecordingState = (index: number, value: boolean) => {
     if (index < 0 || index >= MAX_CELLS) {
@@ -1429,6 +1459,7 @@ const Dashboard: React.FC = () => {
     setGridSize(savedGridSize);
     setCellPaused(cellStates.map(cell => cell?.paused ?? false));
     setCellMuted(cellStates.map(cell => cell?.muted ?? true));
+    setCellVolume(Array.from({ length: MAX_CELLS }, (_, idx) => clampVolume(cellStates[idx]?.volume)));
     setCellRecording(Array.from({ length: MAX_CELLS }, () => false));
     setRecordingPending(Array.from({ length: MAX_CELLS }, () => false));
   setCellCameras(createEmptyCameraArray());
@@ -1483,7 +1514,8 @@ const Dashboard: React.FC = () => {
       const quality: StreamQuality = cellStreams[idx]?.quality ?? 'sd';
       const muted = cellMuted[idx];
       const paused = cellPaused[idx];
-      return { cameraId, quality, muted, paused };
+      const volume = clampVolume(cellVolume[idx]);
+      return { cameraId, quality, muted, paused, volume };
     });
 
     updateDashboardState(prev => ({
@@ -1491,7 +1523,7 @@ const Dashboard: React.FC = () => {
       gridSize,
       cellStates,
     }));
-  }, [gridSize, cellCameras, cellStreams, cellMuted, cellPaused, appStateLoading, updateDashboardState]);
+  }, [gridSize, cellCameras, cellStreams, cellMuted, cellPaused, cellVolume, appStateLoading, updateDashboardState]);
 
   useEffect(() => {
     if (!layoutsRestored || restoringLayoutRef.current) {
@@ -1714,7 +1746,7 @@ const Dashboard: React.FC = () => {
 
     for (const assignment of tab.template.cameraAssignments) {
       if (assignment.cameraId && assignment.cellIndex < MAX_CELLS) {
-  const camera = appCameras.find(c => c && c.id === assignment.cameraId);
+        const camera = appCameras.find(c => c && c.id === assignment.cameraId);
         if (camera) {
           await assignCameraToCell(camera, assignment.cellIndex);
         }
@@ -2500,7 +2532,7 @@ const Dashboard: React.FC = () => {
   const gridCells = Array.from({ length: cols * rows }).map((_, idx) => {
     const cam = cellCameras[idx];
     const streamInfo = cellStreams[idx];
-    const moduleToggles = readyAnalyticsModules.map(module => {
+    const moduleToggles = visibleAnalyticsModules.map(module => {
       const displayName = getLocalizedModuleName(module);
       return {
         moduleId: module.id,
@@ -2711,6 +2743,16 @@ const Dashboard: React.FC = () => {
         copy[idx] = false;
         return copy;
       });
+      setCellVolume(prev => {
+        const copy = [...prev];
+        copy[idx] = DEFAULT_CELL_VOLUME;
+        return copy;
+      });
+      setCellMuted(prev => {
+        const copy = [...prev];
+        copy[idx] = true;
+        return copy;
+      });
       setCellRecordingState(idx, false);
       setRecordingPendingState(idx, false);
     };
@@ -2901,21 +2943,43 @@ const Dashboard: React.FC = () => {
                           isRecording={cellRecording[idx]}
                           isRecordingPending={recordingPending[idx]}
                           isMuted={cellMuted[idx]}
+                          volume={cellVolume[idx]}
+                          isPTZActive={cellPTZActive[idx]}
                           streamId={streamInfo?.quality === 'hd' ? 0 : 1}
                           streamName={streamInfo?.baseName}
                           enableSnapshot={go2rtcSettings.enableSnapshot}
                           onStreamSwitch={handleCellStreamSwitch}
                           onAudio={() => toggleCellMuted(idx)}
+                          onVolumeChange={(value) => handleCellVolumeChange(idx, value)}
                           onRecord={() => { void toggleRecordingForCell(idx); }}
                           onSnapshot={async () => {
                             if (streamInfo?.baseName) {
                               await takeSnapshot(streamInfo.baseName, streamInfo.quality);
                             }
                           }}
+                          onPTZ={() => toggleCellPTZ(idx)}
                           onClose={() => exitFullscreen()}
                           moduleToggles={moduleToggles}
                         />
                       </Box>
+
+                      {/* PTZ Controls Overlay (Fullscreen) */}
+                      {cellPTZActive[idx] && cam && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 10001, // Higher than controls
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          <PTZControls 
+                            camera={cam} 
+                            onClose={() => toggleCellPTZ(idx)}
+                            scale={1}
+                          />
+                        </Box>
+                      )}
                       
                       {/* Camera name overlay in fullscreen */}
                       <div
@@ -3000,6 +3064,7 @@ const Dashboard: React.FC = () => {
                     streamBaseName={cellStreams[idx]?.baseName || streamInfo.baseName}
                     quality={cellStreams[idx]?.quality || streamInfo.quality}
                     cellMuted={cellMuted[idx]}
+                    volume={cellVolume[idx]}
                     cellIndex={idx}
                     onStatsUpdateSD={gridCellCallbacks[idx].onStatsUpdateSD}
                     onStatsUpdateHD={gridCellCallbacks[idx].onStatsUpdateHD}
@@ -3095,17 +3160,39 @@ const Dashboard: React.FC = () => {
                 isRecording={cellRecording[idx]}
                 isRecordingPending={recordingPending[idx]}
                 isMuted={cellMuted[idx]}
+                volume={cellVolume[idx]}
+                isPTZActive={cellPTZActive[idx]}
                 streamId={streamInfo?.quality === 'hd' ? 0 : 1}
                 streamName={streamInfo?.baseName}
                 enableSnapshot={go2rtcSettings.enableSnapshot}
                 onStreamSwitch={handleCellStreamSwitch}
                 onAudio={handleCellAudio}
+                onVolumeChange={(value) => handleCellVolumeChange(idx, value)}
                 onRecord={handleCellRecord}
                 onSnapshot={handleCellSnapshot}
+                onPTZ={() => toggleCellPTZ(idx)}
                 onClose={() => { void handleClearCell(); }}
                 moduleToggles={moduleToggles}
               />
             </Box>
+
+            {/* PTZ Controls Overlay */}
+            {cellPTZActive[idx] && cam && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 100,
+                  pointerEvents: 'none',
+                }}
+              >
+                <PTZControls 
+                  camera={cam} 
+                  onClose={() => toggleCellPTZ(idx)}
+                  scale={gridSize === 1 ? 1 : (gridSize <= 4 ? 0.8 : 0.6)}
+                />
+              </Box>
+            )}
           </>
         ) : (
             <Box sx={{ 
@@ -3139,7 +3226,7 @@ const Dashboard: React.FC = () => {
   const fullscreenRecording = fullscreenIndex >= 0 ? cellRecording[fullscreenIndex] : false;
   const fullscreenRecordingPending = fullscreenIndex >= 0 ? recordingPending[fullscreenIndex] : false;
   const fullscreenModuleToggles = fullscreenIndex >= 0
-    ? readyAnalyticsModules.map(module => {
+    ? visibleAnalyticsModules.map(module => {
         const displayName = getLocalizedModuleName(module);
         return {
           moduleId: module.id,

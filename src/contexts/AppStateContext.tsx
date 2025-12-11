@@ -28,7 +28,7 @@ const defaultSettings: AppStateSettings = {
   recordingsFolder: '',
   screenshotsFolder: '',
   hardwareAcceleration: 'Auto',
-  analyticsProvider: 'Auto (GPU if available)',
+  analyticsProvider: 'Auto',
   enableNotifications: true,
   qscale: 8,
   fps: 20,
@@ -81,6 +81,8 @@ const pickNumber = (source: Record<string, unknown>, keys: string[], fallback: n
   return fallback;
 };
 
+const DEFAULT_CELL_VOLUME = 0.75;
+
 const normalizeAppSettings = (input?: Record<string, unknown> | null): AppStateSettings => {
   const base = { ...defaultSettings };
   if (!input || typeof input !== 'object') {
@@ -93,7 +95,7 @@ const normalizeAppSettings = (input?: Record<string, unknown> | null): AppStateS
   const recordingsFolder = pickString(source, ['recordingsFolder', 'recordingsPath'], base.recordingsFolder);
   const screenshotsFolder = pickString(source, ['screenshotsFolder', 'screenshotsPath'], base.screenshotsFolder);
   const hardwareAcceleration = pickString(source, ['hardwareAcceleration', 'hwAccel'], base.hardwareAcceleration);
-  const analyticsProvider = pickString(source, ['analyticsProvider', 'analytics_provider'], base.analyticsProvider);
+  const analyticsProvider = pickString(source, ['analyticsProvider', 'analytics_provider'], 'Auto');
   const enableNotifications = pickBoolean(source, ['enableNotifications', 'notifications_enabled'], base.enableNotifications);
   const qscale = pickNumber(source, ['qscale', 'qScale'], base.qscale, 2, 31);
   const fps = pickNumber(source, ['fps'], base.fps, 5, 60);
@@ -187,6 +189,7 @@ const createDefaultDashboardCellState = (): DashboardCellState => ({
   quality: 'sd',
   muted: true,
   paused: false,
+  volume: DEFAULT_CELL_VOLUME,
 });
 
 const createDefaultDashboardState = (): DashboardState => ({
@@ -216,11 +219,12 @@ const normalizeDashboardState = (state: Partial<DashboardState> | null | undefin
     }
 
     const cameraId = typeof cell.cameraId === 'number' ? cell.cameraId : null;
-  const quality: 'hd' | 'sd' = cell.quality === 'hd' ? 'hd' : 'sd';
+    const quality: 'hd' | 'sd' = cell.quality === 'hd' ? 'hd' : 'sd';
     const muted = typeof cell.muted === 'boolean' ? cell.muted : true;
     const paused = typeof cell.paused === 'boolean' ? cell.paused : false;
+    const volume = toClampedNumber(cell.volume, DEFAULT_CELL_VOLUME, 0, 1);
 
-    return { cameraId, quality, muted, paused };
+    return { cameraId, quality, muted, paused, volume };
   });
 
   const normalizeTemplatePreview = (preview: unknown): StoredLayoutTemplatePreview | null => {
@@ -336,7 +340,8 @@ const dashboardStatesEqual = (a: DashboardState, b: DashboardState): boolean => 
       cellA.cameraId !== cellB.cameraId ||
       cellA.quality !== cellB.quality ||
       cellA.muted !== cellB.muted ||
-      cellA.paused !== cellB.paused
+      cellA.paused !== cellB.paused ||
+      cellA.volume !== cellB.volume
     ) {
       return false;
     }
@@ -714,19 +719,23 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
 
   const addCamera = async (camera: Camera) => {
     console.log('AppStateContext: Adding camera:', camera);
-    const newCameras = [...cameras, camera];
-    setCamerasState(newCameras);
-    setGlobalCameras(newCameras);
-    console.log('AppStateContext: Camera added, new cameras count:', newCameras.length);
+    setCamerasState(prev => {
+      const newCameras = [...prev, camera];
+      setGlobalCameras(newCameras);
+      console.log('AppStateContext: Camera added, new cameras count:', newCameras.length);
+      return newCameras;
+    });
     await prewarmCameraStreams(camera);
   };
 
   const updateCamera = async (updatedCamera: Camera) => {
-    const newCameras = cameras.map(cam => 
-      cam.id === updatedCamera.id ? updatedCamera : cam
-    );
-    setCamerasState(newCameras);
-    setGlobalCameras(newCameras);
+    setCamerasState(prev => {
+      const newCameras = prev.map(cam => 
+        cam.id === updatedCamera.id ? updatedCamera : cam
+      );
+      setGlobalCameras(newCameras);
+      return newCameras;
+    });
     if (typeof updatedCamera.id === 'number') {
       prewarmedCamerasRef.current.delete(updatedCamera.id);
     }
@@ -734,9 +743,11 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
   };
 
   const removeCamera = async (cameraId: number) => {
-    const newCameras = cameras.filter(cam => cam.id !== cameraId);
-    setCamerasState(newCameras);
-    setGlobalCameras(newCameras);
+    setCamerasState(prev => {
+      const newCameras = prev.filter(cam => cam.id !== cameraId);
+      setGlobalCameras(newCameras);
+      return newCameras;
+    });
     prewarmedCamerasRef.current.delete(cameraId);
   };
 
@@ -746,27 +757,26 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
   };
 
   const addGroup = async (group: CameraGroup) => {
-    const newGroups = [...groups, group];
-    setGroupsState(newGroups);
+    setGroupsState(prev => [...prev, group]);
   };
 
   const updateGroup = async (updatedGroup: CameraGroup) => {
-    const newGroups = groups.map(group => 
+    setGroupsState(prev => prev.map(group => 
       group.id === updatedGroup.id ? updatedGroup : group
-    );
-    setGroupsState(newGroups);
+    ));
   };
 
   const removeGroup = async (groupId: number) => {
-    const newGroups = groups.filter(group => group.id !== groupId);
-    setGroupsState(newGroups);
+    setGroupsState(prev => prev.filter(group => group.id !== groupId));
     
     // Убираем камеры из удаленной группы
-    const updatedCameras = cameras.map(camera => 
-      camera.groupId === groupId ? { ...camera, groupId: undefined } : camera
-    );
-    setCamerasState(updatedCameras);
-    setGlobalCameras(updatedCameras);
+    setCamerasState(prevCameras => {
+      const updatedCameras = prevCameras.map(camera => 
+        camera.groupId === groupId ? { ...camera, groupId: undefined } : camera
+      );
+      setGlobalCameras(updatedCameras);
+      return updatedCameras;
+    });
   };
 
   // Функции для работы с настройками
@@ -853,6 +863,7 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
     updateSettings,
     streamingProvider,
     ensureStreamingBackendStarted,
+    prewarmCameraStreams,
     
     // State management
     isLoading,

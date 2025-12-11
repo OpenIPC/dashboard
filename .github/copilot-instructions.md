@@ -25,6 +25,12 @@
 - [x] Ensure Documentation is Complete
 	<!-- README.md updated with project description and instructions. -->
 
+- [x] Implement PTZ Control
+	<!-- Implemented ONVIF PTZ backend support and frontend UI controls. -->
+
+- [x] Improve Object Counter
+	<!-- Added snapshot saving, improved UI. Upgraded model to YOLOv11s for better long-range detection. -->
+
 # VMS Dashboard Copilot Instructions
 
 - Work through each checklist item systematically.

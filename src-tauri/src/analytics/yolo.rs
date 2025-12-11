@@ -409,6 +409,13 @@ impl YoloDetector {
                     height: candidate.y2 - candidate.y1,
                 },
                 color: self.color_for(candidate.class_idx).to_string(),
+                track_id: None,
+                previous_bounds: None,
+                dwell_ms: None,
+                first_seen_at: None,
+                last_seen_at: None,
+                event_type: None,
+                zone: None,
             })
             .collect()
     }

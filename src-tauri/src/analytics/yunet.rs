@@ -953,6 +953,13 @@ fn to_detection_box(index: usize, det: [f32; 5], scale_x: f32, scale_y: f32) -> 
             height,
         },
         color: "#ff7f50".to_string(),
+        track_id: None,
+        previous_bounds: None,
+        dwell_ms: None,
+        first_seen_at: None,
+        last_seen_at: None,
+        event_type: None,
+        zone: None,
     }
 }
 

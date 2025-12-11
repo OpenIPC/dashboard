@@ -34,10 +34,13 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import StorageIcon from '@mui/icons-material/Storage';
+import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import ArticleIcon from '@mui/icons-material/Article';
 import type { Camera, CameraGroup, CameraFormDraft, CameraFormValues } from '../types';
 import AddCameraDialog from './AddCameraDialog';
+import BatchAddCameraDialog from './BatchAddCameraDialog';
 import CameraSearchDialog from './CameraSearchDialog';
 import type { DiscoveredCamera } from './CameraSearchDialog';
 import SettingsModal from './SettingsModal';
@@ -45,11 +48,15 @@ import UserDialog from './UserDialog';
 import TerminalComponent from './Terminal';
 import FileManager from './FileManager';
 import ArchiveImproved from './ArchiveImproved';
+import AnalyticsModal from './AnalyticsModal';
 import { useLocalization } from '../hooks/useLocalization';
 import { useAppState } from '../hooks/useAppState';
 import { useAuth } from '../hooks/useAuth';
 import { useCameraContextMenu } from '../hooks/useCameraContextMenu';
 import { CAMERA_STATUS_COLORS, resolveCameraStatusLabel } from '../utils/cameraStatus';
+import { useToast } from '../hooks/useToast';
+import { Toast } from './Toast';
+import { useLoggerUi } from '../contexts/LoggerUiContext';
 
 type DiscoveryEventPayload = DiscoveredCamera;
 
@@ -84,11 +91,14 @@ const DevicePanel: React.FC = () => {
     openCameraContextMenu,
     registerDefaultCameraContextMenuHandlers,
   } = useCameraContextMenu();
+  const { toast, showToast, hideToast } = useToast();
+  const { openViewer } = useLoggerUi();
 
   const [addOpen, setAddOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [foundCameras, setFoundCameras] = useState<DiscoveredCamera[]>([]);
   const foundCamerasRef = useRef<DiscoveredCamera[]>(foundCameras);
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -97,6 +107,8 @@ const DevicePanel: React.FC = () => {
   const [showArchive, setShowArchive] = useState(false);
   const [sshTerminalCamera, setSshTerminalCamera] = useState<Camera | null>(null);
   const [fileManagerCamera, setFileManagerCamera] = useState<Camera | null>(null);
+  const [batchAddOpen, setBatchAddOpen] = useState(false);
+  const [selectedBatchCameras, setSelectedBatchCameras] = useState<DiscoveredCamera[]>([]);
 
   const cameraStatusesRef = useRef(cameraStatuses);
   useEffect(() => {
@@ -356,18 +368,20 @@ const DevicePanel: React.FC = () => {
     };
   }, [clearDiscoveryTimer]);
 
-  const discoverCameras = async () => {
+  const discoverCameras = useCallback(async (interfaces?: string[]) => {
     try {
-      console.log('Starting camera discovery...');
-      // Очищаем предыдущие результаты и включаем индикатор
+      console.log('Starting camera discovery...', interfaces);
       setFoundCameras([]);
       setIsDiscovering(true);
-      setDiscoveryProgress('Сканирование сети...');
+      setDiscoveryProgress(t('camera_search_scanning'));
 
       scheduleDiscoveryTimeout();
 
-      // Запускаем поиск (результаты придут через события)
-      await invoke('discover_cameras');
+      const payload = interfaces && interfaces.length > 0
+        ? { request: { interfaces } }
+        : { request: null };
+
+      await invoke('discover_cameras', payload);
       console.log('Camera discovery started successfully');
     } catch (error) {
       console.error('Failed to start camera discovery:', error);
@@ -376,7 +390,7 @@ const DevicePanel: React.FC = () => {
       setIsDiscovering(false);
       setDiscoveryProgress('');
     }
-  };
+  }, [clearDiscoveryTimer, scheduleDiscoveryTimeout, t]);
 
   // Функции для работы с группами
   const handleCreateGroup = async () => {
@@ -739,9 +753,7 @@ const DevicePanel: React.FC = () => {
                       }}
                       disabled={isDiscovering}
                       onClick={() => {
-                        setFoundCameras([]);
                         setSearchOpen(true);
-                        discoverCameras();
                       }}
                     >
                       {isDiscovering ? <CircularProgress size={20} color="inherit" /> : <SearchIcon />}
@@ -776,14 +788,14 @@ const DevicePanel: React.FC = () => {
                 </Tooltip>
               )}
               {canViewArchive && (
-                <Tooltip title={t('plate_database')}>
+                <Tooltip title={t('analytics_unified_window')}>
                   <span>
                     <IconButton
                       size="small"
                       sx={{ color: 'rgba(255,255,255,0.7)' }}
-                      onClick={() => navigate('/plate-database')}
+                      onClick={() => setAnalyticsOpen(true)}
                     >
-                      <StorageIcon />
+                      <QueryStatsRoundedIcon />
                     </IconButton>
                   </span>
                 </Tooltip>
@@ -801,6 +813,17 @@ const DevicePanel: React.FC = () => {
                   </span>
                 </Tooltip>
               )}
+              <Tooltip title={t('log_viewer.tooltip')}>
+                <span>
+                  <IconButton
+                    size="small"
+                    sx={{ color: 'rgba(255,255,255,0.7)' }}
+                    onClick={openViewer}
+                  >
+                    <ArticleIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               {canManageUsers && (
@@ -875,17 +898,66 @@ const DevicePanel: React.FC = () => {
         foundCameras={foundCameras}
         isDiscovering={isDiscovering}
         discoveryProgress={discoveryProgress}
-        onAddSelected={(cameraData) => {
-          setAddDialogData({
-            name: cameraData.name,
-            ip: cameraData.ip,
-            protocol: cameraData.protocol ?? 'onvif',
-            port: cameraData.port ?? cameraData.detectedPort ?? 554,
-            onvifPort: cameraData.onvifPort ?? cameraData.detectedPort ?? 80,
-          });
-          setAddOpen(true);
+        onStartDiscovery={filters => discoverCameras(filters?.interfaces)}
+        onAddSelected={(camerasData) => {
+          if (camerasData.length === 1) {
+            const cameraData = camerasData[0];
+            setAddDialogData({
+              name: cameraData.name,
+              ip: cameraData.ip,
+              protocol: cameraData.protocol ?? 'onvif',
+              port: cameraData.port ?? cameraData.detectedPort ?? 554,
+              onvifPort: cameraData.onvifPort ?? cameraData.detectedPort ?? 80,
+            });
+            setAddOpen(true);
+          } else {
+            setSelectedBatchCameras(camerasData);
+            setBatchAddOpen(true);
+          }
           setSearchOpen(false);
         }}
+      />
+
+      <BatchAddCameraDialog
+        open={batchAddOpen}
+        onClose={() => setBatchAddOpen(false)}
+        count={selectedBatchCameras.length}
+        onAdd={async (credentials, onProgress) => {
+          let tempId = nextId.current;
+          let addedCount = 0;
+          for (const cam of selectedBatchCameras) {
+            const camera: Camera = {
+              id: tempId++,
+              name: cam.name || 'Camera',
+              ip: cam.ip,
+              protocol: cam.protocol || 'onvif',
+              port: cam.port || cam.detectedPort || 554,
+              user: credentials.user,
+              pass: credentials.pass,
+              path_hd: '',
+              path_sd: '',
+              status: 'offline',
+              onvifPort: cam.onvifPort || cam.detectedPort || 80,
+              groupId: null,
+              streamUrl: '',
+            };
+            await addCamera(camera);
+            addedCount++;
+            if (onProgress) {
+              onProgress(addedCount);
+            }
+          }
+          setBatchAddOpen(false);
+          setSelectedBatchCameras([]);
+          showToast(t('batch_add_success', { count: addedCount }), 'success');
+        }}
+      />
+      
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        severity={toast.severity}
+        onClose={hideToast}
       />
       
       <SettingsModal 
@@ -1101,6 +1173,10 @@ const DevicePanel: React.FC = () => {
         open={Boolean(sshTerminalCamera)}
         camera={sshTerminalCamera}
         onClose={() => setSshTerminalCamera(null)}
+      />
+      <AnalyticsModal
+        open={analyticsOpen}
+        onClose={() => setAnalyticsOpen(false)}
       />
         </>
       )}

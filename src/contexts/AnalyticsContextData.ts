@@ -3,6 +3,7 @@ import type {
   AnalyticsModuleStatus,
   AnalyticsDetectionResponse,
   AnalyticsProcessFrameRequest,
+  UpdateAnalyticsModuleConfigOptions,
 } from '../services/analytics';
 
 export interface AnalyticsDetectionEvent extends AnalyticsDetectionResponse {
@@ -24,6 +25,10 @@ export interface AnalyticsContextValue {
   updateModuleSnapshotsDir: (
     moduleId: string,
     snapshotsDir?: string,
+  ) => Promise<AnalyticsModuleStatus | null>;
+  updateModuleConfig: (
+    moduleId: string,
+    options: UpdateAnalyticsModuleConfigOptions,
   ) => Promise<AnalyticsModuleStatus | null>;
   clearDetections: () => void;
 }

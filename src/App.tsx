@@ -6,16 +6,18 @@ import Dashboard from './components/Dashboard';
 import Cameras from './components/Cameras';
 import Analytics from './components/Analytics';
 import Settings from './components/Settings';
-import PlateDatabase from './components/PlateDatabase';
 import { LocalizationProvider } from './contexts/LocalizationContext';
 import { AppStateProvider } from './contexts/AppStateContext';
 import { AnalyticsProvider } from './contexts/AnalyticsContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebRTCStatsProvider } from './contexts/WebRTCStatsContext';
+import { LoggerProvider } from './contexts/LoggerContext';
+import { LoggerUiProvider } from './contexts/LoggerUiContext';
 import { useAuth } from './hooks/useAuth';
 import Layout from './components/Layout';
 import LoginScreen from './components/LoginScreen';
 import { useEffect, useState } from 'react';
+import { logger } from './services/logger';
 
 const theme = createTheme({
   palette: {
@@ -48,6 +50,7 @@ const AuthGate: React.FC = () => {
     console.log('AuthGate render:', { user: !!user, initializing });
     if (user) {
       console.log('User authenticated:', user);
+      logger.info('auth', `User authenticated: ${user.username}`);
     }
   }, [user, initializing]);
 
@@ -90,7 +93,6 @@ const AuthGate: React.FC = () => {
               <Route path="/" element={<Dashboard />} />
               <Route path="/cameras" element={<Cameras />} />
               <Route path="/analytics" element={<Analytics />} />
-              <Route path="/plate-database" element={<PlateDatabase />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Layout>
@@ -105,15 +107,18 @@ function App() {
 
   useEffect(() => {
     console.log('App component mounted');
+    logger.info('app', 'Application started');
     
     // Добавляем обработчик ошибок
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
+      logger.error('app', 'Uncaught error', event.error);
       setError(event.error?.message || 'Unknown error');
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('Unhandled promise rejection:', event.reason);
+      logger.error('app', 'Unhandled promise rejection', event.reason);
       setError(event.reason?.message || 'Promise rejection');
     };
 
@@ -170,12 +175,16 @@ function App() {
   return (
     <LocalizationProvider>
       <AuthProvider>
-        <WebRTCStatsProvider>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <AuthGate />
-          </ThemeProvider>
-        </WebRTCStatsProvider>
+        <LoggerProvider>
+          <LoggerUiProvider>
+            <WebRTCStatsProvider>
+              <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <AuthGate />
+              </ThemeProvider>
+            </WebRTCStatsProvider>
+          </LoggerUiProvider>
+        </LoggerProvider>
       </AuthProvider>
     </LocalizationProvider>
   );

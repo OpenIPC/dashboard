@@ -93,7 +93,7 @@ onnxruntime_providers_shared.dll (0.02 MB)
 
 | Файл | Размер | Откуда |
 |------|--------|--------|
-| `yolov8n.onnx` | ~6 MB | GitHub (Rinibr25) |
+| `yolo11s.onnx` | ~22 MB | GitHub (Rinibr25) |
 | `onnxruntime-win-x64-1.23.0.zip` | ~143 MB | Microsoft GitHub |
 | **ИТОГО** | **~149 MB** | - |
 

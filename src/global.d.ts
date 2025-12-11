@@ -85,6 +85,7 @@ declare global {
     // go2rtc enhanced state
     __GO2RTC_STATS?: Map<string, Go2RtcStreamInfo>;
     __GO2RTC_TRANSPORT?: Map<string, Go2RtcTransportType>;
+    __TAURI__?: unknown;
   }
 }
 

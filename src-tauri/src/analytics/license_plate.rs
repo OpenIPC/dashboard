@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
 use std::result::Result as StdResult;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -390,10 +391,18 @@ fn transliterate_to_cyrillic(text: &str) -> String {
         .collect()
 }
 
+struct PythonDaemon {
+    child: Child,
+    stdin: ChildStdin,
+    reader: BufReader<ChildStdout>,
+}
+
 struct CrnnRecognizer {
     session: Mutex<Session>,
     alphabet: Vec<char>,
     num_classes: usize,
+    module_dir: PathBuf,
+    python_daemon: Mutex<Option<PythonDaemon>>,
 }
 
 impl CrnnRecognizer {
@@ -428,6 +437,103 @@ impl CrnnRecognizer {
             session: Mutex::new(session),
             alphabet,
             num_classes,
+            module_dir: module_dir.to_path_buf(),
+            python_daemon: Mutex::new(None),
+        })
+    }
+
+    fn spawn_daemon(&self) -> StdResult<PythonDaemon, String> {
+        let module_dir = &self.module_dir;
+        let exe_name = if cfg!(windows) { "anpr_ocr.exe" } else { "anpr_ocr" };
+        
+        // 1. Try to find standalone executable
+        let possible_exes = vec![
+            Some(module_dir.join(exe_name)),
+            module_dir.parent().and_then(|p| p.parent()).map(|p| p.join("binaries").join(exe_name)),
+            std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join(exe_name))),
+            std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("binaries").join(exe_name))),
+        ];
+
+        let binary_path = possible_exes
+            .into_iter()
+            .flatten()
+            .find(|p| p.exists());
+
+        let (mut cmd, base_path_for_model) = if let Some(bin_path) = binary_path {
+            (Command::new(&bin_path), bin_path)
+        } else {
+            // 2. Fallback to Python script
+            let possible_scripts = vec![
+                Some(module_dir.join(PYTHON_OCR_SCRIPT)),
+                module_dir.parent().and_then(|p| p.parent()).map(|p| p.join("python_src").join(PYTHON_OCR_SCRIPT)),
+                std::env::current_dir().ok().map(|p| p.join("src-tauri").join("python_src").join(PYTHON_OCR_SCRIPT)),
+                std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("python_src").join(PYTHON_OCR_SCRIPT))),
+            ];
+
+            let script_path = possible_scripts
+                .into_iter()
+                .flatten()
+                .find(|p| p.exists())
+                .ok_or_else(|| "Python OCR binary/script not found".to_string())?;
+
+            let mut cmd = Command::new("python");
+            cmd.arg(&script_path);
+            (cmd, script_path)
+        };
+
+        // Find Python model - try multiple locations
+        let possible_model_paths = vec![
+            Some(module_dir.join(PYTHON_OCR_MODEL_FILE)),
+            base_path_for_model.parent().map(|p| p.join(PYTHON_OCR_MODEL_FILE)),
+            base_path_for_model.parent().map(|p| p.join("binaries").join(PYTHON_OCR_MODEL_FILE)),
+            base_path_for_model.parent().map(|p| p.join("anpr").join(PYTHON_OCR_MODEL_FILE)),
+        ];
+
+        let model_path = possible_model_paths
+            .into_iter()
+            .flatten()
+            .find(|p| p.exists())
+            .ok_or_else(|| {
+                format!(
+                    "Python OCR model not found. Searched near: {}",
+                    base_path_for_model.display()
+                )
+            })?;
+
+        // Configure daemon mode
+        cmd.arg("--model")
+            .arg(&model_path)
+            .arg("--daemon");
+
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::inherit());
+
+        // Hide console window on Windows
+        #[cfg(windows)]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn()
+            .map_err(|err| format!("Failed to spawn Python OCR daemon: {err}"))?;
+
+        let stdin = child.stdin.take().ok_or("Failed to open stdin")?;
+        let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+        let mut reader = BufReader::new(stdout);
+
+        // Consume "ready" message
+        let mut ready_line = String::new();
+        if let Ok(_) = reader.read_line(&mut ready_line) {
+            // Optional: check if it actually says ready
+            // println!("Daemon ready: {}", ready_line.trim());
+        }
+
+        Ok(PythonDaemon {
+            child,
+            stdin,
+            reader,
         })
     }
 
@@ -435,7 +541,7 @@ impl CrnnRecognizer {
     fn recognize_with_python(
         &self,
         roi: &DynamicImage,
-        module_dir: &Path,
+        _module_dir: &Path,
     ) -> StdResult<String, String> {
         use std::fs;
 
@@ -446,101 +552,77 @@ impl CrnnRecognizer {
         roi.save(&temp_image)
             .map_err(|err| format!("Failed to save temp image: {err}"))?;
 
-        // Find Python script - try multiple locations
-        let possible_paths = vec![
-            // Downloaded by module system: in module directory
-            Some(module_dir.join(PYTHON_OCR_SCRIPT)),
-            // Production: next to modules directory
-            module_dir
-                .parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("python_src").join(PYTHON_OCR_SCRIPT)),
-            // Development: in src-tauri
-            std::env::current_dir().ok().map(|p| {
-                p.join("src-tauri")
-                    .join("python_src")
-                    .join(PYTHON_OCR_SCRIPT)
-            }),
-            // Fallback: relative to executable
-            std::env::current_exe().ok().and_then(|exe| {
-                exe.parent()
-                    .map(|p| p.join("python_src").join(PYTHON_OCR_SCRIPT))
-            }),
-        ];
-
-        let script_path = possible_paths
-            .into_iter()
-            .flatten()
-            .find(|p| p.exists())
-            .ok_or_else(|| {
-                let searched = vec![
-                    module_dir.join(PYTHON_OCR_SCRIPT).display().to_string(),
-                    module_dir
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| {
-                            p.join("python_src")
-                                .join(PYTHON_OCR_SCRIPT)
-                                .display()
-                                .to_string()
-                        })
-                        .unwrap_or_default(),
-                ];
-                format!("Python OCR script not found. Searched: {:?}", searched)
-            })?;
-
-        // Find Python model - try multiple locations
-        let possible_model_paths = vec![
-            // Downloaded by module system: in module directory
-            Some(module_dir.join(PYTHON_OCR_MODEL_FILE)),
-            // Development: in anpr/ subdirectory next to the script
-            script_path
-                .parent()
-                .map(|p| p.join("anpr").join(PYTHON_OCR_MODEL_FILE)),
-        ];
-
-        let model_path = possible_model_paths
-            .into_iter()
-            .flatten()
-            .find(|p| p.exists())
-            .ok_or_else(|| {
-                format!(
-                    "Python OCR model not found. Searched: {} and script_dir/anpr/",
-                    module_dir.join(PYTHON_OCR_MODEL_FILE).display()
-                )
-            })?;
-
-        // Execute Python subprocess
-        let mut cmd = Command::new("python");
-        cmd.arg(&script_path)
-            .arg("--model")
-            .arg(&model_path)
-            .arg("--image")
-            .arg(&temp_image)
-            .arg("--json");
-
-        // Hide console window on Windows
-        #[cfg(windows)]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut daemon_guard = self.python_daemon.lock().map_err(|_| "Lock poisoned")?;
+        
+        if daemon_guard.is_none() {
+            println!("license-plate: Spawning Python OCR daemon...");
+            *daemon_guard = Some(self.spawn_daemon()?);
         }
+        
+        let mut retry = false;
+        let result = {
+            let daemon = daemon_guard.as_mut().unwrap();
+            
+            let request = json!({
+                "image_path": temp_image,
+                "json": true
+            });
+            
+            let request_str = request.to_string();
+            if let Err(e) = writeln!(daemon.stdin, "{}", request_str) {
+                println!("license-plate: Failed to write to daemon: {}. Restarting...", e);
+                retry = true;
+                Err(e)
+            } else {
+                let mut line = String::new();
+                match daemon.reader.read_line(&mut line) {
+                    Ok(0) => {
+                        println!("license-plate: Daemon closed stdout. Restarting...");
+                        retry = true;
+                        Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "EOF").into())
+                    }
+                    Ok(_) => Ok(line),
+                    Err(e) => {
+                        println!("license-plate: Failed to read from daemon: {}. Restarting...", e);
+                        retry = true;
+                        Err(e)
+                    }
+                }
+            }
+        };
 
-        let output = cmd
-            .output()
-            .map_err(|err| format!("Failed to execute Python OCR: {err}"))?;
+        let response_line = if retry {
+            // Kill old daemon if it exists
+            if let Some(mut old_daemon) = daemon_guard.take() {
+                let _ = old_daemon.child.kill();
+                let _ = old_daemon.child.wait();
+            }
+            
+            // Respawn
+            *daemon_guard = Some(self.spawn_daemon()?);
+            let daemon = daemon_guard.as_mut().unwrap();
+            
+            let request = json!({
+                "image_path": temp_image,
+                "json": true
+            });
+            
+            writeln!(daemon.stdin, "{}", request.to_string())
+                .map_err(|e| format!("Failed to write to restarted daemon: {}", e))?;
+                
+            let mut line = String::new();
+            daemon.reader.read_line(&mut line)
+                .map_err(|e| format!("Failed to read from restarted daemon: {}", e))?;
+            line
+        } else {
+            result.map_err(|e| format!("Daemon communication error: {}", e))?
+        };
 
         // Cleanup temp file
         let _ = fs::remove_file(&temp_image);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Python OCR failed: {stderr}"));
-        }
-
         // Parse JSON response
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let response: PythonOcrResponse = serde_json::from_str(&stdout)
+        let response: PythonOcrResponse = serde_json::from_str(&response_line)
             .map_err(|err| format!("Failed to parse Python response: {err}"))?;
 
         if let Some(error) = response.error {

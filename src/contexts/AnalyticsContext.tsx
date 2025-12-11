@@ -7,6 +7,7 @@ import {
   disableAnalyticsModule,
   processAnalyticsFrame,
   updateAnalyticsModuleSnapshotsDir,
+  updateAnalyticsModuleConfig,
   type AnalyticsModuleStatus,
   type AnalyticsProcessFrameRequest,
   type AnalyticsDetectionResponse,
@@ -173,10 +174,10 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
     setDetections([]);
   }, []);
 
-  const updateModuleSnapshotsDir = useCallback(
-    async (moduleId: string, snapshotsDir?: string) => {
+  const updateModuleConfig = useCallback(
+    async (moduleId: string, options: Parameters<typeof updateAnalyticsModuleConfig>[1]) => {
       try {
-        const updated = await updateAnalyticsModuleSnapshotsDir(moduleId, snapshotsDir);
+        const updated = await updateAnalyticsModuleConfig(moduleId, options);
         if (updated) {
           setModules(prev => {
             const exists = prev.some(module => module.id === updated.id);
@@ -195,13 +196,25 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
         return null;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn('[Analytics] updateModuleSnapshotsDir failed:', message);
+        console.warn('[Analytics] updateModuleConfig failed:', message);
         setLastError(message);
         await refreshModules();
         return null;
       }
     },
     [refreshModules],
+  );
+
+  const updateModuleSnapshotsDir = useCallback(
+    async (moduleId: string, snapshotsDir?: string) => {
+      try {
+        return await updateModuleConfig(moduleId, { snapshotsDir: snapshotsDir ?? null });
+      } catch (error) {
+        console.warn('[Analytics] updateModuleSnapshotsDir failed:', error);
+        return null;
+      }
+    },
+    [updateModuleConfig],
   );
 
   // Listen to analytics module progress events
@@ -325,6 +338,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
       toggleModule,
       processFrame,
       clearDetections,
+      updateModuleConfig,
       updateModuleSnapshotsDir,
     }),
     [
@@ -339,6 +353,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
       toggleModule,
       processFrame,
       clearDetections,
+      updateModuleConfig,
       updateModuleSnapshotsDir,
     ],
   );

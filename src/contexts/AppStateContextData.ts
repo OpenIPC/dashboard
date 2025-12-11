@@ -46,6 +46,7 @@ export interface AppStateContextType {
   updateSettings: (newSettings: Partial<AppStateSettings>) => Promise<void>;
   streamingProvider: StreamingProvider;
   ensureStreamingBackendStarted: () => Promise<void>;
+  prewarmCameraStreams: (camera: Camera) => Promise<void>;
   isLoading: boolean;
   loadAppState: () => Promise<void>;
   saveAppState: () => Promise<void>;

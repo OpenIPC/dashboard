@@ -1,39 +1,53 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { List, ListItem, ListItemText, ListItemSecondaryAction, IconButton, Typography, Button, Paper, Box, CircularProgress } from '@mui/material';
 import { PlayArrow, Stop, Add, Search, Delete, Videocam } from '@mui/icons-material';
 import VideoStreamPlayer from './VideoStreamPlayer';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-shell';
 import AddCameraDialog from './AddCameraDialog';
-import CameraSearchDialog from './CameraSearchDialog';
+import CameraSearchDialog, { type DiscoveredCamera } from './CameraSearchDialog';
 import { CameraContextMenu } from './CameraContextMenu';
 import type { Camera, CameraFormDraft, CameraFormValues } from '../types';
 import TerminalComponent from './Terminal';
 import FileManager from './FileManager';
 
-interface DiscoveryEventPayload {
-  ip: string;
-  name: string;
-  protocol?: string;
+type DiscoveryEventPayload = DiscoveredCamera;
+
+interface DiscoveryProgressPayload {
+  scanned?: number;
+  total?: number;
+}
+
+interface DiscoveryFinishedPayload {
+  found?: number;
+  status?: string;
 }
 
 const Cameras: React.FC = () => {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  const [foundCameras, setFoundCameras] = useState<{ name: string; ip: string; protocol?: string }[]>([]);
+  const [foundCameras, setFoundCameras] = useState<DiscoveredCamera[]>([]);
   const [streamingCameraId, setStreamingCameraId] = useState<number | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [initialData, setInitialData] = useState<CameraFormDraft | null>(null);
   const [streamBaseName, setStreamBaseName] = useState<string | null>(null);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [discoveryProgress, setDiscoveryProgress] = useState('');
   const [go2rtcSettings, setGo2rtcSettings] = useState({
     showMonitor: false,
     enableSnapshot: true,
     enable2WayAudio: false,
     enableAdaptiveBitrate: true,
   });
+
+  const foundCamerasRef = useRef<DiscoveredCamera[]>(foundCameras);
+  useEffect(() => {
+    foundCamerasRef.current = foundCameras;
+  }, [foundCameras]);
 
   // Load go2rtc settings from localStorage
   useEffect(() => {
@@ -135,37 +149,85 @@ const Cameras: React.FC = () => {
     console.log('🎥 CAMERAS COMPONENT LOADED 🎥');
     loadCameras();
 
-    const unlisten = listen<DiscoveryEventPayload>('device-found', event => {
-      const camera = event.payload;
-      setFoundCameras(prev => {
-        if (prev.find(c => c.ip === camera.ip)) {
-          return prev;
+    const listenerPromises: Promise<UnlistenFn>[] = [];
+
+    listenerPromises.push(
+      listen<DiscoveryEventPayload>('device-found', event => {
+        const camera = event.payload;
+        setFoundCameras(prev => {
+          if (prev.find(c => c.ip === camera.ip)) {
+            return prev;
+          }
+          return [...prev, camera];
+        });
+      })
+    );
+
+    listenerPromises.push(
+      listen<DiscoveryProgressPayload>('device-discovery-progress', event => {
+        const payload = event.payload ?? {};
+        const scanned = typeof payload.scanned === 'number' ? payload.scanned : undefined;
+        const total = typeof payload.total === 'number' ? payload.total : undefined;
+
+        if (scanned !== undefined && total !== undefined) {
+          const foundCount = foundCamerasRef.current.length;
+          const suffix = foundCount > 0 ? ` • найдено: ${foundCount}` : '';
+          setDiscoveryProgress(`Сканирование: ${scanned}/${total}${suffix}`);
+        } else {
+          setDiscoveryProgress('Сканирование сети...');
         }
-        return [...prev, camera];
-      });
-    });
+      })
+    );
+
+    listenerPromises.push(
+      listen<DiscoveryFinishedPayload>('device-discovery-finished', event => {
+        setIsDiscovering(false);
+        const payload = event.payload ?? {};
+        const found = typeof payload.found === 'number' ? payload.found : foundCamerasRef.current.length;
+
+        if (found > 0) {
+          setDiscoveryProgress(`Найдено камер: ${found}`);
+        } else if (payload.status === 'no-targets') {
+          setDiscoveryProgress('Сети для сканирования не найдены');
+        } else if (payload.status === 'error') {
+          setDiscoveryProgress('Ошибка при поиске камер');
+        } else {
+          setDiscoveryProgress('Камеры не найдены');
+        }
+      })
+    );
 
     return () => {
-      unlisten.then(unlistenFn => unlistenFn());
+      listenerPromises.forEach(promise => {
+        promise
+          .then(unlistenFn => unlistenFn())
+          .catch(() => undefined);
+      });
 
       if (window.__peerConnection) {
         window.__peerConnection.close();
         window.__peerConnection = null;
       }
-
     };
   }, [isStreaming, loadCameras]);
 
-  // Функция для запуска поиска камер
-  const startDiscovery = async () => {
-    setFoundCameras([]);
-    setSearchDialogOpen(true);
+  const triggerDiscovery = useCallback(async (interfaces?: string[]) => {
     try {
-      await invoke('discover_cameras');
+      setFoundCameras([]);
+      setIsDiscovering(true);
+      setDiscoveryProgress('Сканирование сети...');
+
+      const payload = interfaces && interfaces.length > 0
+        ? { request: { interfaces } }
+        : { request: null };
+
+      await invoke('discover_cameras', payload);
     } catch (err) {
       console.error('Failed to start camera discovery:', err);
+      setIsDiscovering(false);
+      setDiscoveryProgress('');
     }
-  };
+  }, []);
 
   // Обработчик добавления камеры
   const handleAddCamera = async (data: CameraFormValues) => {
@@ -407,7 +469,7 @@ const Cameras: React.FC = () => {
         <Button 
           variant="outlined" 
           startIcon={<Search />} 
-          onClick={startDiscovery}
+          onClick={() => setSearchDialogOpen(true)}
         >
           Поиск камер
         </Button>
@@ -598,19 +660,24 @@ const Cameras: React.FC = () => {
         open={searchDialogOpen} 
         onClose={() => setSearchDialogOpen(false)} 
         foundCameras={foundCameras}
-        onAddSelected={(cam) => {
-          // Используем данные найденной камеры для заполнения формы
+        isDiscovering={isDiscovering}
+        discoveryProgress={discoveryProgress}
+        onStartDiscovery={filters => triggerDiscovery(filters?.interfaces)}
+        onAddSelected={(cams) => {
+          if (cams.length === 0) {
+            return;
+          }
+          const cam = cams[0];
           setInitialData({
             name: cam.name,
             ip: cam.ip,
             protocol: cam.protocol || 'onvif',
-            port: 554,
+            port: cam.port ?? cam.detectedPort ?? 554,
             user: 'admin',
             pass: '',
-            onvifPort: 80,
+            onvifPort: cam.onvifPort ?? cam.detectedPort ?? 80,
             streamUrl: ''
           });
-          // Теперь передаем initialData в AddCameraDialog через состояние
           setAddDialogOpen(true);
           setSearchDialogOpen(false);
         }}

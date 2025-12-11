@@ -203,8 +203,13 @@ pub async fn play_recording(file_path: String) -> Result<String, String> {
                 .iter()
                 .any(|arg| arg == "-tune")
             {
-                ffmpeg_args.push("-tune".into());
-                ffmpeg_args.push("zerolatency".into());
+                if hw_config_for_thread.video_codec == "libx264" {
+                    ffmpeg_args.push("-tune".into());
+                    ffmpeg_args.push("zerolatency".into());
+                } else if hw_config_for_thread.video_codec.contains("nvenc") {
+                    ffmpeg_args.push("-tune".into());
+                    ffmpeg_args.push("ll".into());
+                }
             }
             if stream_fps > 0 {
                 ffmpeg_args.push("-r".into());

@@ -320,6 +320,9 @@ const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
           if (Number.isFinite(det.confidence)) {
             labelParts.push(`${Math.round(det.confidence * 100)}%`);
           }
+          if (det.zone) {
+            labelParts.push(`[${det.zone}]`);
+          }
           const labelText = labelParts.join(' ');
 
           return (

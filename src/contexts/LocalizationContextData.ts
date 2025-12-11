@@ -2,13 +2,9 @@ import { createContext } from 'react';
 
 export type SupportedLanguage = 'en' | 'ru';
 
-export interface TranslationValue {
-  [key: string]: string | TranslationValue;
-}
+export type TranslationValue = string | { [key: string]: TranslationValue };
 
-export interface Translations {
-  [key: string]: TranslationValue;
-}
+export type Translations = { [key: string]: TranslationValue };
 
 export interface LocalizationContextType {
   currentLanguage: SupportedLanguage;

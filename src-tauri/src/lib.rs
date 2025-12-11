@@ -1,4 +1,5 @@
 mod analytics;
+mod crypto;
 mod auth;
 mod camera_store;
 mod database;
@@ -515,14 +516,20 @@ struct Go2RtcState {
 
 impl Go2RtcState {
     fn new(app_handle: &AppHandle) -> Self {
+        println!("[Go2RtcState::new] Initializing Go2RTC state...");
+        
         let base_dir = app_handle.path().app_local_data_dir().unwrap_or_else(|_| {
             dirs_next::data_local_dir()
                 .or_else(dirs_next::data_dir)
                 .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         });
+        println!("[Go2RtcState::new] Base directory: {:?}", base_dir);
 
         let go2rtc_dir = base_dir.join("go2rtc");
+        println!("[Go2RtcState::new] Go2RTC directory: {:?}", go2rtc_dir);
+        
         if !go2rtc_dir.exists() {
+            println!("[Go2RtcState::new] Creating go2rtc directory...");
             if let Err(err) = fs::create_dir_all(&go2rtc_dir) {
                 println!(
                     "Failed to create go2rtc directory {:?}: {}",
@@ -533,6 +540,11 @@ impl Go2RtcState {
 
         let config_path = go2rtc_dir.join("go2rtc.yaml");
         let exe_path = go2rtc_dir.join(GO2RTC_BINARY_NAME);
+        
+        println!("[Go2RtcState::new] Config path: {:?}", config_path);
+        println!("[Go2RtcState::new] Exe path: {:?}", exe_path);
+        println!("[Go2RtcState::new] Calling prepare_binary...");
+        
         Self::prepare_binary(app_handle, &exe_path);
 
         let ffmpeg_path = go2rtc_dir.join("ffmpeg.exe");
@@ -541,18 +553,32 @@ impl Go2RtcState {
         let ffmpeg_silent_path = go2rtc_dir.join("ffmpeg-silent.exe");
         Self::prepare_ffmpeg_binary(app_handle, &ffmpeg_silent_path, "ffmpeg-silent.exe");
 
+        println!("[Go2RtcState::new] Cleaning up any existing go2rtc processes...");
+        
+        /*
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             const DETACHED_PROCESS: u32 = 0x00000008;
-            let _ = StdCommand::new("taskkill")
+            if let Ok(mut child) = StdCommand::new("taskkill")
                 .args(["/IM", GO2RTC_BINARY_NAME, "/F"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-                .spawn();
+                .spawn()
+            {
+                // Wait for taskkill to complete
+                let _ = child.wait();
+                // Give Windows time to release the process handle
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                println!("[Go2RtcState::new] Killed existing go2rtc processes");
+            }
         }
+        */
+        println!("[Go2RtcState::new] Skipped cleanup of existing go2rtc processes (manual mode)");
 
+        println!("[Go2RtcState::new] Go2RTC state initialized");
+        
         Self {
             child: None,
             go2rtc_dir,
@@ -568,6 +594,14 @@ impl Go2RtcState {
 
         if destination.exists() {
             println!("[prepare_binary] Binary already exists at destination");
+            
+            // Verify the binary is executable and has content
+            if let Ok(metadata) = fs::metadata(destination) {
+                println!("[prepare_binary] Binary size: {} bytes", metadata.len());
+                if metadata.len() < 1000 {
+                    println!("[prepare_binary] WARNING: Binary seems too small, may be corrupted");
+                }
+            }
             return;
         }
 
@@ -587,10 +621,10 @@ impl Go2RtcState {
                 if source.exists() {
                     println!("[prepare_binary] Found source binary at {:?}", source);
                     match fs::copy(&source, destination) {
-                        Ok(_) => {
+                        Ok(bytes) => {
                             println!(
-                                "Copied go2rtc binary from {:?} to {:?}",
-                                source, destination
+                                "Copied go2rtc binary from {:?} to {:?} ({} bytes)",
+                                source, destination, bytes
                             );
                             copied = true;
                             break;
@@ -1394,10 +1428,30 @@ fn find_winscp_executable() -> Option<PathBuf> {
     find_executable_in_path("WinSCP.exe").or_else(|| find_executable_in_path("winscp.exe"))
 }
 
-fn default_ssh_username(username: Option<String>) -> String {
-    username
-        .and_then(|u| if u.trim().is_empty() { None } else { Some(u) })
-        .unwrap_or_else(|| "root".to_string())
+fn ssh_username_candidates(username: Option<String>) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
+
+    if let Some(raw) = username {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            candidates.push(trimmed.to_string());
+        }
+    }
+
+    for fallback in ["root", "admin"] {
+        if !candidates
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(fallback))
+        {
+            candidates.push(fallback.to_string());
+        }
+    }
+
+    if candidates.is_empty() {
+        candidates.push("root".to_string());
+    }
+
+    candidates
 }
 
 fn build_ssh_session(
@@ -1420,7 +1474,11 @@ fn build_ssh_session(
         password_source.as_str(),
         password.chars().count()
     );
-    let username = default_ssh_username(username);
+    let username_candidates = ssh_username_candidates(username);
+    let primary_username = username_candidates
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "root".to_string());
     let host_trimmed = host.trim();
 
     if let Some(explicit) = port {
@@ -1439,7 +1497,7 @@ fn build_ssh_session(
     for candidate_port in candidate_ports.iter().copied() {
         println!(
             "[ssh] attempting connection to {}:{} as {}",
-            host_trimmed, candidate_port, username
+            host_trimmed, candidate_port, primary_username
         );
         let connect_target = format!("{}:{}", host_trimmed, candidate_port);
 
@@ -1521,70 +1579,115 @@ fn build_ssh_session(
             host_trimmed, candidate_port
         );
 
-        match session.userauth_password(&username, &password) {
-            Ok(()) => {
-                if session.authenticated() {
-                    println!(
-                        "[ssh] authentication succeeded for {}@{}:{}",
-                        username, host_trimmed, candidate_port
-                    );
-                    return Ok(session);
-                }
+        let mut auth_errors: Vec<String> = Vec::new();
+
+        for (idx, candidate_username) in username_candidates.iter().enumerate() {
+            if idx == 0 {
                 println!(
-                    "[ssh] authentication reported failure for {}@{}:{} despite Ok",
-                    username, host_trimmed, candidate_port
+                    "[ssh] authenticating as {}@{}:{}",
+                    candidate_username, host_trimmed, candidate_port
                 );
-                return Err("SSH authentication failed".to_string());
+            } else {
+                println!(
+                    "[ssh] retrying authentication with fallback username {}@{}:{}",
+                    candidate_username, host_trimmed, candidate_port
+                );
             }
-            Err(err) => {
-                println!(
-                    "[ssh] authentication failed for {}@{}:{} -> {}",
-                    username, host_trimmed, candidate_port, err
-                );
-                if password.is_empty() {
-                    return Err(format!(
-                        "SSH authentication failed for {}@{}:{}: no password provided",
-                        username, host_trimmed, candidate_port
-                    ));
-                }
 
-                println!(
-                    "[ssh] trying keyboard-interactive auth for {}@{}:{}",
-                    username, host_trimmed, candidate_port
-                );
-
-                let mut prompt_handler = PasswordPrompt {
-                    password: &password,
-                };
-
-                match session.userauth_keyboard_interactive(&username, &mut prompt_handler) {
-                    Ok(()) => {
-                        if session.authenticated() {
-                            println!(
-                                "[ssh] keyboard-interactive authentication succeeded for {}@{}:{}",
-                                username, host_trimmed, candidate_port
-                            );
-                            return Ok(session);
-                        }
+            match session.userauth_password(candidate_username, &password) {
+                Ok(()) => {
+                    if session.authenticated() {
                         println!(
-                            "[ssh] keyboard-interactive authentication reported failure for {}@{}:{} despite Ok",
-                            username, host_trimmed, candidate_port
+                            "[ssh] authentication succeeded for {}@{}:{}",
+                            candidate_username, host_trimmed, candidate_port
                         );
-                        return Err("SSH authentication failed".to_string());
+                        return Ok(session);
                     }
-                    Err(fallback_err) => {
-                        println!(
-                            "[ssh] keyboard-interactive authentication failed for {}@{}:{} -> {}",
-                            username, host_trimmed, candidate_port, fallback_err
-                        );
+                    let message = format!(
+                        "[ssh] authentication reported failure for {}@{}:{} despite Ok",
+                        candidate_username, host_trimmed, candidate_port
+                    );
+                    println!("{}", message);
+                    auth_errors.push(message);
+                    continue;
+                }
+                Err(err) => {
+                    let err_msg = err.to_string();
+                    println!(
+                        "[ssh] authentication failed for {}@{}:{} -> {}",
+                        candidate_username, host_trimmed, candidate_port, err_msg
+                    );
+                    if password.is_empty() {
                         return Err(format!(
-                            "SSH authentication failed for {}@{}:{}: {} (keyboard-interactive fallback: {})",
-                            username, host_trimmed, candidate_port, err, fallback_err
+                            "SSH authentication failed for {}@{}:{}: no password provided",
+                            candidate_username, host_trimmed, candidate_port
                         ));
+                    }
+
+                    println!(
+                        "[ssh] trying keyboard-interactive auth for {}@{}:{}",
+                        candidate_username, host_trimmed, candidate_port
+                    );
+
+                    let mut prompt_handler = PasswordPrompt {
+                        password: &password,
+                    };
+
+                    match session.userauth_keyboard_interactive(
+                        candidate_username,
+                        &mut prompt_handler,
+                    ) {
+                        Ok(()) => {
+                            if session.authenticated() {
+                                println!(
+                                    "[ssh] keyboard-interactive authentication succeeded for {}@{}:{}",
+                                    candidate_username, host_trimmed, candidate_port
+                                );
+                                return Ok(session);
+                            }
+                            let message = format!(
+                                "[ssh] keyboard-interactive authentication reported failure for {}@{}:{} despite Ok",
+                                candidate_username, host_trimmed, candidate_port
+                            );
+                            println!("{}", message);
+                            auth_errors.push(message);
+                        }
+                        Err(fallback_err) => {
+                            let fallback_msg = fallback_err.to_string();
+                            println!(
+                                "[ssh] keyboard-interactive authentication failed for {}@{}:{} -> {}",
+                                candidate_username, host_trimmed, candidate_port, fallback_msg
+                            );
+                            auth_errors.push(format!(
+                                "SSH authentication failed for {}@{}:{}: {} (keyboard-interactive fallback: {})",
+                                candidate_username, host_trimmed, candidate_port, err_msg, fallback_msg
+                            ));
+                        }
                     }
                 }
             }
         }
+
+        if auth_errors.is_empty() {
+            last_err = Some(format!(
+                "SSH authentication failed for {}:{} (no username attempts executed)",
+                host_trimmed, candidate_port
+            ));
+        } else {
+            last_err = Some(format!(
+                "SSH authentication failed for {}:{} (tried usernames: {}): {}",
+                host_trimmed,
+                candidate_port,
+                username_candidates
+                    .iter()
+                    .map(|name| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                auth_errors.last().cloned().unwrap_or_default()
+            ));
+        }
+
+        continue;
     }
 
     Err(last_err.unwrap_or_else(|| {
@@ -1639,19 +1742,24 @@ pub fn run() {
 
             // Автоматический запуск Go2RTC при старте приложения
             {
+                println!("[setup] Attempting to start go2rtc automatically...");
                 let mut guard = go2rtc_state.lock().map_err(|e| {
+                    let err_msg = format!("Failed to lock go2rtc state: {}", e);
+                    println!("[setup] ERROR: {}", err_msg);
                     Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("Failed to lock go2rtc state: {}", e),
+                        err_msg,
                     )) as Box<dyn std::error::Error>
                 })?;
 
+                println!("[setup] Got go2rtc state lock, calling spawn_go2rtc_process...");
                 if let Err(err) = spawn_go2rtc_process(&mut guard) {
-                    println!("[setup] Failed to start go2rtc automatically: {}", err);
+                    println!("[setup] FAILED to start go2rtc automatically: {}", err);
+                    eprintln!("[setup] FAILED to start go2rtc automatically: {}", err);
                     // Не прерываем инициализацию приложения, если Go2RTC не запустился
                     // Пользователь сможет запустить его вручную через команду mediamtx_start
                 } else {
-                    println!("[setup] Go2RTC started successfully");
+                    println!("[setup] ✓ Go2RTC started successfully");
                 }
             }
 
@@ -1699,6 +1807,16 @@ pub fn run() {
             let database_state = database::commands::DatabaseState { db: plate_db };
             app.manage(database_state);
 
+            let object_counter_db =
+                database::commands::init_object_counter_database(&app_data_dir).map_err(|e| {
+                    Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                        as Box<dyn std::error::Error>
+                })?;
+
+            let object_counter_state =
+                database::commands::ObjectCounterDatabaseState { db: object_counter_db };
+            app.manage(object_counter_state);
+
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -1726,7 +1844,14 @@ pub fn run() {
             camera_store::decrypt_password,
             camera_store::remove_camera,
             discovery::discover_cameras,
+            discovery::list_network_interfaces,
             onvif::get_rtsp_url,
+            onvif::ptz_move,
+            onvif::ptz_stop,
+            onvif::ptz_focus,
+            onvif::focus_stop,
+            onvif::get_focus_mode,
+            onvif::set_focus_mode,
             play_direct_rtsp,
             save_config_file,
             check_rtsp_stream,
@@ -1773,6 +1898,7 @@ pub fn run() {
             auth::update_user_permissions,
             auth::delete_user,
             analytics::analytics_list_modules,
+            analytics::analytics_list_snapshots,
             analytics::analytics_enable_module,
             analytics::analytics_disable_module,
             analytics::analytics_update_module_config,
@@ -1783,7 +1909,18 @@ pub fn run() {
             database::commands::delete_plate_record,
             database::commands::get_plate_statistics,
             database::commands::search_plate_history,
-            database::commands::read_plate_image
+            database::commands::read_plate_image,
+            database::commands::read_object_image,
+            database::commands::get_object_counter_events,
+            database::commands::get_object_counter_aggregates,
+            database::commands::get_object_counter_top_cameras,
+            database::commands::get_object_counter_lines,
+            database::commands::upsert_object_counter_line,
+            database::commands::delete_object_counter_line,
+            database::commands::get_object_counter_zones,
+            database::commands::upsert_object_counter_zone,
+            database::commands::delete_object_counter_zone,
+            check_go2rtc_stream_online
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -1970,19 +2107,16 @@ fn ensure_go2rtc_files(state: &mut Go2RtcState) -> Result<(), String> {
     }
 
     if !state.config_path.exists() {
-        println!("[ensure_go2rtc_files] Creating default config...");
-        let default_cfg = r#"api:
-  listen: ":1984"
-  origin: "*"
+                println!("[ensure_go2rtc_files] Creating default config...");
+                let default_cfg = r#"api:
+    listen: ":1984"
+    origin: "*"
 rtsp:
-  listen: ":8554"
+    listen: ":8554"
 webrtc:
-  listen: ":8555"
-  # Low-latency optimizations
-  ice_servers: []
-  # Disable candidates gathering timeout for faster connection
-  candidates:
-    - stun:8555
+    listen: ":8555"
+    # Low-latency optimizations
+    ice_servers: []
 streams: {}
 "#;
 
@@ -2000,6 +2134,14 @@ streams: {}
     }
 
     if ensure_go2rtc_log_defaults(&mut config) {
+        updated = true;
+    }
+
+    if ensure_go2rtc_rtsp_defaults(&mut config) {
+        updated = true;
+    }
+
+    if ensure_go2rtc_webrtc_defaults(&mut config) {
         updated = true;
     }
 
@@ -2041,10 +2183,7 @@ fn ensure_go2rtc_api_defaults(config: &mut serde_yaml::Value) -> bool {
 
     let api_map = api_entry.as_mapping_mut().unwrap();
 
-    let listen_key = Value::String("listen".to_string());
-    let desired_listen = Value::String(":1984".to_string());
-    if !api_map.contains_key(&listen_key) {
-        api_map.insert(listen_key.clone(), desired_listen.clone());
+    if maybe_update_listen(api_map, ":1984") {
         changed = true;
     }
 
@@ -2080,7 +2219,8 @@ fn ensure_go2rtc_log_defaults(config: &mut serde_yaml::Value) -> bool {
 
     let map = log_entry.as_mapping_mut().unwrap();
     let level_key = Value::String("level".into());
-    let desired_level = Value::String("debug".into());
+    // Enable trace logging for debugging
+    let desired_level = Value::String("trace".into());
 
     match map.get(&level_key) {
         Some(existing) if existing == &desired_level => false,
@@ -2088,6 +2228,108 @@ fn ensure_go2rtc_log_defaults(config: &mut serde_yaml::Value) -> bool {
             map.insert(level_key, desired_level);
             true
         }
+    }
+}
+
+fn maybe_update_listen(map: &mut serde_yaml::Mapping, desired: &str) -> bool {
+    use serde_yaml::Value;
+    let listen_key = Value::String("listen".into());
+    let desired_value = Value::String(desired.into());
+    match map.get(&listen_key) {
+        Some(Value::String(existing)) if existing == desired => false,
+        Some(Value::String(existing)) => {
+            let trimmed = existing.trim();
+            if trimmed.starts_with("127.0.0.1:") {
+                let desired_port = desired.trim_start_matches(':');
+                if trimmed.ends_with(desired_port) {
+                    map.insert(listen_key, desired_value);
+                    return true;
+                }
+            }
+            false
+        }
+        Some(_) => {
+            map.insert(listen_key, desired_value);
+            true
+        }
+        None => {
+            map.insert(listen_key, desired_value);
+            true
+        }
+    }
+}
+
+fn ensure_go2rtc_rtsp_defaults(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    if !config.is_mapping() {
+        *config = Value::Mapping(Mapping::new());
+    }
+
+    let root = config.as_mapping_mut().unwrap();
+    let key = Value::String("rtsp".into());
+    let entry = root.entry(key.clone()).or_insert(Value::Mapping(Mapping::new()));
+    if !entry.is_mapping() {
+        *entry = Value::Mapping(Mapping::new());
+    }
+
+    maybe_update_listen(entry.as_mapping_mut().unwrap(), ":8554")
+}
+
+fn ensure_go2rtc_webrtc_defaults(config: &mut serde_yaml::Value) -> bool {
+    use serde_yaml::{Mapping, Value};
+
+    if !config.is_mapping() {
+        *config = Value::Mapping(Mapping::new());
+    }
+
+    let root = config.as_mapping_mut().unwrap();
+    let key = Value::String("webrtc".into());
+    let entry = root.entry(key.clone()).or_insert(Value::Mapping(Mapping::new()));
+    if !entry.is_mapping() {
+        *entry = Value::Mapping(Mapping::new());
+    }
+
+    let map = entry.as_mapping_mut().unwrap();
+    let mut changed = maybe_update_listen(map, ":8555");
+
+    let ice_key = Value::String("ice_servers".into());
+    match map.get(&ice_key) {
+        Some(Value::Sequence(_)) => {}
+        Some(_) => {
+            map.insert(ice_key.clone(), Value::Sequence(Vec::new()));
+            changed = true;
+        }
+        None => {
+            map.insert(ice_key, Value::Sequence(Vec::new()));
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn check_nvenc_availability(ffmpeg_path: &str) -> bool {
+    use std::process::Command;
+    if ffmpeg_path.is_empty() { return false; }
+    
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+    #[cfg(windows)]
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut cmd = Command::new(ffmpeg_path);
+    cmd.arg("-hide_banner").arg("-encoders");
+    
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    match cmd.output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.contains("h264_nvenc")
+        },
+        Err(_) => false,
     }
 }
 
@@ -2099,6 +2341,7 @@ fn ensure_go2rtc_ffmpeg_defaults(config: &mut serde_yaml::Value, state: &Go2RtcS
     }
 
     let ffmpeg_bin = resolve_ffmpeg_bin(state);
+    let _has_nvenc = check_nvenc_availability(&ffmpeg_bin);
 
     let root = config.as_mapping_mut().unwrap();
     let ffmpeg_key = Value::String("ffmpeg".into());
@@ -2111,36 +2354,82 @@ fn ensure_go2rtc_ffmpeg_defaults(config: &mut serde_yaml::Value, state: &Go2RtcS
     }
 
     let map = entry.as_mapping_mut().unwrap();
+    let mut changed = false;
+
     let bin_key = Value::String("bin".into());
     let desired_bin = Value::String(ffmpeg_bin);
 
     match map.get(&bin_key) {
-        Some(existing) if existing == &desired_bin => false,
+        Some(existing) if existing == &desired_bin => {},
         _ => {
             map.insert(bin_key, desired_bin);
-            true
+            changed = true;
         }
     }
+
+    // Set h264 preset to fix NVENC zerolatency crash or provide safe software fallback
+    let h264_key = Value::String("h264".into());
+    // FORCE SOFTWARE ENCODING FOR STABILITY
+    // We detected issues with NVENC stream delivery, so we fallback to libx264
+    // which is guaranteed to work.
+    let desired_h264 = Value::String("-c:v libx264 -g 50 -sc_threshold 0 -preset superfast -tune zerolatency".into());
+
+    match map.get(&h264_key) {
+        Some(existing) if existing == &desired_h264 => {
+             println!("[ensure_go2rtc_ffmpeg_defaults] h264 preset already correct");
+        },
+        _ => {
+            println!("[ensure_go2rtc_ffmpeg_defaults] Updating h264 preset to software fallback");
+            map.insert(h264_key, desired_h264);
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 fn resolve_ffmpeg_bin(state: &Go2RtcState) -> String {
-    // If we have prepared ffmpeg-silent in the go2rtc directory, use it to suppress windows.
-    if state.ffmpeg_silent_path.exists() {
-        return state.ffmpeg_silent_path.to_string_lossy().to_string();
-    }
+    let env_override = env::var_os("FFMPEG_PATH").and_then(|raw| {
+        if raw.is_empty() {
+            return None;
+        }
 
-    // Fallback to standard ffmpeg if silent wrapper is missing
-    if state.ffmpeg_path.exists() {
-        // Use absolute path to avoid any ambiguity
-        return state.ffmpeg_path.to_string_lossy().to_string();
+        let override_path = PathBuf::from(&raw);
+        if override_path.is_dir() {
+            let binary_name = if cfg!(windows) {
+                "ffmpeg.exe"
+            } else {
+                "ffmpeg"
+            };
+            Some(override_path.join(binary_name))
+        } else {
+            Some(override_path)
+        }
+    });
+
+    if let Some(path) = env_override {
+        let override_str = path.to_string_lossy().to_string();
+        println!(
+            "[resolve_ffmpeg_bin] Using FFMPEG_PATH override: {}",
+            override_str
+        );
+        return override_str;
     }
 
     #[cfg(windows)]
     {
+        if state.ffmpeg_silent_path.exists() {
+            return state.ffmpeg_silent_path.to_string_lossy().to_string();
+        }
+
+        if state.ffmpeg_path.exists() {
+            return state.ffmpeg_path.to_string_lossy().to_string();
+        }
+
         if let Some(path) = resolve_bundled_ffmpeg() {
             return path.to_string_lossy().to_string();
         }
-        // Provide a deterministic fallback to avoid go2rtc falling back to system ffmpeg with UI windows
+
         println!(
             "[resolve_ffmpeg_bin] Bundled ffmpeg-silent binaries not found, falling back to ffmpeg-silent.exe in PATH"
         );
@@ -2149,22 +2438,11 @@ fn resolve_ffmpeg_bin(state: &Go2RtcState) -> String {
 
     #[cfg(not(windows))]
     {
-        // Honour overrides first, otherwise fall back to system ffmpeg binary name.
-        if let Some(env_override) = env::var_os("FFMPEG_PATH") {
-            if !env_override.is_empty() {
-                let override_path = PathBuf::from(&env_override);
-                if override_path.is_dir() {
-                    if let Some(path) = override_path.join("ffmpeg").to_str() {
-                        return Some(path.to_string());
-                    }
-                } else if let Some(path) = override_path.to_str() {
-                    return Some(path.to_string());
-                }
-            }
+        if state.ffmpeg_path.exists() {
+            return state.ffmpeg_path.to_string_lossy().to_string();
         }
 
-        // On Linux/macOS, assume ffmpeg is in PATH
-        Some("ffmpeg".into())
+        "ffmpeg".into()
     }
 }
 
@@ -2207,7 +2485,11 @@ fn resolve_bundled_ffmpeg() -> Option<std::path::PathBuf> {
             continue;
         }
 
-        for filename in ["ffmpeg.exe", "ffmpeg-silent.exe", "ffmpeg-silent-launcher.exe"] {
+        for filename in [
+            "ffmpeg-silent.exe",
+            "ffmpeg-silent-launcher.exe",
+            "ffmpeg.exe",
+        ] {
             let candidate = dir.join(filename);
             if candidate.exists() {
                 println!("[resolve_bundled_ffmpeg] Using {}", candidate.display());
@@ -2385,22 +2667,29 @@ fn ensure_go2rtc_stream(map: &mut serde_yaml::Value, stream_name: &str, url: &st
         match streams_map.get_mut(&key) {
             Some(existing) => match existing {
                 Value::Sequence(sequence) => {
-                    // Replace the entire sequence with the new URL instead of appending
-                    // This prevents accumulating outdated camera URLs
-                    if sequence.len() != 1
-                        || !matches!(sequence.first(), Some(Value::String(s)) if s == &optimized_url)
-                    {
+                    // CRITICAL FIX: Check if ANY URL in sequence differs from expected
+                    // Previously we only checked the first, but variants can appear first
+                    // If the base stream URL changed (e.g., password updated), we must restart go2rtc
+                    let base_url_matches = sequence
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .any(|s| s == &optimized_url);
+
+                    if !base_url_matches || sequence.len() != 1 {
+                        println!("[ensure_go2rtc_stream] Stream '{}' URL changed or has extra entries, replacing", stream_name);
                         *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
                         changed = true;
                     }
                 }
                 Value::String(current) => {
                     if current != &optimized_url {
+                        println!("[ensure_go2rtc_stream] Stream '{}' URL changed (was string)", stream_name);
                         *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
                         changed = true;
                     }
                 }
                 _ => {
+                    println!("[ensure_go2rtc_stream] Stream '{}' had non-string/non-sequence value", stream_name);
                     *existing = Value::Sequence(vec![Value::String(optimized_url.clone())]);
                     changed = true;
                 }
@@ -2411,6 +2700,7 @@ fn ensure_go2rtc_stream(map: &mut serde_yaml::Value, stream_name: &str, url: &st
         }
 
         if insert_base {
+            println!("[ensure_go2rtc_stream] Adding new stream '{}'", stream_name);
             streams_map.insert(
                 key,
                 Value::Sequence(vec![Value::String(optimized_url.clone())]),
@@ -2467,6 +2757,12 @@ fn ensure_go2rtc_stream(map: &mut serde_yaml::Value, stream_name: &str, url: &st
 }
 
 fn spawn_go2rtc_process(state: &mut Go2RtcState) -> Result<(), String> {
+    // Check if Go2RTC API is already listening
+    if std::net::TcpStream::connect("127.0.0.1:1984").is_ok() {
+        println!("[spawn_go2rtc_process] Go2RTC API is already listening on 127.0.0.1:1984. Assuming external process.");
+        return Ok(());
+    }
+
     println!("[spawn_go2rtc_process] Starting Go2RTC process...");
     println!("[spawn_go2rtc_process] Executable: {:?}", state.exe_path);
     println!("[spawn_go2rtc_process] Config: {:?}", state.config_path);
@@ -2478,7 +2774,14 @@ fn spawn_go2rtc_process(state: &mut Go2RtcState) -> Result<(), String> {
     ensure_go2rtc_files(state)?;
 
     if !state.exe_path.exists() {
-        let error = format!("Go2RTC executable not found at {:?}", state.exe_path);
+        let error = format!(
+            "Go2RTC executable not found at {:?}. Candidates checked:\n\
+            - {:?}\n\
+            Please ensure go2rtc.exe is present in src-tauri/binaries/ for dev builds,\n\
+            or in the installed application resources for production builds.",
+            state.exe_path,
+            Go2RtcState::resource_candidates()
+        );
         println!("[spawn_go2rtc_process] ERROR: {}", error);
         return Err(error);
     }
@@ -2655,34 +2958,119 @@ async fn start_go2rtc(
 }
 
 #[tauri::command]
-async fn get_go2rtc_snapshot(stream_name: String) -> Result<Vec<u8>, String> {
-    let api_url = format!("{}/api/frame.jpeg?src={}", GO2RTC_DEFAULT_API, stream_name);
+async fn get_go2rtc_snapshot(
+    stream_name: String,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
+) -> Result<Vec<u8>, String> {
+    // Load settings to get the correct API URL
+    let settings = load_streaming_settings().await.map_err(|e| e.to_string())?;
+    let api_base = settings.go2rtc_api_bases().first().cloned().unwrap_or_else(|| GO2RTC_DEFAULT_API.to_string());
+
+    let api_url = format!("{}/api/frame.jpeg?src={}", api_base, stream_name);
     
     println!("[get_go2rtc_snapshot] Fetching snapshot from: {}", api_url);
     
     let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-    
-    let response = client
-        .get(&api_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch snapshot: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Err(format!("HTTP error: {}", response.status()));
+
+    // Try HTTP first
+    let http_result = async {
+        let response = client.get(&api_url).send().await.map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(format!("HTTP {} - {}", status, text));
+        }
+        response.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+    }.await;
+
+    if let Ok(bytes) = http_result {
+        println!("[get_go2rtc_snapshot] HTTP snapshot success, {} bytes", bytes.len());
+        return Ok(bytes);
     }
-    
-    let bytes = response
-        .bytes()
+
+    let http_error = http_result.err().unwrap();
+    println!("[get_go2rtc_snapshot] HTTP snapshot failed: {}. Attempting fallback...", http_error);
+
+    // Fallback: Use ffmpeg directly
+    // Scope the lock to ensure it is dropped before await
+    let (url, ffmpeg_bin) = {
+        let state_guard = go2rtc_state.lock().map_err(|_| "Failed to lock state".to_string())?;
+        let config = load_go2rtc_config(&state_guard)?;
+        
+        // Find stream URL
+        let stream_url = if let Some(streams) = config.get("streams").and_then(|s| s.as_mapping()) {
+            if let Some(val) = streams.get(&serde_yaml::Value::String(stream_name.clone())) {
+                match val {
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    serde_yaml::Value::Sequence(seq) => {
+                        seq.first().and_then(|v| v.as_str()).map(|s| s.to_string())
+                    },
+                    _ => None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let url = stream_url.ok_or_else(|| format!("Stream '{}' not found in config, cannot use fallback. Original error: {}", stream_name, http_error))?;
+        let bin = resolve_ffmpeg_bin(&state_guard);
+        (url, bin)
+    };
+
+    println!("[get_go2rtc_snapshot] Fallback: capturing from {} using {}", url, ffmpeg_bin);
+
+    // Use a temporary file instead of stdout to avoid issues with ffmpeg wrappers swallowing stdout
+    let temp_dir = std::env::temp_dir();
+    let temp_filename = format!("snapshot_{}.jpg", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
+    let temp_path = temp_dir.join(temp_filename);
+    let temp_path_str = temp_path.to_string_lossy().to_string();
+
+    let mut cmd = TokioCommand::new(ffmpeg_bin);
+    cmd.args(&["-y", "-rtsp_transport", "tcp", "-i", &url, "-frames:v", "1", "-f", "image2", &temp_path_str]);
+
+    // Ensure no window is shown on Windows, even if using standard ffmpeg
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd.output()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-    
-    println!("[get_go2rtc_snapshot] Received {} bytes", bytes.len());
-    
-    Ok(bytes.to_vec())
+        .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
+
+    if output.status.success() {
+        if temp_path.exists() {
+            match fs::read(&temp_path) {
+                Ok(bytes) => {
+                    let _ = fs::remove_file(&temp_path);
+                    if bytes.is_empty() {
+                        println!("[get_go2rtc_snapshot] Fallback failed: Captured file is empty");
+                        Err("Captured file is empty".to_string())
+                    } else {
+                        println!("[get_go2rtc_snapshot] Fallback success, captured {} bytes", bytes.len());
+                        Ok(bytes)
+                    }
+                },
+                Err(e) => {
+                    println!("[get_go2rtc_snapshot] Fallback failed: Could not read temp file: {}", e);
+                    Err(format!("Failed to read snapshot file: {}", e))
+                }
+            }
+        } else {
+            println!("[get_go2rtc_snapshot] Fallback failed: Output file not created");
+            Err("FFmpeg reported success but output file was not created".to_string())
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[get_go2rtc_snapshot] Fallback failed: {}", stderr);
+        Err(format!("Snapshot failed. HTTP: {}. Fallback (ffmpeg): {}", http_error, stderr))
+    }
 }
 
 #[allow(dead_code)]
@@ -3447,11 +3835,12 @@ async fn whep_play(
     offer_sdp: String,
     rtsp_session: Option<String>,
     rtsp_transport: Option<String>,
+    hevc_supported: Option<bool>,
     go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
 ) -> Result<String, String> {
     let settings = load_streaming_settings().await?;
     println!("[whep_play] Active streaming provider: Go2RTC");
-    println!("[whep_play] Preparing WHEP endpoints for path '{}'", path);
+    println!("[whep_play] Preparing WHEP endpoints for path '{}' (HEVC supported: {:?})", path, hevc_supported);
 
     let base_urls = load_go2rtc_api_bases(&go2rtc_state, &settings);
     let mut endpoints: Vec<String> = Vec::new();
@@ -3459,10 +3848,19 @@ async fn whep_play(
     let path_ref = &path;
 
     let mut src_variants: Vec<String> = Vec::new();
-    // Try with opus transcoding FIRST to ensure WebRTC-compatible audio (AAC->OPUS via ffmpeg)
-    src_variants.push(format!("{}#audio=opus", path_ref));
-    // Fallback to direct stream if transcoding not available
-    src_variants.push(path.clone());
+    
+    // If client explicitly says HEVC is NOT supported, we force H.264 transcoding
+    if hevc_supported == Some(false) {
+        // Transcode video to H.264 and audio to Opus (best compatibility)
+        src_variants.push(format!("{}#video=h264#audio=opus", path_ref));
+        // Transcode video to H.264, keep audio as is (fallback)
+        src_variants.push(format!("{}#video=h264", path_ref));
+    } else {
+        // Default behavior: Try with opus transcoding FIRST to ensure WebRTC-compatible audio
+        src_variants.push(format!("{}#audio=opus", path_ref));
+        // Fallback to direct stream
+        src_variants.push(path.clone());
+    }
 
     for base in base_urls {
         let normalized = base.trim_end_matches('/');
@@ -4781,7 +5179,9 @@ fn build_segment_ffmpeg_args(
     }
 
     args.push("-movflags".into());
-    args.push("+faststart".into());
+    // Use frag_keyframe+empty_moov to allow file to be playable even if not properly closed
+    // and to avoid long "indexing" (writing moov atom at the end)
+    args.push("+frag_keyframe+empty_moov+default_base_moof".into());
     args.push("-t".into());
     args.push(segment_duration.to_string());
     args.push("-y".into());
@@ -7493,4 +7893,22 @@ async fn check_rtsp_stream(url: String) -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+#[tauri::command]
+async fn check_go2rtc_stream_online(
+    stream_name: String,
+    go2rtc_state: State<'_, Arc<StdMutex<Go2RtcState>>>,
+) -> Result<bool, String> {
+    let settings = load_streaming_settings().await?;
+    let statuses = fetch_go2rtc_paths(&go2rtc_state, &settings).await?;
+    
+    // Check if the stream exists in the list of active streams
+    for item in statuses {
+        if item.name == stream_name {
+            return Ok(true);
+        }
+    }
+    
+    Ok(false)
 }

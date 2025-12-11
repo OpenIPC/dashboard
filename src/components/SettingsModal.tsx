@@ -8,7 +8,7 @@ import type { SupportedLanguage } from '../contexts/LocalizationContextData';
 import { Toast } from './Toast';
 import { useToast } from '../hooks/useToast';
 import { useAnalytics } from '../hooks/useAnalytics';
-import type { AnalyticsModuleStatus } from '../services/analytics';
+import type { AnalyticsModuleStatus, FaceSnapshotMode } from '../services/analytics';
 import './SettingsModal.css';
 
 interface SettingsModalProps {
@@ -158,6 +158,63 @@ const MODULE_METADATA: Record<string, ModuleInfo> = {
   },
 };
 
+const FACE_SNAPSHOT_MODE_VALUES: FaceSnapshotMode[] = [
+  'disabled',
+  'standard',
+  'anonymized',
+  'encrypted',
+];
+
+interface FaceSnapshotModeCopy {
+  label: string;
+  description: string;
+}
+
+const FACE_SNAPSHOT_MODE_COPY: Record<FaceSnapshotMode, { en: FaceSnapshotModeCopy; ru: FaceSnapshotModeCopy }> = {
+  disabled: {
+    en: {
+      label: 'Disabled',
+      description: 'Face snapshots are not captured.',
+    },
+    ru: {
+      label: 'Отключено',
+      description: 'Снимки лиц не сохраняются.',
+    },
+  },
+  standard: {
+    en: {
+      label: 'Standard',
+      description: 'Faces are saved as-is without additional processing.',
+    },
+    ru: {
+      label: 'Стандартный',
+      description: 'Снимки сохраняются без дополнительной обработки.',
+    },
+  },
+  anonymized: {
+    en: {
+      label: 'Anonymized',
+      description: 'Snapshots are blurred before being stored.',
+    },
+    ru: {
+      label: 'Анонимный',
+      description: 'Перед сохранением лица размываются.',
+    },
+  },
+  encrypted: {
+    en: {
+      label: 'Encrypted',
+      description: 'Snapshots are encrypted with your key and stored as .bin files.',
+    },
+    ru: {
+      label: 'Зашифрованный',
+      description: 'Снимки шифруются вашим ключом и сохраняются как .bin.',
+    },
+  },
+};
+
+const DEFAULT_FACE_SNAPSHOT_MODE: FaceSnapshotMode = 'standard';
+
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every(item => typeof item === 'string');
 
@@ -171,6 +228,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     refreshModules,
     toggleModule,
     updateModuleSnapshotsDir,
+    updateModuleConfig,
   } = useAnalytics();
   const [activeTab, setActiveTab] = useState('tab-general');
   const [appVersion, setAppVersion] = useState('Loading...');
@@ -196,6 +254,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     go2rtcEnhanced: DEFAULT_GO2RTC_ENHANCED,
     streamOptimization: DEFAULT_STREAM_OPTIMIZATION,
   });
+  const [faceSnapshotKeyInputs, setFaceSnapshotKeyInputs] = useState<Record<string, string>>({});
+  const [faceSnapshotKeyErrors, setFaceSnapshotKeyErrors] = useState<Record<string, string | null>>({});
+  const [faceSnapshotKeyBusy, setFaceSnapshotKeyBusy] = useState<Record<string, boolean>>({});
 
   // Safe settings with guaranteed defaults - prevents crashes when accessing nested properties
   const safeSettings = useMemo(() => ({
@@ -203,6 +264,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     go2rtcEnhanced: settings.go2rtcEnhanced ?? DEFAULT_GO2RTC_ENHANCED,
     streamOptimization: settings.streamOptimization ?? DEFAULT_STREAM_OPTIMIZATION,
   }), [settings]);
+  const languageKey = currentLanguage === 'ru' ? 'ru' : 'en';
 
   const normalizeStreamingSettings = useCallback((input?: unknown): StreamingBackendSettings => {
     const base = createDefaultStreamingSettings();
@@ -848,6 +910,191 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       }
     },
     [updateModuleSnapshotsDir, currentLanguage, showToast],
+  );
+
+  const resolveFaceSnapshotMode = useCallback(
+    (value?: FaceSnapshotMode): FaceSnapshotMode => {
+      if (!value) {
+        return DEFAULT_FACE_SNAPSHOT_MODE;
+      }
+      return FACE_SNAPSHOT_MODE_VALUES.includes(value) ? value : DEFAULT_FACE_SNAPSHOT_MODE;
+    },
+    [],
+  );
+
+  const validateFaceSnapshotKey = useCallback(
+    (input: string): string | null => {
+      const trimmed = input.trim();
+      if (trimmed.length === 0) {
+        return currentLanguage === 'ru'
+          ? 'Введите ключ из 64 шестнадцатеричных символов'
+          : 'Enter a 64-character hexadecimal key';
+      }
+      if (!/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+        return currentLanguage === 'ru'
+          ? 'Ключ должен содержать 64 шестнадцатеричных символа'
+          : 'The key must contain 64 hexadecimal characters';
+      }
+      return null;
+    },
+    [currentLanguage],
+  );
+
+  const handleFaceSnapshotModeChange = useCallback(
+    async (moduleId: string, mode: FaceSnapshotMode) => {
+      const updated = await updateModuleConfig(moduleId, { faceSnapshotsMode: mode });
+      if (updated) {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Режим снимков лиц обновлён'
+            : 'Face snapshot mode updated';
+        showToast(message, 'success');
+      } else {
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось обновить режим снимков'
+            : 'Failed to update face snapshot mode';
+        showToast(message, 'error');
+      }
+    },
+    [updateModuleConfig, currentLanguage, showToast],
+  );
+
+  const handleFaceSnapshotKeyInputChange = useCallback((moduleId: string, value: string) => {
+    setFaceSnapshotKeyInputs(prev => ({
+      ...prev,
+      [moduleId]: value,
+    }));
+    setFaceSnapshotKeyErrors(prev => ({
+      ...prev,
+      [moduleId]: null,
+    }));
+  }, []);
+
+  const handleFaceSnapshotKeySave = useCallback(
+    async (moduleId: string) => {
+      const input = (faceSnapshotKeyInputs[moduleId] ?? '').trim();
+      const validationError = validateFaceSnapshotKey(input);
+      if (validationError) {
+        setFaceSnapshotKeyErrors(prev => ({
+          ...prev,
+          [moduleId]: validationError,
+        }));
+        return;
+      }
+
+      setFaceSnapshotKeyBusy(prev => ({
+        ...prev,
+        [moduleId]: true,
+      }));
+
+      try {
+        const updated = await updateModuleConfig(moduleId, {
+          faceSnapshotKeyHex: input.toLowerCase(),
+        });
+
+        if (updated) {
+          setFaceSnapshotKeyInputs(prev => ({
+            ...prev,
+            [moduleId]: '',
+          }));
+          setFaceSnapshotKeyErrors(prev => ({
+            ...prev,
+            [moduleId]: null,
+          }));
+          const message =
+            currentLanguage === 'ru'
+              ? 'Ключ шифрования сохранён'
+              : 'Encryption key saved';
+          showToast(message, 'success');
+        } else {
+          const message =
+            currentLanguage === 'ru'
+              ? 'Не удалось сохранить ключ шифрования'
+              : 'Failed to save encryption key';
+          showToast(message, 'error');
+        }
+      } catch (error) {
+        console.error('Failed to save face snapshot key:', error);
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось сохранить ключ шифрования'
+            : 'Failed to save encryption key';
+        showToast(message, 'error');
+      } finally {
+        setFaceSnapshotKeyBusy(prev => ({
+          ...prev,
+          [moduleId]: false,
+        }));
+      }
+    },
+    [
+      faceSnapshotKeyInputs,
+      updateModuleConfig,
+      validateFaceSnapshotKey,
+      currentLanguage,
+      showToast,
+    ],
+  );
+
+  const handleFaceSnapshotKeyReset = useCallback(
+    async (moduleId: string) => {
+      const promptMessage =
+        currentLanguage === 'ru'
+          ? 'Сбросить ключ шифрования? Снимки больше не будут зашифрованы до ввода нового ключа.'
+          : 'Reset the encryption key? Snapshots will not be encrypted until a new key is provided.';
+
+      const confirmed = typeof window === 'undefined' ? true : window.confirm(promptMessage);
+      if (!confirmed) {
+        return;
+      }
+
+      setFaceSnapshotKeyBusy(prev => ({
+        ...prev,
+        [moduleId]: true,
+      }));
+
+      try {
+        const updated = await updateModuleConfig(moduleId, {
+          resetFaceSnapshotKey: true,
+        });
+
+        if (updated) {
+          setFaceSnapshotKeyInputs(prev => ({
+            ...prev,
+            [moduleId]: '',
+          }));
+          setFaceSnapshotKeyErrors(prev => ({
+            ...prev,
+            [moduleId]: null,
+          }));
+          const message =
+            currentLanguage === 'ru'
+              ? 'Ключ шифрования сброшен'
+              : 'Encryption key reset';
+          showToast(message, 'success');
+        } else {
+          const message =
+            currentLanguage === 'ru'
+              ? 'Не удалось сбросить ключ шифрования'
+              : 'Failed to reset encryption key';
+          showToast(message, 'error');
+        }
+      } catch (error) {
+        console.error('Failed to reset face snapshot key:', error);
+        const message =
+          currentLanguage === 'ru'
+            ? 'Не удалось сбросить ключ шифрования'
+            : 'Failed to reset encryption key';
+        showToast(message, 'error');
+      } finally {
+        setFaceSnapshotKeyBusy(prev => ({
+          ...prev,
+          [moduleId]: false,
+        }));
+      }
+    },
+    [updateModuleConfig, currentLanguage, showToast],
   );
 
   const handleExportConfig = async () => {
@@ -1922,6 +2169,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   const snapshotsDisplay = snapshotsDir ?? (currentLanguage === 'ru'
                     ? 'Каталог по умолчанию'
                     : 'Default directory');
+                  const isFaceDetector = module.id === 'face-detector';
+                  const faceSnapshotMode = isFaceDetector
+                    ? resolveFaceSnapshotMode(module.config?.faceSnapshotsMode)
+                    : DEFAULT_FACE_SNAPSHOT_MODE;
+                  const faceSnapshotModeCopy = FACE_SNAPSHOT_MODE_COPY[faceSnapshotMode][languageKey];
+                  const faceSnapshotKeyConfigured = Boolean(module.config?.faceSnapshotKeyConfigured);
+                  const faceSnapshotKeyValue = faceSnapshotKeyInputs[module.id] ?? '';
+                  const faceSnapshotKeyError = faceSnapshotKeyErrors[module.id] ?? null;
+                  const faceSnapshotKeyIsBusy = faceSnapshotKeyBusy[module.id] ?? false;
 
                   return (
                     <div key={module.id} className="form-check-inline" style={{ 
@@ -1977,16 +2233,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 {lastErrorLabel}
                               </div>
                             )}
-                            {['face-detector', 'license-plate-detector'].includes(module.id) && (
+                            {['face-detector', 'license-plate-detector', 'object-counter'].includes(module.id) && (
                               <div className="module-config-block">
                                 <div className="module-config-label">
                                   {module.id === 'license-plate-detector'
                                     ? currentLanguage === 'ru'
                                       ? 'Каталог снимков номеров'
                                       : 'License plate snapshots'
-                                    : currentLanguage === 'ru'
-                                      ? 'Каталог для снимков лиц'
-                                      : 'Snapshots directory'}
+                                    : module.id === 'object-counter'
+                                      ? currentLanguage === 'ru'
+                                        ? 'Каталог снимков объектов'
+                                        : 'Object snapshots'
+                                      : currentLanguage === 'ru'
+                                        ? 'Каталог для снимков лиц'
+                                        : 'Snapshots directory'}
                                 </div>
                                 <div className="module-config-controls">
                                   <span
@@ -2011,6 +2271,129 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                   >
                                     {currentLanguage === 'ru' ? 'По умолчанию' : 'Use default'}
                                   </button>
+                                </div>
+                              </div>
+                            )}
+                            {isFaceDetector && (
+                              <div className="module-config-block">
+                                <div className="module-config-label">
+                                  {currentLanguage === 'ru'
+                                    ? 'Режим сохранения снимков'
+                                    : 'Face snapshot mode'}
+                                </div>
+                                <div
+                                  className="module-config-controls"
+                                  style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}
+                                >
+                                  <select
+                                    value={faceSnapshotMode}
+                                    disabled={isDisabled}
+                                    onChange={event =>
+                                      handleFaceSnapshotModeChange(
+                                        module.id,
+                                        event.target.value as FaceSnapshotMode,
+                                      )
+                                    }
+                                    style={{ width: '100%', maxWidth: '320px' }}
+                                  >
+                                    {FACE_SNAPSHOT_MODE_VALUES.map(mode => {
+                                      const copy = FACE_SNAPSHOT_MODE_COPY[mode][languageKey];
+                                      return (
+                                        <option key={mode} value={mode}>
+                                          {copy.label}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                  <span className="module-config-hint" style={{ fontSize: '0.85em' }}>
+                                    {faceSnapshotModeCopy.description}
+                                  </span>
+                                  {faceSnapshotMode === 'encrypted' && (
+                                    <span className="module-config-hint" style={{ fontSize: '0.85em', color: '#f0ad4e' }}>
+                                      {currentLanguage === 'ru'
+                                        ? 'Для шифрования требуется ключ из 64 шестнадцатеричных символов.'
+                                        : 'Encryption requires a 64-character hexadecimal key.'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {isFaceDetector && (
+                              <div className="module-config-block">
+                                <div className="module-config-label">
+                                  {currentLanguage === 'ru'
+                                    ? 'Ключ для шифрования снимков'
+                                    : 'Snapshot encryption key'}
+                                </div>
+                                <div
+                                  className="module-config-controls"
+                                  style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px', width: '100%' }}
+                                >
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexWrap: 'wrap',
+                                      gap: '8px',
+                                      width: '100%',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <input
+                                      type="text"
+                                      value={faceSnapshotKeyValue}
+                                      maxLength={64}
+                                      spellCheck={false}
+                                      autoComplete="off"
+                                      placeholder={currentLanguage === 'ru'
+                                        ? '64 символа в hex-формате'
+                                        : '64 hex characters'}
+                                      onChange={event =>
+                                        handleFaceSnapshotKeyInputChange(module.id, event.target.value)
+                                      }
+                                      style={{
+                                        flex: '1 1 240px',
+                                        minWidth: '200px',
+                                        padding: '6px 8px',
+                                      }}
+                                      disabled={isDisabled || faceSnapshotKeyIsBusy}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="module-config-button primary"
+                                      onClick={() => handleFaceSnapshotKeySave(module.id)}
+                                      disabled={isDisabled || faceSnapshotKeyIsBusy}
+                                    >
+                                      {currentLanguage === 'ru' ? 'Сохранить' : 'Save'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="module-config-button secondary"
+                                      onClick={() => handleFaceSnapshotKeyReset(module.id)}
+                                      disabled={isDisabled || faceSnapshotKeyIsBusy || !faceSnapshotKeyConfigured}
+                                    >
+                                      {currentLanguage === 'ru' ? 'Сбросить ключ' : 'Reset key'}
+                                    </button>
+                                  </div>
+                                  <div
+                                    className="module-config-hint"
+                                    style={{
+                                      fontSize: '0.8em',
+                                      color: faceSnapshotKeyConfigured ? '#28a745' : '#b5c1d6',
+                                    }}
+                                  >
+                                    {faceSnapshotKeyConfigured
+                                      ? currentLanguage === 'ru'
+                                        ? 'Ключ установлен. Новый ключ заменит текущий.'
+                                        : 'Key configured. Saving a new key will replace it.'
+                                      : currentLanguage === 'ru'
+                                        ? 'Ключ не задан. Укажите ключ, чтобы включить шифрование.'
+                                        : 'No key configured. Provide one to enable encryption.'}
+                                  </div>
+                                  {faceSnapshotKeyError && (
+                                    <div style={{ color: '#dc3545', fontSize: '0.8em' }}>
+                                      {faceSnapshotKeyError}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}

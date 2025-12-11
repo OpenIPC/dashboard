@@ -5,6 +5,7 @@ import DevicePanel from './DevicePanel';
 import AppFooter from './AppFooter';
 import { Box, Button, Typography } from '@mui/material';
 import { CameraContextMenuProvider } from '../contexts/CameraContextMenuContext';
+import LogViewerModal from './LogViewerModal';
 // Динамический импорт Tauri window API
 
 interface LayoutProps {
@@ -84,6 +85,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <AppFooter />
         </Box>
       </Box>
+      <LogViewerModal />
     </CameraContextMenuProvider>
   );
 };

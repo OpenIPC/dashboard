@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+    <s:Body>
+        <tds:GetCapabilities>
+            <tds:Category>All</tds:Category>
+        </tds:GetCapabilities>
+    </s:Body>
+</s:Envelope>

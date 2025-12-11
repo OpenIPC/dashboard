@@ -130,6 +130,7 @@ export interface DashboardCellState {
   quality: StreamQuality;
   muted: boolean;
   paused: boolean;
+  volume: number;
 }
 
 export interface DashboardState {

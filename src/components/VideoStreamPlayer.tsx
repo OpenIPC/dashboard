@@ -78,6 +78,7 @@ interface VideoStreamPlayerProps {
   showWebRTCStats?: boolean; // Показывать панель статистики WebRTC
   webrtcStatsUpdateInterval?: number; // Интервал обновления статистики (мс)
   statsDisplayName?: string; // Отображаемое имя для WebRTC статистики (если отличается от streamName)
+  volume?: number;
 }
 
 interface StreamPlaybackStats {
@@ -369,6 +370,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   showWebRTCStats = false,
   webrtcStatsUpdateInterval = 1000,
   statsDisplayName, // Отображаемое имя для статистики
+  volume: volumeProp = 1,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -409,6 +411,8 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   
   // WebRTC Stats Dashboard state
   const [webrtcStats, setWebrtcStats] = useState<WebRTCStats | null>(null);
+  const [forceH264, setForceH264] = useState(false);
+  const volumeRef = useRef(Math.max(0, Math.min(1, volumeProp)));
 
   // Mount/unmount logging for debugging
   const componentId = useRef(`${streamName}-${useHdQuality ? 'HD' : 'SD'}-${Date.now()}`).current;
@@ -418,6 +422,20 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       console.log(`[VideoStreamPlayer][${componentId}] ❌ UNMOUNTED`);
     };
   }, [componentId, streamName, useHdQuality]);
+
+  useEffect(() => {
+    const clamped = Math.max(0, Math.min(1, volumeProp ?? 1));
+    volumeRef.current = clamped;
+    const effectiveVolume = mutedRef.current ? 0 : clamped;
+
+    if (audioRef.current) {
+      audioRef.current.volume = effectiveVolume;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.volume = effectiveVolume;
+    }
+  }, [volumeProp, muted]);
 
   const webrtcStatsCollectorRef = useRef<WebRTCStatsCollector | null>(null);
   const webrtcStatsContext = useWebRTCStatsContext();
@@ -465,7 +483,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       if (enabled && audioStreamRef.current) {
         audioEl.srcObject = audioStreamRef.current;
         audioEl.muted = mutedRef.current;
-        audioEl.volume = mutedRef.current ? 0 : 1;
+        audioEl.volume = mutedRef.current ? 0 : volumeRef.current;
       } else {
         audioEl.pause();
         audioEl.srcObject = null;
@@ -669,7 +687,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       audioEl.hidden = true;
       audioEl.setAttribute('playsinline', 'true');
       audioEl.muted = muted;
-      audioEl.volume = muted ? 0 : 1;
+      audioEl.volume = muted ? 0 : volumeRef.current;
       audioEl.addEventListener('playing', () => {
         console.info(`[VideoStreamPlayer] Hidden audio element playing for ${streamName}`);
       });
@@ -711,11 +729,11 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
 
     element.muted = muted;
     element.defaultMuted = muted;
-    element.volume = muted ? 0 : 1;
+    element.volume = muted ? 0 : volumeRef.current;
 
     if (audioRef.current) {
       audioRef.current.muted = muted;
-      audioRef.current.volume = muted ? 0 : 1;
+      audioRef.current.volume = muted ? 0 : volumeRef.current;
       // Don't remove srcObject when muting - just pause and mute
       // This allows quick unmute without re-establishing audio connection
       if (muted) {
@@ -741,10 +759,10 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
         try {
           await element.play();
           element.muted = false;
-          element.volume = 1;
+          element.volume = volumeRef.current;
           if (audioRef.current) {
             audioRef.current.muted = false;
-            audioRef.current.volume = 1;
+            audioRef.current.volume = volumeRef.current;
             await audioRef.current.play().catch(() => undefined);
           }
         } catch (err) {
@@ -1623,9 +1641,21 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           logDebug(`Failed to set codec preferences: ${prefError instanceof Error ? prefError.message : String(prefError)}`);
         }
         
+        pc.onicecandidate = event => {
+          if (event.candidate) {
+            logDebug(`[ICE] New candidate: ${event.candidate.candidate}`);
+          } else {
+            logDebug('[ICE] Candidate gathering complete');
+          }
+        };
+
         pc.oniceconnectionstatechange = () => {
           const state = pc.iceConnectionState;
           logDebug(`ICE connection state: ${state}`);
+          if (state === 'failed') {
+            console.error(`[VideoStreamPlayer] ICE connection failed for ${name}`);
+            // Dump candidates if possible
+          }
           if (isActive && (state === 'connected' || state === 'completed')) {
             setConnectionMethod('WebRTC');
             hideConnectingOverlay();
@@ -1674,7 +1704,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           }
           element.muted = false;
           element.defaultMuted = false;
-          element.volume = 1;
+          element.volume = volumeRef.current;
           void element.play().catch(err => {
             logDebug(
               `Audio resume play() failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -1682,7 +1712,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           });
           if (audioRef.current) {
             audioRef.current.muted = false;
-            audioRef.current.volume = 1;
+            audioRef.current.volume = volumeRef.current;
             const playAttempt = audioRef.current.play();
             if (playAttempt && typeof playAttempt.catch === 'function') {
               void playAttempt.catch(err => {
@@ -1810,7 +1840,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
                 console.log(`[VideoStreamPlayer] 🔊 Setting audio srcObject and playing for ${streamName}`);
                 audioEl.srcObject = audioOnlyStream;
                 audioEl.muted = false;
-                audioEl.volume = 1;
+                audioEl.volume = volumeRef.current;
                 const playAttempt = audioEl.play();
                 if (playAttempt && typeof playAttempt.catch === 'function') {
                   void playAttempt.catch(err => {
@@ -1862,7 +1892,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
               if (wantsAudio) {
                 element.muted = false;
                 element.defaultMuted = false;
-                element.volume = 1;
+                element.volume = volumeRef.current;
               }
             } catch (playError) {
               if (wantsAudio) {
@@ -1908,11 +1938,28 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
         
         logDebug(`SDP offer created (${localDescription.sdp.length} bytes)`);
 
+        // Check for HEVC support (Hardware decoding)
+        // This helps the backend decide whether to transcode to H.264
+        const isHevcSupported = (() => {
+          try {
+            if (typeof MediaSource !== 'undefined' && typeof MediaSource.isTypeSupported === 'function') {
+              return MediaSource.isTypeSupported('video/mp4; codecs="hev1.1.6.L93.B0"') || 
+                     MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"');
+            }
+            return false;
+          } catch (e) {
+            return false;
+          }
+        })();
+
+        logDebug(`Client HEVC support detected: ${isHevcSupported}`);
+
         // Try WHEP via Tauri command
         try {
           const whepPayload: Record<string, unknown> = {
             path: name,
             offerSdp: localDescription.sdp,
+            hevcSupported: isHevcSupported && !forceH264,
           };
 
           const answer = await invoke('whep_play', whepPayload);
@@ -1940,6 +1987,26 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
             console.info(
               `[VideoStreamPlayer] Receiver ${kind} track state=${state} muted=${track?.muted ?? 'n/a'}`,
             );
+
+            // Watchdog for H.265 fallback
+            if (kind === 'video' && track && isHevcSupported && !forceH264) {
+              const checkMuted = () => {
+                if (isActive && track.muted && !forceH264) {
+                  console.warn(`[VideoStreamPlayer] Video track still muted after 3s, forcing H.264 fallback for ${name}`);
+                  setForceH264(true);
+                }
+              };
+
+              if (track.muted) {
+                console.log(`[VideoStreamPlayer] Video track is muted, starting fallback timer for ${name}`);
+                setTimeout(checkMuted, 3000);
+              }
+              
+              track.onmute = () => {
+                console.log(`[VideoStreamPlayer] Video track muted event for ${name}`);
+                setTimeout(checkMuted, 3000);
+              };
+            }
           });
           return true;
         } catch (err) {
@@ -2114,7 +2181,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
       isActive = false;
       cleanup();
     };
-  }, [streamName, useHdQuality, useExactName, whepTargets, activeStreamingProvider]);
+  }, [streamName, useHdQuality, useExactName, whepTargets, activeStreamingProvider, forceH264]);
 
   return (
     <div style={{ position: 'relative', width, height, ...style }} className={className}>
@@ -2126,7 +2193,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
         preload={fastStart ? 'auto' : 'metadata'}
         playsInline
         disablePictureInPicture
-        style={{ width: '100%', height: '100%', objectFit, backgroundColor: '#000' }}
+        style={{ width: '100%', height: '100%', objectFit, backgroundColor: '#000', display: 'block' }}
         // Low-latency optimizations
         onLoadedMetadata={(e) => {
           const videoEl = e.target as HTMLVideoElement;
@@ -2153,7 +2220,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           const audioEl = audioRef.current;
           if (audioEl) {
             audioEl.muted = false;
-            audioEl.volume = 1;
+            audioEl.volume = volumeRef.current;
             const playAttempt = audioEl.play();
             if (playAttempt && typeof playAttempt.catch === 'function') {
               void playAttempt.catch(err => {
@@ -2231,6 +2298,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
           </div>
         </>
       )}
+
     </div>
   );
 };

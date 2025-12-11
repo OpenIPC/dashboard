@@ -11,6 +11,7 @@ interface DualQualityStreamPlayerProps {
   streamName: string;
   activeQuality: 'sd' | 'hd';
   cellMuted: boolean;
+  volume: number;
   onStatsUpdateSD?: (stats: any) => void;
   onStatsUpdateHD?: (stats: any) => void;
   onVideoRefSD?: (ref: HTMLVideoElement | null) => void;
@@ -31,6 +32,7 @@ const DualQualityStreamPlayer: React.FC<DualQualityStreamPlayerProps> = ({
   streamName,
   activeQuality,
   cellMuted,
+  volume,
   onStatsUpdateSD,
   onStatsUpdateHD,
   onVideoRefSD,
@@ -85,6 +87,7 @@ const DualQualityStreamPlayer: React.FC<DualQualityStreamPlayerProps> = ({
           showWebRTCStats={true}
           webrtcStatsUpdateInterval={500}
           isPaused={false} // КРИТИЧНО: никогда не останавливать
+          volume={volume}
         />
       </Box>
 
@@ -125,6 +128,7 @@ const DualQualityStreamPlayer: React.FC<DualQualityStreamPlayerProps> = ({
           showWebRTCStats={true}
           webrtcStatsUpdateInterval={500}
           isPaused={false} // КРИТИЧНО: никогда не останавливать
+          volume={volume}
         />
       </Box>
     </>
@@ -138,6 +142,7 @@ export default React.memo(DualQualityStreamPlayer, (prevProps, nextProps) => {
     prevProps.streamName === nextProps.streamName &&
     prevProps.activeQuality === nextProps.activeQuality &&
     prevProps.cellMuted === nextProps.cellMuted &&
+    prevProps.volume === nextProps.volume &&
     prevProps.cellIndex === nextProps.cellIndex &&
     prevProps.go2rtcSettings.showMonitor === nextProps.go2rtcSettings.showMonitor &&
     prevProps.go2rtcSettings.enableSnapshot === nextProps.go2rtcSettings.enableSnapshot &&

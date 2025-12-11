@@ -1,11 +1,13 @@
 #![cfg_attr(not(feature = "device-discovery"), allow(dead_code))]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use futures_util::stream::{self, StreamExt};
 use get_if_addrs::{self, IfAddr};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::Emitter;
 use tokio::net::TcpStream;
@@ -16,9 +18,37 @@ const PORTS_TO_SCAN: &[u16] = &[554, 8554, 7447, 80, 8000, 8080, 8899, 2020];
 const TCP_TIMEOUT_MS: u64 = 250;
 const MAX_CONCURRENT_SCANS: usize = 96;
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscoveryRequest {
+    pub interfaces: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NetworkInterfaceInfo {
+    pub name: String,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    pub ipv4: String,
+    pub netmask: String,
+    pub cidr: String,
+    pub is_loopback: bool,
+}
+
 #[tauri::command]
-pub async fn discover_cameras(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn discover_cameras(
+    app_handle: tauri::AppHandle,
+    request: Option<DiscoveryRequest>,
+) -> Result<(), String> {
     println!("[VMS] discover_cameras: start");
+
+    let interface_filter = request
+        .and_then(|r| r.interfaces)
+        .map(|items| {
+            items
+                .into_iter()
+                .map(|v| v.to_lowercase())
+                .collect::<HashSet<_>>()
+        });
 
     let app_handle_clone = app_handle.clone();
 
@@ -38,6 +68,12 @@ pub async fn discover_cameras(app_handle: tauri::AppHandle) -> Result<(), String
         let mut targets: Vec<String> = Vec::new();
 
         for iface in interfaces {
+            if let Some(filter) = &interface_filter {
+                if !interface_matches(&iface, filter) {
+                    continue;
+                }
+            }
+
             if let IfAddr::V4(ipv4) = iface.addr {
                 if ipv4.ip.is_loopback() {
                     continue;
@@ -135,6 +171,84 @@ pub async fn discover_cameras(app_handle: tauri::AppHandle) -> Result<(), String
 
     println!("[VMS] discover_cameras: task started");
     Ok(())
+}
+
+fn interface_matches(interface: &get_if_addrs::Interface, filter: &HashSet<String>) -> bool {
+    if filter.contains(&interface.name.to_lowercase()) {
+        return true;
+    }
+
+    match interface.addr {
+        IfAddr::V4(ref ipv4) => filter.contains(&ipv4.ip.to_string()),
+        IfAddr::V6(_) => false,
+    }
+}
+
+fn prefix_from_netmask(netmask: &Ipv4Addr) -> u8 {
+    u32::from(*netmask).count_ones() as u8
+}
+
+fn network_cidr(ip: &Ipv4Addr, netmask: &Ipv4Addr) -> String {
+    let prefix = prefix_from_netmask(netmask);
+    let network = u32::from(*ip) & u32::from(*netmask);
+    let network_addr = Ipv4Addr::from(network);
+    format!("{}/{}", network_addr, prefix)
+}
+
+#[tauri::command]
+pub async fn list_network_interfaces() -> Result<Vec<NetworkInterfaceInfo>, String> {
+    let interfaces = get_if_addrs::get_if_addrs().map_err(|e| e.to_string())?;
+    let friendly_names = collect_interface_display_names();
+    let mut list = Vec::new();
+
+    for iface in interfaces {
+        if let IfAddr::V4(v4) = iface.addr {
+            let cidr = network_cidr(&v4.ip, &v4.netmask);
+            list.push(NetworkInterfaceInfo {
+                name: iface.name.clone(),
+                display_name: friendly_names.get(&iface.name).cloned(),
+                ipv4: v4.ip.to_string(),
+                netmask: v4.netmask.to_string(),
+                cidr,
+                is_loopback: v4.ip.is_loopback(),
+            });
+        }
+    }
+
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(list)
+}
+
+fn collect_interface_display_names() -> HashMap<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use ipconfig::get_adapters;
+
+        let mut map = HashMap::new();
+        if let Ok(adapters) = get_adapters() {
+            for adapter in adapters {
+                let key = adapter.adapter_name().to_string();
+                let friendly = adapter.friendly_name();
+                let friendly = if !friendly.is_empty() {
+                    friendly.to_string()
+                } else {
+                    let desc = adapter.description();
+                    if !desc.is_empty() {
+                        desc.to_string()
+                    } else {
+                        adapter.adapter_name().to_string()
+                    }
+                };
+                map.insert(key, friendly);
+            }
+        }
+        map
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        HashMap::new()
+    }
 }
 
 async fn scan_ip(
