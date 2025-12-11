@@ -31,6 +31,9 @@
 - [x] Improve Object Counter
 	<!-- Added snapshot saving, improved UI. Upgraded model to YOLOv11s for better long-range detection. -->
 
+- [x] Implement Auto Updater
+	<!-- Configured Tauri updater with GitHub Releases. Added update check on startup and manual check in settings. -->
+
 # VMS Dashboard Copilot Instructions
 
 - Work through each checklist item systematically.

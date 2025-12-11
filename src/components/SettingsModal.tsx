@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save, ask, message } from '@tauri-apps/plugin-dialog';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { useLocalization } from '../hooks/useLocalization';
@@ -1207,20 +1209,45 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     input.click();
   };
 
-  const handleCheckForUpdates = () => {
+  const handleCheckForUpdates = async () => {
     setUpdateStatus('checking');
-    // Simulate update check
-    setTimeout(() => {
-      setUpdateStatus('latest');
+    try {
+      const update = await check();
+      if (update?.available) {
+        setUpdateStatus('available');
+        
+        const yes = await ask(
+          `New version ${update.version} is available!\n\n${update.body || 'No release notes.'}\n\nDo you want to install it now?`, 
+          { title: 'Update Available', kind: 'info', okLabel: 'Install & Restart', cancelLabel: 'Later' }
+        );
+        
+        if (yes) {
+          await update.downloadAndInstall();
+          await relaunch();
+        }
+      } else {
+        setUpdateStatus('latest');
+        const toast = document.getElementById('app-toast');
+        if (toast) {
+          toast.textContent = t('update_latest');
+          toast.className = 'toast-notification show';
+          setTimeout(() => {
+            toast.className = 'toast-notification';
+          }, 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Update check failed:', error);
+      setUpdateStatus('error');
       const toast = document.getElementById('app-toast');
       if (toast) {
-        toast.textContent = 'У вас установлена последняя версия';
+        toast.textContent = 'Update check failed';
         toast.className = 'toast-notification show';
         setTimeout(() => {
           toast.className = 'toast-notification';
         }, 3000);
       }
-    }, 2000);
+    }
   };
 
   const openDonationPage = () => {

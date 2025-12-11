@@ -1,5 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { check } from '@tauri-apps/plugin-updater';
+import { ask } from '@tauri-apps/plugin-dialog';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 import DevicePanel from './DevicePanel';
 import AppFooter from './AppFooter';
@@ -18,6 +21,28 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSimMaximized, setIsSimMaximized] = useState(false);
   const [isSimMinimized, setIsSimMinimized] = useState(false);
   const [isSimClosed, setIsSimClosed] = useState(false);
+
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        const update = await check();
+        if (update?.available) {
+          const yes = await ask(
+            `New version ${update.version} is available!\n\n${update.body || 'No release notes.'}\n\nDo you want to install it now?`, 
+            { title: 'Update Available', kind: 'info', okLabel: 'Install & Restart', cancelLabel: 'Later' }
+          );
+          if (yes) {
+            await update.downloadAndInstall();
+            await relaunch();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check for updates:', error);
+      }
+    };
+
+    checkForUpdates();
+  }, []);
 
   return (
     <CameraContextMenuProvider>
