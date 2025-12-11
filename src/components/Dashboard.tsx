@@ -1,20 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { buildCameraRtspUrls } from '../utils/cameraStreams';
 // appLocalDataDir removed; go2rtc handles all streaming duties now
-import { Box, Dialog, Typography, IconButton } from '@mui/material';
+import { Box, Typography, IconButton } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useLocalization } from '../hooks/useLocalization';
 import { useAppState } from '../hooks/useAppState';
 import LayoutTabs from './LayoutTabs';
 import LayoutTemplateDialog from './LayoutTemplateDialog';
-import VideoStreamPlayer from './VideoStreamPlayer';
-import DualQualityStreamPlayer from './DualQualityStreamPlayer';
 import GridCell from './GridCell';
 import CellControls from './CellControls';
 import PTZControls from './PTZControls';
-import DetectionOverlay from './DetectionOverlay';
 import { useCameraContextMenu } from '../hooks/useCameraContextMenu';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { useToast } from '../hooks/useToast';
@@ -72,11 +68,8 @@ if (typeof window !== 'undefined') {
 
 const MAX_CELLS = MAX_DASHBOARD_CELLS;
 const GRID_PRESETS = [1, 4, 6, 8, 9, 12, 16, 20, 25, 32, 36, 49, 64].filter(size => size <= MAX_CELLS);
-const ANALYSIS_LOOP_DELAY_MS = 2000;
 const ANALYSIS_WARMUP_RETRY_MS = 1000;
 const CAMERA_STATUS_OFFLINE_TIMEOUT_MS = 8000;
-const CAMERA_STATUS_LAG_FPS = 12;
-const CAMERA_STATUS_LAG_BITRATE = 400;
 const DEFAULT_CELL_VOLUME = 0.75;
 const MIN_AUDIBLE_VOLUME = 0.01;
 

@@ -27,7 +27,7 @@ interface AppStatusProps {
 	onClose: () => void;
 	webrtcStatsData?: Array<{
 		streamName: string;
-		stats: any;
+		stats: unknown;
 		quality: string;
 	}>;
 }

@@ -39,7 +39,6 @@ const CellControls: React.FC<CellControlsProps> = ({
   isMuted,
   volume = 1,
   streamId,
-  streamName,
   enableSnapshot = false,
   onStreamSwitch,
   onAudio,
