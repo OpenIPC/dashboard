@@ -37,7 +37,7 @@ use yolo::{
 // ANPR config module - functions reserved for future use
 #[allow(unused_imports)]
 pub use anpr_config::{
-    get_config as get_anpr_config, get_config_path as get_anpr_config_path,
+    get_anpr_config, get_config_path as get_anpr_config_path,
     initialize_config as initialize_anpr_config, update_config as update_anpr_config, AnprConfig,
 };
 

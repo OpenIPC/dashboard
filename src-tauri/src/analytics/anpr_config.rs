@@ -68,7 +68,7 @@ lazy_static! {
 }
 
 #[tauri::command]
-pub fn get_config() -> AnprConfig {
+pub fn get_anpr_config() -> AnprConfig {
     ANPR_CONFIG.read().clone()
 }
 
