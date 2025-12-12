@@ -151,7 +151,7 @@ impl AnalyticsEngine for LicensePlateEngine {
         let frame_start = Instant::now();
 
         // Get current ANPR config
-        let config = anpr_config::get_config();
+        let config = anpr_config::get_anpr_config();
 
         let mut effective_options = options.clone();
         if effective_options.get("confidence_threshold").is_none() {
