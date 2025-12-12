@@ -1,4 +1,4 @@
-mod anpr_config;
+pub mod anpr_config;
 mod license_plate;
 mod tracker;
 mod yolo;

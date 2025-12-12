@@ -1895,7 +1895,7 @@ pub fn run() {
             analytics::analytics_disable_module,
             analytics::analytics_update_module_config,
             analytics::analytics_process_frame,
-            analytics::get_anpr_config,
+            analytics::anpr_config::get_anpr_config,
             database::commands::get_plate_records,
             database::commands::get_plate_record_by_id,
             database::commands::update_plate_notes,
