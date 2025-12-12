@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Alert,
   Box,
   Button,
   Chip,
@@ -83,7 +82,6 @@ const LicensePlatePanel: React.FC = () => {
   const [records, setRecords] = useState<PlateRecord[]>([]);
   const [statistics, setStatistics] = useState<PlateStatistics | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<PlateRecord | null>(null);
   const [plateFilter, setPlateFilter] = useState('');
   const [cameraFilter, setCameraFilter] = useState('');
@@ -236,33 +234,13 @@ const LicensePlatePanel: React.FC = () => {
     void loadRecords();
   }, [loadStatistics, loadRecords]);
 
-  const handleSearch = async () => {
-    if (!plateFilter.trim()) {
-      await loadRecords();
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const data: PlateRecord[] = await invoke('search_plate_history', {
-        plateNumber: plateFilter.trim(),
-      });
-      setRecords(data);
-      setPage(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleUpdateNotes = async (record: PlateRecord) => {
     try {
       await invoke('update_plate_notes', { id: record.id, notes: record.notes || '' });
       await loadRecords();
       setSelectedRecord(prev => (prev && prev.id === record.id ? { ...prev, notes: record.notes } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err);
     }
   };
 
@@ -278,20 +256,8 @@ const LicensePlatePanel: React.FC = () => {
         setSelectedRecord(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err);
     }
-  };
-
-  const handleClearFilters = () => {
-    setPlateFilter('');
-    setCameraFilter('');
-    setDateFrom('');
-    setDateTo('');
-    setPage(0);
-  };
-
-  const handleCameraFilterChange = (event: SelectChangeEvent<string>) => {
-    setCameraFilter(event.target.value);
   };
 
   const formatTimestamp = (timestamp: string) => {

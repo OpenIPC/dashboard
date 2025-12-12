@@ -71,13 +71,6 @@ const EnhancedVideoPlayerDemo: React.FC<EnhancedVideoPlayerDemoProps> = ({
     switchTransport(transport);
   };
 
-  const handleSnapshot = async () => {
-    const blob = await takeSnapshot();
-    if (blob) {
-      console.log('[Demo] Snapshot captured:', blob.size, 'bytes');
-    }
-  };
-
   return (
     <Paper
       elevation={3}

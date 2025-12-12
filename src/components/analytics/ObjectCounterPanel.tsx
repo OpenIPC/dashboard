@@ -84,7 +84,7 @@ const ImageWithFallback = ({ src, alt, fallback }: { src: string, alt: string, f
 
 const ObjectCounterPanel: React.FC = () => {
   const { t } = useLocalization();
-  const { modules, processFrame, detections } = useAnalytics();
+  const { modules, detections } = useAnalytics();
   const { cameras } = useAppState();
   const [events, setEvents] = useState<ObjectCounterEvent[]>([]);
   const [aggregates, setAggregates] = useState<ObjectCounterAggregate[]>([]);

@@ -6,7 +6,6 @@ import {
   enableAnalyticsModule,
   disableAnalyticsModule,
   processAnalyticsFrame,
-  updateAnalyticsModuleSnapshotsDir,
   updateAnalyticsModuleConfig,
   type AnalyticsModuleStatus,
   type AnalyticsProcessFrameRequest,

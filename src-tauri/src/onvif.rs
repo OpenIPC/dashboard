@@ -4,7 +4,6 @@ use lazy_static::lazy_static;
 use rand::Rng;
 use regex::Regex;
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::sync::Mutex;

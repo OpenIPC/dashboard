@@ -4,14 +4,12 @@
  * Features: monitoring, multiple transports, snapshots, 2-way audio, adaptive bitrate
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import type {
   Go2RtcStreamStats,
   Go2RtcStreamInfo,
   Go2RtcTransportType,
   TwoWayAudioConfig,
   Go2RtcStreamFilter,
-  AdaptiveStreamConfig,
 } from '../global';
 
 export interface Go2RtcApiConfig {

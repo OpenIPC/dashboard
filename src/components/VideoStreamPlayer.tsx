@@ -6,7 +6,6 @@ import { performRtspHandshake, resolveStreamSource } from '../services/rtsp';
 import { isTauriAvailable } from '../utils/tauri';
 import StreamMonitor from './StreamMonitor';
 import { WebRTCStatsCollector } from '../services/webrtcStats';
-import type { WebRTCStats } from '../services/webrtcStats';
 import { useWebRTCStatsContext } from '../contexts/WebRTCStatsContext';
 
 // Stream optimization settings interface
@@ -143,7 +142,12 @@ const waitForIceGatheringComplete = async (
     const nativeRemove = typeof pc.removeEventListener === 'function' ? pc.removeEventListener.bind(pc) : null;
     const previousHandler = pc.onicegatheringstatechange;
 
-  let handler: () => void;
+    const handler = () => {
+      logger?.(`ICE gathering state -> ${pc.iceGatheringState}`);
+      if (pc.iceGatheringState === 'complete') {
+        finish();
+      }
+    };
 
     const finish = () => {
       if (settled) {
@@ -159,13 +163,6 @@ const waitForIceGatheringComplete = async (
         pc.onicegatheringstatechange = previousHandler ?? null;
       }
       resolve();
-    };
-
-    handler = () => {
-      logger?.(`ICE gathering state -> ${pc.iceGatheringState}`);
-      if (pc.iceGatheringState === 'complete') {
-        finish();
-      }
     };
 
     if (nativeAdd && nativeRemove) {
@@ -520,7 +517,7 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
     };
 
     // Check at configured interval (convert seconds to ms)
-    latencyCheckInterval = window.setInterval(checkLatency, streamOptSettings.latencyCheckInterval! * 1000);
+    const latencyCheckInterval = window.setInterval(checkLatency, streamOptSettings.latencyCheckInterval! * 1000);
 
     return () => {
       if (latencyCheckInterval) {

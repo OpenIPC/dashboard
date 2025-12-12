@@ -3180,7 +3180,6 @@ const Dashboard: React.FC = () => {
   });
 
   const fullscreenIndex = fullscreenCell ?? -1;
-  const fullscreenStream = fullscreenIndex >= 0 ? cellStreams[fullscreenIndex] : null;
 
   const dialogLayout = templateDialog.layoutId
     ? layoutTabs.find(tab => tab.id === templateDialog.layoutId) ?? null
