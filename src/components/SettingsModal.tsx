@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { open as openDialog, save, ask, message } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save, ask } from '@tauri-apps/plugin-dialog';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -324,37 +324,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     [currentLanguage, normalizeStreamingSettings],
   );
 
-  const handleStreamingSettingChange = (
-    key: keyof StreamingBackendSettings,
-    value: unknown
-  ) => {
-    setSettings(prev => {
-      const nextStreaming: StreamingBackendSettings = {
-        ...prev.streaming,
-      };
-
-      switch (key) {
-        case 'provider':
-          nextStreaming.provider = isStreamingProvider(value)
-            ? value
-            : DEFAULT_STREAMING_SETTINGS.provider;
-          break;
-        case 'enableOnDemand':
-          nextStreaming.enableOnDemand = Boolean(value);
-          break;
-        case 'restartOnConfigChange':
-          nextStreaming.restartOnConfigChange = Boolean(value);
-          break;
-        default:
-          break;
-      }
-
-      return {
-        ...prev,
-        streaming: nextStreaming
-      };
-    });
-  };
   const prepareStreamingForSave = (
     streaming: StreamingBackendSettings
   ): StreamingBackendSettings => ({

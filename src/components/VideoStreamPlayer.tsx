@@ -2,11 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import Hls from 'hls.js';
 import type { ErrorData } from 'hls.js';
-import { performRtspHandshake, resolveStreamSource, type RtspHandshakeResponse } from '../services/rtsp';
+import { performRtspHandshake, resolveStreamSource } from '../services/rtsp';
 import { isTauriAvailable } from '../utils/tauri';
 import StreamMonitor from './StreamMonitor';
-import SnapshotButton from './SnapshotButton';
-import TwoWayAudioControl from './TwoWayAudioControl';
 import { WebRTCStatsCollector } from '../services/webrtcStats';
 import type { WebRTCStats } from '../services/webrtcStats';
 import { useWebRTCStatsContext } from '../contexts/WebRTCStatsContext';
@@ -361,9 +359,6 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   // Enhanced go2rtc features
   showMonitor = false,
   monitorCompact = true,
-  enableSnapshot = false,
-  enable2WayAudio = false,
-  enableAdaptiveBitrate = false,
   // Performance optimizations
   fastStart = true, // По умолчанию включено
   // WebRTC Stats Dashboard
@@ -410,7 +405,6 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
   });
   
   // WebRTC Stats Dashboard state
-  const [webrtcStats, setWebrtcStats] = useState<WebRTCStats | null>(null);
   const [forceH264, setForceH264] = useState(false);
   const volumeRef = useRef(Math.max(0, Math.min(1, volumeProp)));
 

@@ -3,7 +3,7 @@
  * Предотвращает пересоздание VideoStreamPlayer при изменениях в других ячейках
  */
 
-import React, { memo, useCallback } from 'react';
+import React, { memo } from 'react';
 import { Box } from '@mui/material';
 import DualQualityStreamPlayer from './DualQualityStreamPlayer';
 import DetectionOverlay from './DetectionOverlay';

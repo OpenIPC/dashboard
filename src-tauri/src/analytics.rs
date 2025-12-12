@@ -70,8 +70,6 @@ const SNAPSHOT_MIN_CROP_WIDTH: f32 = 160.0;
 const SNAPSHOT_MIN_CROP_HEIGHT: f32 = SNAPSHOT_MIN_CROP_WIDTH / SNAPSHOT_TARGET_ASPECT;
 const SNAPSHOT_MAX_FRAME_COVERAGE_RATIO: f32 = 0.7;
 const SNAPSHOT_MAX_EXPANSION_MULTIPLIER: f32 = 1.9;
-const SNAPSHOT_OUTPUT_WIDTH: u32 = 640;
-const SNAPSHOT_OUTPUT_HEIGHT: u32 = 480;
 const SNAPSHOT_ASPECT_MIN: f32 = 0.4;
 const SNAPSHOT_ASPECT_MAX: f32 = 2.2;
 const SNAPSHOT_EDGE_MARGIN_HORIZONTAL_RATIO: f32 = 0.01;
@@ -1793,7 +1791,6 @@ impl AnalyticsState {
                 }
 
                 let mut snapshot_path: Option<String> = None;
-                let mut event_triggered = false;
 
                 // Line crossings
                 for line in &lines {
@@ -1811,7 +1808,6 @@ impl AnalyticsState {
                     
                     if intersect {
                         println!("DEBUG: Line crossing detected! Line: {}, Object: {}", line.name, detection.label);
-                        event_triggered = true;
                         if snapshot_path.is_none() {
                              snapshot_path = self.save_object_snapshot(module, frame, detection, response.camera_id.as_deref());
                         }
@@ -1887,7 +1883,6 @@ impl AnalyticsState {
 
                     if !was_in && is_in {
                         println!("DEBUG: Zone entry detected! Zone: {}, Object: {}", zone.name, detection.label);
-                        event_triggered = true;
                         if snapshot_path.is_none() {
                              snapshot_path = self.save_object_snapshot(module, frame, detection, response.camera_id.as_deref());
                         }
@@ -3700,15 +3695,6 @@ const LICENSE_PLATE_OCR_MODEL_RESOURCE: ModuleResourceSpec = ModuleResourceSpec:
         url: "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard/releases/download/v0.1.0/anpr_crnn.onnx",
         file_name: LICENSE_PLATE_OCR_MODEL_FILE,
         sha256: None,
-    },
-);
-
-// Python OCR script for ANPR (optional, fallback to Rust ONNX if not available)
-const LICENSE_PLATE_PYTHON_OCR_SCRIPT_RESOURCE: ModuleResourceSpec = ModuleResourceSpec::File(
-    ModuleDownloadSpec {
-        url: "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard/releases/download/v0.1.0/anpr_ocr.py",
-        file_name: "anpr_ocr.py",
-        sha256: Some("af4492a2a5993e50e49f639b10b1f37c23c27f57dca47ebb496070af683b01b5"),
     },
 );
 

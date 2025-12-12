@@ -120,12 +120,6 @@ fn is_unreachable_error(err: &str) -> bool {
         || lowered.contains("no route to host")
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OnvifProfile {
-    pub token: String,
-    pub name: String,
-}
-
 #[tauri::command]
 pub async fn get_rtsp_url(
     ip: String,

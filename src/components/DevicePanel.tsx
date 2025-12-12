@@ -32,8 +32,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
-import StorageIcon from '@mui/icons-material/Storage';
 import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
@@ -72,7 +70,6 @@ interface DiscoveryFinishedPayload {
 
 const DevicePanel: React.FC = () => {
   const { t } = useLocalization();
-  const navigate = useNavigate();
   const {
     cameras,
     groups,

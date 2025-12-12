@@ -139,10 +139,6 @@ interface ProcessedFrameResult {
   frameHeight: number;
 }
 
-const getHdStreamKey = (stream: StreamInfo): string => {
-  return `${stream.baseName}_0`;
-};
-
 const Dashboard: React.FC = () => {
   const { t } = useLocalization();
   const {
@@ -153,7 +149,6 @@ const Dashboard: React.FC = () => {
     updateDashboardState,
     streamingProvider,
     ensureStreamingBackendStarted,
-    cameraStatuses,
     updateCameraStatus,
     settings,
   } = useAppState();
@@ -215,21 +210,6 @@ const Dashboard: React.FC = () => {
   const cellStreamsRef = useRef<(StreamInfo | null)[]>(cellStreams); // Ref для избежания зависимости в useMemo
   const [hoveredCell, setHoveredCellState] = useState<number | null>(null);
   const [fullscreenCell, setFullscreenCell] = useState<number | null>(null);
-  const [fullscreenPortalElement, setFullscreenPortalElement] = useState<HTMLDivElement | null>(null);
-  
-  // Callback ref to capture Portal container as soon as it's mounted
-  const handlePortalRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      console.log('[Dashboard] Portal ref callback fired! Node:', node, 'dimensions:', {
-        width: node.offsetWidth,
-        height: node.offsetHeight
-      });
-      setFullscreenPortalElement(node);
-    } else {
-      console.log('[Dashboard] Portal ref callback: node is NULL');
-      setFullscreenPortalElement(null);
-    }
-  }, []);
   
   // Новые состояния для управления ячейками
   const [cellPaused, setCellPaused] = useState<boolean[]>(() => Array.from({ length: MAX_CELLS }, () => false));
@@ -549,19 +529,6 @@ const Dashboard: React.FC = () => {
     },
     [],
   );
-
-  const resolveVideoElement = useCallback((index: number): HTMLVideoElement | null => {
-    if (index < 0 || index >= MAX_CELLS) {
-      return null;
-    }
-
-    const entry = videoElementRefs.current[index];
-    if (!entry) {
-      return null;
-    }
-
-    return entry.fullscreen ?? entry.grid;
-  }, []);
 
   const isVideoElementReady = useCallback((element: HTMLVideoElement | null) => {
     if (!element) {
@@ -3213,33 +3180,7 @@ const Dashboard: React.FC = () => {
   });
 
   const fullscreenIndex = fullscreenCell ?? -1;
-  const fullscreenCamera = fullscreenIndex >= 0 ? cellCameras[fullscreenIndex] : null;
   const fullscreenStream = fullscreenIndex >= 0 ? cellStreams[fullscreenIndex] : null;
-  const fullscreenMuted = fullscreenIndex >= 0 ? cellMuted[fullscreenIndex] : true;
-  const fullscreenRecording = fullscreenIndex >= 0 ? cellRecording[fullscreenIndex] : false;
-  const fullscreenRecordingPending = fullscreenIndex >= 0 ? recordingPending[fullscreenIndex] : false;
-  const fullscreenModuleToggles = fullscreenIndex >= 0
-    ? visibleAnalyticsModules.map(module => {
-        const displayName = getLocalizedModuleName(module);
-        return {
-          moduleId: module.id,
-          label: displayName,
-          icon: resolveModuleIcon(module.id),
-          tooltip: getModuleButtonTooltip(fullscreenIndex, module, displayName),
-          active:
-            frameAnalysisActive[fullscreenIndex] &&
-            analysisModuleRef.current[fullscreenIndex] === module.id,
-          disabled: isModuleButtonDisabled(fullscreenIndex, module.id),
-          onToggle: () => handleModuleToggle(fullscreenIndex, module.id),
-        };
-      })
-    : [];
-  const fullscreenStatsKey = fullscreenStream ? `${fullscreenStream.baseName}_${fullscreenStream.quality}` : null;
-  const fullscreenStats = fullscreenStatsKey ? streamStatsRef.current[fullscreenStatsKey] : undefined;
-  const fullscreenDetection = fullscreenIndex >= 0 ? cellDetections[fullscreenIndex] : null;
-  const fullscreenVideoEntry = fullscreenIndex >= 0 ? videoElementRefs.current[fullscreenIndex] : undefined;
-  const fullscreenVideoElement = fullscreenVideoEntry?.fullscreen ?? null;
-  const fullscreenHasDetections = !!(fullscreenDetection && fullscreenDetection.detections.length > 0);
 
   const dialogLayout = templateDialog.layoutId
     ? layoutTabs.find(tab => tab.id === templateDialog.layoutId) ?? null

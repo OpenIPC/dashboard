@@ -3,7 +3,7 @@
  * Держит оба WebRTC соединения активными и переключает только видимость
  */
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { Box } from '@mui/material';
 import VideoStreamPlayer from './VideoStreamPlayer';
 

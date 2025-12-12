@@ -896,16 +896,6 @@ impl Go2RtcState {
             println!("[prepare_ffmpeg_binary] WARNING: Failed to copy {} to {:?}", binary_name, destination);
         }
     }
-
-    #[cfg(windows)]
-    fn ffmpeg_resource_candidates() -> &'static [&'static str] {
-        &["binaries/ffmpeg.exe", "ffmpeg.exe"]
-    }
-
-    #[cfg(not(windows))]
-    fn ffmpeg_resource_candidates() -> &'static [&'static str] {
-        &["binaries/ffmpeg", "ffmpeg"]
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
