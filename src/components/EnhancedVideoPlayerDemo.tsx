@@ -39,7 +39,6 @@ const EnhancedVideoPlayerDemo: React.FC<EnhancedVideoPlayerDemoProps> = ({
     isLoading,
     error,
     switchTransport,
-    takeSnapshot,
     reconnect,
   } = useEnhancedVideoStream({
     streamName,

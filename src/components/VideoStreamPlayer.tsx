@@ -497,8 +497,6 @@ const VideoStreamPlayer: React.FC<VideoStreamPlayerProps> = ({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    let latencyCheckInterval: number | undefined;
-
     const checkLatency = () => {
       if (!videoEl.srcObject || videoEl.paused) return;
 

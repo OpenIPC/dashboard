@@ -3179,8 +3179,6 @@ const Dashboard: React.FC = () => {
     );
   });
 
-  const fullscreenIndex = fullscreenCell ?? -1;
-
   const dialogLayout = templateDialog.layoutId
     ? layoutTabs.find(tab => tab.id === templateDialog.layoutId) ?? null
     : null;

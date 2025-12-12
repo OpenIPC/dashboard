@@ -3,7 +3,7 @@
  * Глобальное хранилище статистики WebRTC соединений для всех активных потоков
  */
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import type { WebRTCStats } from '../services/webrtcStats';
 

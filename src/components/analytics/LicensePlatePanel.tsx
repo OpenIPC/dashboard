@@ -82,6 +82,7 @@ const LicensePlatePanel: React.FC = () => {
   const [records, setRecords] = useState<PlateRecord[]>([]);
   const [statistics, setStatistics] = useState<PlateStatistics | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<PlateRecord | null>(null);
   const [plateFilter, setPlateFilter] = useState('');
   const [cameraFilter, setCameraFilter] = useState('');
