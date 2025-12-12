@@ -135,6 +135,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
+      - name: generate updater json
+        run: node tools/generate_updater_json.js ${{ needs.create-release.outputs.tag_name }}
+
       - name: upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -148,4 +151,6 @@ jobs:
           draft: true
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           files: |
+            latest.json
             src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.sig

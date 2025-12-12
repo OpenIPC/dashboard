@@ -67,6 +67,7 @@ lazy_static! {
         Arc::new(RwLock::new(AnprConfig::default()));
 }
 
+#[tauri::command]
 pub fn get_config() -> AnprConfig {
     ANPR_CONFIG.read().clone()
 }
