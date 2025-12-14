@@ -32,6 +32,7 @@ const sigFile = files.find(f => f.endsWith('.msi.sig') && f.includes(version));
 if (!msiFile || !sigFile) {
   console.error('Could not find .msi or .msi.sig files in', bundleDir);
   console.log('Files found:', files);
+  console.error('HINT: If the .sig file is missing, ensure that TAURI_SIGNING_PRIVATE_KEY is correctly set in GitHub Secrets.');
   process.exit(1);
 }
 
