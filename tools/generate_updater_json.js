@@ -25,8 +25,9 @@ if (!fs.existsSync(bundleDir)) {
 
 const files = fs.readdirSync(bundleDir);
 
-const msiFile = files.find(f => f.endsWith('.msi'));
-const sigFile = files.find(f => f.endsWith('.msi.sig'));
+// Filter for files matching the current version to avoid picking up old artifacts
+const msiFile = files.find(f => f.endsWith('.msi') && f.includes(version));
+const sigFile = files.find(f => f.endsWith('.msi.sig') && f.includes(version));
 
 if (!msiFile || !sigFile) {
   console.error('Could not find .msi or .msi.sig files in', bundleDir);
