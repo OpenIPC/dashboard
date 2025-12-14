@@ -154,3 +154,4 @@ jobs:
             latest.json
             src-tauri/target/release/bundle/**/*.msi
             src-tauri/target/release/bundle/**/*.sig
+            src-tauri/target/release/bundle/**/*.exe

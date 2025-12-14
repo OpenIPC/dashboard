@@ -16,21 +16,33 @@ if (!tagName) {
 // However, the tag name in the URL MUST have the 'v' if the release tag has it.
 const version = tagName.startsWith('v') ? tagName.slice(1) : tagName;
 
-const bundleDir = path.join(__dirname, '../src-tauri/target/release/bundle/msi');
+// Define search paths
+const msiDir = path.join(__dirname, '../src-tauri/target/release/bundle/msi');
+const nsisDir = path.join(__dirname, '../src-tauri/target/release/bundle/nsis');
 
-if (!fs.existsSync(bundleDir)) {
-    console.error(`Bundle directory does not exist: ${bundleDir}`);
+let bundleDir;
+let extension;
+
+// Check for MSI first, then NSIS
+if (fs.existsSync(msiDir) && fs.readdirSync(msiDir).some(f => f.endsWith('.msi'))) {
+    bundleDir = msiDir;
+    extension = '.msi';
+} else if (fs.existsSync(nsisDir) && fs.readdirSync(nsisDir).some(f => f.endsWith('.exe'))) {
+    bundleDir = nsisDir;
+    extension = '.exe';
+} else {
+    console.error(`Could not find valid bundle directory. Checked:\n - ${msiDir}\n - ${nsisDir}`);
     process.exit(1);
 }
 
 const files = fs.readdirSync(bundleDir);
 
 // Filter for files matching the current version to avoid picking up old artifacts
-const msiFile = files.find(f => f.endsWith('.msi') && f.includes(version));
-const sigFile = files.find(f => f.endsWith('.msi.sig') && f.includes(version));
+const installerFile = files.find(f => f.endsWith(extension) && f.includes(version));
+const sigFile = files.find(f => f.endsWith(`${extension}.sig`) && f.includes(version));
 
-if (!msiFile || !sigFile) {
-  console.error('Could not find .msi or .msi.sig files in', bundleDir);
+if (!installerFile || !sigFile) {
+  console.error(`Could not find ${extension} or ${extension}.sig files in`, bundleDir);
   console.log('Files found:', files);
   console.error('HINT: If the .sig file is missing, ensure that TAURI_SIGNING_PRIVATE_KEY is correctly set in GitHub Secrets.');
   process.exit(1);
@@ -45,7 +57,7 @@ const updateData = {
   platforms: {
     "windows-x86_64": {
       "signature": signature,
-      "url": `https://github.com/OpenIPC/dashboard/releases/download/${tagName}/${msiFile}`
+      "url": `https://github.com/OpenIPC/dashboard/releases/download/${tagName}/${installerFile}`
     }
   }
 };
