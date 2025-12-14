@@ -34,3 +34,6 @@ src-tauri/cameras.json
 
 # Binaries (downloaded by tools)
 src-tauri/binaries/
+
+*.key
+*.key.pub

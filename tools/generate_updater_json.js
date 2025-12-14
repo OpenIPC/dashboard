@@ -42,9 +42,27 @@ const installerFile = files.find(f => f.endsWith(extension) && f.includes(versio
 const sigFile = files.find(f => f.endsWith(`${extension}.sig`) && f.includes(version));
 
 if (!installerFile || !sigFile) {
-  console.error(`Could not find ${extension} or ${extension}.sig files in`, bundleDir);
-  console.log('Files found:', files);
-  console.error('HINT: If the .sig file is missing, ensure that TAURI_SIGNING_PRIVATE_KEY is correctly set in GitHub Secrets.');
+  console.error(`\nERROR: Artifact verification failed for version ${version}`);
+  console.error(`Search directory: ${bundleDir}`);
+  
+  if (installerFile) {
+      console.log(`[OK] Found installer: ${installerFile}`);
+  } else {
+      console.error(`[MISSING] Installer file (*${extension}) for version ${version} not found.`);
+  }
+
+  if (sigFile) {
+      console.log(`[OK] Found signature: ${sigFile}`);
+  } else {
+      console.error(`[MISSING] Signature file (*${extension}.sig) for version ${version} not found.`);
+      console.error('HINT: The build completed, but Tauri did not sign the binaries.');
+      console.error('      Ensure TAURI_SIGNING_PRIVATE_KEY is set correctly in GitHub Secrets.');
+      console.error('      The key must be the PRIVATE key (starts with "untrusted comment: minisign secret key").');
+  }
+  
+  console.log('\nAll files in directory:');
+  files.forEach(f => console.log(` - ${f}`));
+  
   process.exit(1);
 }
 

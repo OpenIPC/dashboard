@@ -129,8 +129,18 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      - name: Check signing secrets
+        run: |
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) { 
+            Write-Host "Secret TAURI_SIGNING_PRIVATE_KEY is present (length: $($env:TAURI_SIGNING_PRIVATE_KEY.Length))" 
+          } else { 
+            Write-Error "Secret TAURI_SIGNING_PRIVATE_KEY is MISSING or EMPTY" 
+          }
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+
       - name: build Tauri app
-        run: npx tauri build
+        run: npx tauri build --verbose
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
