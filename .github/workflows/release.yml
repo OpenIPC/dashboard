@@ -139,6 +139,21 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
 
+      - name: Verify signing capability
+        run: |
+          echo "Testing signing capability..." > test_sign.txt
+          npx tauri signer sign -f test_sign.txt
+          if (Test-Path test_sign.txt.sig) {
+            Write-Host "Signing test PASSED. Generated signature file."
+            Get-Content test_sign.txt.sig
+          } else {
+            Write-Error "Signing test FAILED. No signature file generated."
+            exit 1
+          }
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
       - name: build Tauri app
         run: npx tauri build --verbose
         env:
