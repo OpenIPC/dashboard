@@ -129,20 +129,15 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      - name: Check signing secrets
+      - name: Setup signing key
         run: |
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) { 
-            Write-Host "Secret TAURI_SIGNING_PRIVATE_KEY is present (length: $($env:TAURI_SIGNING_PRIVATE_KEY.Length))" 
-          } else { 
-            Write-Error "Secret TAURI_SIGNING_PRIVATE_KEY is MISSING or EMPTY" 
-          }
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          echo "${{ secrets.TAURI_PRIVATE_KEY }}" > private.key
+        shell: bash
 
       - name: Verify signing capability
         run: |
           echo "Testing signing capability..." > test_sign.txt
-          npx tauri signer sign test_sign.txt
+          npx tauri signer sign -f private.key test_sign.txt
           if (Test-Path test_sign.txt.sig) {
             Write-Host "Signing test PASSED. Generated signature file."
             Get-Content test_sign.txt.sig
@@ -151,13 +146,12 @@ jobs:
             exit 1
           }
         env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: build Tauri app
         run: npx tauri build --verbose
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: private.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: generate updater json
