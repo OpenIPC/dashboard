@@ -129,6 +129,9 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      - name: Clean target directory
+        run: Remove-Item -Recurse -Force src-tauri/target -ErrorAction SilentlyContinue
+
       - name: Write signing key
         id: write-key
         run: |
@@ -141,21 +144,27 @@ jobs:
             process.exit(1);
           }
 
-          let keyContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
+          const rawContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
           
-          // Force Windows line endings (CRLF) because we are on windows-latest
-          // If we don't do this, minisign might read the first line (comment) and try to decode it as the key
-          if (!keyContent.includes('\r\n')) {
-            keyContent = keyContent.replace(/\n/g, '\r\n');
-            console.log('Converted LF to CRLF for Windows compatibility');
+          // Split into lines and filter out empty ones
+          const lines = rawContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+          
+          if (lines.length < 2) {
+             console.error('ERROR: Key file must have at least 2 lines (comment and key)');
+             console.log('Content preview:', rawContent.substring(0, 50));
+             process.exit(1);
           }
 
+          // Reconstruct strictly: Comment + Newline + Key (no trailing newline)
+          // Minisign is sensitive to trailing whitespace in the key line
+          const cleanContent = lines[0].trim() + '\n' + lines[1].trim();
+
           const keyPath = path.resolve('private.key');
-          fs.writeFileSync(keyPath, keyContent);
+          fs.writeFileSync(keyPath, cleanContent);
           
           console.log('Private key written to: ' + keyPath);
+          console.log('Key length: ' + cleanContent.length);
           
-          // Set output
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
