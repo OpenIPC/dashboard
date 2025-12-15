@@ -167,6 +167,39 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ steps.write-key.outputs.key_path }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
+      - name: Manually sign artifacts (fallback)
+        run: |
+          $keyPath = "${{ steps.write-key.outputs.key_path }}"
+          $msiDir = "src-tauri/target/release/bundle/msi"
+          $nsisDir = "src-tauri/target/release/bundle/nsis"
+          
+          function Sign-Artifacts($dir, $ext) {
+            if (Test-Path $dir) {
+              Get-ChildItem $dir -Filter "*$ext" | ForEach-Object {
+                $file = $_.FullName
+                $sigFile = "$file.sig"
+                if (-not (Test-Path $sigFile)) {
+                  Write-Host "Manual signing required for: $file"
+                  # Use tauri signer directly
+                  # Note: tauri signer uses TAURI_PRIVATE_KEY_PASSWORD (not SIGNING_...)
+                  npx tauri signer sign -f $keyPath $file
+                  if (Test-Path $sigFile) {
+                    Write-Host "Successfully signed: $file"
+                  } else {
+                    Write-Error "Failed to sign: $file"
+                  }
+                } else {
+                  Write-Host "Signature already exists for: $file"
+                }
+              }
+            }
+          }
+
+          Sign-Artifacts $msiDir ".msi"
+          Sign-Artifacts $nsisDir ".exe"
+        env:
+          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
       - name: generate updater json
         run: node tools/generate_updater_json.js ${{ needs.create-release.outputs.tag_name }}
 
