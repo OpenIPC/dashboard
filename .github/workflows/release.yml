@@ -130,21 +130,54 @@ jobs:
         continue-on-error: true
 
       - name: Write signing key
+        id: write-key
         run: |
           const fs = require('fs');
+          const path = require('path');
           const keyBase64 = process.env.SECRET_KEY;
-          // Decode base64 to get the actual key file content
+          
+          if (!keyBase64) {
+            console.error('ERROR: SECRET_KEY env var is empty!');
+            process.exit(1);
+          }
+
           const keyContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
-          fs.writeFileSync('private.key', keyContent);
-          console.log('Private key written to file (length: ' + keyContent.length + ')');
+          const keyPath = path.resolve('private.key');
+          fs.writeFileSync(keyPath, keyContent);
+          
+          console.log('Private key written to: ' + keyPath);
+          console.log('Key length: ' + keyContent.length);
+          console.log('First line check: ' + keyContent.split('\n')[0]);
+          
+          // Export the path for next steps
+          const core = require('@actions/core');
+          core.setOutput('key_path', keyPath);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         shell: node {0}
 
+      - name: Verify signing capability
+        run: |
+          echo "Testing signing capability..." > test_sign.txt
+          
+          # Try signing with the file we just wrote
+          # Note: tauri signer uses TAURI_PRIVATE_KEY_PASSWORD
+          npx tauri signer sign -f "${{ steps.write-key.outputs.key_path }}" test_sign.txt
+          
+          if (Test-Path test_sign.txt.sig) {
+            Write-Host "Signing test PASSED. Generated signature file."
+            Get-Content test_sign.txt.sig
+          } else {
+            Write-Error "Signing test FAILED. No signature file generated."
+            exit 1
+          }
+        env:
+          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
       - name: build Tauri app
         run: npx tauri build --verbose
         env:
-          TAURI_SIGNING_PRIVATE_KEY: private.key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.write-key.outputs.key_path }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: generate updater json
