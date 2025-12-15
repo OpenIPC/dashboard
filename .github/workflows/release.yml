@@ -149,9 +149,9 @@ jobs:
           console.log('Key length: ' + keyContent.length);
           console.log('First line check: ' + keyContent.split('\n')[0]);
           
-          // Export the path for next steps
-          const core = require('@actions/core');
-          core.setOutput('key_path', keyPath);
+          // Set output using GitHub Actions command syntax directly
+          // instead of requiring @actions/core which might not be installed
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         shell: node {0}
