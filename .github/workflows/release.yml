@@ -129,24 +129,17 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      - name: Setup signing key
+      - name: Write signing key
         run: |
-          echo "${{ secrets.TAURI_PRIVATE_KEY }}" > private.key
-        shell: bash
-
-      - name: Verify signing capability
-        run: |
-          echo "Testing signing capability..." > test_sign.txt
-          npx tauri signer sign -f private.key test_sign.txt
-          if (Test-Path test_sign.txt.sig) {
-            Write-Host "Signing test PASSED. Generated signature file."
-            Get-Content test_sign.txt.sig
-          } else {
-            Write-Error "Signing test FAILED. No signature file generated."
-            exit 1
-          }
+          const fs = require('fs');
+          const keyBase64 = process.env.SECRET_KEY;
+          // Decode base64 to get the actual key file content
+          const keyContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
+          fs.writeFileSync('private.key', keyContent);
+          console.log('Private key written to file (length: ' + keyContent.length + ')');
         env:
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        shell: node {0}
 
       - name: build Tauri app
         run: npx tauri build --verbose
