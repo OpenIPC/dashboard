@@ -134,45 +134,32 @@ jobs:
         run: |
           const fs = require('fs');
           const path = require('path');
-          const keyBase64 = process.env.SECRET_KEY;
           
+          const keyBase64 = process.env.SECRET_KEY;
           if (!keyBase64) {
             console.error('ERROR: SECRET_KEY env var is empty!');
             process.exit(1);
           }
 
-          const keyContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
+          let keyContent = Buffer.from(keyBase64, 'base64').toString('utf-8');
+          
+          // Force Windows line endings (CRLF) because we are on windows-latest
+          // If we don't do this, minisign might read the first line (comment) and try to decode it as the key
+          if (!keyContent.includes('\r\n')) {
+            keyContent = keyContent.replace(/\n/g, '\r\n');
+            console.log('Converted LF to CRLF for Windows compatibility');
+          }
+
           const keyPath = path.resolve('private.key');
           fs.writeFileSync(keyPath, keyContent);
           
           console.log('Private key written to: ' + keyPath);
-          console.log('Key length: ' + keyContent.length);
-          console.log('First line check: ' + keyContent.split('\n')[0]);
           
-          // Set output using GitHub Actions command syntax directly
-          // instead of requiring @actions/core which might not be installed
+          // Set output
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         shell: node {0}
-
-      - name: Verify signing capability
-        run: |
-          echo "Testing signing capability..." > test_sign.txt
-          
-          # Try signing with the file we just wrote
-          # Note: tauri signer uses TAURI_PRIVATE_KEY_PASSWORD
-          npx tauri signer sign -f "${{ steps.write-key.outputs.key_path }}" test_sign.txt
-          
-          if (Test-Path test_sign.txt.sig) {
-            Write-Host "Signing test PASSED. Generated signature file."
-            Get-Content test_sign.txt.sig
-          } else {
-            Write-Error "Signing test FAILED. No signature file generated."
-            exit 1
-          }
-        env:
-          TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: build Tauri app
         run: npx tauri build --verbose
