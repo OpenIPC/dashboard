@@ -155,10 +155,10 @@ jobs:
              process.exit(1);
           }
 
-          // Reconstruct strictly: Comment + CRLF + Key (no trailing newline)
-          // Windows tools often require CRLF to detect line breaks correctly
-          // And Minisign is sensitive to trailing whitespace/newlines
-          const cleanContent = lines[0].trim() + '\r\n' + lines[1].trim();
+          // Reconstruct: ONLY the key line (second line)
+          // We are removing the "untrusted comment: ..." line entirely
+          // because minisign/tauri seems to choke on it in this environment
+          const cleanContent = lines[1].trim();
 
           const keyPath = path.resolve('private.key');
           fs.writeFileSync(keyPath, cleanContent);
@@ -172,7 +172,9 @@ jobs:
         shell: node {0}
 
       - name: Inspect key file (debug)
-        run: Format-Hex private.key
+        run: |
+           Get-Content private.key
+           Format-Hex private.key
 
       - name: build Tauri app
         run: npx tauri build --verbose
