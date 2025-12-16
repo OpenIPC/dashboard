@@ -155,16 +155,23 @@ jobs:
              process.exit(1);
           }
 
-          // Reconstruct: ONLY the key line (second line)
-          // We are removing the "untrusted comment: ..." line entirely
-          // because minisign/tauri seems to choke on it in this environment
-          const cleanContent = lines[1].trim();
+          // Reconstruct: Comment + LF + Key
+          // It seems minisign STRICTLY requires the comment line to identify the key type.
+          // The previous error "invalid utf-8 sequence" when we removed the comment confirms
+          // that it tried to parse the raw key bytes as a text header and failed.
+          
+          // So we MUST include the comment. The problem is likely the newline encoding.
+          // Let's try to be extremely explicit with Buffer concatenation to avoid string encoding issues.
+          
+          const line1 = Buffer.from(lines[0].trim() + '\n', 'utf-8');
+          const line2 = Buffer.from(lines[1].trim(), 'utf-8');
+          const finalBuffer = Buffer.concat([line1, line2]);
 
           const keyPath = path.resolve('private.key');
-          fs.writeFileSync(keyPath, cleanContent);
+          fs.writeFileSync(keyPath, finalBuffer);
           
           console.log('Private key written to: ' + keyPath);
-          console.log('Key length: ' + cleanContent.length);
+          console.log('Key length: ' + finalBuffer.length);
           
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
         env:
