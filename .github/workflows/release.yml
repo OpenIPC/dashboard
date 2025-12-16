@@ -169,12 +169,17 @@ jobs:
 
           const keyPath = path.resolve('private.key');
           fs.writeFileSync(keyPath, finalBuffer);
+
+          // Create clean key file (just the base64 part) for tauri signer CLI
+          const cleanKeyPath = path.resolve('private.key.clean');
+          fs.writeFileSync(cleanKeyPath, line2);
           
           console.log('Private key written to: ' + keyPath);
+          console.log('Clean key written to: ' + cleanKeyPath);
           console.log('Key length: ' + finalBuffer.length);
           
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `private_key_content=${lines[1].trim()}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `clean_key_path=${cleanKeyPath}\n`);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         shell: node {0}
@@ -192,7 +197,7 @@ jobs:
 
       - name: Manually sign artifacts (fallback)
         run: |
-          $keyPath = "${{ steps.write-key.outputs.key_path }}"
+          $cleanKeyPath = "${{ steps.write-key.outputs.clean_key_path }}"
           $msiDir = "src-tauri/target/release/bundle/msi"
           $nsisDir = "src-tauri/target/release/bundle/nsis"
           
@@ -203,10 +208,8 @@ jobs:
                 $sigFile = "$file.sig"
                 if (-not (Test-Path $sigFile)) {
                   Write-Host "Manual signing required for: $file"
-                  # Use tauri signer directly
-                  # Note: tauri signer uses TAURI_PRIVATE_KEY_PASSWORD (not SIGNING_...)
-                  # Pass key via env var to avoid command line exposure/parsing issues
-                  npx tauri signer sign $file
+                  # Use tauri signer directly with clean key file (no comments)
+                  npx tauri signer sign -f $cleanKeyPath $file
                   if (Test-Path $sigFile) {
                     Write-Host "Successfully signed: $file"
                   } else {
@@ -222,7 +225,6 @@ jobs:
           Sign-Artifacts $msiDir ".msi"
           Sign-Artifacts $nsisDir ".exe"
         env:
-          TAURI_PRIVATE_KEY: ${{ steps.write-key.outputs.private_key_content }}
           TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: generate updater json
