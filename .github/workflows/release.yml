@@ -174,6 +174,7 @@ jobs:
           console.log('Key length: ' + finalBuffer.length);
           
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `key_path=${keyPath}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `private_key_content=${lines[1].trim()}\n`);
         env:
           SECRET_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         shell: node {0}
@@ -204,7 +205,8 @@ jobs:
                   Write-Host "Manual signing required for: $file"
                   # Use tauri signer directly
                   # Note: tauri signer uses TAURI_PRIVATE_KEY_PASSWORD (not SIGNING_...)
-                  npx tauri signer sign -f $keyPath $file
+                  # Pass key via env var to avoid command line exposure/parsing issues
+                  npx tauri signer sign $file
                   if (Test-Path $sigFile) {
                     Write-Host "Successfully signed: $file"
                   } else {
@@ -220,6 +222,7 @@ jobs:
           Sign-Artifacts $msiDir ".msi"
           Sign-Artifacts $nsisDir ".exe"
         env:
+          TAURI_PRIVATE_KEY: ${{ steps.write-key.outputs.private_key_content }}
           TAURI_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: generate updater json
