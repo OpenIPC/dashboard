@@ -20,7 +20,7 @@ jobs:
       with:
         version: '6.4.2'
         arch: 'win64_mingw'
-        tools: 'tools_mingw1120'
+        tools: 'tools_mingw90'
         
     - name: Check Environment
       run: |
