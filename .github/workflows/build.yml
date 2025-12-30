@@ -20,13 +20,19 @@ jobs:
       with:
         version: '6.4.2'
         arch: 'win64_mingw'
+        tools: 'tools_mingw1120'
+        
+    - name: Check Environment
+      run: |
+        g++ --version
+        cmake --version
+        ninja --version
         
     - name: Build
-      shell: cmd
       run: |
         mkdir build
         cd build
-        cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+        cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
         windeployqt --release --qmldir ../src/ui appOpenIPC-Dashboard.exe
 
