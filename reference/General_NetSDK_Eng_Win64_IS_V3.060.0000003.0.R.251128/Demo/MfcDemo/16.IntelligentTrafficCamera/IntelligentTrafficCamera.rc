@@ -1,0 +1,413 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\IntelligentTrafficCamera.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""         // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\IntelligentTrafficCamera.ico"
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOG  0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About IntelligentTrafficCamera"
+FONT 8, "MS Sans Serif"
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "Video Analyse Device Version 1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2010",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,14,WS_GROUP
+END
+
+IDD_REALLOADPICTURE_DIALOG DIALOGEX 0, 0, 503, 324
+STYLE DS_SETFONT | DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "IntelligentTrafficCamera"
+FONT 8, "MS Sans Serif", 400, 0, 0x0
+BEGIN
+    LTEXT           "IP",IDC_STATIC,9,9,17,14
+    LTEXT           "Port",IDC_STATIC,126,8,22,14
+    EDITTEXT        IDC_EDIT_PORT,153,6,40,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Name",IDC_STATIC,210,8,29,10
+    LTEXT           "Pwd",IDC_STATIC,315,8,18,14
+    EDITTEXT        IDC_EDIT_USERNAME,245,6,54,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PASSWORD,344,6,52,14,ES_PASSWORD | ES_AUTOHSCROLL
+    PUSHBUTTON      "Login",IDC_BUTTON_LOGIN,400,6,44,14
+    PUSHBUTTON      "Logout",IDC_BUTTON_LOGOUT,449,6,44,14,WS_DISABLED
+    CONTROL         "IPAddress1",IDC_IPADDRESS_IP,"SysIPAddress32",WS_TABSTOP,27,6,88,14
+    LTEXT           "Channel",IDC_STATIC,13,35,35,11
+    COMBOBOX        IDC_COMBO_CHANNEL,51,33,56,90,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Preview",IDC_STATIC,6,57,195,144
+    CONTROL         "",IDC_STATIC_PREVIEW,"Static",SS_BLACKRECT,10,67,186,129
+    GROUPBOX        "EventPicture",IDC_STATIC,297,57,195,144
+    CONTROL         "",IDC_STATIC_PICTURE,"Static",SS_BLACKRECT,303,67,186,129
+    GROUPBOX        "EventSubscribe",IDC_STATIC,2,202,496,28
+    PUSHBUTTON      "StartSubscribe",IDC_BUTTON_START,4,212,61,15,WS_DISABLED
+    PUSHBUTTON      "StartPreview",IDC_BUTTON_START_PREVIEW,112,33,69,15,WS_DISABLED
+    PUSHBUTTON      "StopPreview",IDC_BUTTON_STOP_PREVIEW,189,33,69,15,WS_DISABLED
+    CONTROL         "",IDC_LISTCTRL_REAL_EVENT,"SysListView32",LVS_REPORT | WS_BORDER | WS_TABSTOP,3,233,495,85
+    LTEXT           "FilterType",IDC_STATIC,195,215,39,11
+    COMBOBOX        IDC_COMBO_DISPLAY_FILTER,242,213,136,366,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "StopSubscribe",IDC_BUTTON_STOP,67,212,61,15,WS_DISABLED
+    PUSHBUTTON      "Clear",IDC_BUTTON_CLEAR,465,211,32,16
+    LTEXT           "AlarmCount",IDC_STATIC,383,215,39,12
+    PUSHBUTTON      "Manual Snap",IDC_BUTTON_MANUAL_SNAP,130,212,61,15,WS_DISABLED
+    LTEXT           "0",IDC_STATIC_ALARM_COUNT,429,215,34,11
+    GROUPBOX        "",IDC_STATIC,6,26,489,28
+    CTEXT           "License Plate",IDC_STATIC_LP,202,116,93,20,SS_SUNKEN
+    CONTROL         "",IDC_STATIC_EVENT_LP_IMAGE,"Static",SS_BLACKRECT,202,61,93,46
+    PUSHBUTTON      "BW List",IDC_BUTTON_BW_LIST,266,33,69,15,WS_DISABLED
+    PUSHBUTTON      "Traffic Flow",IDC_BUTTON_TRAFFIC_FLOW,343,33,69,15,WS_DISABLED
+    PUSHBUTTON      "Traffic Query",IDC_BUTTON_TRAFFIC_QUERY,420,33,69,15,WS_DISABLED
+END
+
+IDD_ADD_AND_MODIFY_BW_DIALOG DIALOGEX 0, 0, 232, 216
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Add"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    EDITTEXT        IDC_EDIT_PLATE_NUMBER,71,12,134,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Ok",IDC_BTN_OK,72,189,50,14
+    PUSHBUTTON      "Cancle",IDC_BTN_CANCLE,157,189,50,14
+    LTEXT           "Plate Number",IDC_STATIC,9,16,44,8
+    CONTROL         "",IDC_DATETIMEPICKER_START_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,71,142,67,14
+    EDITTEXT        IDC_EDIT_OWNER,71,32,134,14,ES_AUTOHSCROLL
+    LTEXT           "Owner of Car",IDC_STATIC,9,35,45,8
+    CONTROL         "",IDC_DATETIMEPICKER_START_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,144,142,67,15
+    CONTROL         "",IDC_DATETIMEPICKER_END_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,71,166,67,14
+    CONTROL         "",IDC_DATETIMEPICKER_END_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,144,166,67,15
+    LTEXT           "Start Time",IDC_STATIC,9,145,51,8
+    LTEXT           "End Time",IDC_STATIC,9,169,51,8
+    LTEXT           "Plate Type",IDC_STATIC,9,55,35,8
+    LTEXT           "Plate Color",IDC_STATIC,9,73,36,8
+    LTEXT           "Vehicle Type",IDC_STATIC,9,91,41,8
+    LTEXT           "Vehicle Color",IDC_STATIC,9,109,42,8
+    COMBOBOX        IDC_COMBO_PLATETYPE,71,52,134,375,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_PLATECOLOR,71,70,134,400,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_VEHICLETYPE,71,88,134,411,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_VEHICLECOLOR,71,106,134,400,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "ControlType",IDC_STATIC_CT,9,127,40,8
+    COMBOBOX        IDC_COMBO_CONTROLTYPE,71,124,134,400,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_TRAFIC_FLOW_DIALOG DIALOGEX 0, 0, 483, 252
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Traffic Flow"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Subscribe",IDC_BTN_SUNSCIRBE_AND_UNSUBSCRIBE,241,9,50,14
+    CONTROL         "",IDC_LIST_TRAFFIC_FLOW,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,9,26,464,97
+    PUSHBUTTON      "Query",IDC_BTN_QUERY,353,132,50,14
+    CONTROL         "",IDC_LIST_QUERY_TRAFFIC_FLOW,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,9,151,465,76
+    CONTROL         "",IDC_DATETIMEPICKER_START_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,51,130,58,15
+    CONTROL         "",IDC_DATETIMEPICKER_START_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,113,130,58,15
+    LTEXT           "Start Time",IDC_STATIC,9,134,34,8
+    CONTROL         "",IDC_DATETIMEPICKER_END_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,223,130,58,15
+    CONTROL         "",IDC_DATETIMEPICKER_END_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,285,130,58,15
+    LTEXT           "End Time",IDC_STATIC,181,134,30,8
+    PUSHBUTTON      "Previous Page",IDC_BTN_PREVIOUS_PAGE,327,231,52,14
+    PUSHBUTTON      "Next Page",IDC_BTN_NEXT_PAGE,399,231,52,14
+    LTEXT           "Channel",IDC_STATIC,13,12,27,8
+    COMBOBOX        IDC_CMB_CHANNEL,55,9,48,73,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Lane",IDC_STATIC,125,10,16,8
+    COMBOBOX        IDC_CMB_LANE,151,9,48,73,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_RECORD_COUNT,141,231,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "Current Page",IDC_STATIC,205,234,44,8
+    LTEXT           "Total Count",IDC_STATIC,89,234,38,8
+    EDITTEXT        IDC_EDIT_RECORD_CURRENT_PAGE,253,231,40,14,ES_AUTOHSCROLL | WS_DISABLED
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+
+    IDD_REALLOADPICTURE_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 497
+        TOPMARGIN, 1
+        BOTTOMMARGIN, 323
+        HORZGUIDE, 21
+    END
+
+    IDD_ADD_AND_MODIFY_BW_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 225
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 209
+    END
+
+    IDD_TRAFIC_FLOW_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 476
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 245
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "IntelligentTrafficCamera MFC Application"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "IntelligentTrafficCamera"
+            VALUE "LegalCopyright", "Copyright (C) 2010"
+            VALUE "OriginalFilename", "IntelligentTrafficCamera.EXE"
+            VALUE "ProductName", "IntelligentTrafficCamera Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About Video Analyse Device..."
+END
+
+#endif    // 英语(美国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(英国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENG)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_BW_LITS_DIALOG DIALOGEX 0, 0, 473, 264
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "BW List"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Query",IDC_BTTN_QUERY,7,111,43,14
+    PUSHBUTTON      "Modify",IDC_BTN_MODIFY,71,111,43,14
+    PUSHBUTTON      "Delete",IDC_BTN_DELETE,71,133,43,14
+    EDITTEXT        IDC_EDIT_PLATE_NUMBER,56,48,66,14,ES_AUTOHSCROLL
+    LTEXT           "Plate Number",IDC_STATIC,7,51,44,8
+    PUSHBUTTON      "Add",IDC_BTN_ADD,7,133,43,14
+    CONTROL         "",IDC_LIST_BW,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_ALIGNLEFT | WS_BORDER | WS_GROUP | WS_TABSTOP,125,11,344,241
+    PUSHBUTTON      "Previous Page",IDC_BTN_PREVIOUS_PAGE,55,211,56,14
+    PUSHBUTTON      "Next Page",IDC_BTN_NEXT_PAGE,55,237,56,14
+    LTEXT           "Channel",IDC_STATIC,7,10,27,8
+    COMBOBOX        IDC_COMBO_CHANNEL,48,7,48,61,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Type",IDC_STATIC,7,30,17,8
+    COMBOBOX        IDC_COMBO_CHANNEL2,49,27,60,61,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_RECORD_COUNT,56,68,66,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "Total Count",IDC_STATIC,7,72,38,8
+    EDITTEXT        IDC_EDIT_RECORD_CURRENT_PAGE,56,89,66,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "Current Page",IDC_STATIC,7,91,44,8
+END
+
+IDD_QUERY_TRAFFIC_PICTURE_DIALOG DIALOGEX 0, 0, 494, 257
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Query"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_DATETIMEPICKER_START_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,56,29,58,15
+    LTEXT           "Start Time",IDC_STATIC,15,33,34,8
+    CONTROL         "",IDC_DATETIMEPICKER_START_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,120,29,58,15
+    CONTROL         "",IDC_DATETIMEPICKER_END_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,56,49,58,15
+    LTEXT           "End Time",IDC_STATIC,15,53,39,8
+    CONTROL         "",IDC_DATETIMEPICKER_END_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,120,49,58,15
+    COMBOBOX        IDC_CMB_EVENT_TYPE,250,28,108,379,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Plate Number",IDC_STATIC,198,53,44,8
+    EDITTEXT        IDC_EDIT_PLATE_NUMBER,250,50,108,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Query",IDC_BTN_QUERY,368,50,50,14
+    CONTROL         "",IDC_LIST_PICTURE,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,11,74,469,151
+    PUSHBUTTON      "Previous Page",IDC_BTN_PTRVIOUS_PAGE,352,232,50,14
+    PUSHBUTTON      "Next page",IDC_BTN_NEXT_PAGE,423,232,50,14
+    LTEXT           "Event Type",IDC_STATIC,198,31,38,8
+    COMBOBOX        IDC_CMB_CHANNEL,56,11,48,60,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Channel",IDC_STATIC,15,14,27,8
+    EDITTEXT        IDC_EDIT_RECORD_COUNT,168,232,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "Current Page",IDC_STATIC,232,235,44,8
+    LTEXT           "Total Count",IDC_STATIC,116,235,38,8
+    EDITTEXT        IDC_EDIT_RECORD_CURRENT_PAGE,280,232,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    PUSHBUTTON      "Download",IDC_BTN_DOWNLOAD,428,50,50,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_BW_LITS_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 466
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 257
+    END
+
+    IDD_QUERY_TRAFFIC_PICTURE_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 487
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 250
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // 英语(英国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#endif //_WIN32
+#include "res\IntelligentTrafficCamera.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"         // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

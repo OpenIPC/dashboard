@@ -1,0 +1,4 @@
+// Microsoft Developer Studio generated Help ID include file.
+// Used by DevInit.rc
+//
+#define HIDC_BUTTON_FINDPASSWORD        0x80660402    // IDD_DEVINIT_DIALOG

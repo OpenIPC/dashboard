@@ -1,0 +1,395 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#include ""res\\GateDemo.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""     // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\GateDemo.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About GateDemo"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "GateDemo Version 1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2018",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,16,WS_GROUP
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "FileDescription", "GateDemo Microsoft Application"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "GateDemo"
+            VALUE "LegalCopyright", "Copyright (C) 2018"
+            VALUE "OriginalFilename", "GateDemo.exe"
+            VALUE "ProductName", "GateDemo Application"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About GateDemo..."
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_RECORDMANAGER_DIALOG DIALOGEX 0, 0, 459, 310
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "RecordManager"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Enter-Exit Record",IDC_STATIC,7,7,297,296
+    CONTROL         "",IDC_RECORD_LIST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,7,22,291,281
+    PUSHBUTTON      "Clear",IDC_BTN_RECORD_CLEAR,315,260,124,14
+    PUSHBUTTON      "Delete",IDC_BTN_RECORD_DELETE,316,239,123,14
+    PUSHBUTTON      "Search",IDC_BTN_RECORD_SEARCH,315,218,124,14
+    CONTROL         "CardNo:",IDC_RECORD_CARDNO_CHECK,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,309,140,46,10
+    CONTROL         "QueryTime:",IDC_CHECK_QUERYTIME,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,309,154,110,14
+    EDITTEXT        IDC_EDIT_RECORD_CARDNO,360,139,85,14,ES_AUTOHSCROLL | WS_DISABLED
+    CONTROL         "",IDC_DATE_RECORD_BEGIN,"SysDateTimePick32",DTS_RIGHTALIGN | WS_DISABLED | WS_TABSTOP,309,181,67,15
+    CONTROL         "",IDC_TIME_RECORD_BEGIN,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,383,180,67,15
+    CONTROL         "",IDC_DATE_RECORD_END,"SysDateTimePick32",DTS_RIGHTALIGN | WS_DISABLED | WS_TABSTOP,310,199,67,15
+    CONTROL         "",IDC_TIME_RECORD_END,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,384,198,67,15
+    GROUPBOX        "",IDC_STATIC,307,128,145,176
+    GROUPBOX        "Image",IDC_STATIC,308,7,144,125
+    CONTROL         "",IDC_STATIC_SHOW_RECORD_PIC,"Static",SS_BLACKRECT,310,18,140,111
+    PUSHBUTTON      "PictureDownLoad",IDC_BTN_PIC_DOWNLOAD,316,288,123,14
+    LTEXT           "(Formatting time of UTC + time zone)",IDC_STATIC,309,168,136,10
+END
+
+IDD_GATEDEMO_DIALOG DIALOGEX 0, 0, 463, 189
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "GateDemo"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_IPADDRESS,"SysIPAddress32",WS_TABSTOP,31,11,80,15
+    LTEXT           "IP:",IDC_STATIC,5,14,23,9
+    EDITTEXT        IDC_EDIT_PORT,141,11,46,15,ES_AUTOHSCROLL
+    LTEXT           "Port:",IDC_STATIC,116,13,25,9
+    EDITTEXT        IDC_EDIT_USERNAME,231,11,55,15,ES_AUTOHSCROLL
+    LTEXT           "User:",IDC_STATIC,198,13,27,9
+    EDITTEXT        IDC_EDIT_PASSWD,323,11,55,15,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Pwd:",IDC_STATIC,293,13,28,9
+    PUSHBUTTON      "Login",IDC_BTN_LOGIN,385,11,33,15
+    COMBOBOX        IDC_CBX_CHANNEL,65,41,52,83,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Logout",IDC_BTN_LOGOUT,421,11,33,15,WS_DISABLED
+    PUSHBUTTON      "Attach",IDC_BTN_ATTACHEVENT,11,98,62,15,WS_DISABLED
+    PUSHBUTTON      "Detach",IDC_BTN_DETACHEVENT,84,98,57,15,WS_DISABLED
+    GROUPBOX        "",IDC_STATIC,1,2,461,28
+    GROUPBOX        "",IDC_STATIC,0,31,150,33
+    LTEXT           "Channel:",IDC_STATIC,13,43,30,8
+    CONTROL         "",IDC_STATIC_PIC,"Static",SS_BLACKRECT,164,41,148,135
+    GROUPBOX        "",IDC_STATIC,158,32,298,155
+    LTEXT           "Time:",IDC_STATIC,328,48,28,11
+    EDITTEXT        IDC_EDIT_EVENTTIME,367,46,85,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "OpenMethod:",IDC_STATIC,323,93,45,8
+    EDITTEXT        IDC_EDIT_EVENTNAME,369,90,84,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "CardName:",IDC_STATIC,324,119,41,8
+    EDITTEXT        IDC_EDIT_CARDNAME,369,115,82,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "CardNo:",IDC_STATIC,324,144,37,8
+    EDITTEXT        IDC_EDIT_CARDNO,369,140,84,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "UserID:",IDC_STATIC,324,164,35,8
+    EDITTEXT        IDC_EDIT_USERID,370,160,84,14,ES_AUTOHSCROLL | WS_DISABLED
+    GROUPBOX        "Operate",IDC_STATIC,0,67,152,120
+    PUSHBUTTON      "CardOperate",IDC_BTN_CARD_OPERATE,12,130,129,15,WS_DISABLED
+    LTEXT           "OpenStatus:",IDC_STATIC,322,71,42,8
+    EDITTEXT        IDC_EDIT_OPENSTATUS,367,68,85,14,ES_AUTOHSCROLL | WS_DISABLED
+    PUSHBUTTON      "RecordListOperate",IDC_BTN_RECORD_OPERATE,12,156,128,14,WS_DISABLED
+END
+
+IDD_CARDMANAGER_DIALOG DIALOGEX 0, 0, 459, 261
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "CardManager"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "CardList",IDC_STATIC,7,7,304,247
+    CONTROL         "",IDC_LIST_CARD,"SysListView32",LVS_REPORT | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,14,23,294,231
+    GROUPBOX        "Operate",IDC_STATIC,316,7,136,247
+    LTEXT           "CardNo:",IDC_STATIC,329,25,28,8
+    EDITTEXT        IDC_EDIT_MANAGER_CARDNO,370,22,64,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Search",IDC_BTN_CARD_SEARCH,328,55,110,14
+    PUSHBUTTON      "Add",IDC_BTN_CARD_ADD,328,90,110,14
+    PUSHBUTTON      "Modify",IDC_BTN_CARD_MODIFY,329,126,110,14
+    PUSHBUTTON      "Delete",IDC_BTN_CARD_DELETE,330,162,110,14
+    PUSHBUTTON      "Clear",IDC_BTN_CLEAR_CARD,330,201,110,14
+END
+
+IDD_ADDCARD_DIALOG DIALOGEX 0, 0, 478, 235
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "AddCard"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "Ok",IDOK,155,202,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,235,202,50,14
+    GROUPBOX        "Information",IDC_STATIC,7,7,293,186
+    LTEXT           "CardNo:",IDC_STATIC,28,31,28,8
+    EDITTEXT        IDC_EDIT_ADD_CARDNO,68,28,79,14,ES_AUTOHSCROLL
+    LTEXT           "UserID:",IDC_STATIC,159,32,37,8
+    EDITTEXT        IDC_EDIT_ADD_USERID,212,29,73,14,ES_AUTOHSCROLL
+    LTEXT           "CardName:",IDC_STATIC,26,63,37,8
+    EDITTEXT        IDC_EDIT_ADD_CARDNAME,68,61,79,14,ES_AUTOHSCROLL
+    LTEXT           "CardPassword:",IDC_STATIC,160,63,51,8
+    EDITTEXT        IDC_EDIT_ADD_CARDPWD,213,60,73,14,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "CardStatus:",IDC_STATIC,24,97,40,8
+    COMBOBOX        IDC_COMBO_CARDSTATUS,70,95,77,83,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "CardType:",IDC_STATIC,160,98,47,8
+    COMBOBOX        IDC_COMBO_CARDTYPE,213,95,76,83,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "UseTime:",IDC_STATIC,24,124,41,8
+    EDITTEXT        IDC_EDIT_USERTIME,70,120,67,14,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "IsFirstEnter",IDC_CHECK_ISFIRST,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,213,121,53,10
+    CONTROL         "Enable",IDC_CHECK_ISENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,25,152,37,10
+    LTEXT           "Period:",IDC_STATIC,84,152,37,8
+    CONTROL         "",IDC_BEGIN_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_TABSTOP,130,148,71,15
+    CONTROL         "",IDC_BEGIN_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,214,148,64,15
+    CONTROL         "",IDC_END_DATE,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_TABSTOP,130,170,71,15
+    CONTROL         "",IDC_END_TIME,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,214,170,64,15
+    GROUPBOX        "Image",IDC_STATIC,305,7,166,211
+    CONTROL         "",IDC_STATIC_ADDPIC,"Static",SS_BLACKRECT,311,19,153,168
+    PUSHBUTTON      "OpenPic",IDC_BTN_ADD_OPENPIC,349,193,83,14
+END
+
+IDD_MODIFYCARD_DIALOG DIALOGEX 0, 0, 478, 235
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ModifyCard"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "Ok",IDOK,155,203,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,235,202,50,14
+    GROUPBOX        "Information",-1,7,7,293,186
+    LTEXT           "CardNo:",-1,28,31,28,8
+    EDITTEXT        IDC_EDIT_MODIFY_CARDNO,68,28,79,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "UserID:",-1,159,32,37,8
+    EDITTEXT        IDC_EDIT_MODIFY_USERID,212,29,73,14,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "CardName:",-1,26,63,37,8
+    EDITTEXT        IDC_EDIT_MODIFY_CARDNAME,68,61,79,14,ES_AUTOHSCROLL
+    LTEXT           "CardPassword:",-1,160,63,51,8
+    EDITTEXT        IDC_EDIT_MODIFY_CARDPWD,213,60,73,14,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "CardStatus:",-1,24,97,40,8
+    COMBOBOX        IDC_COMBO_MODIFY_CARDSTATUS,70,95,77,88,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "CardType:",-1,160,98,47,8
+    COMBOBOX        IDC_COMBO_MODIFY_CARDTYPE,213,95,76,83,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "UseTime:",-1,24,124,43,8
+    EDITTEXT        IDC_EDIT_MODIFY_USERTIME,70,120,67,14,ES_AUTOHSCROLL
+    CONTROL         "IsFirstEnter",IDC_CHECK_ISFIRST_MODIFY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,208,122,57,10
+    CONTROL         "Enable",IDC_CHECK_ISENABLE_MODIFY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,25,150,39,10
+    LTEXT           "Period:",-1,86,152,35,8
+    CONTROL         "",IDC_BEGIN_DATE_MODIFY,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_TABSTOP,130,148,70,15
+    CONTROL         "",IDC_BEGIN_TIME_MODIFY,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,214,148,64,15
+    CONTROL         "",IDC_END_DATE_MODIFY,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_TABSTOP,130,170,71,15
+    CONTROL         "",IDC_END_TIME_MODIFY,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,214,170,64,15
+    GROUPBOX        "Image",IDC_STATIC_ADDPIC,305,7,166,211
+    CONTROL         "",IDC_STATIC_MODIFYPIC,"Static",SS_BLACKRECT,311,19,153,168
+    PUSHBUTTON      "OpenPic",IDC_BTN__MODIFY_OPENPIC,349,193,83,14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_RECORDMANAGER_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 452
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 303
+    END
+
+    IDD_GATEDEMO_DIALOG, DIALOG
+    BEGIN
+        RIGHTMARGIN, 456
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 182
+    END
+
+    IDD_CARDMANAGER_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 452
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 254
+    END
+
+    IDD_ADDCARD_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 471
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 228
+    END
+
+    IDD_MODIFYCARD_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 471
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 228
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // 英语(美国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE 4, 2
+#pragma code_page(936)
+#include "res\GateDemo.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"     // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

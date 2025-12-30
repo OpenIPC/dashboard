@@ -1,0 +1,521 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(非特定语言) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_NEUTRAL
+#pragma code_page(936)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ENTRANCEACCESSDEVICES_DIALOG DIALOGEX 0, 0, 503, 334
+STYLE DS_SETFONT | DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "EntranceAccessDevices"
+FONT 8, "MS Sans Serif", 400, 0, 0x0
+BEGIN
+    LTEXT           "IP",IDC_STATIC,9,9,17,14
+    LTEXT           "Port",IDC_STATIC,126,8,22,14
+    EDITTEXT        IDC_EDIT_PORT,153,6,40,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Name",IDC_STATIC,210,8,29,10
+    LTEXT           "Pwd",IDC_STATIC,315,8,18,14
+    EDITTEXT        IDC_EDIT_USERNAME,245,6,54,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PASSWORD,344,6,52,14,ES_PASSWORD | ES_AUTOHSCROLL
+    PUSHBUTTON      "Login",IDC_BUTTON_LOGIN,400,6,44,14
+    PUSHBUTTON      "Logout",IDC_BUTTON_LOGOUT,449,6,44,14,WS_DISABLED
+    CONTROL         "IPAddress1",IDC_IPADDRESS_IP,"SysIPAddress32",WS_TABSTOP,27,6,88,14
+    LTEXT           "Channel",IDC_STATIC,13,35,35,11
+    COMBOBOX        IDC_COMBO_CHANNEL,51,33,56,90,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Preview",IDC_STATIC,6,57,195,144
+    CONTROL         "",IDC_STATIC_PREVIEW,"Static",SS_BLACKRECT,10,67,186,129
+    GROUPBOX        "EventPicture",IDC_STATIC,297,57,195,144
+    CONTROL         "",IDC_STATIC_PICTURE,"Static",SS_BLACKRECT,303,67,186,129
+    GROUPBOX        "Subscribe Traffic Junction",IDC_STATIC,5,202,245,129
+    PUSHBUTTON      "StartSubscribe",IDC_BUTTON_START,9,212,61,15,WS_DISABLED
+    PUSHBUTTON      "StartPreview",IDC_BUTTON_START_PREVIEW,112,33,60,15,WS_DISABLED
+    PUSHBUTTON      "StopPreview",IDC_BUTTON_STOP_PREVIEW,175,33,64,15,WS_DISABLED
+    CONTROL         "",IDC_LISTCTRL_REAL_EVENT,"SysListView32",LVS_REPORT | WS_BORDER | WS_TABSTOP,8,230,239,88
+    PUSHBUTTON      "StopSubscribe",IDC_BUTTON_STOP,73,212,61,15,WS_DISABLED
+    GROUPBOX        "",IDC_STATIC,6,26,489,28
+    CTEXT           "License Plate",IDC_STATIC_LP,202,116,93,20,SS_SUNKEN
+    CONTROL         "",IDC_STATIC_EVENT_LP_IMAGE,"Static",SS_BLACKRECT,202,61,93,46
+    PUSHBUTTON      "Manual Snap",IDC_BUTTON_MANUAL_SNAP,423,34,61,15,WS_DISABLED
+    PUSHBUTTON      "OpenStrobe",IDC_BUTTON_OPEN_STROBE,347,34,64,15,WS_DISABLED
+    GROUPBOX        "Subscribe Traffic Vehicle Position",IDC_STATIC,252,202,245,129
+    PUSHBUTTON      "StartSubscribe",IDC_BUTTON_START2,257,212,61,15,WS_DISABLED
+    PUSHBUTTON      "StopSubscribe",IDC_BUTTON_STOP2,321,212,61,15,WS_DISABLED
+    CONTROL         "",IDC_LISTCTRL_EVENT,"SysListView32",LVS_REPORT | WS_BORDER | WS_TABSTOP,256,230,239,88
+    CONTROL         "OpenStorobeByPicture",IDC_CHECK_OPEN_TYPE1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,141,215,96,10
+    CONTROL         "OpenStorobeByPosition",IDC_CHECK_OPEN_TYPE2,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,389,215,100,10
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ENTRANCEACCESSDEVICES_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 497
+        TOPMARGIN, 1
+        BOTTOMMARGIN, 333
+        HORZGUIDE, 21
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // 中文(非特定语言) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_STROBESET DIALOGEX 0, 0, 335, 113
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "StrobeSet"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Nomal Open",IDC_STATIC,25,17,40,8
+    CONTROL         "",IDC_CHECK_OPEN,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,70,17,16,10
+    LTEXT           "week",IDC_STATIC,25,39,38,8
+    COMBOBOX        IDC_COMBO_Week,70,37,69,160,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "time",IDC_STATIC,163,39,14,8
+    COMBOBOX        IDC_COMBO_TimeSlot,198,37,69,189,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "enable",IDC_CHECK_TIME,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,279,39,37,10
+    LTEXT           "start time",IDC_STATIC,25,60,38,8
+    EDITTEXT        IDC_EDIT_hours,69,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "：",IDC_STATIC,87,60,8,8
+    EDITTEXT        IDC_EDIT_minutes,97,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "：",IDC_STATIC,115,60,8,8
+    EDITTEXT        IDC_EDIT_seconds,125,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_EDIT_houre,198,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "：",IDC_STATIC,216,60,8,8
+    EDITTEXT        IDC_EDIT_minutee,226,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "：",IDC_STATIC,244,60,8,8
+    EDITTEXT        IDC_EDIT_seconde,254,58,14,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "end time",IDC_STATIC,161,60,28,8
+    PUSHBUTTON      "Set",IDC_BUTTON_SET,87,79,50,14
+    PUSHBUTTON      "Get",IDC_BUTTON_GET,162,79,50,14
+END
+
+IDD_DIALOG_BLACKWHILTLIST DIALOGEX 0, 0, 299, 94
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "BlackWhiltList"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "Import",IDC_STATIC,19,34,26,8
+    LTEXT           "List",IDC_STATIC,19,18,26,8
+    COMBOBOX        IDC_COMBO_LIST,49,15,72,92,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_PATH_IMPORT,49,31,177,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Import",IDC_BUTTON_IMPORT,229,30,25,14
+    LTEXT           "Export",IDC_STATIC,19,50,26,8
+    PUSHBUTTON      "Export",IDC_BUTTON_EXPORT,229,48,25,14
+    LTEXT           "Process",IDC_STATIC,19,67,26,8
+    CONTROL         "",IDC_PROGRESS1,"msctls_progress32",WS_BORDER,49,65,177,12
+    EDITTEXT        IDC_EDIT_PATH_EXPORT,49,48,177,14,ES_AUTOHSCROLL
+END
+
+IDD_DIALOG_TALK DIALOGEX 0, 0, 286, 74
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Talk"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Begin talk",IDC_BUTTON_BEGINTALK,41,37,80,14
+    PUSHBUTTON      "Stop talk",IDC_BUTTON_STOPTALK,139,37,80,14
+    CONTROL         "Monitor Call Events",IDC_CHECK_CALLEVENT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,44,15,77,10
+END
+
+IDD_DIALOG_LATTICESCREEN DIALOGEX 0, 0, 399, 222
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "LatticeScreen"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    EDITTEXT        IDC_EDIT_PLATENUMBER,69,36,115,14,ES_AUTOHSCROLL
+    LTEXT           "Plate Number",IDC_STATIC,16,39,48,8
+    EDITTEXT        IDC_EDIT_PARKTIME,267,52,115,14,ES_AUTOHSCROLL
+    LTEXT           "Park Time",IDC_STATIC,213,54,32,8
+    EDITTEXT        IDC_EDIT_OWNEROFCAR,69,57,115,14,ES_AUTOHSCROLL
+    LTEXT           "Owner Of Car",IDC_STATIC,16,59,48,8
+    LTEXT           "User Type",IDC_STATIC,16,80,48,8
+    COMBOBOX        IDC_COMBO_USERTYPE,69,78,115,174,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_SUBUSERTYPE,69,129,314,14,ES_AUTOHSCROLL
+    LTEXT           "Sub User Type",IDC_STATIC,16,131,48,8
+    EDITTEXT        IDC_EDIT_REMAINDAY,69,97,115,14,ES_AUTOHSCROLL
+    LTEXT           "Remain Day",IDC_STATIC,16,100,48,8
+    EDITTEXT        IDC_EDIT_PARKCHARGE,267,70,115,14,ES_AUTOHSCROLL
+    LTEXT           "Park Charge",IDC_STATIC,213,73,40,8
+    EDITTEXT        IDC_EDIT_REMAINSPACE,267,90,115,14,ES_AUTOHSCROLL
+    LTEXT           "Remain Space",IDC_STATIC,213,93,46,8
+    CONTROL         "No Passage Allowed",IDC_RADIO_NOPASS,"Button",BS_AUTORADIOBUTTON,213,110,80,10
+    CONTROL         "Let Through",IDC_RADIO_PASS,"Button",BS_AUTORADIOBUTTON,306,110,75,10
+    LTEXT           "In Time",IDC_STATIC,213,18,24,8
+    LTEXT           "Out Time",IDC_STATIC,213,36,30,8
+    LTEXT           "Pass State",IDC_STATIC,16,18,48,8
+    COMBOBOX        IDC_COMBO_STATUS,69,15,115,179,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_REMARKS,69,150,314,14,ES_AUTOHSCROLL
+    LTEXT           "Remarks",IDC_STATIC,16,153,48,8
+    EDITTEXT        IDC_EDIT_CUSTOM,69,171,314,14,ES_AUTOHSCROLL
+    LTEXT           "Custom",IDC_STATIC,16,174,48,8
+    PUSHBUTTON      "Set",IDC_BUTTON_SET,330,194,50,14
+    CONTROL         "",IDC_DATETIMEPICKER_IN1,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,267,14,66,15
+    CONTROL         "",IDC_DATETIMEPICKER_IN2,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,337,14,45,15
+    CONTROL         "",IDC_DATETIMEPICKER_OUT1,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,267,33,66,15
+    CONTROL         "",IDC_DATETIMEPICKER_OUT2,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,337,33,45,15
+END
+
+IDD_DIALOG_LATTICESCREEN2 DIALOGEX 0, 0, 716, 312
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "LatticeScreen2"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "ScreenShow",IDC_STATIC,7,7,438,269
+    GROUPBOX        "BroadCast",IDC_STATIC,456,7,217,269
+    PUSHBUTTON      "Add",IDC_BUTTON_SCREENSHOW_ADD,20,252,50,14
+    PUSHBUTTON      "Modify",IDC_BUTTON_SCREENSHOW_MODIFY,84,252,50,14
+    PUSHBUTTON      "Delete",IDC_BUTTON_SCREENSHOW_DELETE,150,252,50,14
+    PUSHBUTTON      "Add",IDC_BUTTON_BROADCAST_ADD,469,252,50,14
+    PUSHBUTTON      "Modify",IDC_BUTTON_BROADCAST_MODIFY,530,252,50,14
+    PUSHBUTTON      "Delete",IDC_BUTTON_BROADCAST_DELETE,589,252,50,14
+    CONTROL         "",IDC_LIST_SCREENSHOW,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,20,24,410,210
+    CONTROL         "",IDC_LIST_BROADCAST,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,469,24,192,210
+    PUSHBUTTON      "Issue",IDC_BUTTON_ISSUE,309,283,102,22
+END
+
+IDD_DIALOG_SCREENSHOW_DETAIL DIALOGEX 0, 0, 297, 241
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ScreenShow"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,240,7,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,240,24,50,14
+    LTEXT           "ScreenNo",IDC_STATIC,34,20,32,8
+    LTEXT           "TextType",IDC_STATIC,34,38,32,8
+    LTEXT           "TextColor",IDC_STATIC,34,57,32,8
+    LTEXT           "TextRollMode",IDC_STATIC,34,75,60,8
+    LTEXT           "RollSpeed",IDC_STATIC,34,94,60,8
+    EDITTEXT        IDC_EDIT_SCREENSHOW_TEXT,34,128,232,94,ES_AUTOHSCROLL
+    LTEXT           "Text",IDC_STATIC,34,112,16,8
+    EDITTEXT        IDC_EDIT_SCREENSHOW_SCREENNO,94,17,40,14,ES_AUTOHSCROLL
+    COMBOBOX        IDC_COMBO_SCREENSHOW_TEXTTYPE,94,36,83,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_SCREENSHOW_TEXTCOLOR,94,55,83,65,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_SCREENSHOW_TEXTROLLMODE,94,73,83,67,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_SCREENSHOW_ROLLSPEED,94,93,83,72,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_DIALOG_BROADCAST_DETAIL DIALOGEX 0, 0, 294, 172
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "BroadCast"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,237,7,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,237,24,50,14
+    COMBOBOX        IDC_COMBO_BROADCAST_TEXTTYPE,61,20,81,59,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "TextType",IDC_STATIC,25,22,32,8
+    EDITTEXT        IDC_EDIT_BROADCAST_TEXT,25,57,232,96,ES_AUTOHSCROLL
+    LTEXT           "Voice text",IDC_STATIC,25,41,33,8
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DIALOG_STROBESET, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 328
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 106
+    END
+
+    IDD_DIALOG_BLACKWHILTLIST, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 292
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 87
+    END
+
+    IDD_DIALOG_TALK, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 279
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 66
+    END
+
+    IDD_DIALOG_LATTICESCREEN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 392
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 215
+    END
+
+    IDD_DIALOG_LATTICESCREEN2, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 709
+        VERTGUIDE, 20
+        VERTGUIDE, 469
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 305
+        HORZGUIDE, 24
+        HORZGUIDE, 234
+        HORZGUIDE, 266
+        HORZGUIDE, 276
+    END
+
+    IDD_DIALOG_SCREENSHOW_DETAIL, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 290
+        VERTGUIDE, 34
+        VERTGUIDE, 94
+        VERTGUIDE, 177
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 234
+        HORZGUIDE, 24
+        HORZGUIDE, 42
+        HORZGUIDE, 61
+        HORZGUIDE, 79
+        HORZGUIDE, 99
+    END
+
+    IDD_DIALOG_BROADCAST_DETAIL, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 287
+        VERTGUIDE, 25
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 165
+        HORZGUIDE, 34
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\EntranceAccessDevices.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""         // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\EntranceAccessDevices.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU 
+BEGIN
+    MENUITEM "StrobeSet",                   ID_STROBESET
+    MENUITEM "BlackWhiltList",              ID_BLACKWHILTLIST
+    MENUITEM "Talk",                        ID_TALK
+    MENUITEM "LatticeScreen",               ID_LATTICESCREEN
+    MENUITEM "LatticeScreen2",              ID_LATTICESCREEN2
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOG  0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About IntelligentTraffic"
+FONT 8, "MS Sans Serif"
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "Video Analyse Device Version 1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2010",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,14,WS_GROUP
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "IntelligentTraffic MFC Application"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "IntelligentTraffic"
+            VALUE "LegalCopyright", "Copyright (C) 2010"
+            VALUE "OriginalFilename", "IntelligentTraffic.EXE"
+            VALUE "ProductName", "IntelligentTraffic Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About Video Analyse Device..."
+END
+
+#endif    // 英语(美国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#endif //_WIN32
+#include "res\EntranceAccessDevices.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"         // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

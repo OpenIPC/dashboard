@@ -1,0 +1,287 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\PlayBack.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""          // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\PlayBack.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOG  0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About PlayBack"
+FONT 9, "MS Sans Serif"
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "PlayBack Version 1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2018",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,14,WS_GROUP
+END
+
+IDD_PLAYBACK_DIALOG DIALOGEX 0, 0, 551, 441
+STYLE DS_SETFONT | DS_MODALFRAME | WS_MINIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "PlayBack"
+FONT 9, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "Login",IDC_BTN_LOGIN,442,26,38,14
+    PUSHBUTTON      "Logout",IDC_BTN_LOGOUT,489,26,38,14,WS_DISABLED
+    CONTROL         "IPAddress1",IDC_IPADDRESS_DVRIP,"SysIPAddress32",WS_TABSTOP,52,25,72,15
+    EDITTEXT        IDC_EDIT_PORT,170,26,40,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_EDIT_USERNAME,253,26,60,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_DVRPWD,357,26,60,14,ES_PASSWORD | ES_AUTOHSCROLL
+    GROUPBOX        "Dev. Login",IDC_STATIC,7,15,538,32
+    RTEXT           "Dev.IP:",IDC_STATIC,12,29,39,8
+    RTEXT           "Port:",IDC_STATIC,128,29,40,8
+    RTEXT           "UserName:",IDC_STATIC,212,29,39,8
+    RTEXT           "Password:",IDC_STATIC,316,29,39,8
+    GROUPBOX        "",IDC_STATIC,7,51,346,290
+    CONTROL         "",IDC_SCREEN_PLAYBACK,"Static",SS_BLACKRECT,14,63,333,236
+    CONTROL         "",IDC_STATIC,"Static",SS_BLACKFRAME | SS_SUNKEN,8,305,344,4
+    CONTROL         "Tab1",IDC_TAB1,"SysTabControl32",0x0,357,58,186,349
+    GROUPBOX        "",IDC_STATIC,354,51,192,360
+    PUSHBUTTON      "Play",IDC_BUTTON_PLAY,15,314,30,16,WS_DISABLED
+    PUSHBUTTON      "Stop",IDC_BUTTON_STOP,77,314,30,16,WS_DISABLED
+    PUSHBUTTON      "Fast",IDC_BUTTON_FAST,182,313,30,16,WS_DISABLED
+    PUSHBUTTON      "Slow",IDC_BUTTON_SLOW,112,314,30,16,WS_DISABLED
+    LTEXT           "Normal",IDC_LAST_ERROR,231,5,218,8
+    RTEXT           "Run info:",IDC_STATIC,103,5,121,8
+    PUSHBUTTON      "normal",IDC_BUTTON_NORMALSPEED,217,313,30,16,WS_DISABLED
+    PUSHBUTTON      "Capture Picture",IDC_BUTTON_CAPTURE_PICTURE,285,312,65,16,WS_DISABLED
+    CTEXT           "",IDC_STATIC_SPEED,148,313,28,16,SS_CENTERIMAGE | SS_SUNKEN,WS_EX_TRANSPARENT
+    LTEXT           "",IDC_PLAYBACKVIEW_PARENT,4,364,346,68
+    CTEXT           "00:00:00",IDC_STATIC_SHOWTIME,154,348,33,11,SS_CENTERIMAGE
+    LTEXT           "静态",IDC_STATIC_TEST,434,418,55,17,NOT WS_VISIBLE | WS_DISABLED
+END
+
+IDD_LOCKRECORD DIALOGEX 0, 0, 170, 311
+STYLE DS_SETFONT | WS_CHILD
+FONT 9, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    PUSHBUTTON      "Query",IDC_BUTTON_QUERY,88,109,35,14,WS_DISABLED
+    PUSHBUTTON      "Clear",IDC_BUTTON_CLEANLIST,129,109,35,14,WS_DISABLED
+    COMBOBOX        IDC_COMBO_CHANNELBYFILE,44,20,70,65,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "DateTimePicker1",IDC_DATE_FROM,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_DISABLED | WS_TABSTOP,44,46,71,15
+    CONTROL         "DateTimePicker2",IDC_TIME_FROM,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,119,46,49,15
+    CONTROL         "DateTimePicker1",IDC_DATE_TO,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_DISABLED | WS_TABSTOP,44,74,71,15
+    CONTROL         "DateTimePicker2",IDC_TIME_TO,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,119,74,49,15
+    RTEXT           "No.",IDC_STATIC,7,22,35,8
+    RTEXT           "Start:",IDC_STATIC,6,49,36,8
+    RTEXT           "End:",IDC_STATIC,5,77,37,8
+    GROUPBOX        "",IDC_STATIC,0,1,170,102
+    GROUPBOX        "",IDC_STATIC,0,98,170,32
+    CONTROL         "List1",IDC_LIST_QUERYINFO,"SysListView32",LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP,0,130,167,171
+    PUSHBUTTON      "Lock",IDC_BUTTON_LOCK,5,109,35,14,WS_DISABLED
+    PUSHBUTTON      "Unlock",IDC_BUTTON_UNLOCK,47,109,35,14,WS_DISABLED
+END
+
+IDD_PLAYBACK_BYTIME DIALOGEX 0, 0, 184, 319
+STYLE DS_SETFONT | WS_CHILD
+FONT 9, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "PlayBack",IDC_STATIC,4,0,180,107
+    RTEXT           "No.",IDC_STATIC,11,10,37,8
+    COMBOBOX        IDC_COMBO_CHANNEL,54,8,71,62,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Download",IDC_STATIC,3,200,181,119
+    RTEXT           "Start:",IDC_STATIC,4,239,37,8
+    CONTROL         "DateTimePicker1",IDC_DATE_LOAD_FROM,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_DISABLED | WS_TABSTOP,43,233,71,15
+    CONTROL         "DateTimePicker2",IDC_TIME_LOAD_FROM,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,118,233,49,15
+    RTEXT           "End:",IDC_STATIC,4,259,37,8
+    CONTROL         "DateTimePicker1",IDC_DATE_LOAD_TO,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_LONGDATEFORMAT | WS_DISABLED | WS_TABSTOP,43,257,71,15
+    CONTROL         "DateTimePicker2",IDC_TIME_LOAD_TO,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_DISABLED | WS_TABSTOP | 0x8,118,257,49,15
+    PUSHBUTTON      "Download",IDC_BUTTON_DOWNLOAD,27,279,50,14,WS_DISABLED
+    CONTROL         "Progress1",IDC_PROGRESS_BYTIME,"msctls_progress32",WS_BORDER,4,301,164,14
+    CONTROL         "",IDC_STATIC,"Static",SS_BLACKFRAME | SS_SUNKEN,2,297,168,1
+    RTEXT           "No.",IDC_STATIC,6,213,35,8
+    COMBOBOX        IDC_COMBO_LOADCHANNEL,43,213,38,62,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Mode:",IDC_STATIC,13,29,37,8
+    COMBOBOX        IDC_COMBO_TIMEPLAYMODE,54,27,71,62,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "MonthCalendar1",IDC_MONTHCALENDAR,"SysMonthCal32",MCS_NOTODAY | WS_DISABLED | WS_TABSTOP,2,110,177,87
+    COMBOBOX        IDC_COMBO_QUERYTYPE,54,48,71,49,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Type:",IDC_STATIC,10,50,41,8
+    RTEXT           "Stream:",IDC_STATIC,7,72,45,8
+    COMBOBOX        IDC_COMBO_STREAMTYPE,54,69,71,64,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Direction:",IDC_STATIC,7,93,45,8
+    COMBOBOX        IDC_COMBO_PLAYDIRECTION,54,90,71,54,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "ConvertType:",IDC_STATIC,84,215,22,8
+    COMBOBOX        IDC_COMBO_LOADCHANNEL2,116,213,52,62,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "DownloadByType",IDC_BUTTON_DOWNLOAD2,104,279,63,14,WS_DISABLED
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "FileDescription", "PlayBack Microsoft Application"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "PlayBack"
+            VALUE "LegalCopyright", "Copyright (C) 2018"
+            VALUE "OriginalFilename", "PlayBack.EXE"
+            VALUE "ProductName", "PlayBack Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+
+    IDD_PLAYBACK_DIALOG, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 438
+    END
+
+    IDD_LOCKRECORD, DIALOG
+    BEGIN
+        HORZGUIDE, 265
+        HORZGUIDE, 297
+    END
+
+    IDD_PLAYBACK_BYTIME, DIALOG
+    BEGIN
+        TOPMARGIN, 8
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "About PlayBack(&A)..."
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE 4, 2
+#pragma code_page(936)
+#endif //_WIN32
+#include "res\PlayBack.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"          // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

@@ -1,0 +1,310 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#include ""res\\IntelligentDevice.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""     // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\IntelligentDevice.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 235, 55
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About IntelligentDevice"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    ICON            IDR_MAINFRAME,IDC_STATIC,11,17,20,20
+    LTEXT           "IntelligentDevice Version 1.0",IDC_STATIC,40,10,119,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2018",IDC_STATIC,40,25,119,8
+    DEFPUSHBUTTON   "OK",IDOK,178,7,50,16,WS_GROUP
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", ""
+            VALUE "FileDescription", "IntelligentDevice Microsoft Application"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "IntelligentDevice"
+            VALUE "LegalCopyright", "Copyright (C) 2018"
+            VALUE "OriginalFilename", "IntelligentDevice.exe"
+            VALUE "ProductName", "IntelligentDevice Application"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 48
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_ABOUTBOX            "&About IntelligentDevice..."
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// 英语(美国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_QUERY_DOWNLOAD_DIALOG DIALOGEX 0, 0, 430, 302
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "QueryDownload"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "BeginTime:",IDC_STATIC,27,19,44,10
+    CONTROL         "",IDC_DATE_START,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,76,16,57,15
+    CONTROL         "",IDC_DATE_END,"SysDateTimePick32",DTS_RIGHTALIGN | WS_TABSTOP,76,39,56,15
+    LTEXT           "EventType:",IDC_STATIC,26,106,36,8
+    COMBOBOX        IDC_COMBO_CHANNEL_QUERY,75,62,38,64,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Channel:",IDC_STATIC,28,65,30,10
+    COMBOBOX        IDC_COMBO_ALARM_TYPE,74,104,65,70,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "",IDC_STATIC,10,8,223,127
+    PUSHBUTTON      "Query",IDC_BUTTON_QUERY_START,24,143,50,14
+    CONTROL         "",IDC_LIST_QUERY_RESULT,"SysListView32",LVS_REPORT | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP,10,163,406,111
+    PUSHBUTTON      "DownLoad",IDC_BUTTON_QUERY_DOWNLOAD,272,277,50,14,WS_DISABLED
+    COMBOBOX        IDC_COMBO_FILE_TYPE,74,83,65,33,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "FileType:",IDC_STATIC,27,85,40,10
+    PUSHBUTTON      "NextPage",IDC_BUTTON_QUERY_NEXTPAGE,92,277,50,14,WS_DISABLED
+    PUSHBUTTON      "PerPage",IDC_BUTTON_QUERY_PREPAGE,20,277,50,14,WS_DISABLED
+    GROUPBOX        "",IDC_STATIC,10,134,224,27
+    GROUPBOX        "",IDC_STATIC,237,6,180,154
+    CONTROL         "",IDC_STATIC_REALPLAY_PIC,"Static",SS_BLACKRECT,242,13,170,124
+    CONTROL         "",IDC_PROGRESS_QUERY,"msctls_progress32",WS_BORDER,334,277,80,14
+    CONTROL         "",IDC_PROGRESS_QUERY2,"msctls_progress32",WS_BORDER,242,140,169,14
+    LTEXT           "EndTime:",IDC_STATIC,27,41,44,10
+    CONTROL         "",IDC_TIME_START,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,141,16,57,15
+    CONTROL         "",IDC_TIME_END,"SysDateTimePick32",DTS_RIGHTALIGN | DTS_UPDOWN | WS_TABSTOP | 0x8,141,38,57,15
+END
+
+IDD_INTELLIGENTDEVICE_DIALOG DIALOGEX 0, 0, 488, 338
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "IntelligentDevice"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_IPADDRESS,"SysIPAddress32",WS_TABSTOP,40,16,82,15
+    LTEXT           "IP:",IDC_STATIC,15,19,23,9
+    EDITTEXT        IDC_EDIT_PORT,155,16,46,15,ES_AUTOHSCROLL
+    LTEXT           "Port:",IDC_STATIC,126,18,25,9
+    EDITTEXT        IDC_EDIT_USERNAME,241,16,55,15,ES_AUTOHSCROLL
+    LTEXT           "User:",IDC_STATIC,211,18,27,9
+    EDITTEXT        IDC_EDIT_PASSWD,339,16,55,15,ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Pwd:",IDC_STATIC,307,18,28,9
+    CONTROL         "",IDC_STATIC_PREVIEW,"Static",SS_BLACKRECT,12,70,225,141
+    PUSHBUTTON      "Login",IDC_BTN_LOGIN,401,16,33,15
+    CONTROL         "",IDC_LIST_EVENTINFO,"SysListView32",LVS_REPORT | WS_BORDER | WS_TABSTOP,10,212,467,116
+    COMBOBOX        IDC_CBX_CHANNEL,61,47,37,83,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "StartRealPlay",IDC_BTN_STARTREALPLAY,113,46,52,15,WS_DISABLED
+    PUSHBUTTON      "StopRealPlay",IDC_BTN_STOPREALPLAY,183,46,47,15,WS_DISABLED
+    PUSHBUTTON      "Logout",IDC_BTN_LOGOUT,439,16,33,15,WS_DISABLED
+    PUSHBUTTON      "Attach",IDC_BTN_ATTACHEVENT,241,46,50,15,WS_DISABLED
+    PUSHBUTTON      "Detach",IDC_BTN_DETACHEVENT,303,46,50,15,WS_DISABLED
+    COMBOBOX        IDC_CBX_EVENT,380,47,87,56,CBS_DROPDOWNLIST | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "",IDC_STATIC,10,5,467,33
+    GROUPBOX        "",IDC_STATIC,10,36,467,33
+    CONTROL         "",IDC_STATIC_PICTURE,"Static",SS_BLACKRECT,241,70,233,141
+    LTEXT           "Channel:",IDC_STATIC,23,49,30,8
+END
+
+IDD_SHOWPIC DIALOGEX 0, 0, 403, 262
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Picture"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_STATIC_SHOWPIC,"Static",SS_BLACKFRAME | SS_NOTIFY,10,8,386,247
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_QUERY_DOWNLOAD_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 423
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 295
+    END
+
+    IDD_INTELLIGENTDEVICE_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 481
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 331
+    END
+
+    IDD_SHOWPIC, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 396
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 255
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU_QUERYDOWNLAD MENU 
+BEGIN
+    MENUITEM "QueryDownload",               ID_QUERYDOWNLOAD
+END
+
+#endif    // 英语(美国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE 4, 2
+#pragma code_page(936)
+#include "res\IntelligentDevice.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"     // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

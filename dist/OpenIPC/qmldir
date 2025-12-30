@@ -1,0 +1,27 @@
+module OpenIPC
+typeinfo appOpenIPC-Dashboard.qmltypes
+prefer :/OpenIPC/
+Main 1.0 src/ui/Main.qml
+SettingsDialog 1.0 src/ui/SettingsDialog.qml
+ModulesSettingsPanel 1.0 src/ui/ModulesSettingsPanel.qml
+GridCell 1.0 src/ui/GridCell.qml
+SidebarIcon 1.0 src/ui/SidebarIcon.qml
+CameraSearchDialog 1.0 src/ui/CameraSearchDialog.qml
+AddCameraDialog 1.0 src/ui/AddCameraDialog.qml
+singleton I18n 1.0 src/ui/I18n.qml
+AnalyticsView 1.0 src/ui/AnalyticsView.qml
+FaceSnapshotsPanel 1.0 src/ui/analytics/FaceSnapshotsPanel.qml
+ObjectCounterPanel 1.0 src/ui/analytics/ObjectCounterPanel.qml
+LicensePlatePanel 1.0 src/ui/analytics/LicensePlatePanel.qml
+UserManagementDialog 1.0 src/ui/UserManagementDialog.qml
+AddUserDialog 1.0 src/ui/AddUserDialog.qml
+ChangePasswordDialog 1.0 src/ui/ChangePasswordDialog.qml
+LoginView 1.0 src/ui/LoginView.qml
+DashboardView 1.0 src/ui/DashboardView.qml
+AddGroupDialog 1.0 src/ui/AddGroupDialog.qml
+LogView 1.0 src/ui/LogView.qml
+CameraContextMenu 1.0 src/ui/CameraContextMenu.qml
+SshTerminalDialog 1.0 src/ui/SshTerminalDialog.qml
+ArchiveView 1.0 src/ui/ArchiveView.qml
+PtzControlPanel 1.0 src/ui/PtzControlPanel.qml
+

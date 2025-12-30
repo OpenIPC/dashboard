@@ -1,0 +1,461 @@
+//Microsoft Developer Studio generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Chinese (P.R.C.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE DISCARDABLE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\DemoMonitorWall.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""          // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON    DISCARDABLE     "res\\DemoMonitorWall.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DEMOMONITORWALL_DIALOG DIALOGEX 0, 0, 609, 436
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "MonitorWall"
+FONT 9, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    CONTROL         "Tree1",IDC_TREE_DEVICE,"SysTreeView32",TVS_HASBUTTONS | 
+                    TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS | 
+                    TVS_FULLROWSELECT | WS_BORDER | WS_TABSTOP,505,1,103,329
+    PUSHBUTTON      "Del Device",IDC_BTN_REMOVE_DEVICE,558,421,50,14
+    PUSHBUTTON      "Add Device",IDC_BTN_ADD_DEVICE,505,421,50,14
+END
+
+IDD_DIALOG_LOGIN DIALOG DISCARDABLE  0, 0, 198, 178
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Dialog"
+FONT 9, "MS Sans Serif"
+BEGIN
+    EDITTEXT        IDC_EDIT_ADDRESS,64,13,68,15,ES_AUTOHSCROLL | NOT 
+                    WS_VISIBLE | WS_DISABLED
+    COMBOBOX        IDC_COMBO_ADDRESS,63,14,119,126,CBS_DROPDOWN | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_PORT,64,35,118,15,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_USER,64,57,118,15,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PWD,64,78,118,15,ES_PASSWORD | ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,29,149,50,15
+    PUSHBUTTON      "Cancel",IDCANCEL,118,149,50,15
+    LTEXT           "Address:",IDC_STATIC,13,16,43,9
+    LTEXT           "User:",IDC_STATIC,13,59,43,9
+    LTEXT           "Password:",IDC_STATIC,13,81,43,9
+    LTEXT           "Port:",IDC_STATIC,13,38,43,9
+    EDITTEXT        IDC_EDIT_DEV_CLASS,64,99,118,15,ES_AUTOHSCROLL
+    LTEXT           "DevClass:",IDC_STATIC,13,101,43,9
+    EDITTEXT        IDC_EDIT_DEV_TYPE,64,121,118,15,ES_AUTOHSCROLL
+    LTEXT           "DevType:",IDC_STATIC,13,123,43,9
+END
+
+IDD_DIALOG_SPLICESCREEN DIALOG DISCARDABLE  0, 0, 473, 356
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Splice Screen"
+FONT 9, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,363,335,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,416,335,50,14
+    GROUPBOX        "Output Layout",IDC_STATIC_OUTPUT_COUNT,7,260,127,68
+    GROUPBOX        "Output Size",IDC_STATIC_OUTPUT_COUNT2,142,260,127,68
+    CONTROL         "1 x 1",IDC_RADIO_LAYOUT_1x1,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,15,274,36,10
+    CONTROL         "2 x 2",IDC_RADIO_LAYOUT_2x2,"Button",BS_AUTORADIOBUTTON,
+                    81,274,36,10
+    CONTROL         "3 x 3",IDC_RADIO_LAYOUT_3x3,"Button",BS_AUTORADIOBUTTON,
+                    15,290,36,10
+    CONTROL         "4 x 4",IDC_RADIO_LAYOUT_4x4,"Button",BS_AUTORADIOBUTTON,
+                    81,290,36,10
+    CONTROL         "",IDC_RADIO_LAYOUT_nxn,"Button",BS_AUTORADIOBUTTON,15,
+                    307,10,8
+    COMBOBOX        IDC_COMBO_OUTPUT_LAYOUT_ROW,28,305,38,141,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_OUTPUT_LAYOUT_COLUMN,81,305,38,142,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "x",IDC_STATIC,71,307,8,8
+    CONTROL         "1 x 1",IDC_RADIO_SIZE_1x1,"Button",BS_AUTORADIOBUTTON | 
+                    WS_GROUP,149,274,36,10
+    CONTROL         "2 x 2",IDC_RADIO_SIZE_2x2,"Button",BS_AUTORADIOBUTTON,
+                    215,274,36,10
+    CONTROL         "3 x 3",IDC_RADIO_SIZE_3x3,"Button",BS_AUTORADIOBUTTON,
+                    149,290,36,10
+    CONTROL         "4 x 4",IDC_RADIO_SIZE_4x4,"Button",BS_AUTORADIOBUTTON,
+                    215,290,36,10
+    CONTROL         "",IDC_RADIO_SIZE_nxn,"Button",BS_AUTORADIOBUTTON,149,
+                    307,10,8
+    COMBOBOX        IDC_COMBO_OUTPUT_SIZE_ROW,162,305,38,144,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_COMBO_OUTPUT_SIZE_COLUMN,215,305,38,145,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "x",IDC_STATIC,205,307,8,8
+    PUSHBUTTON      "Add",IDC_BTN_ADD,7,335,50,14
+    PUSHBUTTON      "Delete",IDC_BTN_DELETE,60,335,50,14
+    PUSHBUTTON      "Clear",IDC_BTN_CLEAR,113,335,50,14
+    LISTBOX         IDC_LIST_BLOCK_OUTPUTS,317,49,148,275,LBS_OWNERDRAWFIXED | 
+                    LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Name",IDC_STATIC,317,10,17,8
+    EDITTEXT        IDC_EDIT_SPLICE_NAME,345,7,120,14,ES_AUTOHSCROLL
+    LTEXT           "ID",IDC_STATIC,317,30,9,8
+    EDITTEXT        IDC_EDIT_SPLICE_ID,345,27,120,14,ES_AUTOHSCROLL
+END
+
+IDD_DIALOG_POWER DIALOG DISCARDABLE  0, 0, 183, 132
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Power"
+FONT 9, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,34,103,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,99,103,50,14
+    LTEXT           "MonitorWall",IDC_STATIC,7,10,45,8
+    COMBOBOX        IDC_COMBO_MONITORWALL,58,7,118,145,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Block",IDC_STATIC,7,30,21,8
+    COMBOBOX        IDC_COMBO_BLOCK,58,27,118,128,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Output",IDC_STATIC,7,50,25,8
+    COMBOBOX        IDC_COMBO_OUTPUT,58,47,118,140,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Power",IDC_STATIC,7,70,21,8
+    COMBOBOX        IDC_COMBO_POWER,58,67,118,75,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+END
+
+IDD_DIALOG_COLLECTION DIALOG DISCARDABLE  0, 0, 235, 223
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Collection"
+FONT 9, "MS Sans Serif"
+BEGIN
+    LISTBOX         IDC_LIST_COLLECTION,7,7,108,209,LBS_SORT | 
+                    LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_COLLECTION_NAME,119,26,108,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Load",IDC_BTN_LOAD,119,45,50,14
+    PUSHBUTTON      "Save",IDC_BTN_SAVE,178,46,50,14
+    COMBOBOX        IDC_COMBO_MONITORWALL,119,7,109,109,CBS_DROPDOWNLIST | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_COLLECTION_NEW_NAME,120,66,108,14,
+                    ES_AUTOHSCROLL
+    PUSHBUTTON      "Rename",IDC_BTN_RENAME,178,85,50,14
+END
+
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", ""
+            VALUE "FileDescription", "MonitorWall Microsoft Application"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "MonitorWall"
+            VALUE "LegalCopyright", "Copyright (C) 2018"
+            VALUE "LegalTrademarks", ""
+            VALUE "OriginalFilename", "MonitorWall.EXE"
+            VALUE "ProductName", "MonitorWall Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+#endif    // !_MAC
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO DISCARDABLE 
+BEGIN
+    IDD_DEMOMONITORWALL_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 1
+        RIGHTMARGIN, 608
+        TOPMARGIN, 1
+        BOTTOMMARGIN, 435
+    END
+
+    IDD_DIALOG_LOGIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 191
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 171
+    END
+
+    IDD_DIALOG_SPLICESCREEN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 466
+        VERTGUIDE, 310
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 349
+    END
+
+    IDD_DIALOG_POWER, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 176
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 125
+    END
+
+    IDD_DIALOG_COLLECTION, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 228
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 216
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Toolbar
+//
+
+IDR_TOOLBAR1 TOOLBAR DISCARDABLE  32, 15
+BEGIN
+    BUTTON      ID_TOOLBAR_LOGIN
+    BUTTON      ID_TOOLBAR_LOGOUT
+    SEPARATOR
+    BUTTON      ID_TOOLBAR_SPLICE
+    SEPARATOR
+    BUTTON      IDCANCEL
+END
+
+IDR_TOOLBAR2 TOOLBAR DISCARDABLE  32, 15
+BEGIN
+    BUTTON      ID_TOOLBAR_TV_OUT
+    BUTTON      ID_TOOLBAR_SPLIT1
+    BUTTON      ID_TOOLBAR_SPLIT4
+    BUTTON      ID_TOOLBAR_SPLIT8
+    BUTTON      ID_TOOLBAR_SPLIT9
+    BUTTON      ID_TOOLBAR_SPLIT16
+    BUTTON      ID_TOOLBAR_SPLIT25
+    BUTTON      ID_TOOLBAR_SPLIT36
+    BUTTON      ID_TOOLBAR_SPLIT64
+    BUTTON      ID_TOOLBAR_SPLIT_FREE
+    SEPARATOR
+    BUTTON      ID_TOOLBAR_OPEN_WINDOW
+    BUTTON      ID_TOOLBAR_CLOSE_WINDOW
+    BUTTON      ID_TOOLBAR_SET_LEVEL
+    SEPARATOR
+    BUTTON      ID_TOOLBAR_SET_PUSH
+    BUTTON      ID_TOOLBAR_POWER
+    BUTTON      ID_TOOLBAR_COLLECTION
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDR_TOOLBAR1            BITMAP  DISCARDABLE     "res\\toolbar1.bmp"
+IDR_TOOLBAR2            BITMAP  DISCARDABLE     "res\\toolbar2.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_DIALOG_POWER DLGINIT
+BEGIN
+    IDC_COMBO_POWER, 0x403, 3, 0
+0x6e4f, "\000" 
+    IDC_COMBO_POWER, 0x403, 4, 0
+0x664f, 0x0066, 
+    0
+END
+
+IDD_DIALOG_SPLICESCREEN DLGINIT
+BEGIN
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0031, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0032, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0033, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0034, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0035, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0036, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0037, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0038, 
+    IDC_COMBO_OUTPUT_LAYOUT_ROW, 0x403, 2, 0
+0x0039, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0031, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0032, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0033, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0034, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0035, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0036, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0037, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0038, 
+    IDC_COMBO_OUTPUT_LAYOUT_COLUMN, 0x403, 2, 0
+0x0039, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0031, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0032, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0033, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0034, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0035, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0036, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0037, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0038, 
+    IDC_COMBO_OUTPUT_SIZE_ROW, 0x403, 2, 0
+0x0039, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0031, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0032, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0033, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0034, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0035, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0036, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0037, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0038, 
+    IDC_COMBO_OUTPUT_SIZE_COLUMN, 0x403, 2, 0
+0x0039, 
+    0
+END
+
+#endif    // Chinese (P.R.C.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE 4, 2
+#pragma code_page(936)
+#endif //_WIN32
+#include "res\DemoMonitorWall.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"          // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

@@ -1,0 +1,297 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(中华人民共和国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 4, 2\r\n"
+    "#pragma code_page(936)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\ShowDemo.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""          // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\ShowDemo.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_SHOWDEMO_DIALOG DIALOGEX 0, 0, 572, 401
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Encoding Config"
+FONT 9, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    CONTROL         "",IDC_REALPALY,"Static",SS_BLACKRECT,7,7,261,238
+    LTEXT           "IP:",IDC_STATIC,17,283,41,10
+    LTEXT           "Port:",IDC_STATIC,17,299,41,10
+    LTEXT           "UserName:",IDC_STATIC,17,315,41,10
+    LTEXT           "Password:",IDC_STATIC,17,331,41,10
+    CONTROL         "",IDC_STATIC,"Static",SS_BLACKFRAME,7,273,150,113
+    CONTROL         "IPAddress1",IDC_IPADDRESS,"SysIPAddress32",WS_TABSTOP,64,281,81,13
+    EDITTEXT        IDC_EDIT_PORT,64,299,81,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_USERMANE,64,315,81,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_PASSWD,64,332,81,13,ES_PASSWORD | ES_AUTOHSCROLL
+    PUSHBUTTON      "Login",IDC_BTN_LOGIN,18,355,50,17
+    PUSHBUTTON      "Logout",IDC_BTN_LOGOUT,92,355,50,17
+    LTEXT           "Channel:",IDC_STATIC,281,16,33,8
+    COMBOBOX        IDC_COMBO_CHANNELCOUNT,318,13,41,115,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Video Attribute",IDC_STATIC,274,39,292,137
+    LTEXT           "Stream Type",IDC_STATIC,412,16,45,8
+    COMBOBOX        IDC_CMB_FORMAT,474,13,83,103,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "",IDC_STATIC,274,1,292,31
+    CONTROL         "",IDC_CHECK_VIDEO_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,346,57,16,8
+    COMBOBOX        IDC_CMB_COMPRESSION,343,75,58,99,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Enable",IDC_STATIC,285,57,50,8
+    LTEXT           "Encoding Mode",IDC_STATIC,285,77,56,8
+    LTEXT           "Resolution",IDC_STATIC,285,117,50,8
+    COMBOBOX        IDC_CMB_RESOLUTION,343,115,58,76,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Control",IDC_STATIC,412,58,47,8
+    COMBOBOX        IDC_CMB_BITRATE_CTL,474,55,83,74,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Stream",IDC_STATIC,412,77,51,8
+    LTEXT           "Image Quality",IDC_STATIC_IMAGE_QUALITY,412,116,54,8
+    COMBOBOX        IDC_CMB_IMAGE_QUALITY,474,115,83,90,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frame",IDC_STATIC,285,97,50,8
+    COMBOBOX        IDC_CMB_FRAMERATE,343,95,58,129,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "I Interval",IDC_STATIC,285,137,50,8
+    EDITTEXT        IDC_EDIT_IFRAME_INTERVAL,343,135,58,12,ES_AUTOHSCROLL
+    LTEXT           "Packet Mode",IDC_STATIC,412,136,48,8
+    COMBOBOX        IDC_CMB_FRAME_TYPE,474,135,83,80,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    GROUPBOX        "Audio Attribute",IDC_STATIC,274,174,292,98
+    LTEXT           "Enable",IDC_STATIC,287,188,34,8
+    CONTROL         "",IDC_CHECK_AUDIO_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,343,188,16,8
+    LTEXT           "Compression",IDC_STATIC,287,205,46,8
+    COMBOBOX        IDC_CMB_AUDIO_FORMAT,344,204,58,58,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Depth",IDC_STATIC,287,234,34,8
+    COMBOBOX        IDC_CMB_DEPTH,344,230,58,64,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Frequency",IDC_STATIC,287,250,40,8
+    COMBOBOX        IDC_CMB_FREQUENCY,344,248,58,70,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Encoding Mode",IDC_STATIC,412,188,54,8
+    LTEXT           "Packet Mode",IDC_STATIC,412,205,54,8
+    LTEXT           "Packet Period",IDC_STATIC,412,223,54,8
+    COMBOBOX        IDC_CMB_MODE,474,185,83,72,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_CMB_PACK,474,203,83,69,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_PACKETPERIOD,474,222,83,12,ES_AUTOHSCROLL
+    GROUPBOX        "Capture Picture",IDC_STATIC,168,270,398,119
+    COMBOBOX        IDC_CMB_SNAPTYPE,231,284,69,76,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Category",IDC_STATIC,174,286,47,8
+    LTEXT           "Timing",IDC_STATIC,174,309,47,8
+    CONTROL         "",IDC_CHECK_SNAPENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,231,309,16,8
+    LTEXT           "Video Format",IDC_STATIC,174,333,54,8
+    COMBOBOX        IDC_CMB_SNAPCOMPRESSION,231,330,69,64,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Resolution",IDC_STATIC,174,360,47,8
+    COMBOBOX        IDC_CMB_SNAPRESOLUTION,231,357,69,77,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "SVC-I",IDC_STATIC,285,157,50,8
+    EDITTEXT        IDC_EDIT_SVC,343,155,58,12,ES_AUTOHSCROLL
+    LTEXT           "Rate",IDC_STATIC,315,287,33,8
+    COMBOBOX        IDC_CMB_SNAP_FRAMERATE,355,285,88,65,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Quality",IDC_STATIC,315,311,33,8
+    COMBOBOX        IDC_CMB_SNAP_QUALITY,355,310,88,60,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_CMB_BITRATE,474,75,83,87,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "OK",IDC_SETSNAP,474,357,50,14
+    PUSHBUTTON      "OK",IDC_SETAUDIO,474,244,50,14
+    PUSHBUTTON      "OK",IDC_SETVIDEO,474,154,50,14
+    EDITTEXT        IDC_EDIT_SNAPFRAMERATE,446,285,31,14,ES_AUTOHSCROLL | NOT WS_VISIBLE
+    EDITTEXT        IDC_EDIT_BITRATE,474,96,83,12,ES_AUTOHSCROLL
+    LTEXT           "Value",IDC_STATIC_BITRATE,412,98,53,8
+    PUSHBUTTON      "Button1",IDOK,179,198,9,11,NOT WS_VISIBLE | WS_DISABLED
+    LTEXT           "Reference Stream Value",IDC_STATIC,380,35,95,9,NOT WS_VISIBLE | WS_DISABLED
+    LTEXT           "",IDC_STATIC_MIN,439,35,15,10,NOT WS_VISIBLE | WS_DISABLED
+    LTEXT           "",IDC_STATIC_MAX,471,37,21,8,NOT WS_VISIBLE | WS_DISABLED
+    LTEXT           "-",IDC_STATIC,459,37,8,10,NOT WS_VISIBLE | WS_DISABLED
+    GROUPBOX        "Sampling",IDC_STATIC,279,221,130,44
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "FileDescription", "ShowDemo Microsoft Application"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "ShowDemo"
+            VALUE "LegalCopyright", "Copyright (C) 2018"
+            VALUE "OriginalFilename", "ShowDemo.EXE"
+            VALUE "ProductName", "ShowDemo Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_SHOWDEMO_DIALOG, DIALOG
+    BEGIN
+        RIGHTMARGIN, 567
+        VERTGUIDE, 274
+        VERTGUIDE, 566
+        BOTTOMMARGIN, 397
+        HORZGUIDE, 132
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_SHOWDEMO_DIALOG DLGINIT
+BEGIN
+    IDC_CMB_FREQUENCY, 0x403, 5, 0
+0x3038, 0x3030, "\000" 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3631, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3233, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3434, 0x3031, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3734, 0x3532, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3834, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3035, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3436, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 6, 0
+0x3639, 0x3030, 0x0030, 
+    IDC_CMB_FREQUENCY, 0x403, 7, 0
+0x3931, 0x3032, 0x3030, "\000" 
+    IDC_CMB_MODE, 0x403, 8, 0
+0x2e34, 0x3537, 0x626b, 0x0073, 
+    IDC_CMB_MODE, 0x403, 8, 0
+0x2e35, 0x3531, 0x626b, 0x0073, 
+    IDC_CMB_MODE, 0x403, 7, 0
+0x2e35, 0x6b39, 0x7362, "\000" 
+    IDC_CMB_MODE, 0x403, 7, 0
+0x2e36, 0x6b37, 0x7362, "\000" 
+    IDC_CMB_MODE, 0x403, 7, 0
+0x2e37, 0x6b34, 0x7362, "\000" 
+    IDC_CMB_MODE, 0x403, 8, 0
+0x2e37, 0x3539, 0x626b, 0x0073, 
+    IDC_CMB_MODE, 0x403, 8, 0
+0x3031, 0x322e, 0x626b, 0x0073, 
+    IDC_CMB_MODE, 0x403, 8, 0
+0x3231, 0x322e, 0x626b, 0x0073, 
+    IDC_CMB_PACK, 0x403, 5, 0
+0x4844, 0x5641, "\000" 
+    IDC_CMB_PACK, 0x403, 3, 0
+0x5350, "\000" 
+    0
+END
+
+#endif    // 中文(中华人民共和国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+#ifdef _WIN32
+LANGUAGE 4, 2
+#pragma code_page(936)
+#endif //_WIN32
+#include "res\ShowDemo.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"          // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
