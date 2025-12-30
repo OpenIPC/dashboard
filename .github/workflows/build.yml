@@ -47,9 +47,9 @@ jobs:
         xcopy build\translations dist\translations /E /I
         
     - name: Create Installer
-      uses: Minionguyjosh/inno-setup-action@v1.2.2
-      with:
-        path: setup.iss
+      run: |
+        choco install innosetup
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
         
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
