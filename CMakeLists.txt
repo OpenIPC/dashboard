@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent)
 
 # Force native rcc executable to avoid picking up python-based rcc from VS Code extensions
-if(WIN32)
+if(WIN32 AND EXISTS "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
     set(QT_RCC_EXECUTABLE "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
     set(CMAKE_AUTORCC_EXECUTABLE "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
     if(TARGET Qt6::rcc)
