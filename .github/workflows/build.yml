@@ -39,7 +39,7 @@ jobs:
         
     - name: Prepare Dist
       run: |
-        mkdir dist
+        if (!(Test-Path dist)) { mkdir dist }
         copy build\appOpenIPC-Dashboard.exe dist\
         copy build\*.dll dist\
         xcopy build\plugins dist\plugins /E /I
