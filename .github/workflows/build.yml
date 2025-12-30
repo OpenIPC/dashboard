@@ -29,6 +29,10 @@ jobs:
         cmake --version
         ninja --version
         
+    - name: Build
+      run: |
+        mkdir build
+        cd build
         cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
         windeployqt --release --qmldir ../src/ui appOpenIPC-Dashboard.exe
