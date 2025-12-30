@@ -19,19 +19,16 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.4.2'
-        arch: 'win64_mingw'
-        tools: 'tools_mingw90'
+        arch: 'win64_msvc2019_64'
         
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
     - name: Check Environment
       run: |
-        g++ --version
         cmake --version
         ninja --version
         
-    - name: Build
-      run: |
-        mkdir build
-        cd build
         cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
         windeployqt --release --qmldir ../src/ui appOpenIPC-Dashboard.exe
