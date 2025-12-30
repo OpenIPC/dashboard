@@ -36,14 +36,25 @@ jobs:
         cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
         windeployqt --release --qmldir ../src/ui appOpenIPC-Dashboard.exe
-
-    - name: Upload Artifact
+        
+    - name: Prepare Dist
+      run: |
+        mkdir dist
+        copy build\appOpenIPC-Dashboard.exe dist\
+        copy build\*.dll dist\
+        xcopy build\plugins dist\plugins /E /I
+        xcopy build\qml dist\qml /E /I
+        xcopy build\translations dist\translations /E /I
+        
+    - name: Create Installer
+      uses: Minionguyjosh/inno-setup-action@v1.2.2
+      with:
+        path: setup.iss
+        
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: OpenIPC-Dashboard-Windows
         path: |
-          build/appOpenIPC-Dashboard.exe
-          build/*.dll
-          build/plugins/
-          build/qml/
-          build/translations/
+          OpenIPC-Dashboard-Installer.exe
+          dist/
