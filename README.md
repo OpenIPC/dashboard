@@ -31,9 +31,3 @@ cd build
 cmake .. -DCMAKE_PREFIX_PATH="C:/Qt/6.x.x/msvc2019_64"
 cmake --build .
 ```
-
-## Roadmap for Porting
-
-1.  **Video Streaming**: Integrate `QtMultimedia` or `LibVLC` to replace the web-based player.
-2.  **ONVIF Discovery**: Implement UDP broadcast discovery in `SystemController::scanNetwork`.
-3.  **Sidecar Management**: Bundle `go2rtc` and `ffmpeg` binaries and manage them via `QProcess`.
