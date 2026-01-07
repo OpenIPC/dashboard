@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import QtQuick.Layouts
+import QtMultimedia
 import OpenIPC
 
 Item {
@@ -51,6 +52,7 @@ Item {
         // Prioritize D3D11/MFT on Windows for stability, even for Nvidia
         if (mode === "nvidia") return ["MFT:d3d=11", "D3D11", "CUDA", "NVDEC", "FFmpeg"]
         if (mode === "intel") return ["MFT:d3d=11", "D3D11", "FFmpeg"]
+        if (mode === "dxva") return ["D3D11", "DXVA", "FFmpeg"]
         if (mode === "none") return ["FFmpeg"]
         // auto
         return ["MFT:d3d=11", "D3D11", "CUDA", "FFmpeg"]
@@ -153,36 +155,29 @@ Item {
         MdkPlayer {
             id: player
             anchors.fill: parent
+            visible: root.streamUrl !== "" && !hdWindow.visible
+
+            // Respect app setting (Crop/Fit/Stretch)
+            fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
+            
+            // Fix orientation
+            orientation: 180
+            mirror: true
+            transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: player.mirror ? -1 : 1 }
+            
             url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-            running: root.streamUrl !== "" && !hdWindow.visible
-            fillMode: SystemController.appSettings.playerFillMode === undefined ? 0 : SystemController.appSettings.playerFillMode // 0 fit, -1 crop
+            
+            // Start only if visible and URL is valid
+            running: visible && root.streamUrl !== ""
+            
             muted: root.isMuted
             volume: root.volume
-            hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel)
-
-            // Direct C++ connection for analytics; disabled by default via appSettings.analyticsEnabled
-            analyticsEngine: SystemController.appSettings.analyticsEnabled ? SystemController.analyticsEngine : null
+            hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel || "auto")
+            bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
+            rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
+            
+            analyticsEngine: SystemController.analyticsEngine
             cameraId: root.cameraIp
-            // Keep camera upright (camera is mounted inverted)
-            // rotation: 180
-            // transformOrigin: Item.Center
-            transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; yScale: -1 }
-
-            // Default MDK aspect; we rely on clipping by parent Item to avoid overflow
-            
-            // MdkPlayer doesn't have playbackState property yet in our wrapper, 
-            // so we use running for visibility logic
-            
-            // onFrameReady removed in favor of direct C++ connection
-            
-            // Auto-reconnect logic
-            // MDK MediaStatus: 0=NoMedia, 1=Unloaded, 2=Loading, 3=Loaded, 4=Prepared, 5=Stalled, 6=Buffering, 7=Buffered, 8=End, 9=Seekable, 10=Invalid
-            onMediaStatusChanged: (status) => {
-                if (status === 10 || status === 8) { // Invalid or End
-                    console.warn("Stream ended or invalid, retrying in 5s...", root.cameraIp)
-                    reconnectTimer.restart()
-                }
-            }
         }
         
         Timer {
@@ -386,17 +381,27 @@ Item {
             MdkPlayer {
                 id: hdPlayer
                 anchors.fill: parent
+                // Respect app setting (Crop/Fit/Stretch)
+                fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
+                
+                // Fix orientation (upside down) and mirror
+                orientation: 180
+                mirror: true
+                transform: Scale { origin.x: hdPlayer.width / 2; origin.y: hdPlayer.height / 2; xScale: hdPlayer.mirror ? -1 : 1 }
+                
                 url: root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-                // Use configured fillMode; default fit to keep aspect
-                fillMode: SystemController.appSettings.playerFillMode === undefined ? 0 : SystemController.appSettings.playerFillMode
+                
+                // Auto run when window actsally visible
+                running: hdWindow.visible && url !== ""
+                
                 muted: root.isMuted
                 volume: root.volume
-                hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel)
-                // Mirror rotation from preview so fullscreen is not upside down
-                // rotation: player.rotation
-                // transformOrigin: Item.Center
-                transform: Scale { origin.x: hdPlayer.width / 2; origin.y: hdPlayer.height / 2; yScale: -1 }
-                // Default MDK aspect; clipping via parent Item
+                hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel || "auto")
+                bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
+                rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
+                
+                analyticsEngine: SystemController.analyticsEngine
+                cameraId: root.cameraIp
             }
 
             // Fullscreen Detection Overlay
@@ -586,7 +591,7 @@ Item {
                 Text {
                     id: qualityLabel
                     anchors.centerIn: parent
-                    text: "Preview: " + (root.useHdPreview && root.hdStreamUrl !== "" ? "HD" : "SD") + "  |  Fullscreen: " + (root.useHdFullscreen && root.hdStreamUrl !== "" ? "HD" : "SD")
+                    text: "Preview: " + (root.useHdPreview && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD") + "  |  Fullscreen: " + (root.useHdFullscreen && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD")
                     color: "white"
                     font.pixelSize: 12
                     font.bold: true

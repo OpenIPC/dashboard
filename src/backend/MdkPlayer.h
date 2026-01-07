@@ -32,6 +32,8 @@ class MdkPlayer : public QQuickFramebufferObject
     Q_PROPERTY(qint64 position READ position WRITE setPosition NOTIFY positionChanged)
     Q_PROPERTY(bool mirror READ mirror WRITE setMirror NOTIFY mirrorChanged)
     Q_PROPERTY(double playbackRate READ playbackRate WRITE setPlaybackRate NOTIFY playbackRateChanged)
+    Q_PROPERTY(int bufferMode READ bufferMode WRITE setBufferMode NOTIFY bufferModeChanged)
+    Q_PROPERTY(QString rtspTransport READ rtspTransport WRITE setRtspTransport NOTIFY rtspTransportChanged)
 
 public:
     explicit MdkPlayer(QQuickItem *parent = nullptr);
@@ -56,6 +58,12 @@ public:
     
     bool mirror() const { return m_mirror; }
     void setMirror(bool mirror);
+
+    int bufferMode() const { return m_bufferMode; }
+    void setBufferMode(int mode);
+
+    QString rtspTransport() const { return m_rtspTransport; }
+    void setRtspTransport(const QString &transport);
 
     qint64 duration() const;
     qint64 position() const;
@@ -103,6 +111,8 @@ signals:
     void positionChanged();
     void mirrorChanged();
     void playbackRateChanged();
+    void bufferModeChanged();
+    void rtspTransportChanged();
 
 private:
     std::shared_ptr<mdk::Player> m_player;
@@ -112,6 +122,8 @@ private:
     bool m_mirror = false;
     float m_fillMode = 1.0f; // KeepAspectRatio
     double m_playbackRate = 1.0;
+    int m_bufferMode = 1; // 0: Realtime, 1: Balanced (Default), 2: Smooth
+    QString m_rtspTransport = "tcp"; // tcp, udp, http, auto
     
     QString m_videoCodec;
     QString m_videoResolution;

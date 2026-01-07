@@ -1,0 +1,7 @@
+2025-12-30 12:52:12,940 - aqt.metadata - DEBUG - metadata 22360 Connection to 'https://download.qt.io' failed. Retrying with fallback 'https://mirrors.aliyun.com/qt/'.
+2025-12-30 12:52:39,160 - aqt.main - ERROR - installer 22360 Failure to connect to https://mirrors.aliyun.com/qt/online/qtsdkrepository/windows_x86/desktop/: ConnectionError
+2025-12-30 12:53:24,199 - aqt.metadata - DEBUG - metadata 1464 Connection to 'https://download.qt.io' failed. Retrying with fallback 'https://ftp2.nluug.nl/languages/qt/'.
+2025-12-30 12:53:50,034 - aqt.main - ERROR - installer 1464 Failure to connect to https://ftp2.nluug.nl/languages/qt/online/qtsdkrepository/windows_x86/desktop/: ConnectionError
+2025-12-30 12:56:45,928 - aqt.metadata - DEBUG - metadata 11200 Connection to 'https://download.qt.io' failed. Retrying with fallback 'https://master.qt.io/'.
+2025-12-30 12:57:11,709 - aqt.main - ERROR - installer 11200 Failure to connect to https://master.qt.io/online/qtsdkrepository/windows_x86/desktop/: ConnectionError
+2025-12-30 12:59:06,489 - aqt.main - INFO - installer 26520 aqtinstall(aqt) v3.3.0 on Python 3.11.9 [CPython MSC v.1938 64 bit (AMD64)]

@@ -91,6 +91,10 @@ SystemController::SystemController(QObject *parent)
     // Sane grid defaults; avoid spawning hundreds of cells when state.json is absent
     m_appSettings["gridRows"] = 2;
     m_appSettings["gridCols"] = 2;
+    
+    // Player settings
+    m_appSettings["playerBufferMode"] = 1; // Balanced
+    m_appSettings["playerRtspTransport"] = "tcp";
 
     m_gridRows = 2;
     m_gridCols = 2; 
@@ -196,13 +200,67 @@ void SystemController::addLog(QtMsgType type, const QString &msg)
 
 void SystemController::startService()
 {
-    // Placeholder for starting go2rtc or similar service
-    m_serviceStatus = "Running";
-    emit serviceStatusChanged();
+    if (m_process->state() != QProcess::NotRunning) {
+        qInfo() << "Service already running";
+        return;
+    }
+
+    QString program = "go2rtc";
+#ifdef Q_OS_WIN
+    program = "go2rtc.exe";
+#endif
+    
+    // Check various locations
+    QStringList searchPaths = {
+        QCoreApplication::applicationDirPath(),
+        QCoreApplication::applicationDirPath() + "/bin",
+        QCoreApplication::applicationDirPath() + "/../bin"
+    };
+    
+    QString executablePath;
+    for (const QString &path : searchPaths) {
+        QString candidate = QDir(path).filePath(program);
+        if (QFile::exists(candidate)) {
+            executablePath = candidate;
+            break;
+        }
+    }
+
+    if (executablePath.isEmpty()) {
+        qWarning() << "go2rtc binary not found";
+        m_serviceStatus = "Missing go2rtc";
+        emit serviceStatusChanged();
+        executablePath = program; // Fallback to PATH
+    } else {
+        qInfo() << "Found go2rtc at" << executablePath;
+    }
+
+    m_process->disconnect(this);
+
+    connect(m_process, &QProcess::started, this, [this](){
+        m_serviceStatus = "Running";
+        emit serviceStatusChanged();
+    });
+    
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
+            this, [this](int code, QProcess::ExitStatus status){
+        m_serviceStatus = (status == QProcess::CrashExit) ? "Crashed" : "Stopped";
+        emit serviceStatusChanged();
+        qInfo() << "go2rtc finished with code" << code;
+    });
+
+    m_process->setProgram(executablePath);
+    m_process->start();
 }
 
 void SystemController::stopService()
 {
+    if (m_process->state() != QProcess::NotRunning) {
+        m_process->terminate();
+        if (!m_process->waitForFinished(3000)) {
+            m_process->kill();
+        }
+    }
     m_serviceStatus = "Stopped";
     emit serviceStatusChanged();
 }
@@ -852,82 +910,6 @@ void SystemController::openFolder(const QString &path)
     QDesktopServices::openUrl(QUrl::fromLocalFile(targetPath));
 }
 
-void SystemController::onUdpReadyRead()
-{
-    while (m_udpSocket->hasPendingDatagrams()) {
-        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        QByteArray data = datagram.data();
-        
-        // Very basic parsing to check if it's a ProbeMatch
-        if (data.contains("ProbeMatches")) {
-            QString senderIp = datagram.senderAddress().toString();
-            // Handle IPv6 mapped IPv4 addresses
-            if (senderIp.startsWith("::ffff:")) {
-                senderIp = senderIp.mid(7);
-            }
-
-            if (!m_discoveryModel->contains(senderIp)) {
-                qDebug() << "Found camera at:" << senderIp;
-                
-                QString xmlStr = QString::fromUtf8(data);
-                QString extractedName = "OpenIPC Camera";
-                
-                // Try to find name in Scopes
-                int nameIdx = xmlStr.indexOf("onvif://www.onvif.org/name/");
-                if (nameIdx != -1) {
-                    int start = nameIdx + 27; // length of "onvif://www.onvif.org/name/"
-                    int endSpace = xmlStr.indexOf(" ", start);
-                    int endTag = xmlStr.indexOf("<", start);
-                    int end = -1;
-                    
-                    if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
-                    else if (endSpace != -1) end = endSpace;
-                    else end = endTag;
-                    
-                    if (end != -1) {
-                        extractedName = xmlStr.mid(start, end - start);
-                        extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
-                    }
-                } 
-                
-                // If name is still default or empty, try hardware
-                if (extractedName == "OpenIPC Camera" || extractedName.isEmpty()) {
-                    int hwIdx = xmlStr.indexOf("onvif://www.onvif.org/hardware/");
-                    if (hwIdx != -1) {
-                        int start = hwIdx + 31; // length of "onvif://www.onvif.org/hardware/"
-                        int endSpace = xmlStr.indexOf(" ", start);
-                        int endTag = xmlStr.indexOf("<", start);
-                        int end = -1;
-                        
-                        if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
-                        else if (endSpace != -1) end = endSpace;
-                        else end = endTag;
-                        
-                        if (end != -1) {
-                            extractedName = xmlStr.mid(start, end - start);
-                            extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
-                        }
-                    }
-                }
-                
-                // Fallback if empty
-                if (extractedName.isEmpty()) extractedName = "OpenIPC Camera";
-
-                Camera cam;
-                cam.id = QUuid::createUuid().toString();
-                cam.name = extractedName;
-                cam.ip = senderIp;
-                cam.hdStreamUrl = QString("rtsp://%1/stream=0").arg(senderIp); // main stream
-                cam.sdStreamUrl = QString("rtsp://%1/stream=1").arg(senderIp); // sub stream
-                cam.streamUrl = cam.hdStreamUrl; // legacy main
-                cam.status = "Online";
-                
-                m_discoveryModel->addCamera(cam);
-            }
-        }
-    }
-}
-
 void SystemController::saveAppSettings(const QVariantMap &settings)
 {
     m_appSettings = settings;
@@ -1513,5 +1495,81 @@ void SystemController::setLayoutTemplates(const QVariantList &templates)
         m_layoutTemplates = templates;
         saveState();
         emit layoutTemplatesChanged();
+    }
+}
+
+void SystemController::onUdpReadyRead()
+{
+    while (m_udpSocket->hasPendingDatagrams()) {
+        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
+        QByteArray data = datagram.data();
+        
+        // Very basic parsing to check if it's a ProbeMatch
+        if (data.contains("ProbeMatches")) {
+            QString senderIp = datagram.senderAddress().toString();
+            // Handle IPv6 mapped IPv4 addresses
+            if (senderIp.startsWith("::ffff:")) {
+                senderIp = senderIp.mid(7);
+            }
+
+            if (!m_discoveryModel->contains(senderIp)) {
+                qDebug() << "Found camera at:" << senderIp;
+                
+                QString xmlStr = QString::fromUtf8(data);
+                QString extractedName = "OpenIPC Camera";
+                
+                // Try to find name in Scopes
+                int nameIdx = xmlStr.indexOf("onvif://www.onvif.org/name/");
+                if (nameIdx != -1) {
+                    int start = nameIdx + 27; // length of "onvif://www.onvif.org/name/"
+                    int endSpace = xmlStr.indexOf(" ", start);
+                    int endTag = xmlStr.indexOf("<", start);
+                    int end = -1;
+                    
+                    if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
+                    else if (endSpace != -1) end = endSpace;
+                    else end = endTag;
+                    
+                    if (end != -1) {
+                        extractedName = xmlStr.mid(start, end - start);
+                        extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
+                    }
+                } 
+                
+                // If name is still default or empty, try hardware
+                if (extractedName == "OpenIPC Camera" || extractedName.isEmpty()) {
+                    int hwIdx = xmlStr.indexOf("onvif://www.onvif.org/hardware/");
+                    if (hwIdx != -1) {
+                        int start = hwIdx + 31; // length of "onvif://www.onvif.org/hardware/"
+                        int endSpace = xmlStr.indexOf(" ", start);
+                        int endTag = xmlStr.indexOf("<", start);
+                        int end = -1;
+                        
+                        if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
+                        else if (endSpace != -1) end = endSpace;
+                        else end = endTag;
+                        
+                        if (end != -1) {
+                            extractedName = xmlStr.mid(start, end - start);
+                            extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
+                        }
+                    }
+                }
+                
+                // Fallback if empty
+                if (extractedName.isEmpty()) extractedName = "OpenIPC Camera";
+
+                Camera cam;
+                cam.id = QUuid::createUuid().toString();
+                cam.name = extractedName;
+                cam.ip = senderIp;
+                cam.hdStreamUrl = QString("rtsp://%1/stream=0").arg(senderIp); // main stream
+                cam.sdStreamUrl = QString("rtsp://%1/stream=1").arg(senderIp); // sub stream
+                cam.streamUrl = cam.hdStreamUrl; // legacy main
+                cam.status = "Online";
+                
+                m_discoveryModel->addCamera(cam);
+            }
+        }
     }
 }

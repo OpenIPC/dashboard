@@ -148,6 +148,7 @@ QtObject {
         "Нет записей": "No recordings",
         "ВОЙТИ": "LOGIN",
         "Данные по умолчанию: логин admin, пароль admin.": "Default credentials: login admin, password admin.",
+        "Поддержать проект": "Support Project",
         "Неверный логин или пароль": "Invalid username or password",
         "Найденные камеры": "Discovered cameras",
         "Сетевой интерфейс": "Network interface",

@@ -55,6 +55,8 @@ Dialog {
     property real playerFillMode: -1.0 // -1 crop/fill, 1 fit, 0 stretch
     property bool showStatsOverlay: true
     property bool defaultAutoplay: true
+    property int playerBufferMode: 1
+    property string playerRtspTransport: "tcp"
 
     property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
 
@@ -70,6 +72,8 @@ Dialog {
             if (settings.playerFillMode !== undefined) playerFillMode = settings.playerFillMode
             if (settings.showStatsOverlay !== undefined) showStatsOverlay = settings.showStatsOverlay
             if (settings.defaultAutoplay !== undefined) defaultAutoplay = settings.defaultAutoplay
+            if (settings.playerBufferMode !== undefined) playerBufferMode = settings.playerBufferMode
+            if (settings.playerRtspTransport) playerRtspTransport = settings.playerRtspTransport
         }
     }
 
@@ -423,60 +427,6 @@ Dialog {
                                     onClicked: screenshotsDialog.open()
                                 }
                             }
-
-                            Text {
-                                text: I18n.t("Аппаратное ускорение")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: generalGrid.labelWidth
-                            }
-                            ColumnLayout {
-                                spacing: 6
-                                ComboBox {
-                                    id: hwCombo
-                                    model: [I18n.t("Авто"), "NVIDIA", "Intel", I18n.t("Без ускорения")]
-                                    currentIndex: hwAccel === "nvidia" ? 1 : hwAccel === "intel" ? 2 : hwAccel === "none" ? 3 : 0
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 30
-                                    onActivated: (index) => {
-                                        if (index === 1) hwAccel = "nvidia"
-                                        else if (index === 2) hwAccel = "intel"
-                                        else if (index === 3) hwAccel = "none"
-                                        else hwAccel = "auto"
-                                    }
-                                    background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                    contentItem: Text {
-                                        text: hwCombo.displayText
-                                        color: "white"
-                                        verticalAlignment: Text.AlignVCenter
-                                        leftPadding: 8
-                                        rightPadding: 24
-                                    }
-                                    indicator: Canvas {
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.margins: 8
-                                        width: 12; height: 8
-                                        onPaint: {
-                                            var ctx = getContext("2d");
-                                            ctx.fillStyle = "#a0aec0";
-                                            ctx.beginPath();
-                                            ctx.moveTo(0, 0);
-                                            ctx.lineTo(width, 0);
-                                            ctx.lineTo(width/2, height);
-                                            ctx.closePath();
-                                            ctx.fill();
-                                        }
-                                    }
-                                }
-                                Text {
-                                    text: I18n.t("Авто выберет доступное ускорение (NVIDIA/Intel) или CPU")
-                                    color: "#888888"
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                            }
                         }
 
                         Rectangle {
@@ -794,20 +744,152 @@ Dialog {
                                     Layout.alignment: Qt.AlignVCenter
                                 }
                             }
+
+                            Text {
+                                text: I18n.t("Буферизация (Задержка)")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            ComboBox {
+                                id: bufferModeCombo
+                                model: [I18n.t("Минимальная (Realtime)"), I18n.t("Сбалансированная"), I18n.t("Плавная (Smooth)")]
+                                currentIndex: playerBufferMode
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                contentItem: Text {
+                                    text: bufferModeCombo.displayText
+                                    color: "white"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+                                indicator: Canvas {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 8
+                                    width: 12; height: 8
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.beginPath();
+                                        ctx.moveTo(0, 0);
+                                        ctx.lineTo(width, 0);
+                                        ctx.lineTo(width/2, height);
+                                        ctx.closePath();
+                                        ctx.fill();
+                                    }
+                                }
+                                onActivated: {
+                                    playerBufferMode = index
+                                }
+                            }
+
+                            Text {
+                                text: I18n.t("Транспорт RTSP")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            ComboBox {
+                                id: rtspTransportCombo
+                                model: ["TCP", "UDP", "HTTP"]
+                                currentIndex: playerRtspTransport === "tcp" ? 0 : (playerRtspTransport === "udp" ? 1 : 2)
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                contentItem: Text {
+                                    text: rtspTransportCombo.displayText
+                                    color: "white"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+                                indicator: Canvas {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 8
+                                    width: 12; height: 8
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.beginPath();
+                                        ctx.moveTo(0, 0);
+                                        ctx.lineTo(width, 0);
+                                        ctx.lineTo(width/2, height);
+                                        ctx.closePath();
+                                        ctx.fill();
+                                    }
+                                }
+                                onActivated: {
+                                    if (index === 0) playerRtspTransport = "tcp"
+                                    else if (index === 1) playerRtspTransport = "udp"
+                                    else if (index === 2) playerRtspTransport = "http"
+                                }
+                            }
+
+                            Text {
+                                text: I18n.t("Аппаратное ускорение")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            ColumnLayout {
+                                spacing: 4
+                                Layout.fillWidth: true
+                                ComboBox {
+                                    id: hwCombo
+                                    model: [I18n.t("Авто"), "NVIDIA", "Intel", "DirectX (Windows)", I18n.t("Без ускорения (CPU)")]
+                                    currentIndex: hwAccel === "nvidia" ? 1 : hwAccel === "intel" ? 2 : hwAccel === "dxva" ? 3 : hwAccel === "none" ? 4 : 0
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 32
+                                    onActivated: (index) => {
+                                        if (index === 1) hwAccel = "nvidia"
+                                        else if (index === 2) hwAccel = "intel"
+                                        else if (index === 3) hwAccel = "dxva"
+                                        else if (index === 4) hwAccel = "none"
+                                        else hwAccel = "auto"
+                                    }
+                                    background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                    contentItem: Text {
+                                        text: hwCombo.displayText
+                                        color: "white"
+                                        verticalAlignment: Text.AlignVCenter
+                                        leftPadding: 8
+                                        rightPadding: 24
+                                    }
+                                    indicator: Canvas {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.margins: 8
+                                        width: 12; height: 8
+                                        onPaint: {
+                                            var ctx = getContext("2d");
+                                            ctx.fillStyle = "#a0aec0";
+                                            ctx.beginPath();
+                                            ctx.moveTo(0, 0);
+                                            ctx.lineTo(width, 0);
+                                            ctx.lineTo(width/2, height);
+                                            ctx.closePath();
+                                            ctx.fill();
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: I18n.t("Попробуйте DirectX или NVIDIA при высокой нагрузке")
+                                    color: "#888888"
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
                             height: 1
                             color: "#3b4657"
-                        }
-
-                        Text {
-                            text: I18n.t("Доступные опции основаны на текущей версии MDK-плеера (FFmpeg, без HW-декодеров). Дополнительные настройки можно будет добавить позже.")
-                            color: "#9da3ad"
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
 
                         Item { Layout.fillHeight: true }
@@ -939,7 +1021,9 @@ Dialog {
                     "preferredStream": preferredStream,
                     "playerFillMode": playerFillMode,
                     "showStatsOverlay": showStatsOverlay,
-                    "defaultAutoplay": defaultAutoplay
+                    "defaultAutoplay": defaultAutoplay,
+                    "playerBufferMode": playerBufferMode,
+                    "playerRtspTransport": playerRtspTransport
                 }
                 SystemController.saveAppSettings(settings)
                 saveNotification.open()

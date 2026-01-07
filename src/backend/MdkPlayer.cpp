@@ -166,7 +166,20 @@ void MdkPlayer::setUrl(const QString &url)
         m_player->setMedia(m_url.toUtf8().constData());
         
         // Buffer: 250ms to smooth out network jitter (fixes "jerky" video)
-        m_player->setBufferRange(250);
+        if (m_bufferMode == 0) { // Realtime
+            m_player->setBufferRange(0);
+            m_player->setProperty("avformat.fflags", "nobuffer");
+            m_player->setProperty("avformat.max_delay", "0");
+        } else if (m_bufferMode == 2) { // Smooth
+            m_player->setBufferRange(1000);
+            m_player->setProperty("avformat.fflags", "");
+            m_player->setProperty("avformat.max_delay", "1000000");
+        } else { // Balanced (Default)
+            m_player->setBufferRange(250);
+            m_player->setProperty("avformat.fflags", "");
+            m_player->setProperty("avformat.max_delay", "250000");
+        }
+
         // Removed "nobuffer" to allow smooth playback
         // m_player->setProperty("avformat.fflags", "nobuffer");
         m_player->setProperty("avformat.flush_packets", "1");
@@ -174,8 +187,7 @@ void MdkPlayer::setUrl(const QString &url)
         // Slightly increased probe size for better FPS detection
         m_player->setProperty("avformat.probesize", "200000");
         m_player->setProperty("avformat.analyzeduration", "200000");
-        m_player->setProperty("avformat.rtsp_transport", "tcp");
-        m_player->setProperty("avformat.max_delay", "250000"); // 0.25s max delay
+        m_player->setProperty("avformat.rtsp_transport", m_rtspTransport.toUtf8().constData());
         m_player->setProperty("avformat.reorder_queue_size", "0");
         m_player->setProperty("avformat.buffer_size", "2048000");
         
@@ -213,7 +225,20 @@ void MdkPlayer::setRunning(bool running)
             m_player->setMedia(m_url.toUtf8().constData());
 
             // Buffer: 250ms to smooth out network jitter (fixes "jerky" video)
-            m_player->setBufferRange(250);
+            if (m_bufferMode == 0) { // Realtime
+                m_player->setBufferRange(0);
+                m_player->setProperty("avformat.fflags", "nobuffer");
+                m_player->setProperty("avformat.max_delay", "0");
+            } else if (m_bufferMode == 2) { // Smooth
+                m_player->setBufferRange(1000);
+                m_player->setProperty("avformat.fflags", "");
+                m_player->setProperty("avformat.max_delay", "1000000");
+            } else { // Balanced (Default)
+                m_player->setBufferRange(250);
+                m_player->setProperty("avformat.fflags", "");
+                m_player->setProperty("avformat.max_delay", "250000");
+            }
+
             // Removed "nobuffer" to allow smooth playback
             // m_player->setProperty("avformat.fflags", "nobuffer");
             m_player->setProperty("avformat.flush_packets", "1");
@@ -221,8 +246,7 @@ void MdkPlayer::setRunning(bool running)
             // Slightly increased probe size for better FPS detection
             m_player->setProperty("avformat.probesize", "200000");
             m_player->setProperty("avformat.analyzeduration", "200000");
-            m_player->setProperty("avformat.rtsp_transport", "tcp");
-            m_player->setProperty("avformat.max_delay", "250000"); // 0.25s max delay
+            m_player->setProperty("avformat.rtsp_transport", m_rtspTransport.toUtf8().constData());
             m_player->setProperty("avformat.reorder_queue_size", "0");
             m_player->setProperty("avformat.buffer_size", "2048000");
         }
@@ -268,6 +292,44 @@ void MdkPlayer::setMirror(bool mirror)
     m_mirror = mirror;
     emit mirrorChanged();
     update();
+}
+
+void MdkPlayer::setBufferMode(int mode)
+{
+    if (m_bufferMode == mode)
+        return;
+
+    m_bufferMode = mode;
+    emit bufferModeChanged();
+    
+    // If running, we might need to restart to apply buffer changes effectively
+    // or just rely on next start/url change.
+    // Dynamic change is tricky for some properties, but we can try setting properties on the fly.
+    // However, setBufferRange works dynamically. avformat options usually require re-opening.
+    if (isRunning()) {
+        // Soft restart or re-apply where possible
+         m_player->setBufferRange(m_bufferMode == 0 ? 0 : (m_bufferMode == 2 ? 1000 : 250));
+         // For deep avformat changes, full restart is safer to ensure consistency
+         // But users might not like video flickering on setting change. 
+         // Let's force restart if user changes this setting while playing.
+         QString currentUrl = m_url;
+         setRunning(false);
+         setRunning(true);
+    }
+}
+
+void MdkPlayer::setRtspTransport(const QString &transport)
+{
+    if (m_rtspTransport == transport)
+        return;
+
+    m_rtspTransport = transport;
+    emit rtspTransportChanged();
+    
+    if (isRunning()) {
+         setRunning(false);
+         setRunning(true);
+    }
 }
 
 qint64 MdkPlayer::duration() const

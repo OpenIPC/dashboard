@@ -32,8 +32,27 @@ cmake .. -DCMAKE_PREFIX_PATH="C:/Qt/6.x.x/msvc2019_64"
 cmake --build .
 ```
 
-## Roadmap for Porting
+## Features
 
-1.  **Video Streaming**: Integrate `QtMultimedia` or `LibVLC` to replace the web-based player.
-2.  **ONVIF Discovery**: Implement UDP broadcast discovery in `SystemController::scanNetwork`.
-3.  **Sidecar Management**: Bundle `go2rtc` and `ffmpeg` binaries and manage them via `QProcess`.
+*   **Low Latency Streaming**: Optimized for FPV and real-time monitoring with configurable buffer modes (Zero, Balanced, Smooth).
+*   **Hardware Acceleration**: Extensive support for GPU decoding including DXVA, D3D11, CUDA, and QuickSync to minimize CPU usage.
+*   **Protocol Control**: Ability to force RTSP via TCP, UDP, or HTTP to suit different network conditions.
+*   **Video Tools**: Horizontal video mirroring for HUD or teleprompter applications.
+*   **Modern Interface**: Clean and responsive dashboard built on Qt 6 and QML.
+*   **Customizable**: Settings specifically exposed for tuning player performance.
+
+## System Requirements
+
+### Minimum
+*   **OS**: Windows 10 (64-bit)
+*   **Processor**: Intel Core i3 (6th Gen) / AMD Ryzen 3 or equivalent
+*   **RAM**: 4 GB
+*   **Graphics**: GPU with DirectX 11 support
+*   **Network**: 100 Mbps Ethernet or 5GHz Wi-Fi
+
+### Recommended
+*   **OS**: Windows 10/11 (64-bit)
+*   **Processor**: Intel Core i5 / AMD Ryzen 5 or better
+*   **RAM**: 8 GB or higher
+*   **Graphics**: Dedicated NVIDIA (CUDA) or Intel (QuickSync) GPU for multi-stream hardware decoding
+*   **Network**: Gigabit Ethernet usually recommended for multiple high-bitrate streams

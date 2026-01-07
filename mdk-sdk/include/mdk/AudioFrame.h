@@ -41,15 +41,18 @@ public:
             if (owner_)
                 mdkAudioFrameAPI_unref(&p);
             p = mdkAudioFrameAPI_ref(that.p);
+            owner_ = true;
         }
         return *this;
     }
 
     AudioFrame(AudioFrame&& that) {
         std::swap(p, that.p);
+        std::swap(owner_, that.owner_);
     }
     AudioFrame& operator=(AudioFrame&& that)  {
         std::swap(p, that.p);
+        std::swap(owner_, that.owner_);
         return *this;
     }
 

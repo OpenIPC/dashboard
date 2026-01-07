@@ -117,6 +117,8 @@ endif()
 
 if(ANDROID_ABI)
   set(_IMPORT_ARCH ${ANDROID_ABI})
+elseif(OHOS_ARCH)
+  set(_IMPORT_ARCH ${OHOS_ARCH})
 elseif(CMAKE_ANDROID_ARCH_ABI)
   set(_IMPORT_ARCH ${CMAKE_ANDROID_ARCH_ABI})
 elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID) # msvc, or cmake 4.1+
@@ -268,7 +270,7 @@ endif()
 
 if(WIN32)
   set(MDK_RUNTIME ${MDK_RUNTIME_DIR}/mdk.dll)
-elseif(ANDROID)
+elseif(ANDROID OR OHOS)
   set(MDK_RUNTIME ${MDK_LIBRARY})
 elseif(LINUX OR CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(MDK_RUNTIME ${MDK_LIBRARY}.${MDK_VERSION_MAJOR})
@@ -321,7 +323,7 @@ endif()
 if(APPLE)
   set_property(TARGET mdk PROPERTY FRAMEWORK 1)
 else()
-  if(ANDROID)
+  if(ANDROID OR OHOS) # TODO: test ohos
     add_library(mdk-ffmpeg SHARED IMPORTED)
     set_target_properties(mdk-ffmpeg PROPERTIES
             IMPORTED_LOCATION ${MDK_FFMPEG}

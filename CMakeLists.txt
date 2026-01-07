@@ -5,7 +5,7 @@ project(OpenIPC-Dashboard VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent Multimedia)
 
 # Force native rcc executable to avoid picking up python-based rcc from VS Code extensions
 if(WIN32 AND EXISTS "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
