@@ -5,3 +5,15 @@
 2025-12-30 12:56:45,928 - aqt.metadata - DEBUG - metadata 11200 Connection to 'https://download.qt.io' failed. Retrying with fallback 'https://master.qt.io/'.
 2025-12-30 12:57:11,709 - aqt.main - ERROR - installer 11200 Failure to connect to https://master.qt.io/online/qtsdkrepository/windows_x86/desktop/: ConnectionError
 2025-12-30 12:59:06,489 - aqt.main - INFO - installer 26520 aqtinstall(aqt) v3.3.0 on Python 3.11.9 [CPython MSC v.1938 64 bit (AMD64)]
+2026-01-12 14:15:39,478 - aqt.helper - DEBUG - helper 17160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_642/Updates.xml.sha256
+2026-01-12 14:16:03,628 - aqt.helper - DEBUG - helper 17160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_642/Updates.xml.sha256
+2026-01-12 14:16:27,791 - aqt.helper - DEBUG - helper 17160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_642/Updates.xml.sha256
+2026-01-12 14:16:51,938 - aqt.helper - DEBUG - helper 17160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_642/Updates.xml.sha256
+2026-01-12 14:17:16,075 - aqt.helper - DEBUG - helper 17160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_642/Updates.xml.sha256
+2026-01-12 14:17:40,223 - aqt.main - ERROR - installer 17160 Failed to download checksum for the file 'Updates.xml' from mirrors '['https://download.qt.io']
+==============================Suggested follow-up:==============================
+* Check your internet connection
+* Consider modifying `requests.max_retries_to_retrieve_hash` in settings.ini
+* Consider modifying `mirrors.trusted_mirrors` in settings.ini (see https://aqtinstall.readthedocs.io/en/stable/configuration.html#configuration)
+* Please use 'aqt list-qt linux desktop' to show versions of Qt available.
+* Please use 'aqt list-qt linux desktop --arch <QT_VERSION>' to list valid architectures.

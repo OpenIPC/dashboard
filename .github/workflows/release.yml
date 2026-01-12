@@ -93,7 +93,7 @@ jobs:
           version: '6.4.2'
           host: 'linux'
           target: 'desktop'
-          modules: 'qtmultimedia qtwayland'
+          modules: 'qtmultimedia'
 
       - name: Install libxcb dependencies
         run: sudo apt-get install -y libxcb-cursor0
