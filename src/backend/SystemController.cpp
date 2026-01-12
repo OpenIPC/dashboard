@@ -940,6 +940,7 @@ void SystemController::loadState()
     emit cameraGroupsChanged();
 }
 
+#ifdef Q_OS_WIN
 static quint64 fileTimeToUInt64(const FILETIME &ft)
 {
     ULARGE_INTEGER li;
@@ -947,6 +948,7 @@ static quint64 fileTimeToUInt64(const FILETIME &ft)
     li.HighPart = ft.dwHighDateTime;
     return li.QuadPart;
 }
+#endif
 
 double SystemController::processCpuPercent()
 {
