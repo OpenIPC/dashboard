@@ -36,35 +36,44 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Prepare Release Package
+      - name: Prepare Distribution Folder
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path release_pack
-          Copy-Item build/appOpenIPC-Dashboard.exe -Destination release_pack/
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item build/appOpenIPC-Dashboard.exe -Destination dist/
           
           # Copy DLLs
           if (Test-Path build/*.dll) { 
-            Copy-Item build/*.dll -Destination release_pack/ 
+            Copy-Item build/*.dll -Destination dist/ 
           }
           
           # Copy plugins folder
           if (Test-Path build/plugins) { 
-            Copy-Item build/plugins -Destination release_pack/ -Recurse 
+            Copy-Item build/plugins -Destination dist/ -Recurse 
           }
           
           # Copy OpenIPC QML module
           if (Test-Path build/OpenIPC) {
-            Copy-Item build/OpenIPC -Destination release_pack/ -Recurse
+            Copy-Item build/OpenIPC -Destination dist/ -Recurse
           }
-  
-      - name: Zip Artifacts
-        run: Compress-Archive -Path release_pack/* -DestinationPath OpenIPC-Dashboard-Windows.zip
 
-      - name: Upload Artifact
+      - name: Install Inno Setup
+        run: choco install innosetup
+
+      - name: Update Installer Version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          (Get-Content setup.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion ""$version""" | Set-Content setup.iss
+
+      - name: Build Installer
+        run: iscc setup.iss
+
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: OpenIPC-Dashboard-Windows.zip
+          name: windows-installer
+          path: OpenIPC-Dashboard-Installer.exe
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -75,7 +84,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config
+          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -94,24 +103,61 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Prepare Release Package
+      - name: Helper - Create Desktop File
         run: |
-          mkdir release_pack_linux
-          cp build/appOpenIPC-Dashboard release_pack_linux/
-          # Copy .so libs if any exist in build output
-          cp build/*.so* release_pack_linux/ || true
-          # Copy plugins if any
-          if [ -d "build/plugins" ]; then cp -r build/plugins release_pack_linux/; fi
-          # Copy OpenIPC QML module
-          cp -r build/OpenIPC release_pack_linux/
+          echo "[Desktop Entry]" > appOpenIPC-Dashboard.desktop
+          echo "Type=Application" >> appOpenIPC-Dashboard.desktop
+          echo "Name=OpenIPC Dashboard" >> appOpenIPC-Dashboard.desktop
+          echo "Exec=appOpenIPC-Dashboard" >> appOpenIPC-Dashboard.desktop
+          echo "Icon=openipc-dashboard" >> appOpenIPC-Dashboard.desktop
+          echo "Categories=Utility;" >> appOpenIPC-Dashboard.desktop
+
+      - name: Create AppImage
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          # Download linuxdeployqt
+          wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          chmod +x linuxdeployqt-continuous-x86_64.AppImage
           
-          # Create start script
-          echo '#!/bin/bash' > release_pack_linux/run.sh
-          echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(dirname "$0")' >> release_pack_linux/run.sh
-          echo './appOpenIPC-Dashboard' >> release_pack_linux/run.sh
-          chmod +x release_pack_linux/run.sh
+          # Prepare AppDir
+          mkdir -p AppDir/usr/bin
+          cp build/appOpenIPC-Dashboard AppDir/usr/bin/
           
-          tar -czvf OpenIPC-Dashboard-Linux.tar.gz -C release_pack_linux .
+          # Prepare Icon (Convert .ico to .png)
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
+          convert resources/appicon.ico -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
+          
+          # Copy desktop file
+          cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
+          
+          # Copy extra assets (OpenIPC QML module) - linuxdeployqt might NOT handle this automatically if not in standard locations
+          # We need to manually place QML modules if they are custom.
+          # For custom QML modules located in build/OpenIPC, we need to instruct linuxdeployqt to find them or copy them to Qt qml dir.
+          # A safer bet for custom QML is to copy them into the AppDir or configure QML_IMPORT_PATH.
+          # Let's try copying to AppDir QML location and setting QML2_IMPORT_PATH?
+          # Actually, linuxdeployqt has a -qmldir option.
+          
+          # Run linuxdeployqt
+          # We point to the desktop file in AppDir
+          # We use -unsupported-allow-new-glibc because we are on 22.04
+          # -qmldir=... tells it where to scan for QML dependencies (our source + build)
+          
+          ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
+            -appimage \
+            -unsupported-allow-new-glibc \
+            -qmldir=src \
+            -qmldir=build/OpenIPC \
+            -extra-plugins=iconengines,imageformats
+            
+      - name: Rename AppImage
+        run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: OpenIPC-Dashboard-Linux.AppImage
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
