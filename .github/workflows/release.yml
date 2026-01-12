@@ -133,25 +133,27 @@ jobs:
           mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
           
-          # Setup LD_LIBRARY_PATH so linuxdeployqt can find our custom libs
-          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ github.workspace }}/libs/dahua/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib
-          
           # !IMPORTANT! Copy custom libs to standard location expected by AppImage (usr/lib)
           mkdir -p AppDir/usr/lib
           cp libs/dahua/lib/Linux64/*.so AppDir/usr/lib/
           cp libs/onnxruntime/lib/Linux64/*.so* AppDir/usr/lib/
           
           # Patch RPATH of the main binary to find libs in ../lib relative to itself
-          # This ensures that when linuxdeployqt inspects the binary, it sees the libs are resolvable within the AppDir
+          # We DO NOT set LD_LIBRARY_PATH so we can verify if RPATH is working correctly
           patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/appOpenIPC-Dashboard
           
           # Debug: check ldd after patching
-          echo "LDD after patching:"
+          echo "LDD after patching (Expect libs in .../AppDir/usr/lib):"
           ldd AppDir/usr/bin/appOpenIPC-Dashboard
           
           # Run linuxdeployqt
           # We use -no-strip to avoid potential issues with stripping failing
-          # We REMOVE -executable flags as the RPATH should handle it now, and -executable sometimes causes duplicate processing crashes
+          # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
+          
+          # Use qmake to get the correct plugin path
+          export QT_PLUGIN_PATH=$(qmake -query QT_INSTALL_PLUGINS)
+          echo "Using QT_PLUGIN_PATH: $QT_PLUGIN_PATH"
+          
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
             -unsupported-allow-new-glibc \
@@ -159,7 +161,8 @@ jobs:
             -qmldir=build/OpenIPC \
             -extra-plugins=iconengines,imageformats \
             -verbose=2 \
-            -no-strip
+            -no-strip \
+            -no-translations
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
