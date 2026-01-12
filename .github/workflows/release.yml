@@ -93,7 +93,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev
+          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev vlc-plugin-base vlc-plugin-video-output
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -149,6 +149,13 @@ jobs:
           # Copy OpenIPC assets (QML modules, models) - mirror Windows behavior
           if [ -d "build/OpenIPC" ]; then
             cp -r build/OpenIPC AppDir/usr/bin/
+          fi
+
+          # Copy VLC plugins to where LibVlcPlayer.cpp expects them (applicationDirPath() + "/plugins")
+          # On Ubuntu 22.04, plugins are typically in /usr/lib/x86_64-linux-gnu/vlc/plugins/
+          mkdir -p AppDir/usr/bin/plugins
+          if [ -d "/usr/lib/x86_64-linux-gnu/vlc/plugins" ]; then
+             cp -r /usr/lib/x86_64-linux-gnu/vlc/plugins/* AppDir/usr/bin/plugins/
           fi
 
           # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
