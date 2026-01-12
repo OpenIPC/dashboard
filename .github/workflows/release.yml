@@ -184,29 +184,27 @@ jobs:
           name: linux-appimage
           path: OpenIPC-Dashboard-Linux.AppImage
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build
-          path: OpenIPC-Dashboard-Linux.tar.gz
-
   release:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Download Windows Artifact
+      - name: Download Windows Installer
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
+          name: windows-installer
       
-      - name: Download Linux Artifact
+      - name: Download Linux AppImage
         uses: actions/download-artifact@v4
         with:
-          name: linux-build
+          name: linux-appimage
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            OpenIPC-Dashboard-Installer.exe
+            OpenIPC-Dashboard-Linux.AppImage
         with:
           files: |
             OpenIPC-Dashboard-Windows.zip
