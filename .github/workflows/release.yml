@@ -125,33 +125,31 @@ jobs:
           mkdir -p AppDir/usr/bin
           cp build/appOpenIPC-Dashboard AppDir/usr/bin/
           
-          # Prepare Icon (Convert .ico to .png)
+          # Prepare Icon (Use existing PNG and resize to ensure 256x256)
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
-          convert "resources/appicon.ico[0]" -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
+          convert resources/appicon.png -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
           
           # Copy desktop file
           mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
           
-          # Copy extra assets (OpenIPC QML module) - linuxdeployqt might NOT handle this automatically if not in standard locations
-          # We need to manually place QML modules if they are custom.
-          # For custom QML modules located in build/OpenIPC, we need to instruct linuxdeployqt to find them or copy them to Qt qml dir.
-          # A safer bet for custom QML is to copy them into the AppDir or configure QML_IMPORT_PATH.
-          # Let's try copying to AppDir QML location and setting QML2_IMPORT_PATH?
-          # Actually, linuxdeployqt has a -qmldir option.
+          # Setup LD_LIBRARY_PATH so linuxdeployqt can find our custom libs (Dahua, ONNX)
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ github.workspace }}/libs/dahua/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib
+          
+          # Debug: check dependencies
+          echo "Checking binary dependencies:"
+          ldd build/appOpenIPC-Dashboard
           
           # Run linuxdeployqt
-          # We point to the desktop file in AppDir
-          # We use -unsupported-allow-new-glibc because we are on 22.04
-          # -qmldir=... tells it where to scan for QML dependencies (our source + build)
-          
+          # We use -no-strip to avoid potential issues with stripping failing
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
             -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
             -extra-plugins=iconengines,imageformats \
-            -verbose=2
+            -verbose=2 \
+            -no-strip
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
