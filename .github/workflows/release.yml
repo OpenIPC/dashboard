@@ -39,22 +39,23 @@ jobs:
       - name: Prepare Distribution Folder
         shell: pwsh
         run: |
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item build/appOpenIPC-Dashboard.exe -Destination dist/
           
           # Copy DLLs
           if (Test-Path build/*.dll) { 
-            Copy-Item build/*.dll -Destination dist/ 
+            Copy-Item build/*.dll -Destination dist/ -Force
           }
           
           # Copy plugins folder
           if (Test-Path build/plugins) { 
-            Copy-Item build/plugins -Destination dist/ -Recurse 
+            Copy-Item build/plugins -Destination dist/ -Recurse -Force
           }
           
           # Copy OpenIPC QML module
           if (Test-Path build/OpenIPC) {
-            Copy-Item build/OpenIPC -Destination dist/ -Recurse
+            Copy-Item build/OpenIPC -Destination dist/ -Recurse -Force
           }
 
       - name: Install Inno Setup
@@ -129,6 +130,7 @@ jobs:
           convert resources/appicon.ico -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
           
           # Copy desktop file
+          mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
           
           # Copy extra assets (OpenIPC QML module) - linuxdeployqt might NOT handle this automatically if not in standard locations
