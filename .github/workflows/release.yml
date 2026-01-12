@@ -146,6 +146,11 @@ jobs:
           echo "LDD after patching (Expect libs in .../AppDir/usr/lib):"
           ldd AppDir/usr/bin/appOpenIPC-Dashboard
           
+          # HACK: Fix silent exit 1 loop in linuxdeployqt when using -unsupported-allow-new-glibc
+          # The tool checks for this specific file if the flag is present, otherwise it exits 1 silently
+          mkdir -p AppDir/usr/share/doc/libc6
+          touch AppDir/usr/share/doc/libc6/copyright
+          
           # Run linuxdeployqt
           # We use -no-strip to avoid potential issues with stripping failing
           # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
