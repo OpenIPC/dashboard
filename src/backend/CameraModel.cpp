@@ -150,6 +150,18 @@ void CameraModel::setCamera(int index, const Camera &camera)
     }
 }
 
+void CameraModel::setStatus(int index, const QString &status)
+{
+    if (index < 0 || index >= m_cameras.count())
+        return;
+
+    if (m_cameras[index].status != status) {
+        m_cameras[index].status = status;
+        const QModelIndex modelIndex = createIndex(index, 0);
+        emit dataChanged(modelIndex, modelIndex, {StatusRole});
+    }
+}
+
 void CameraModel::setSpan(int index, int rows, int cols)
 {
     if (index < 0 || index >= m_cameras.count())

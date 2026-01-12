@@ -14,6 +14,7 @@ Menu {
     signal editRequested()
     signal deleteRequested()
     signal sshRequested()
+    signal fileManagerRequested()
     signal archiveRequested()
     signal groupChanged()
 
@@ -41,13 +42,13 @@ Menu {
     }
     
     MenuItem {
-        text: I18n.t("Файловый менеджер")
-        onTriggered: Qt.openUrlExternally("http://" + cameraIp + ":8080") // Assuming file manager is on 8080 or similar, or just open main IP
-    }
-    
-    MenuItem {
         text: I18n.t("SSH Терминал")
         onTriggered: contextMenu.sshRequested()
+    }
+
+    MenuItem {
+        text: I18n.t("Файловый менеджер")
+        onTriggered: contextMenu.fileManagerRequested()
     }
     
     MenuSeparator {}

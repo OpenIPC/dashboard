@@ -51,8 +51,11 @@ Item {
         id: listView
         anchors.fill: parent
         anchors.margins: 20
+        anchors.rightMargin: 4 // Scrollbar on the right edge
         spacing: 10
         clip: true
+
+        ScrollBar.vertical: StyledScrollBar {}
         
         model: ListModel {
             id: modulesModel

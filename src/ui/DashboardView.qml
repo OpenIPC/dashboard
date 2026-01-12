@@ -18,6 +18,15 @@ Item {
     // Propagate language changes if needed, though I18n is singleton
     property string appLanguage: I18n.language
 
+    Connections {
+        target: SystemController.cameraModel
+        ignoreUnknownSignals: true
+        function onRowsInserted(parent, first, last) { root.cameraDataVersion++ }
+        function onRowsRemoved(parent, first, last) { root.cameraDataVersion++ }
+        function onModelReset() { root.cameraDataVersion++ }
+        function onDataChanged(topLeft, bottomRight, roles) { root.cameraDataVersion++ }
+    }
+
     function setGrid(r, c) {
         // Apply layout preset using ultra-fine grid (1200x1200 base)
         SystemController.applyLayoutPreset(Math.max(1, r), Math.max(1, c))
@@ -624,15 +633,16 @@ Item {
                         model: SystemController.gridModel
                         delegate: GridCell {
                             // Strict sizing based on units
-                            Layout.preferredWidth: model.spanCols * cameraGrid.unitWidth
-                            Layout.preferredHeight: model.spanRows * cameraGrid.unitHeight
+                            Layout.preferredWidth: Math.floor(Math.max(1, model.spanCols) * cameraGrid.unitWidth)
+                            Layout.preferredHeight: Math.floor(Math.max(1, model.spanRows) * cameraGrid.unitHeight)
                             
                             // Normalize rowSpan to discrete grid rows to avoid creating thousands of rows
                             // spanRows is in 1200-units. We map it back to the logical grid row count.
-                            Layout.rowSpan: Math.max(1, Math.round(model.spanRows / (1200 / Math.max(1, gridRows))))
+                            // If gridRows is 0 or uninitialized, default to 2.
+                            Layout.rowSpan: Math.max(1, Math.round((model.spanRows || 1) / (1200 / Math.max(1, gridRows || 2))))
                             
                             // columnSpan stays in 1200-units because GridLayout.columns is 1200
-                            Layout.columnSpan: model.spanCols || 1
+                            Layout.columnSpan: Math.max(1, model.spanCols || 1)
                             
                             // Pass grid info for resizing
                             gridParent: cameraGrid
@@ -658,7 +668,7 @@ Item {
                             status: model.status
                             isRecording: model.isRecording
                             manufacturer: model.manufacturer || ""
-
+                            
                             onCloseClicked: {
                                 SystemController.removeCameraFromGrid(index)
                             }
@@ -1749,9 +1759,11 @@ Item {
         onStatusChanged: {
             if (status === Loader.Ready) {
                 item.currentCameraIp = pendingCameraIp
+                SystemController.isArchiveOpen = true
                 item.open()
                 item.closed.connect(function() {
                     active = false
+                    SystemController.isArchiveOpen = false
                 })
             }
         }
@@ -1790,6 +1802,13 @@ Item {
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             archiveLoader.pendingCameraIp = cam.cameraIp
             archiveLoader.active = true
+        }
+        onFileManagerRequested: {
+            var cam = SystemController.cameraModel.getCamera(cameraIndex)
+            fileManagerDialog.cameraIp = cam.cameraIp
+            fileManagerDialog.cameraUser = cam.cameraLogin || "root"
+            fileManagerDialog.cameraPassword = cam.cameraPassword || ""
+            fileManagerDialog.open()
         }
     }
 
@@ -1932,6 +1951,10 @@ Item {
 
     SshTerminalDialog {
         id: sshDialog
+    }
+
+    FileManagerDialog {
+        id: fileManagerDialog
     }
 
     // Drag Proxy Item

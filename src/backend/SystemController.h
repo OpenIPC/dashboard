@@ -20,6 +20,8 @@
 #include "DiscoveryController.h"
 #include "ArchiveController.h"
 
+class StatusChecker;
+
 class SystemController : public QObject
 {
     Q_OBJECT
@@ -38,6 +40,7 @@ class SystemController : public QObject
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
     Q_PROPERTY(QVariantList layoutTemplates READ layoutTemplates WRITE setLayoutTemplates NOTIFY layoutTemplatesChanged)
+    Q_PROPERTY(bool isArchiveOpen READ isArchiveOpen WRITE setIsArchiveOpen NOTIFY isArchiveOpenChanged)
 
 public:
     explicit SystemController(QObject *parent = nullptr);
@@ -53,6 +56,9 @@ public:
     CameraModel* gridModel() const;
     int gridRows() const { return m_gridRows; }
     int gridCols() const { return m_gridCols; }
+    bool isArchiveOpen() const { return m_isArchiveOpen; }
+    void setIsArchiveOpen(bool open);
+
     QVariantList layoutTemplates() const { return m_layoutTemplates; }
     void setLayoutTemplates(const QVariantList &templates);
     QStringList cameraGroups() const { return m_cameraGroups; }
@@ -94,6 +100,8 @@ public slots:
     Q_INVOKABLE QList<int> getRecordingDates(const QString &cameraIp, int year, int month);
     Q_INVOKABLE void exportRecording(const QString &inputFile, const QString &outputFile, int startMs, int endMs);
     
+    Q_INVOKABLE QString generateRecordingPath(const QString &ip);
+
     // Recording
     Q_INVOKABLE void toggleRecording(int gridIndex);
     Q_INVOKABLE void applyLayoutPreset(int rows, int cols);
@@ -118,9 +126,11 @@ signals:
     void gridLayoutChanged();
     void layoutTemplatesChanged();
     void snapshotSaved(const QString &path);
+    void isArchiveOpenChanged();
 
 private slots:
     void onUdpReadyRead();
+    void performSave();
 
 private:
     QString m_serviceStatus;
@@ -129,11 +139,13 @@ private:
     CameraModel *m_discoveryModel;  // Discovered cameras
     // CPU sampling state
     bool m_cpuInit = false;
+    bool m_isArchiveOpen = false;
     quint64 m_prevSysKernel = 0;
     quint64 m_prevSysUser = 0;
     quint64 m_prevProcKernel = 0;
     quint64 m_prevProcUser = 0;
     QElapsedTimer m_cpuTimer;
+    QTimer *m_saveTimer;            // Debounce timer for saving state
     CameraModel *m_gridModel;       // Cameras in the grid
     QStringList m_cameraGroups;
     AnalyticsEngine *m_analyticsEngine;
@@ -142,6 +154,7 @@ private:
     PtzController *m_ptzController;
     DiscoveryController *m_dahuaDiscovery;
     ArchiveController *m_archiveController;
+    StatusChecker *m_statusChecker;
     QUdpSocket *m_udpSocket;
     
     // App Settings
@@ -158,7 +171,7 @@ private:
     QMap<QString, QPair<QString, QString>> m_pendingCredentials;
 
     void sendDiscoveryProbe();
-    void saveState() const;
+    void saveState();
     void loadState();
     QString stateFilePath() const;
     static QJsonObject cameraToJson(const Camera &cam);

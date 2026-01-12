@@ -82,6 +82,10 @@ private:
 
     mutable QMutex m_processingMutex;
     QSet<QString> m_processingCameras;
+    
+    // Throttling for snapshots: Key = "cameraId_moduleType", Value = timestamp ms
+    QMap<QString, qint64> m_lastSnapshotTimes;
+    QMutex m_snapshotMutex;
 
     void setupModules();
     void startDownload(ModuleType type);

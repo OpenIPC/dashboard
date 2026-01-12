@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QTimer>
+#include <QDateTime>
 #include <QFile>
 #include <QNetworkRequest>
 #include <QNetworkReply>
@@ -346,22 +347,22 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
         if (m_processingCameras.contains(cameraId)) {
             return; // Skip frame to maintain real-time performance
         }
+        
+        // Throttling for frame *ingestion* to avoid queue buildup is good,
+        // but we also need snapshot throttling.
         m_processingCameras.insert(cameraId);
     }
 
     // Prepare data for background thread
-    // The frame passed in is already a deep copy from MdkPlayer (emitted as img.copy()).
-    // QImage is implicitly shared. Copying it here (by value) is a shallow copy (ref count increment).
-    // Since the original 'frame' (the signal argument) will be destroyed after this function returns,
-    // 'frameCopy' will hold the reference to the data.
-    // We do NOT need another deep copy (.copy()) unless we plan to modify it, which we don't.
     QImage frameCopy = frame;
     
     // Collect active backends to avoid accessing m_modules (which is not thread-safe) in the worker thread
-    // We use shared_ptr so the backend stays alive even if module is disabled/deleted in main thread
     struct TaskContext {
         QString moduleId;
+        ModuleType moduleType;
         std::shared_ptr<InferenceBackend> backend;
+        QString snapshotsDir;
+        QString faceSnapshotsMode;
     };
     QList<TaskContext> tasks;
 
@@ -371,7 +372,13 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
         bool cameraEnabled = m_cameraModules.value(cameraId).value(type, false);
 
         if (globallyEnabled && cameraEnabled) {
-            tasks.append({it.value().name, it.value().backend});
+            tasks.append({
+                it.value().name, 
+                type,
+                it.value().backend, 
+                it.value().snapshotsDir, 
+                it.value().faceSnapshotsMode
+            });
         }
     }
 
@@ -400,10 +407,74 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
                 detection["h"] = box.bounds.height();
                 detection["moduleId"] = task.moduleId;
                 
-                // We can't emit from here directly if we want to be safe with QML connections?
-                // Actually signals are thread-safe. But let's collect all and emit on main thread via invokeMethod
-                // to ensure sequential delivery and state consistency.
                 allDetections.append(detection);
+
+                // --- Snapshot Logic ---
+                // Only save if directory is configured and exists
+                if (!task.snapshotsDir.isEmpty() && QDir(task.snapshotsDir).exists()) {
+                    
+                    // Throttling: Check if we saved recently for this camera + module
+                    // We need a thread-safe check. 
+                    // Using invokeMethod to check/update state on main thread is too slow for blocking the worker.
+                    // Accessing m_lastSnapshotTimes with mutex here.
+                    bool canSnapshot = false;
+                    QString key = cameraId + "_" + QString::number(task.moduleType);
+                    qint64 now = QDateTime::currentMSecsSinceEpoch();
+                    
+                    {
+                        QMutexLocker snapshotLocker(&m_snapshotMutex);
+                        qint64 last = m_lastSnapshotTimes.value(key, 0);
+                        if (now - last > 1000) { // Limit: 1 snapshot per second per module per camera
+                            m_lastSnapshotTimes[key] = now;
+                            canSnapshot = true;
+                        }
+                    }
+
+                    if (canSnapshot && box.confidence > 0.6) { // Ensure quality
+                        if (task.moduleType == FaceDetector && task.faceSnapshotsMode != "disabled") {
+                            // Calculate rect with padding (50% larger)
+                            int x = (int)(box.bounds.x() * frameCopy.width());
+                            int y = (int)(box.bounds.y() * frameCopy.height());
+                            int w = (int)(box.bounds.width() * frameCopy.width());
+                            int h = (int)(box.bounds.height() * frameCopy.height());
+
+                            // Apply padding
+                            int padW = w / 2;
+                            int padH = h / 2;
+                            
+                            x -= padW / 2;
+                            y -= padH / 2;
+                            w += padW;
+                            h += padH;
+
+                            // Clamp values
+                            x = std::max(0, x);
+                            y = std::max(0, y);
+                            w = std::min(frameCopy.width() - x, w);
+                            h = std::min(frameCopy.height() - y, h);
+                            
+                            QRect faceRect(x, y, w, h);
+                            if (w > 10 && h > 10) {
+                                QImage faceImg = frameCopy.copy(faceRect);
+                                
+                                // TODO: Implement "anonymized" blur if needed
+                                if (task.faceSnapshotsMode == "anonymized") {
+                                    // Scale down and up to pixelate
+                                    faceImg = faceImg.scaled(w/10, h/10).scaled(w, h);
+                                }
+                                
+                                QString filename = QString("%1/face_%2_%3.jpg")
+                                    .arg(task.snapshotsDir)
+                                    .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss-zzz"))
+                                    .arg((int)(box.confidence * 100));
+                                    
+                                faceImg.save(filename, "JPG", 100);
+                            }
+                        }
+                        // Add other modules here
+                    }
+                }
+                // ---------------------
             }
         }
 

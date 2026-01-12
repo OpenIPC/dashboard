@@ -19,12 +19,14 @@ Item {
     property string hdStreamUrl: ""
     property string status: ""
     property bool isSelected: false
-    property bool isRecording: false
+    property bool isRecording: recorder.recordingPath !== ""
     property bool isMuted: true
+    property bool audioNormalization: false
     property real volume: 1.0
     property bool useHdPreview: false
     property bool useHdFullscreen: true
     property string manufacturer: ""
+    property int recordingSegmentDuration: (SystemController.appSettings.recordingSegmentDuration !== undefined) ? SystemController.appSettings.recordingSegmentDuration : 15
     
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
@@ -145,14 +147,14 @@ Item {
         }
     }
 
-    // Video Player (MDK) fill parent, clip to cell (no fixed aspect)
+    // Video Player fill parent, clip to cell (no fixed aspect)
     Item {
         id: videoHolder
         anchors.fill: parent
         clip: true
         visible: root.streamUrl !== ""
 
-        MdkPlayer {
+        LibVlcPlayer {
             id: player
             anchors.fill: parent
             visible: root.streamUrl !== "" && !hdWindow.visible
@@ -163,21 +165,57 @@ Item {
             // Fix orientation
             orientation: 180
             mirror: true
-            transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: player.mirror ? -1 : 1 }
             
             url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
             
             // Start only if visible and URL is valid
             running: visible && root.streamUrl !== ""
             
-            muted: root.isMuted
+            muted: {
+                if (SystemController.isArchiveOpen) return true
+                return root.isMuted
+            }
             volume: root.volume
-            hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel || "auto")
+            audioNormalization: root.audioNormalization
+            hwDecoders: root.getHwDecoders(SystemController.appSettings.hwAccel || "auto") // Keep legacy for now
+            hwDecoding: (SystemController.appSettings.playerHwDecoding !== undefined) ? SystemController.appSettings.playerHwDecoding : "auto"
+            
+            // Adjustments
+            brightness: (SystemController.appSettings.playerBrightness !== undefined) ? SystemController.appSettings.playerBrightness : 1.0
+            contrast: (SystemController.appSettings.playerContrast !== undefined) ? SystemController.appSettings.playerContrast : 1.0
+            hue: (SystemController.appSettings.playerHue !== undefined) ? SystemController.appSettings.playerHue : 0
+            saturation: (SystemController.appSettings.playerSaturation !== undefined) ? SystemController.appSettings.playerSaturation : 1.0
+            gamma: (SystemController.appSettings.playerGamma !== undefined) ? SystemController.appSettings.playerGamma : 1.0
+            
+            onBrightnessChanged: console.log("GridCell brightness updated:", brightness)
+            
             bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
             rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
             
+            analyticsUrl: root.hdStreamUrl
             analyticsEngine: SystemController.analyticsEngine
             cameraId: root.cameraIp
+        }
+
+        // Background Recorder (HD preferred)
+        LibVlcPlayer {
+            id: recorder
+            visible: false 
+            backgroundMode: true
+            
+            // Always prefer HD for recording
+            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            
+            // Run only when recording path is set
+            running: recordingPath !== ""
+            
+            // Ensure audio is captured
+            muted: false
+            volume: 1.0
+            
+            // Match transport settings
+            rtspTransport: player.rtspTransport
+            bufferMode: player.bufferMode
         }
         
         Timer {
@@ -229,20 +267,6 @@ Item {
                 }
             }
         }
-
-        /*
-        Item {
-            id: player
-            anchors.fill: parent
-            property string url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-            property bool running: root.streamUrl !== ""
-            property int fillMode: -1
-            property bool muted: root.isMuted
-            property real volume: root.volume
-            
-            Text { anchors.centerIn: parent; text: "MDK Disabled"; color: "red" }
-        }
-        */
     }
 
     // Placeholder / Loading / Error
@@ -378,16 +402,15 @@ Item {
             anchors.fill: parent
             clip: true
 
-            MdkPlayer {
+            LibVlcPlayer {
                 id: hdPlayer
                 anchors.fill: parent
                 // Respect app setting (Crop/Fit/Stretch)
                 fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
                 
-                // Fix orientation (upside down) and mirror
+                // Fix orientation (upside down)
                 orientation: 180
                 mirror: true
-                transform: Scale { origin.x: hdPlayer.width / 2; origin.y: hdPlayer.height / 2; xScale: hdPlayer.mirror ? -1 : 1 }
                 
                 url: root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
                 
@@ -400,7 +423,9 @@ Item {
                 bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
                 rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
                 
-                analyticsEngine: SystemController.analyticsEngine
+                // Disable analytics for fullscreen player to prevent race conditions/double processing
+                // The preview player continues to run in the background and provides detections
+                analyticsEngine: null
                 cameraId: root.cameraIp
             }
 
@@ -661,6 +686,27 @@ Item {
             }
         }
     }
+    
+    // Segmented Recording Timer
+    Timer {
+        id: segmentTimer
+        interval: root.recordingSegmentDuration * 60 * 1000
+        repeat: true
+        running: false
+        onTriggered: {
+            if (recorder.recordingPath !== "") {
+                console.info("Segment limit reached. Splitting recording...")
+                // Stop (Internal flush)
+                recorder.recordingPath = ""
+                // Start new segment
+                var path = SystemController.generateRecordingPath(root.cameraIp)
+                recorder.recordingPath = path
+                console.info("New segment started to", path)
+            } else {
+                running = false
+            }
+        }
+    }
 
     // Keep fullscreen stats fresh while window is visible
     Timer {
@@ -708,10 +754,25 @@ Item {
         visible: hoverArea.containsMouse || controlsRow.hovered || hdWindow.visible
         border.color: "#55ffffff"
         border.width: 1
+
+        // Hover tracker so the panel stays visible while interacting (MOVED FIRST to be in background)
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            onEntered: {
+                controlsRow.hovered = true
+            }
+            onExited: {
+                controlsRow.hovered = false
+            }
+        }
         
         Row {
             id: controlsRow
-            anchors.centerIn: parent
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            anchors.verticalCenter: parent.verticalCenter
             spacing: 6
             property bool hovered: false
             property bool volumeHovered: false
@@ -754,13 +815,105 @@ Item {
             // Audio toggle + hover-preserved slider area
             Item {
                 id: volumeGroup
-                property bool sliderShowing: !root.isMuted && volumeHover.hovered
-                width: audioButton.width + (sliderShowing ? volumeSlider.width + 6 : 0)
-                height: Math.max(audioButton.implicitHeight, volumeSlider.implicitHeight)
+                
+                // Use HoverHandler to capture hover state even if buttons are stealing mouse events
+                HoverHandler {
+                    id: volHover
+                }
+                
+                // Show controls if mouse is over the group or slider is being manipulated
+                property bool sliderShowing: volHover.hovered || volumeSlider.pressed || volumeSlider.hovered || normalizeBtn.hovered || audioButton.hovered
+                
+                // Base width is audio button (26). 
+                // Expanded adds: Spacing(6) + N_Button(26) + Spacing(6) + Slider(110) = 148
+                // We expand by growing width. Content aligns to the LEFT (AudioButton)
+                width: 26 + (sliderShowing ? 148 : 0)
+                height: 26
 
                 Row {
-                    anchors.centerIn: parent
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
                     spacing: volumeGroup.sliderShowing ? 6 : 0
+
+                    Slider {
+                        id: volumeSlider
+                        visible: volumeGroup.sliderShowing
+                        width: 110
+                        height: 20
+                        from: 0.0
+                        to: 2.0 // Allow up to 200% amplification
+                        stepSize: 0.05
+                        value: root.volume
+                        onValueChanged: root.volume = value
+                        
+                        // Custom slider style
+                        background: Rectangle {
+                            x: parent.leftPadding
+                            y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                            implicitWidth: 200
+                            implicitHeight: 4
+                            width: parent.availableWidth
+                            height: implicitHeight
+                            radius: 2
+                            color: "#444"
+                            
+                            Rectangle {
+                                width: parent.visualPosition * parent.width
+                                height: parent.height
+                                color: parent.visualPosition > 0.5 ? "#ff9800" : "#2196f3" 
+                                radius: 2
+                            }
+                            
+                            // 100% Marker
+                            Rectangle {
+                                x: parent.width * 0.5
+                                width: 2
+                                height: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: "#888"
+                            }
+                        }
+                        
+                        handle: Rectangle {
+                            x: parent.leftPadding + parent.visualPosition * (parent.availableWidth - width)
+                            y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                            implicitWidth: 16
+                            implicitHeight: 16
+                            radius: 8
+                            color: parent.pressed ? "#f0f0f0" : "#f6f6f6"
+                            border.color: "#bdbebf"
+                        }
+                    }
+
+                    // Normalization Toggle (N)
+                    Button {
+                        id: normalizeBtn
+                        visible: volumeGroup.sliderShowing
+                        width: 26
+                        height: 26
+                        background: Rectangle { 
+                            color: root.audioNormalization ? "#2563eb" : "transparent" 
+                            radius: 3 
+                            border.color: "#999"
+                            border.width: 1
+                        }
+                        contentItem: Text {
+                            text: "N"
+                            font.bold: true
+                            font.pixelSize: 12
+                            color: "white"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        
+                        // Simple tooltip using standard QtQuick Controls ToolTip
+                        ToolTip.visible: normalizeBtn.hovered
+                        ToolTip.text: I18n.t("Нормализация")
+                        
+                        onClicked: {
+                            root.audioNormalization = !root.audioNormalization
+                        }
+                    }
 
                     Button {
                         id: audioButton
@@ -768,10 +921,10 @@ Item {
                         height: 26
                         background: Rectangle { color: "transparent"; radius: 3 }
                         contentItem: Text {
-                                    text: root.isMuted ? "volume_off" : "volume_up"
-                                    font.family: root.iconFontFamily
-                                    font.pixelSize: 18
-                                    color: "white"
+                            text: root.isMuted ? "volume_off" : "volume_up"
+                            font.family: root.iconFontFamily
+                            font.pixelSize: 18
+                            color: "white"
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -780,43 +933,49 @@ Item {
                             root.audioClicked()
                         }
                     }
-
-                    // Volume slider (visible when hovering the audio cluster)
-                    Slider {
-                        id: volumeSlider
-                        width: 110
-                        height: 20
-                        from: 0.0
-                        to: 1.0
-                        stepSize: 0.05
-                        visible: volumeGroup.sliderShowing
-                        value: root.volume
-                        onValueChanged: root.volume = value
-                    }
-                }
-
-                // Hover handler keeps slider visible while moving from the icon
-                HoverHandler {
-                    id: volumeHover
                 }
             }
 
             // Record
             Button {
+                id: recordBtn
                 width: 26
                 height: 26
                 background: Rectangle { color: "transparent"; radius: 3 }
                 contentItem: Text {
-                            text: "fiber_manual_record"
-                            font.family: root.iconFontFamily
-                            font.pixelSize: 18
-                            color: root.isRecording ? "#f44336" : "white"
+                    id: recordIcon
+                    text: "fiber_manual_record"
+                    font.family: root.iconFontFamily
+                    font.pixelSize: 18
+                    color: recorder.recordingPath !== "" ? "#f44336" : "white"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
+                    
+                    SequentialAnimation {
+                        running: recorder.recordingPath !== ""
+                        loops: Animation.Infinite
+                        NumberAnimation { target: recordIcon; property: "opacity"; from: 1.0; to: 0.3; duration: 800; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: recordIcon; property: "opacity"; from: 0.3; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                    }
                 }
                 onClicked: {
-                    root.isRecording = !root.isRecording
-                    console.log(root.isRecording ? "Recording started" : "Recording stopped")
+                    if (recorder.recordingPath !== "") {
+                        // Stop recording
+                        recorder.recordingPath = ""
+                        segmentTimer.stop()
+                        console.log("Recording stopped")
+                    } else {
+                        // Start recording (HD, background, no display switch)
+                        var path = SystemController.generateRecordingPath(root.cameraIp)
+                        recorder.recordingPath = path
+                        
+                        // Restart segment timer
+                        if (root.recordingSegmentDuration > 0) {
+                            segmentTimer.restart()
+                        }
+                        
+                        console.log("Recording started to", path)
+                    }
                     root.recordClicked()
                 }
             }
@@ -838,19 +997,24 @@ Item {
                     if (root.manufacturer === "Dahua") {
                         SystemController.takeDahuaSnapshot(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
                     } else {
-                        // Fallback to grabbing from video item
-                        // Use videoHolder instead of player to capture the applied transform (flip)
-                        videoHolder.grabToImage(function(result) {
-                            var fileName = "snapshot_" + root.cameraIp.replace(/\./g, "_") + "_" + Qt.formatDateTime(new Date(), "yyyyMMdd_HHmmss_zzz") + ".png"
-                            var fullPath = SystemController.getSnapshotPath(fileName)
-                            
-                            if (result.saveToFile(fullPath)) {
-                                console.log("Snapshot saved to " + fullPath)
-                                SystemController.notifySnapshotSaved(fullPath)
-                            } else {
-                                console.warn("Failed to save QML snapshot")
-                            }
-                        })
+                        var fileName = "snapshot_" + root.cameraIp.replace(/\./g, "_") + "_" + Qt.formatDateTime(new Date(), "yyyyMMdd_HHmmss_zzz") + ".png"
+                        var fullPath = SystemController.getSnapshotPath(fileName)
+                        
+                        // Try native player snapshot first (full resolution)
+                        // Note: player.saveSnapshot is synchronous and uses the current frame buffer
+                        if (player.saveSnapshot(fullPath)) {
+                            SystemController.notifySnapshotSaved(fullPath)
+                        } else {
+                            // Fallback to grabToImage (screen resolution)
+                            videoHolder.grabToImage(function(result) {
+                                if (result.saveToFile(fullPath)) {
+                                    console.log("Snapshot saved to " + fullPath)
+                                    SystemController.notifySnapshotSaved(fullPath)
+                                } else {
+                                    console.warn("Failed to save QML snapshot")
+                                }
+                            })
+                        }
                     }
                     root.snapshotClicked()
                 }
@@ -966,21 +1130,6 @@ Item {
                         background.color = !current ? "#4299e1" : "transparent"
                     }
                 }
-            }
-        }
-        
-
-
-        // Hover tracker so the panel stays visible while interacting
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-            onEntered: {
-                controlsRow.hovered = true
-            }
-            onExited: {
-                controlsRow.hovered = false
             }
         }
     }

@@ -54,6 +54,14 @@ Dialog {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
+
+            Text {
+                text: "⚠️ " + I18n.t("Сторонние камеры могут быть добавлены с ошибками")
+                color: "#ffab00"
+                font.pixelSize: 12
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
             
             ColumnLayout {
                 spacing: 5

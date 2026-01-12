@@ -72,6 +72,7 @@ public:
     Q_INVOKABLE void moveCamera(int from, int to);
     Q_INVOKABLE void swapCameras(int index1, int index2);
     void setCamera(int index, const Camera &camera);
+    Q_INVOKABLE void setStatus(int index, const QString &status);
     void setSpan(int index, int rows, int cols);
     void clear();
     Q_INVOKABLE Camera getCamera(int index) const;

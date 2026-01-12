@@ -3,29 +3,92 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import OpenIPC
 
-Dialog {
+Window {
     id: root
     title: I18n.t("SSH Терминал") + (cameraIp ? " - " + cameraIp : "")
-    modal: true
     width: 800
     height: 600
-    x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    visible: false
+    color: "#1e1e1e"
+    flags: Qt.Window | Qt.FramelessWindowHint
     
     property string cameraIp: ""
     property string cameraUser: "root"
     property string cameraPassword: ""
     
-    onOpened: {
+    function open() {
         outputArea.text = ""
         inputField.text = ""
         sshClient.connectToHost(cameraIp, cameraUser, cameraPassword)
         inputField.forceActiveFocus()
+        show()
+        requestActivate()
     }
     
-    onClosed: {
+    onClosing: {
         sshClient.disconnectFromHost()
+    }
+
+    // Custom Header
+    Rectangle {
+        id: titleBar
+        height: 40
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        color: "#2d2d30"
+        z: 100
+
+        MouseArea {
+            anchors.fill: parent
+            onPressed: root.startSystemMove()
+        }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 15
+            anchors.rightMargin: 5
+            
+            Text {
+                text: root.title
+                color: "white"
+                font.bold: true
+                Layout.fillWidth: true
+            }
+            
+            Button {
+                text: "—"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
+                onClicked: root.showMinimized()
+                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+            }
+            
+            Button {
+                text: "□"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
+                onClicked: {
+                    if (root.visibility === Window.Maximized) root.showNormal()
+                    else root.showMaximized()
+                }
+                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+            }
+
+            Button {
+                text: "✕"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
+                onClicked: root.close()
+                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
+            }
+        }
     }
     
     SshClient {
@@ -45,39 +108,15 @@ Dialog {
         }
     }
     
-    background: Rectangle {
-        color: "#1e1e1e"
-        border.color: "#3c3c3c"
-        radius: 4
-    }
+    // Background handled by window color
+
+    // header removed to use native OS title bar
     
-    header: Rectangle {
-        height: 40
-        color: "#2d2d30"
-        
-        Text {
-            anchors.centerIn: parent
-            text: root.title
-            color: "white"
-            font.bold: true
-        }
-        
-        Text {
-            anchors.right: parent.right
-            anchors.rightMargin: 15
-            anchors.verticalCenter: parent.verticalCenter
-            text: "×"
-            color: "#aaaaaa"
-            font.pixelSize: 24
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
-        }
-    }
-    
-    contentItem: ColumnLayout {
+    ColumnLayout {
+        anchors.top: titleBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         spacing: 0
         
         ScrollView {

@@ -41,75 +41,61 @@ void SshClient::connectToHost(const QString &ip, const QString &user, const QStr
     m_passwordSent = false;
     m_receiveBuffer.clear();
     
-    // Use SSH_ASKPASS with a compiled helper for reliability
-    QDir appDir = QCoreApplication::applicationDirPath();
-    QString askPassExe = appDir.filePath("askpass_helper.exe");
-    QString passFilePath = appDir.filePath("ssh_pass.txt");
+    QString program = "ssh";
+    QStringList args;
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+
+    // Determine if we should use ssh (OpenSSH) or plink
+    // We prefer OpenSSH if available because it supports PTY allocation (-tt) reliably which gives us banners/prompts
+    bool usePlink = true;
     
-    // Compile the helper if it doesn't exist
-    if (!QFile::exists(askPassExe)) {
-        // Try to find g++ in the known path or system path
-        QString compilerPath = "g++";
-        // Check the workspace specific path first
-        QString workspaceCompiler = "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/g++.exe";
-        if (QFile::exists(workspaceCompiler)) {
-            compilerPath = workspaceCompiler;
+    // Check for ssh in path
+    if (!QStandardPaths::findExecutable("ssh").isEmpty()) {
+        usePlink = false;
+        program = "ssh";
+        
+        // Create simple batch file helper for ASKPASS to avoid complex environment inheritance issues on Windows
+        // and avoid the need for the main application to handle ASKPASS mode.
+        QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+        QString askPassBat = QDir::toNativeSeparators(tempPath + "/ssh_askpass_auth.bat");
+        QFile batchFile(askPassBat);
+        if (batchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&batchFile);
+            out << "@echo off\n";
+            // Escape special batch characters in password if needed, but for now assume simple
+            out << "echo " << password << "\n"; 
+            batchFile.close();
+        }
+
+        env.insert("SSH_ASKPASS", askPassBat);
+        env.insert("SSH_ASKPASS_REQUIRE", "force");
+        // Dummy display required for ASKPASS to trigger
+        if (!env.contains("DISPLAY")) {
+            env.insert("DISPLAY", "dummy:0");
         }
         
-        // Source file is expected to be in the same directory as the executable or we can write it temporarily
-        // But we created it in src/backend/askpass_helper.cpp. 
-        // Since we are running from build directory, we might need to locate it.
-        // For simplicity, let's write the source here to a temp file.
-        QString sourcePath = appDir.filePath("askpass_helper.cpp");
-        QFile sourceFile(sourcePath);
-        if (sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            sourceFile.write("#include <iostream>\n");
-            sourceFile.write("#include <fstream>\n");
-            sourceFile.write("#include <string>\n");
-            sourceFile.write("#include <cstdlib>\n");
-            sourceFile.write("int main() {\n");
-            sourceFile.write("    const char* passFileEnv = std::getenv(\"SSH_PASS_FILE\");\n");
-            sourceFile.write("    if (!passFileEnv) return 1;\n");
-            sourceFile.write("    std::ifstream f(passFileEnv, std::ios::binary);\n");
-            sourceFile.write("    if (f) {\n");
-            sourceFile.write("        std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());\n");
-            sourceFile.write("        std::cout << content;\n");
-            sourceFile.write("    }\n");
-            sourceFile.write("    return 0;\n");
-            sourceFile.write("}\n");
-            sourceFile.close();
-            
-            QProcess compile;
-            compile.start(compilerPath, QStringList() << sourcePath << "-o" << askPassExe);
-            compile.waitForFinished();
-        }
+        // -tt forces pseudo-tty allocation (important for interactive shell behavior)
+        args << "-tt" << "-o" << "StrictHostKeyChecking=no" << "-o" << "UserKnownHostsFile=/dev/null" << (user + "@" + ip);
+    }
+#ifdef Q_OS_WIN
+    // Fallback to plink ONLY if ssh is missing (rare on modern Windows) or if specifically desired
+    else if (!QStandardPaths::findExecutable("plink").isEmpty()) {
+        usePlink = true;
+        program = "plink";
+        // -t forces PTY allocation, -batch disables interactive prompts (we handle host keys manually if needed, or rely on -batch to fail them? No, better to be interactive)
+        // Actually, for plink, -t is strictly pty allocation.
+        args << "-ssh" << "-l" << user << "-pw" << password << "-t" << ip;
+    }
+#endif
+    else {
+         emit errorOccurred("No SSH client found (ssh or plink)");
+         return;
     }
 
-    // 1. Write password to a file (exact bytes, no newlines)
-    QFile passFile(passFilePath);
-    if (passFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        passFile.write(password.toUtf8());
-        passFile.close();
-    }
-
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.insert("SSH_ASKPASS", QDir::toNativeSeparators(askPassExe));
-    env.insert("SSH_ASKPASS_REQUIRE", "force");
-    env.insert("SSH_PASS_FILE", QDir::toNativeSeparators(passFilePath));
-    
-    // Force DISPLAY to dummy value to trigger ASKPASS if needed
-    if (!env.contains("DISPLAY")) {
-        env.insert("DISPLAY", "dummy:0");
-    }
     m_process->setProcessEnvironment(env);
-
-    QStringList args;
-    // -tt forces pseudo-tty allocation
-    // -o StrictHostKeyChecking=no avoids "yes/no" prompt for new hosts
-    args << "-tt" << "-o" << "StrictHostKeyChecking=no" << "-o" << "UserKnownHostsFile=/dev/null" << (user + "@" + ip);
     
-    qDebug() << "Starting SSH:" << "ssh" << args;
-    m_process->start("ssh", args);
+    qDebug() << "Starting SSH:" << program << args;
+    m_process->start(program, args);
 }
 
 void SshClient::sendCommand(const QString &command)
@@ -130,33 +116,55 @@ void SshClient::disconnectFromHost()
 void SshClient::onReadyReadStandardOutput()
 {
     QByteArray data = m_process->readAllStandardOutput();
-    m_receiveBuffer.append(data);
     QString text = QString::fromUtf8(data);
     
-    // No manual password handling needed with ASKPASS
+    // Automatic handling of Plink host key prompt
+    if (text.contains("Store key in cache?", Qt::CaseInsensitive) || 
+        text.contains("Update cached key?", Qt::CaseInsensitive)) {
+        m_process->write("y\n");
+    }
     
+    // Fallback for SSH password prompt if ASKPASS fails (OpenSSH sometimes prompts on TTY/stdout even with ASKPASS set)
+    if (!m_passwordSent && !m_password.isEmpty()) {
+        if (text.contains("password:", Qt::CaseInsensitive) || text.contains("passphrase", Qt::CaseInsensitive)) {
+            m_process->write(m_password.toUtf8());
+            m_process->write("\n");
+            m_passwordSent = true;
+        }
+    }
+
     emit dataReceived(text);
 }
 
 void SshClient::onReadyReadStandardError()
 {
     QByteArray data = m_process->readAllStandardError();
-    m_receiveBuffer.append(data);
     QString text = QString::fromUtf8(data);
     
-    // No manual password handling needed with ASKPASS
-    
+    // Fallback for SSH password prompt if it appears on stderr
+    if (!m_passwordSent && !m_password.isEmpty()) {
+        if (text.contains("password:", Qt::CaseInsensitive) || text.contains("passphrase", Qt::CaseInsensitive)) {
+            m_process->write(m_password.toUtf8());
+            m_process->write("\n");
+            m_passwordSent = true;
+        }
+    }
+
     emit dataReceived(text);
 }
 
 void SshClient::onStateChanged(QProcess::ProcessState newState)
 {
-    if (newState == QProcess::Running) {
-        m_isConnected = true;
+    bool connected = (newState == QProcess::Running);
+    if (m_isConnected != connected) {
+        m_isConnected = connected;
         emit connectedChanged();
-    } else if (newState == QProcess::NotRunning) {
-        m_isConnected = false;
-        emit connectedChanged();
-        emit errorOccurred("Session ended");
+    }
+    
+    if (newState == QProcess::NotRunning) {
+        QString error = m_process->readAllStandardError();
+        if (!error.isEmpty()) {
+            emit errorOccurred(error);
+        }
     }
 }

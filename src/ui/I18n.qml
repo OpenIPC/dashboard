@@ -98,6 +98,29 @@ QtObject {
         "Face Snapshots": "Face Snapshots",
         "Object Counter": "Object Counter",
         "License Plates": "License Plates",
+        
+        // File Manager
+        "Удаление": "Deletion",
+        "Вы уверены, что хотите удалить '%1'?": "Are you sure you want to delete '%1'?",
+        "Создание папки": "Create folder",
+        "Имя папки:": "Folder name:",
+        "Переименование": "Rename",
+        "Новое имя:": "New name:",
+        "F2 Имя": "F2 Rename",
+        "F5 Копия": "F5 Copy",
+        "F7 Папка": "F7 Folder",
+        "F8 Удал.": "F8 Delete",
+        "Выход": "Exit",
+        "Права": "Rights",
+        "Да": "Yes",
+        "Нет": "No",
+        "ОК": "OK",
+        "Отмена": "Cancel",
+        "Загрузить на камеру": "Upload to camera",
+        "Скачать (в текущую локальную папку)": "Download (to current local folder)",
+        "Переименовать": "Rename",
+        "Удалить": "Delete",
+        "Дата": "Date",
         "Загрузка...": "Downloading...",
         "Пароль": "Password",
         "Канал": "Channel",
@@ -237,7 +260,33 @@ QtObject {
         "Пожалуйста, войдите для\nпродолжения": "Please log in to\ncontinue",
         "Пакетное добавление": "Batch Add",
         "Введите логин и пароль для выбранных камер:": "Enter login and password for selected cameras:",
-        "Добавить": "Add"
+        "Добавить": "Add",
+        "Длительность записи (мин)": "Recording duration (min)",
+        "5-60 мин": "5-60 min",
+        "Трансляция (VLC)": "Streaming (VLC)",
+        "Предпочтительный поток": "Preferred stream",
+        "Авто": "Auto",
+        "Режим кадра": "Frame mode",
+        "Обрезать по краям": "Crop to fill",
+        "Сохранять пропорции": "Keep aspect",
+        "Растянуть": "Stretch",
+        "Отображать статистику": "Show stats",
+        "Показывать codec/res/bitrate/fps": "Show codec/res/bitrate/fps",
+        "Автовоспроизведение": "Autoplay",
+        "Запускать поток сразу после загрузки": "Start stream on load",
+        "Буферизация (Задержка)": "Buffering (Latency)",
+        "Минимальная (Realtime)": "Minimal (Realtime)",
+        "Сбалансированная": "Balanced",
+        "Плавная (Smooth)": "Smooth",
+        "Транспорт RTSP": "RTSP Transport",
+        "Аппаратное декодирование": "Hardware Decoding",
+        "Настройки изображения": "Image Settings",
+        "Яркость": "Brightness",
+        "Контраст": "Contrast",
+        "Насыщенность": "Saturation",
+        "Гамма": "Gamma",
+        "Оттенок": "Hue",
+        "Сбросить настройки изображения": "Reset image settings"
     })
 
     // Optional reverse translations for English source strings when showing Russian
@@ -277,7 +326,8 @@ QtObject {
         "Error: ": "Ошибка: ",
         "Author: ": "Автор: ",
         "Default directory": "Каталог по умолчанию",
-        "Choose snapshots directory": "Выберите каталог снимков"
+        "Choose snapshots directory": "Выберите каталог снимков",
+        "Скачать (в текущую локальную папку)": "Download (to current local folder)"
     })
 
     function t(text, params) {

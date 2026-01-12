@@ -39,6 +39,19 @@ Dialog {
     onClosed: {
         player.running = false
         player.url = ""
+        SystemController.isArchiveOpen = false
+    }
+
+    onOpened: {
+        SystemController.isArchiveOpen = true
+    }
+
+    onVisibleChanged: {
+        if (!visible) {
+            player.running = false
+            player.url = ""
+            SystemController.isArchiveOpen = false
+        }
     }
 
     Connections {
@@ -363,13 +376,21 @@ Dialog {
                     width: parentRatio > targetRatio ? videoArea.height * targetRatio : videoArea.width
                     height: parentRatio > targetRatio ? videoArea.height : videoArea.width / targetRatio
 
-                    MdkPlayer {
+                    LibVlcPlayer {
                         id: player
                         anchors.fill: parent
                         url: "" // Set when playing
                         orientation: 180
-                        fillMode: 0 // IgnoreAspectRatio (Stretch to container)
+                        // fillMode: 0 // IgnoreAspectRatio (Stretch to container)
                         transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: -1 }
+                        
+                        // Settings bindings
+                        hwDecoding: (SystemController.appSettings.playerHwDecoding !== undefined) ? SystemController.appSettings.playerHwDecoding : "auto"
+                        brightness: (SystemController.appSettings.playerBrightness !== undefined) ? SystemController.appSettings.playerBrightness : 1.0
+                        contrast: (SystemController.appSettings.playerContrast !== undefined) ? SystemController.appSettings.playerContrast : 1.0
+                        hue: (SystemController.appSettings.playerHue !== undefined) ? SystemController.appSettings.playerHue : 0
+                        saturation: (SystemController.appSettings.playerSaturation !== undefined) ? SystemController.appSettings.playerSaturation : 1.0
+                        gamma: (SystemController.appSettings.playerGamma !== undefined) ? SystemController.appSettings.playerGamma : 1.0
                     }
                     
                     Text {
@@ -634,9 +655,38 @@ Dialog {
                             RowLayout {
                                 spacing: 10
                                 Text { text: "🔊"; color: "#ccc" }
+                                
+                                // Normalization Toggle
+                                Button {
+                                    width: 26
+                                    height: 26
+                                    background: Rectangle { 
+                                        color: player.audioNormalization ? "#2563eb" : "transparent" 
+                                        radius: 3 
+                                        border.color: "#666"
+                                        border.width: 1
+                                    }
+                                    contentItem: Text {
+                                        text: "N"
+                                        font.bold: true
+                                        font.pixelSize: 12
+                                        color: "white"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    
+                                    // Custom ToolTip
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: I18n.t("Нормализация (усиление тихих звуков)")
+                                    
+                                    onClicked: {
+                                        player.audioNormalization = !player.audioNormalization
+                                    }
+                                }
+
                                 Slider {
                                     from: 0
-                                    to: 1.0
+                                    to: 2.0 // Boost up to 200%
                                     value: player.volume
                                     onMoved: player.volume = value
                                     Layout.preferredWidth: 100
@@ -653,10 +703,19 @@ Dialog {
                                         Rectangle {
                                             width: parent.visualPosition * parent.width
                                             height: parent.height
-                                            color: "#3f89d6"
+                                            color: parent.visualPosition > 0.5 ? "#ff9800" : "#3f89d6"
                                             radius: 2
                                         }
+                                        // 100% Mark
+                                        Rectangle {
+                                            x: parent.width * 0.5
+                                            width: 1
+                                            height: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            color: "#888"
+                                        }
                                     }
+
                                     handle: Rectangle {
                                         x: parent.leftPadding + parent.visualPosition * (parent.availableWidth - width)
                                         y: parent.topPadding + parent.availableHeight / 2 - height / 2

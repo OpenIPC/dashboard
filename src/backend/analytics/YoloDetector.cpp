@@ -122,13 +122,21 @@ std::vector<float> YoloDetector::preprocess(const QImage &img, int &outW, int &o
     const uchar* bits = scaled.bits();
     int stride = scaled.bytesPerLine();
 
+    // Optimize: Reduce implicit coercion and access
+    // Pre-calculate inverse 255
+    const float inv255 = 1.0f / 255.0f;
+    const int offsetG = targetW * targetH;
+    const int offsetB = offsetG * 2;
+
     for (int y = 0; y < targetH; ++y) {
+        const uchar* line = bits + y * stride;
+        int yOffset = y * targetW;
         for (int x = 0; x < targetW; ++x) {
-            const uchar* pixel = bits + y * stride + x * 3;
+            const uchar* pixel = line + x * 3;
             // Normalize 0-1
-            inputTensorValues[0 * targetH * targetW + y * targetW + x] = pixel[0] / 255.0f; // R
-            inputTensorValues[1 * targetH * targetW + y * targetW + x] = pixel[1] / 255.0f; // G
-            inputTensorValues[2 * targetH * targetW + y * targetW + x] = pixel[2] / 255.0f; // B
+            inputTensorValues[yOffset + x] = pixel[0] * inv255;          // R
+            inputTensorValues[offsetG + yOffset + x] = pixel[1] * inv255; // G
+            inputTensorValues[offsetB + yOffset + x] = pixel[2] * inv255; // B
         }
     }
 
@@ -161,12 +169,14 @@ QVector<DetectionBox> YoloDetector::detect(const QImage &frame)
             m_outputNodeNames.size()
         );
 
-        // Parse output
-        // YOLOv8 output: [1, 4+classes, 8400]
+        // Get output data
         float* floatArr = outputTensors[0].GetTensorMutableData<float>();
         auto outputInfo = outputTensors[0].GetTensorTypeAndShapeInfo();
         auto outputShape = outputInfo.GetShape(); // [1, channels, anchors]
 
+        // Important: Manual memory release logic for raw float vector is not needed as vector handles it.
+        // But ONNX Runtime internal tensors are RAII.
+        
         int batchSize = outputShape[0];
         int channels = outputShape[1]; // 4 + num_classes
         int anchors = outputShape[2];  // 8400

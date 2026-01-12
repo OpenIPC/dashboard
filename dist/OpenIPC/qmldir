@@ -24,4 +24,6 @@ CameraContextMenu 1.0 src/ui/CameraContextMenu.qml
 SshTerminalDialog 1.0 src/ui/SshTerminalDialog.qml
 ArchiveView 1.0 src/ui/ArchiveView.qml
 PtzControlPanel 1.0 src/ui/PtzControlPanel.qml
+StyledScrollBar 1.0 src/ui/StyledScrollBar.qml
+FileManagerDialog 1.0 src/ui/FileManagerDialog.qml
 

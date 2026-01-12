@@ -4,11 +4,24 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import OpenIPC
 
-Dialog {
+Window {
     id: root
     title: I18n.t("Настройки")
-    modal: true
-    dim: true
+    width: 680
+    height: 600
+    visible: false
+    color: "#1e1e1e"
+    flags: Qt.Window | Qt.FramelessWindowHint
+
+    // Make it non-modal but behave like a standalone window
+    function open() {
+        show()
+        requestActivate()
+    }
+
+    function close() {
+        hide()
+    }
 
     component StyledCheckBox: CheckBox {
         hoverEnabled: false
@@ -57,6 +70,15 @@ Dialog {
     property bool defaultAutoplay: true
     property int playerBufferMode: 1
     property string playerRtspTransport: "tcp"
+    property string playerHwDecoding: "auto"
+    property int recordingSegmentDuration: 15 // Default 15 minutes
+    
+    // Video Adjustments
+    property real playerBrightness: 1.0
+    property real playerContrast: 1.0
+    property int playerHue: 0
+    property real playerSaturation: 1.0
+    property real playerGamma: 1.0
 
     property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
 
@@ -74,6 +96,14 @@ Dialog {
             if (settings.defaultAutoplay !== undefined) defaultAutoplay = settings.defaultAutoplay
             if (settings.playerBufferMode !== undefined) playerBufferMode = settings.playerBufferMode
             if (settings.playerRtspTransport) playerRtspTransport = settings.playerRtspTransport
+            if (settings.playerHwDecoding) playerHwDecoding = settings.playerHwDecoding
+            if (settings.recordingSegmentDuration !== undefined) recordingSegmentDuration = settings.recordingSegmentDuration
+            
+            if (settings.playerBrightness !== undefined) playerBrightness = settings.playerBrightness
+            if (settings.playerContrast !== undefined) playerContrast = settings.playerContrast
+            if (settings.playerHue !== undefined) playerHue = settings.playerHue
+            if (settings.playerSaturation !== undefined) playerSaturation = settings.playerSaturation
+            if (settings.playerGamma !== undefined) playerGamma = settings.playerGamma
         }
     }
 
@@ -168,59 +198,93 @@ Dialog {
         }
     }
     
-    // Center in parent window
-    x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
+    // Center logic removed, Window centers itself or uses system positioning
+    // x: (parent.width - width) / 2 
+    // y: (parent.height - height) / 2
     
-    width: 780
-    height: 640
+    // Duplicated width/height removed (defined in root properties)
     
-    background: Rectangle {
+    
+    
+    // Background Rectangle
+    Rectangle {
+        id: bgRect
+        anchors.fill: parent
         color: "#252526"
         border.color: "#444444"
         border.width: 1
         radius: 8
+        z: -1
     }
     
-    header: Rectangle {
-        width: parent.width
-        height: 60
-        color: "transparent"
-        
-        Text {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: 20
-            text: I18n.t("Настройки — ") + tabLabels[bar.currentIndex]
-            color: "#ffffff" // --text-main
-            font.pixelSize: 20
-            font.bold: true
+    // Custom Window Header
+    Rectangle {
+        id: titleBar
+        height: 40
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        color: "#2d2d30"
+        z: 100
+
+        MouseArea {
+            anchors.fill: parent
+            onPressed: root.startSystemMove()
         }
-        
-        // Close button
-        Text {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.rightMargin: 20
-            text: "×"
-            color: "#a0aec0" // --text-secondary
-            font.pixelSize: 28
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 15
+            anchors.rightMargin: 5
+            
+            Text {
+                text: I18n.t("Настройки — ") + tabLabels[bar.currentIndex]
+                color: "#ffffff"
+                font.bold: true
+                Layout.fillWidth: true
+            }
+            
+            Button {
+                text: "—"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
+                onClicked: root.showMinimized()
+                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+            }
+            
+            Button {
+                text: "□"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
+                onClicked: {
+                    if (root.visibility === Window.Maximized) root.showNormal()
+                    else root.showMaximized()
+                }
+                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+            }
+
+            Button {
+                text: "✕"
+                flat: true
+                Layout.preferredWidth: 40
+                Layout.fillHeight: true
                 onClicked: root.close()
+                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
             }
         }
-        
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width
-            height: 1
-            color: "#626974" // --border-color
-        }
     }
-    
-    contentItem: ColumnLayout {
+
+    // Main Content
+    ColumnLayout {
+        anchors.top: titleBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footerBar.visible ? footerBar.top : parent.bottom
         spacing: 0
         
         // Tabs
@@ -284,28 +348,31 @@ Dialog {
             
             StackLayout {
                 anchors.fill: parent
-                anchors.margins: 16
+                // margins: 0 to allow scrollbar to hit the edge
                 currentIndex: bar.currentIndex
                 
                 // -------------------------------------------------
                 // General Tab
                 // -------------------------------------------------
                 ScrollView {
-                    contentWidth: parent.width
-                    contentHeight: generalCol.height
+                    // Padding for content, but scrollbar stays at right edge
+                    leftPadding: 20
+                    rightPadding: 20
+                    topPadding: 16
+                    bottomPadding: 16
+                    
+                    contentWidth: availableWidth
                     clip: true
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                    // Keep wheel/trackpad scrolling but hide the vertical bar
-                    ScrollBar.vertical: ScrollBar {
-                        policy: ScrollBar.AsNeeded
-                        visible: false
-                        interactive: false
-                        opacity: 0
+                    ScrollBar.vertical: StyledScrollBar {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                     }
 
                     ColumnLayout {
                         id: generalCol
-                        width: parent.width - 24
+                        width: parent.width - 40 // Adjust for padding
                         spacing: 14
 
                         Text {
@@ -425,6 +492,73 @@ Dialog {
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     onClicked: screenshotsDialog.open()
+                                }
+                            }
+
+                            Text {
+                                text: I18n.t("Длительность записи (мин)")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: generalGrid.labelWidth
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+                                
+                                SpinBox {
+                                    id: segmentSpin
+                                    from: 5
+                                    to: 60
+                                    stepSize: 5
+                                    value: recordingSegmentDuration
+                                    onValueModified: recordingSegmentDuration = value
+                                    editable: true
+                                    Layout.preferredHeight: 32
+                                    Layout.preferredWidth: 120
+                                    
+                                    // Make room for indicators
+                                    leftPadding: 30
+                                    rightPadding: 30
+                                    
+                                    contentItem: TextInput {
+                                        text: segmentSpin.textFromValue(segmentSpin.value, segmentSpin.locale)
+                                        font: segmentSpin.font
+                                        color: "white"
+                                        selectionColor: "#2196F3"
+                                        selectedTextColor: "#ffffff"
+                                        horizontalAlignment: Qt.AlignHCenter
+                                        verticalAlignment: Qt.AlignVCenter
+                                        readOnly: !segmentSpin.editable
+                                        validator: segmentSpin.validator
+                                        inputMethodHints: Qt.ImhDigitsOnly
+                                    }
+
+                                    background: Rectangle { 
+                                        color: "#1f2733"
+                                        border.color: "#4a5568"
+                                        radius: 4 
+                                    }
+                                    
+                                    up.indicator: Rectangle {
+                                        x: parent.width - width
+                                        height: parent.height
+                                        width: 30
+                                        color: parent.up.pressed ? "#3e3e40" : "transparent"
+                                        Text { text: "+"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
+                                    }
+                                    down.indicator: Rectangle {
+                                        x: 0
+                                        height: parent.height
+                                        width: 30
+                                        color: parent.down.pressed ? "#3e3e40" : "transparent"
+                                        Text { text: "-"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
+                                    }
+                                }
+                                
+                                Text {
+                                    text: I18n.t("5-60 мин")
+                                    color: "#666"
+                                    font.pixelSize: 12
                                 }
                             }
                         }
@@ -601,13 +735,33 @@ Dialog {
                 // Streaming Tab
                 // -------------------------------------------------
                 Item {
-                    ColumnLayout {
+                    ScrollView {
                         anchors.fill: parent
-                        spacing: 14
-                        Layout.margins: 4
+                        // Padding for content
+                        leftPadding: 20
+                        rightPadding: 20
+                        topPadding: 16
+                        bottomPadding: 16
+                        
+                        contentWidth: availableWidth
+                        contentHeight: streamingCol.height
+                        clip: true
+                        ScrollBar.vertical: StyledScrollBar {
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                        }
+
+                        ColumnLayout {
+                            id: streamingCol
+                            width: parent.width - 40 // Adjust for padding
+                            spacing: 14
+                            // anchors.top: parent.top
+                            // anchors.left: parent.left
+                            // anchors.leftMargin: 4
 
                         Text {
-                            text: I18n.t("Трансляция (MDK)")
+                            text: I18n.t("Трансляция (VLC)")
                             color: "#ffffff"
                             font.pixelSize: 16
                             font.bold: true
@@ -830,58 +984,51 @@ Dialog {
                             }
 
                             Text {
-                                text: I18n.t("Аппаратное ускорение")
+                                text: I18n.t("Аппаратное декодирование")
                                 color: "#a0aec0"
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
-                            ColumnLayout {
-                                spacing: 4
+                            ComboBox {
+                                id: hwDecodingCombo
+                                model: [I18n.t("Авто"), "D3D11", "DXVA2", "Off (None)"]
+                                currentIndex: {
+                                    if (playerHwDecoding === "d3d11") return 1
+                                    if (playerHwDecoding === "dxva2") return 2
+                                    if (playerHwDecoding === "none") return 3
+                                    return 0 // auto
+                                }
                                 Layout.fillWidth: true
-                                ComboBox {
-                                    id: hwCombo
-                                    model: [I18n.t("Авто"), "NVIDIA", "Intel", "DirectX (Windows)", I18n.t("Без ускорения (CPU)")]
-                                    currentIndex: hwAccel === "nvidia" ? 1 : hwAccel === "intel" ? 2 : hwAccel === "dxva" ? 3 : hwAccel === "none" ? 4 : 0
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 32
-                                    onActivated: (index) => {
-                                        if (index === 1) hwAccel = "nvidia"
-                                        else if (index === 2) hwAccel = "intel"
-                                        else if (index === 3) hwAccel = "dxva"
-                                        else if (index === 4) hwAccel = "none"
-                                        else hwAccel = "auto"
-                                    }
-                                    background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                    contentItem: Text {
-                                        text: hwCombo.displayText
-                                        color: "white"
-                                        verticalAlignment: Text.AlignVCenter
-                                        leftPadding: 8
-                                        rightPadding: 24
-                                    }
-                                    indicator: Canvas {
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.margins: 8
-                                        width: 12; height: 8
-                                        onPaint: {
-                                            var ctx = getContext("2d");
-                                            ctx.fillStyle = "#a0aec0";
-                                            ctx.beginPath();
-                                            ctx.moveTo(0, 0);
-                                            ctx.lineTo(width, 0);
-                                            ctx.lineTo(width/2, height);
-                                            ctx.closePath();
-                                            ctx.fill();
-                                        }
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                contentItem: Text {
+                                    text: hwDecodingCombo.displayText
+                                    color: "white"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+                                indicator: Canvas {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 8
+                                    width: 12; height: 8
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.beginPath();
+                                        ctx.moveTo(0, 0);
+                                        ctx.lineTo(width, 0);
+                                        ctx.lineTo(width/2, height);
+                                        ctx.closePath();
+                                        ctx.fill();
                                     }
                                 }
-                                Text {
-                                    text: I18n.t("Попробуйте DirectX или NVIDIA при высокой нагрузке")
-                                    color: "#888888"
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
+                                onActivated: {
+                                    if (index === 1) playerHwDecoding = "d3d11"
+                                    else if (index === 2) playerHwDecoding = "dxva2"
+                                    else if (index === 3) playerHwDecoding = "none"
+                                    else playerHwDecoding = "auto"
                                 }
                             }
                         }
@@ -892,7 +1039,118 @@ Dialog {
                             color: "#3b4657"
                         }
 
+                        Text {
+                            text: I18n.t("Настройки изображения")
+                            color: "#ffffff"
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            id: adjustmentsGrid
+                            columns: 2
+                            columnSpacing: 14
+                            rowSpacing: 10
+                            Layout.fillWidth: true
+                            property int labelWidth: 180
+
+                            // Brightness
+                            Text {
+                                text: I18n.t("Яркость") + " (" + playerBrightness.toFixed(2) + ")"
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            Slider {
+                                from: 0.0; to: 2.0
+                                value: playerBrightness
+                                Layout.fillWidth: true
+                                onMoved: playerBrightness = value
+                            }
+                            
+                            // Contrast
+                            Text {
+                                text: I18n.t("Контраст") + " (" + playerContrast.toFixed(2) + ")"
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            Slider {
+                                from: 0.0; to: 2.0
+                                value: playerContrast
+                                Layout.fillWidth: true
+                                onMoved: playerContrast = value
+                            }
+                            
+                            // Saturation
+                            Text {
+                                text: I18n.t("Насыщенность") + " (" + playerSaturation.toFixed(2) + ")"
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            Slider {
+                                from: 0.0; to: 3.0
+                                value: playerSaturation
+                                Layout.fillWidth: true
+                                onMoved: playerSaturation = value
+                            }
+                            
+                            // Gamma
+                            Text {
+                                text: I18n.t("Гамма") + " (" + playerGamma.toFixed(2) + ")"
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            Slider {
+                                from: 0.01; to: 3.0
+                                value: playerGamma
+                                Layout.fillWidth: true
+                                onMoved: playerGamma = value
+                            }
+
+                            // Hue
+                            Text {
+                                text: I18n.t("Оттенок") + " (" + playerHue + ")"
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            Slider {
+                                from: -180; to: 180
+                                stepSize: 1
+                                value: playerHue
+                                Layout.fillWidth: true
+                                onMoved: playerHue = value
+                            }
+                            
+                            // Reset Button
+                            Item { Layout.fillWidth: true; Layout.columnSpan: 2; height: 10 }
+                            Button {
+                                text: I18n.t("Сбросить настройки изображения")
+                                Layout.columnSpan: 2
+                                Layout.alignment: Qt.AlignHCenter
+                                onClicked: {
+                                    playerBrightness = 1.0
+                                    playerContrast = 1.0
+                                    playerHue = 0
+                                    playerSaturation = 1.0
+                                    playerGamma = 1.0
+                                }
+                                background: Rectangle { color: "#4a5568"; radius: 4 }
+                                contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#3b4657"
+                        }
+
                         Item { Layout.fillHeight: true }
+                    }
                     }
                 }
                 
@@ -977,11 +1235,15 @@ Dialog {
         }
     }
 
-    footer: Rectangle {
-        width: parent.width
+    Rectangle {
+        id: footerBar
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         height: 60
         color: "transparent"
         visible: bar.currentIndex !== 4 // Hide on About tab
+        z: 10
         
         Rectangle {
             anchors.top: parent.top
@@ -1023,10 +1285,17 @@ Dialog {
                     "showStatsOverlay": showStatsOverlay,
                     "defaultAutoplay": defaultAutoplay,
                     "playerBufferMode": playerBufferMode,
-                    "playerRtspTransport": playerRtspTransport
+                    "playerRtspTransport": playerRtspTransport,
+                    "playerHwDecoding": playerHwDecoding,
+                    "recordingSegmentDuration": recordingSegmentDuration,
+                    "playerBrightness": playerBrightness,
+                    "playerContrast": playerContrast,
+                    "playerHue": playerHue,
+                    "playerSaturation": playerSaturation,
+                    "playerGamma": playerGamma
                 }
                 SystemController.saveAppSettings(settings)
-                saveNotification.open()
+                root.close()
             }
         }
     }

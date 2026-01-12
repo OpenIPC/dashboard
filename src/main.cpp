@@ -9,10 +9,11 @@
 #include <QDateTime>
 #include <QTimer>
 #include "backend/SystemController.h"
-#include "backend/MdkPlayer.h"
+#include "backend/LibVlcPlayer.h"
 #include "backend/AnalyticsModel.h"
 #include "backend/analytics/AnalyticsEngine.h"
 #include "backend/SshClient.h"
+#include "backend/RemoteFsModel.h"
 #include <functional>
 
 namespace {
@@ -25,6 +26,9 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
     if (msg.contains("No QSGTexture provided from updateSampledImage")) {
         return;
     }
+
+    // Disable excessive logging to prevent memory buffer growth
+    // if (type == QtDebugMsg || type == QtInfoMsg) return;
 
     const char *level = "LOG";
     switch (type) {
@@ -88,7 +92,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Prefer OpenGL for MDK. Force RHI to OpenGL regardless of external env, so QQuickFramebufferObject works.
+    // Force RHI to OpenGL regardless of external env, so QQuickFramebufferObject works with QOpenGL functions.
     qunsetenv("QT_QUICK_BACKEND");
     qputenv("QSG_RHI_BACKEND", "opengl");
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGLRhi);
@@ -104,20 +108,22 @@ int main(int argc, char *argv[])
                       << "graphicsApi=" << QQuickWindow::graphicsApi();
     qInfo() << "Log file path:" << gLogFile.fileName();
 
-    QQmlApplicationEngine engine;
-
-    // Register MdkPlayer
-    qmlRegisterType<MdkPlayer>("OpenIPC", 1, 0, "MdkPlayer");
-    qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
-    qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
-    qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
-
-    // Register the C++ backend controller
+    // Register the C++ backend controller FIRST to ensure it outlives the engine
     SystemController systemController;    
     // Hook up logging to SystemController
     gLogCallback = [&](QtMsgType type, const QString &msg) {
         systemController.addLog(type, msg);
     };
+
+    QQmlApplicationEngine engine;
+
+    // Register LibVlcPlayer
+    qmlRegisterType<LibVlcPlayer>("OpenIPC", 1, 0, "LibVlcPlayer");
+    qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
+    qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
+    qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
+    qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");
+
     // engine.rootContext()->setContextProperty("systemController", &systemController);
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 

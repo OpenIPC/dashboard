@@ -21,3 +21,7 @@ Thumbs.db
 6.4.2/
 !libs/**/*.dll
 !mdk-sdk/**/*.dll
+
+!libs/**/*.so
+!libs/**/*.so.*
+!libs/**/*.lib

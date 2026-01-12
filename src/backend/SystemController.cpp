@@ -1,4 +1,5 @@
 #include "SystemController.h"
+#include "StatusChecker.h"
 #include <QUuid>
 #include <QNetworkDatagram>
 #include <QNetworkInterface>
@@ -42,7 +43,13 @@ SystemController::SystemController(QObject *parent)
     , m_archiveController(new ArchiveController(this))
     , m_udpSocket(new QUdpSocket(this))
     , m_networkManager(new QNetworkAccessManager(this))
+    , m_saveTimer(new QTimer(this))
+    , m_statusChecker(new StatusChecker(m_cameraModel, this))
 {
+    m_saveTimer->setSingleShot(true);
+    m_saveTimer->setInterval(1000); // 1 second debounce
+    connect(m_saveTimer, &QTimer::timeout, this, &SystemController::performSave);
+    
     connect(m_networkManager, &QNetworkAccessManager::authenticationRequired, this, &SystemController::onAuthenticationRequired);
     connect(m_udpSocket, &QUdpSocket::readyRead, this, &SystemController::onUdpReadyRead);
     
@@ -100,12 +107,34 @@ SystemController::SystemController(QObject *parent)
     m_gridCols = 2; 
 
     loadState();
+    
+    // Start camera monitoring after loading state
+    m_statusChecker->start();
+
     // If no saved state, ensure default 2x2 grid placeholders
     if (m_gridModel->rowCount() == 0) {
         for (int i = 0; i < 4; ++i) {
             m_gridModel->addCamera(Camera());
         }
     }
+
+    // Auto-save on significant changes
+    connect(m_cameraModel, &QAbstractListModel::rowsInserted, this, &SystemController::saveState);
+    connect(m_cameraModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
+    // Use lambda to swallow arguments for dataChanged
+    connect(m_cameraModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
+
+    connect(m_gridModel, &QAbstractListModel::rowsInserted, this, &SystemController::saveState);
+    connect(m_gridModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
+    connect(m_gridModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
+}
+
+void SystemController::setIsArchiveOpen(bool open)
+{
+    if (m_isArchiveOpen == open) return;
+    qInfo() << "SystemController::setIsArchiveOpen" << open;
+    m_isArchiveOpen = open;
+    emit isArchiveOpenChanged();
 }
 
 QVariantList SystemController::getNetworkInterfaces()
@@ -601,7 +630,14 @@ Camera SystemController::cameraFromJson(const QJsonObject &obj)
     return cam;
 }
 
-void SystemController::saveState() const
+void SystemController::saveState()
+{
+    // Debounce: restart timer if already running, or start if not.
+    // This effectively waits for 1 second of "silence" before writing to disk.
+    m_saveTimer->start();
+}
+
+void SystemController::performSave()
 {
     QJsonObject root;
     QJsonArray cameras;
@@ -630,20 +666,95 @@ void SystemController::saveState() const
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
 
     const QString path = stateFilePath();
-    QFile f(path);
+    const QString tempPath = path + ".tmp";
+    const QString backupPath = path + ".bak";
+
+    QFile f(tempPath);
     if (f.open(QIODevice::WriteOnly)) {
-        f.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+        f.flush();
         f.close();
+
+        // 1. If we have a good new file, proceed to rotation
+        if (QFile::exists(path)) {
+            // Remove old backup
+            if (QFile::exists(backupPath)) {
+                QFile::remove(backupPath);
+            }
+            // Move current to backup
+            if (!QFile::rename(path, backupPath)) {
+                 // If rename fails (e.g. locked), try copy+delete
+                 if (QFile::copy(path, backupPath)) {
+                     QFile::remove(path);
+                 } else {
+                     qWarning() << "Failed to back up state file" << path << "to" << backupPath;
+                 }
+            }
+        }
+        
+        // 2. Move temp to primary
+        // Ensure primary is gone (should be moved to backup, but verify)
+        if (QFile::exists(path)) {
+            QFile::remove(path);
+        }
+        
+        if (!f.rename(tempPath, path)) {
+            qWarning() << "Failed to rename temp state file to" << path;
+            // Fallback: copy and remove
+            if (QFile::copy(tempPath, path)) {
+                QFile::remove(tempPath);
+                qInfo() << "State saved successfully (via copy/delete mechanism).";
+            } else {
+                qCritical() << "CRITICAL: Failed to save state file! Settings may be lost.";
+            }
+        } else {
+             qInfo() << "State saved successfully.";
+        }
     } else {
-        qWarning() << "Failed to save state to" << path << f.errorString();
+        qWarning() << "Failed to save state to" << tempPath << f.errorString();
     }
 }
 
 void SystemController::loadState()
 {
     const QString path = stateFilePath();
-    QFile f(path);
-    if (!f.exists()) {
+    const QString backupPath = path + ".bak";
+
+    // Helper to read and validate JSON
+    auto readJson = [](const QString &p) -> QJsonObject {
+        QFile f(p);
+        if (!f.exists() || !f.open(QIODevice::ReadOnly)) return QJsonObject();
+
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &error);
+        f.close();
+
+        if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+            qWarning() << "Invalid JSON in" << p << ":" << error.errorString();
+            return QJsonObject();
+        }
+        return doc.object();
+    };
+
+    QJsonObject root = readJson(path);
+
+    if (root.isEmpty()) {
+        qWarning() << "Primary corrupted or missing. Trying backup:" << backupPath;
+        root = readJson(backupPath);
+        if (!root.isEmpty()) {
+            qInfo() << "Restored from backup.";
+            // Restore the file on disk so we don't lose it again
+            QFile::remove(path);
+            QFile::copy(backupPath, path);
+        }
+    } else {
+        // Primary is good. Update backup.
+        QFile::remove(backupPath);
+        QFile::copy(path, backupPath);
+    }
+
+    // Still empty? Use defaults
+    if (root.isEmpty()) {
         // No persisted state: seed defaults so QML sees a 2x2 grid and a starter template
         m_gridRows = 2;
         m_gridCols = 2;
@@ -665,18 +776,6 @@ void SystemController::loadState()
         applyLayoutPreset(2, 2);
         return;
     }
-    if (!f.open(QIODevice::ReadOnly)) {
-        qWarning() << "Failed to open state file" << path << f.errorString();
-        return;
-    }
-    const QByteArray data = f.readAll();
-    f.close();
-    const QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject()) {
-        qWarning() << "State file is not an object" << path;
-        return;
-    }
-    const QJsonObject root = doc.object();
 
     if (root.contains("analytics")) {
         m_analyticsEngine->setSettings(root.value("analytics").toObject().toVariantMap());
@@ -692,8 +791,12 @@ void SystemController::loadState()
         m_gridCols = m_appSettings.value("gridCols", 2).toInt();
         
         // Sanity check to prevent crash from invalid/legacy settings
-        if (m_gridRows > 64) m_gridRows = 2;
-        if (m_gridCols > 64) m_gridCols = 2;
+        if (m_gridRows < 1 || m_gridRows > 64) m_gridRows = 2;
+        if (m_gridCols < 1 || m_gridCols > 64) m_gridCols = 2;
+    } else {
+        // Fallback if appSettings missing but file exists
+        m_gridRows = 2;
+        m_gridCols = 2;
     }
 
     if (root.contains("layoutTemplates")) {
@@ -788,10 +891,15 @@ void SystemController::loadState()
     }
 
     QJsonArray grid = root.value("grid").toArray();
-    const int slotCount = grid.size() > 0 ? grid.size() : 4;
-    for (int i = 0; i < slotCount; ++i) {
-        Camera cam;
-        if (i < grid.size()) {
+    
+    if (grid.isEmpty()) {
+        qInfo() << "Empty grid state detected. Initializing default 2x2 layout.";
+        m_gridRows = 2;
+        m_gridCols = 2;
+        applyLayoutPreset(2, 2);
+    } else {
+        for (int i = 0; i < grid.size(); ++i) {
+            Camera cam;
             QJsonObject slotObj = grid.at(i).toObject();
             const QString ip = slotObj.value("ip").toString();
             if (!ip.isEmpty()) {
@@ -816,8 +924,17 @@ void SystemController::loadState()
             if (oldRows <= 8 && cam.spanRows <= 8) {
                 cam.spanRows = std::max(1, (1200 / oldRows) * cam.spanRows);
             }
+            
+            m_gridModel->addCamera(cam);
         }
-        m_gridModel->addCamera(cam);
+    }
+    
+    // Safety fallback: if grid is empty or dimensions look uninitialized, reset to 2x2
+    if (m_gridModel->rowCount() == 0 || m_gridRows < 1 || m_gridCols < 1) {
+        qWarning() << "Invalid grid state detected after load, resetting to 2x2 default";
+        m_gridRows = 2;
+        m_gridCols = 2;
+        applyLayoutPreset(2, 2);
     }
 
     emit cameraGroupsChanged();
@@ -886,13 +1003,30 @@ double SystemController::processCpuPercent()
 
 double SystemController::processMemoryMB()
 {
-#ifndef Q_OS_WIN
-    return 0.0;
-#else
+#ifdef Q_OS_WIN
     PROCESS_MEMORY_COUNTERS_EX pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc))) {
         return static_cast<double>(pmc.WorkingSetSize) / (1024.0 * 1024.0);
     }
+    return 0.0;
+#elif defined(Q_OS_LINUX)
+    // Read /proc/self/status for VmRSS
+    QFile file("/proc/self/status");
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.startsWith("VmRSS:")) {
+                QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+                if (parts.size() >= 2) {
+                    // Value is in kB
+                    return parts[1].toDouble() / 1024.0; 
+                }
+            }
+        }
+    }
+    return 0.0;
+#else
     return 0.0;
 #endif
 }
@@ -912,7 +1046,10 @@ void SystemController::openFolder(const QString &path)
 
 void SystemController::saveAppSettings(const QVariantMap &settings)
 {
-    m_appSettings = settings;
+    // Merge new settings with existing ones to prevent data loss (e.g. grid state, hidden flags)
+    for (auto it = settings.begin(); it != settings.end(); ++it) {
+        m_appSettings[it.key()] = it.value();
+    }
     emit appSettingsChanged();
     saveState();
 }
@@ -1114,145 +1251,26 @@ QList<int> SystemController::getRecordingDates(const QString &cameraIp, int year
     return days;
 }
 
+QString SystemController::generateRecordingPath(const QString &ip)
+{
+    QString path = m_appSettings.value("recordingsPath").toString();
+    if (path.isEmpty()) {
+        path = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC";
+    }
+    QDir().mkpath(path);
+    
+    QString sanitizedIp = ip;
+    sanitizedIp.replace(".", "_");
+    QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
+    
+    return QString("%1/%2_%3.mp4").arg(path, sanitizedIp, timestamp);
+}
+
 void SystemController::toggleRecording(int gridIndex)
 {
-    if (m_activeRecordings.contains(gridIndex)) {
-        // Stop recording
-        QProcess *proc = m_activeRecordings.take(gridIndex);
-        if (proc) {
-            qDebug() << "Stopping recording for grid index" << gridIndex;
-            
-            // Update model immediately to reflect UI state
-            Camera cam = m_gridModel->getCamera(gridIndex);
-            cam.isRecording = false;
-            m_gridModel->setCamera(gridIndex, cam);
-
-            if (proc->state() == QProcess::Running) {
-                // Send 'q' to quit gracefully
-                proc->write("q");
-                proc->closeWriteChannel();
-                
-                // Set up a timer to force kill if it doesn't exit gracefully
-                QTimer *timer = new QTimer(proc);
-                timer->setSingleShot(true);
-                timer->setInterval(3000); // 3 seconds timeout
-                
-                connect(timer, &QTimer::timeout, proc, [proc]() {
-                    if (proc->state() == QProcess::Running) {
-                        qDebug() << "FFmpeg did not stop gracefully, terminating...";
-                        proc->terminate();
-                        
-                        // Give it another 2 seconds then kill
-                        QTimer::singleShot(2000, proc, [proc]() {
-                            if (proc->state() == QProcess::Running) {
-                                qDebug() << "FFmpeg did not stop with terminate, killing...";
-                                proc->kill();
-                            }
-                        });
-                    }
-                });
-                
-                connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, [proc, timer]() {
-                     timer->stop();
-                     proc->deleteLater();
-                });
-                
-                timer->start();
-            } else {
-                proc->deleteLater();
-            }
-        }
-    } else {
-        // Start recording
-        Camera cam = m_gridModel->getCamera(gridIndex);
-        if (cam.ip.isEmpty()) return;
-        
-        QString url = cam.hdStreamUrl;
-        if (url.isEmpty()) url = cam.streamUrl;
-        if (url.isEmpty()) return;
-
-        // Inject credentials if present and not already in URL
-        if (!cam.login.isEmpty() && !cam.password.isEmpty() && !url.contains("@")) {
-            QUrl qUrl(url);
-            if (qUrl.isValid()) {
-                qUrl.setUserName(cam.login);
-                qUrl.setPassword(cam.password);
-                url = qUrl.toString();
-            }
-        }
-        
-        QString path = m_appSettings.value("recordingsPath").toString();
-        if (path.isEmpty()) {
-            path = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC";
-        }
-        QDir().mkpath(path);
-        
-        // Filename format: IP_Date_Time.mp4
-        // e.g. 192_168_1_10_2025-12-25_12-00-00.mp4
-        QString sanitizedIp = cam.ip;
-        sanitizedIp.replace(".", "_");
-        QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss");
-        QString filename = QString("%1/%2_%3.mp4").arg(path, sanitizedIp, timestamp);
-        
-        qDebug() << "Starting recording for" << cam.ip << "to" << filename;
-        
-        QProcess *proc = new QProcess(this);
-        
-        connect(proc, &QProcess::readyReadStandardOutput, this, [proc]() {
-            qDebug() << "[FFmpeg stdout] " << proc->readAllStandardOutput();
-        });
-        
-        connect(proc, &QProcess::readyReadStandardError, this, [proc]() {
-            qWarning() << "[FFmpeg stderr] " << proc->readAllStandardError();
-        });
-
-        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                this, [this, proc, gridIndex](int exitCode, QProcess::ExitStatus exitStatus) {
-            qDebug() << "[FFmpeg finished] Code:" << exitCode << "Status:" << exitStatus;
-            
-            // If process finished unexpectedly (crashed or error), update UI
-            if (m_activeRecordings.contains(gridIndex) && m_activeRecordings[gridIndex] == proc) {
-                m_activeRecordings.remove(gridIndex);
-                Camera cam = m_gridModel->getCamera(gridIndex);
-                cam.isRecording = false;
-                m_gridModel->setCamera(gridIndex, cam);
-            }
-            proc->deleteLater();
-        });
-
-        // FFmpeg command: ffmpeg -i URL -c:v copy -c:a aac -y filename
-        // -c:v copy ensures no video transcoding (low CPU usage)
-        // -c:a aac ensures audio compatibility with MP4 container (pcm_alaw is not supported in MP4)
-        // -rtsp_transport tcp ensures reliability
-        QStringList args;
-        args << "-rtsp_transport" << "tcp" 
-             << "-i" << url 
-             << "-c:v" << "copy" 
-             << "-c:a" << "aac" 
-             << "-y" << filename;
-             
-        // Check if ffmpeg is in path or local bin
-        QString program = "ffmpeg";
-#ifdef Q_OS_WIN
-        if (QFile::exists(QCoreApplication::applicationDirPath() + "/ffmpeg.exe")) {
-            program = QCoreApplication::applicationDirPath() + "/ffmpeg.exe";
-        }
-#endif
-        
-        connect(proc, &QProcess::started, this, [this, gridIndex, proc]() {
-             m_activeRecordings.insert(gridIndex, proc);
-             Camera cam = m_gridModel->getCamera(gridIndex);
-             cam.isRecording = true;
-             m_gridModel->setCamera(gridIndex, cam);
-        });
-
-        connect(proc, &QProcess::errorOccurred, this, [proc](QProcess::ProcessError error) {
-             qWarning() << "FFmpeg process error:" << error << proc->errorString();
-             proc->deleteLater();
-        });
-        
-        proc->start(program, args);
-    }
+    // Legacy method kept for ABI compatibility if needed, but implementation removed
+    // Logic moved to client-side (QML + LibVlcPlayer) to avoid ffmpeg dependency
+    qWarning() << "SystemController::toggleRecording is deprecated. Use LibVlcPlayer::setRecordingPath instead.";
 }
 
 void SystemController::exportRecording(const QString &inputFile, const QString &outputFile, int startMs, int endMs)

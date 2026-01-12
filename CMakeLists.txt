@@ -20,19 +20,66 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# MDK SDK Setup
-set(MDK_DIR "${CMAKE_SOURCE_DIR}/mdk-sdk")
-include(${MDK_DIR}/lib/cmake/FindMDK.cmake)
+# libVLC Setup (expect layout like libs/libvlc/sdk/{include,lib,bin})
+set(LIBVLC_DIR "${CMAKE_SOURCE_DIR}/libs/libvlc/sdk" CACHE PATH "Path to libVLC SDK root (containing include/ lib/ bin/)")
+find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h
+    PATHS
+        "${LIBVLC_DIR}/include"
+        "${LIBVLC_DIR}/win64/include"
+        "${LIBVLC_DIR}/sdk/include"
+)
+find_library(LIBVLC_LIBRARY NAMES libvlc
+    PATHS "${LIBVLC_DIR}/lib" "${LIBVLC_DIR}/win64/lib" "${LIBVLC_DIR}/sdk/lib")
+find_library(LIBVLCCORE_LIBRARY NAMES libvlccore
+    PATHS "${LIBVLC_DIR}/lib" "${LIBVLC_DIR}/win64/lib" "${LIBVLC_DIR}/sdk/lib")
+
+if(NOT LIBVLC_INCLUDE_DIR OR NOT LIBVLC_LIBRARY OR NOT LIBVLCCORE_LIBRARY)
+    if(UNIX AND NOT APPLE)
+        message(STATUS "Trying to find libVLC via pkg-config...")
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(LIBVLC REQUIRED libvlc)
+        # Fix for some distros where pkg-config returns include path without vlc/vlc.h suffix
+        find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h PATHS ${LIBVLC_INCLUDE_DIRS})
+        set(LIBVLC_LIBRARY ${LIBVLC_LIBRARIES})
+        set(LIBVLCCORE_LIBRARY "") # PkgConfig usually lumps them or we mostly link against libvlc
+    else()
+        message(FATAL_ERROR "libVLC SDK not found. Set LIBVLC_DIR to the SDK root containing include/ and lib/ (e.g. libs/libvlc/sdk).")
+    endif()
+endif()
+
+include_directories(${LIBVLC_INCLUDE_DIR})
 
 # ONNX Runtime Setup
-set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/libs/onnxruntime")
-include_directories(${ONNXRUNTIME_DIR}/include)
-link_directories(${ONNXRUNTIME_DIR}/lib)
+if(WIN32)
+    set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/libs/onnxruntime")
+    include_directories(${ONNXRUNTIME_DIR}/include)
+    link_directories(${ONNXRUNTIME_DIR}/lib)
+elseif(UNIX)
+    # Assume system ONNX Runtime or located in libs/onnxruntime-linux
+    # proper checking should be here, but for now we look for headers in standard paths or libs/onnxruntime/include
+    set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/libs/onnxruntime")
+    if(EXISTS "${ONNXRUNTIME_DIR}/include")
+        include_directories(${ONNXRUNTIME_DIR}/include)
+    endif()
+    # If user has put linux libs here:
+    if(EXISTS "${ONNXRUNTIME_DIR}/lib/Linux64/libonnxruntime.so")
+        link_directories(${ONNXRUNTIME_DIR}/lib/Linux64)
+    elseif(EXISTS "${ONNXRUNTIME_DIR}/lib/libonnxruntime.so")
+        link_directories(${ONNXRUNTIME_DIR}/lib)
+    endif()
+endif()
 
 # Dahua SDK Setup
 set(DAHUA_DIR "${CMAKE_SOURCE_DIR}/libs/dahua")
 include_directories(${DAHUA_DIR}/include/Common)
-link_directories(${DAHUA_DIR}/lib/Win64)
+if(WIN32)
+    link_directories(${DAHUA_DIR}/lib/Win64)
+elseif(UNIX)
+     # User should place .so files in libs/dahua/lib/Linux64 or similar if they have them
+    if(EXISTS "${DAHUA_DIR}/lib/Linux64")
+        link_directories(${DAHUA_DIR}/lib/Linux64)
+    endif()
+endif()
 
 set(SOURCES
     src/main.cpp
@@ -44,8 +91,10 @@ set(SOURCES
     src/backend/ArchiveController.h
     src/backend/CameraModel.cpp
     src/backend/CameraModel.h
-    src/backend/MdkPlayer.cpp
-    src/backend/MdkPlayer.h
+    src/backend/StatusChecker.cpp
+    src/backend/StatusChecker.h
+    src/backend/LibVlcPlayer.cpp
+    src/backend/LibVlcPlayer.h
     src/backend/AnalyticsModel.cpp
     src/backend/AnalyticsModel.h
     src/backend/analytics/AnalyticsEngine.cpp
@@ -61,6 +110,8 @@ set(SOURCES
     src/backend/SshClient.h
     src/backend/PtzController.cpp
     src/backend/PtzController.h
+    src/backend/RemoteFsModel.cpp
+    src/backend/RemoteFsModel.h
 )
 
 set(APP_ICON resources/appicon.rc)
@@ -89,6 +140,8 @@ set(QML_FILES
     src/ui/SshTerminalDialog.qml
     src/ui/ArchiveView.qml
     src/ui/PtzControlPanel.qml
+    src/ui/StyledScrollBar.qml
+    src/ui/FileManagerDialog.qml
 )
 
 # Mark the localization helper as a QML singleton so it can be imported from the module
@@ -99,10 +152,20 @@ set(QML_RESOURCES
 )
 
 add_executable(appOpenIPC-Dashboard
-    WIN32
     ${SOURCES}
     ${APP_ICON}
 )
+
+# On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
+if(WIN32)
+    set_target_properties(appOpenIPC-Dashboard PROPERTIES WIN32_EXECUTABLE TRUE)
+else()
+    # Configure RPATH to look in the application directory for shared libraries
+    set_target_properties(appOpenIPC-Dashboard PROPERTIES 
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN"
+    )
+endif()
 
 # Resource file for QML
 qt_add_qml_module(appOpenIPC-Dashboard
@@ -113,32 +176,92 @@ qt_add_qml_module(appOpenIPC-Dashboard
 )
 
 target_link_libraries(appOpenIPC-Dashboard
-    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent mdk onnxruntime dhnetsdk
+    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent onnxruntime dhnetsdk ${LIBVLC_LIBRARY} ${LIBVLCCORE_LIBRARY}
 )
 
-if (WIN32)
-    target_link_libraries(appOpenIPC-Dashboard PRIVATE psapi)
+if (UNIX AND NOT APPLE)
+    # Explicitly link pthread if needed, though Qt usually pulls it in
+    target_link_libraries(appOpenIPC-Dashboard PRIVATE pthread)
 endif()
 
-# Copy MDK DLLs to build directory
-add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${MDK_DIR}/bin/x64 $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
-)
-
 # Copy ONNX Runtime DLL to build directory
-add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${ONNXRUNTIME_DIR}/lib/onnxruntime.dll $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
-)
+if(WIN32)
+    add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ONNXRUNTIME_DIR}/lib/onnxruntime.dll $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+    )
+elseif(UNIX)
+    file(GLOB ONNX_SOS "${ONNXRUNTIME_DIR}/lib/Linux64/*.so*")
+    if(ONNX_SOS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${ONNX_SOS}
+            $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+        )
+    endif()
+endif()
 
 # Copy Dahua SDK DLLs to build directory
-file(GLOB DAHUA_DLLS "${DAHUA_DIR}/bin/*.dll")
-add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${DAHUA_DLLS}
-    $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
-)
+if(WIN32)
+    file(GLOB DAHUA_DLLS "${DAHUA_DIR}/bin/*.dll")
+    add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${DAHUA_DLLS}
+        $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+    )
+elseif(UNIX)
+    file(GLOB DAHUA_SOS "${DAHUA_DIR}/lib/Linux64/*.so")
+    if(DAHUA_SOS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${DAHUA_SOS}
+            $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+        )
+    endif()
+endif()
+
+# Copy libVLC DLLs to build directory (guard if glob is empty)
+if(WIN32)
+    file(GLOB LIBVLC_DLLS
+        "${LIBVLC_DIR}/bin/*.dll"
+        "${LIBVLC_DIR}/win64/bin/*.dll"
+        "${LIBVLC_DIR}/lib/*.dll"
+        "${LIBVLC_DIR}/sdk/bin/*.dll"
+        "${LIBVLC_DIR}/sdk/lib/*.dll")
+    if(LIBVLC_DLLS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${LIBVLC_DLLS}
+            $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+        )
+    else()
+        message(WARNING "libVLC DLLs not found in ${LIBVLC_DIR}; please ensure libvlc.dll and libvlccore.dll are present under bin/ or lib/.")
+    endif()
+endif()
+
+# Copy libVLC plugins directory if present (required for demux/codec modules)
+if(WIN32)
+    if(EXISTS "${LIBVLC_DIR}/plugins")
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${LIBVLC_DIR}/plugins"
+            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/plugins"
+        )
+    elseif(EXISTS "${LIBVLC_DIR}/sdk/plugins")
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${LIBVLC_DIR}/sdk/plugins"
+            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/plugins"
+        )
+    else()
+        message(WARNING "libVLC plugins directory not found under ${LIBVLC_DIR}; RTSP/codec modules may be missing.")
+    endif()
+endif()
+
+# Copy OpenIPC QML module to build directory (for deployment)
+# On Linux we might want to instal this, but for local build copying is fine
+    message(WARNING "libVLC plugins directory not found under ${LIBVLC_DIR}; RTSP/codec modules may be missing.")
+endif()
 
 # Copy OpenIPC QML module to build directory (for deployment)
 add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
