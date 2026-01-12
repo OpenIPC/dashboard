@@ -35,8 +35,13 @@ bool YoloDetector::load(const QString &moduleDir)
         m_sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
         // Convert path to wstring for Windows
+#ifdef Q_OS_WIN
         std::wstring modelPathW = modelPath.toStdWString();
         m_session = std::make_unique<Ort::Session>(*m_env, modelPathW.c_str(), *m_sessionOptions);
+#else
+        std::string modelPathStr = modelPath.toStdString();
+        m_session = std::make_unique<Ort::Session>(*m_env, modelPathStr.c_str(), *m_sessionOptions);
+#endif
 
         // Get input info
         Ort::AllocatorWithDefaultOptions allocator;
