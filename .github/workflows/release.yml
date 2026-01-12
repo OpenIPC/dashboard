@@ -133,15 +133,18 @@ jobs:
           mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
           
-          # Setup LD_LIBRARY_PATH so linuxdeployqt can find our custom libs (Dahua, ONNX)
+          # Setup LD_LIBRARY_PATH so linuxdeployqt can find our custom libs
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ github.workspace }}/libs/dahua/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib
           
-          # Debug: check dependencies
-          echo "Checking binary dependencies:"
-          ldd build/appOpenIPC-Dashboard
+          # !IMPORTANT! Copy custom libs to standard location expected by AppImage (usr/lib)
+          # linuxdeployqt doesn't always automatically pull in libs from non-standard paths even if they are in ldd
+          mkdir -p AppDir/usr/lib
+          cp libs/dahua/lib/Linux64/libdhnetsdk.so AppDir/usr/lib/
+          cp libs/onnxruntime/lib/Linux64/libonnxruntime.so.1 AppDir/usr/lib/
           
           # Run linuxdeployqt
           # We use -no-strip to avoid potential issues with stripping failing
+          # We use -executable to force it to look at our binary again in the right context
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
             -unsupported-allow-new-glibc \
@@ -149,7 +152,9 @@ jobs:
             -qmldir=build/OpenIPC \
             -extra-plugins=iconengines,imageformats \
             -verbose=2 \
-            -no-strip
+            -no-strip \
+            -executable=AppDir/usr/lib/libdhnetsdk.so \
+            -executable=AppDir/usr/lib/libonnxruntime.so.1
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
