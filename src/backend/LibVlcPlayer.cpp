@@ -111,7 +111,10 @@ LibVlcPlayer::LibVlcPlayer(QQuickItem *parent)
     
     // Build plugin path so codecs/demux are found when bundled
     QString pluginPath = QCoreApplication::applicationDirPath() + "/plugins";
-    m_pluginPathArg = QByteArray("--plugin-path=" + pluginPath.toUtf8());
+    // VLC 3.x+ no longer supports --plugin-path, use environment variable instead
+    if (!pluginPath.isEmpty()) {
+        qputenv("VLC_PLUGIN_PATH", pluginPath.toUtf8());
+    }
 
     std::vector<const char*> args = {
         "--no-xlib",
@@ -120,9 +123,9 @@ LibVlcPlayer::LibVlcPlayer(QQuickItem *parent)
         // "--clock-jitter=0", // Disabled to improve smoothness (jitter helps smooth out bursty packets)
         // "--clock-synchro=0",
     };
-    if (!pluginPath.isEmpty()) {
-        args.push_back(m_pluginPathArg.constData());
-    }
+    // if (!pluginPath.isEmpty()) {
+    //    args.push_back(m_pluginPathArg.constData());
+    // }
 
     m_instance = libvlc_new(static_cast<int>(args.size()), args.data());
     if (m_instance) {
