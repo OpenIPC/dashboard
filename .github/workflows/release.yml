@@ -141,15 +141,30 @@ jobs:
           mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
           
-          # !IMPORTANT! Copy custom libs to standard location expected by AppImage (usr/lib)
+          # Copy custom libs to standard location expected by AppImage (usr/lib)
           mkdir -p AppDir/usr/lib
           cp libs/dahua/lib/Linux64/*.so AppDir/usr/lib/
           cp libs/onnxruntime/lib/Linux64/*.so* AppDir/usr/lib/
+
+          # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
+          # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it, but Ubuntu 22.04+ has OpenSSL 3.
+          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb || wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.20_amd64.deb
+          dpkg -x libssl1.1_*.deb openssl_temp
+          cp openssl_temp/usr/lib/x86_64-linux-gnu/libssl.so.1.1 AppDir/usr/lib/
+          cp openssl_temp/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 AppDir/usr/lib/
           
           # Patch RPATH of the main binary to find libs in ../lib relative to itself
           # We DO NOT set LD_LIBRARY_PATH so we can verify if RPATH is working correctly
           patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/appOpenIPC-Dashboard
           
+          # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
+          # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it, but Ubuntu 22.04+ has OpenSSL 3.
+          # Try newer version first, fallback to older if removed from repo
+          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb || wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.20_amd64.deb
+          dpkg -x libssl1.1_*.deb openssl_temp
+          cp openssl_temp/usr/lib/x86_64-linux-gnu/libssl.so.1.1 AppDir/usr/lib/
+          cp openssl_temp/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 AppDir/usr/lib/
+
           # Debug: check ldd after patching
           echo "LDD after patching (Expect libs in .../AppDir/usr/lib):"
           ldd AppDir/usr/bin/appOpenIPC-Dashboard
@@ -177,7 +192,7 @@ jobs:
             -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
-            -extra-plugins=iconengines,imageformats,platforms,platformthemes \
+            -extra-plugins=iconengines,imageformats,platforms,platformthemes,wayland-decoration-client,wayland-graphics-integration-client,wayland-shell-integration \
             -verbose=2 \
             -no-strip \
             -no-translations \
