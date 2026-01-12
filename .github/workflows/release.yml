@@ -85,7 +85,7 @@ jobs:
           path: OpenIPC-Dashboard-Installer.exe
 
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev vlc-plugin-base vlc-plugin-video-output
+          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev vlc-plugin-base vlc-plugin-video-output liblivemedia-dev
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -165,12 +165,10 @@ jobs:
           cp /usr/lib/x86_64-linux-gnu/libUsageEnvironment.so.* AppDir/usr/lib/ || true
           cp /usr/lib/x86_64-linux-gnu/libBasicUsageEnvironment.so.* AppDir/usr/lib/ || true
 
-          # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
-          # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it, but Ubuntu 22.04+ has OpenSSL 3.
-          wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb
-          dpkg -x libssl1.1_*.deb openssl_temp
-          cp openssl_temp/usr/lib/x86_64-linux-gnu/libssl.so.1.1 AppDir/usr/lib/
-          cp openssl_temp/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 AppDir/usr/lib/
+          # Fix OpenSSL: Copy system OpenSSL 1.1 libs (standard on Ubuntu 20.04)
+          # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it.
+          cp /usr/lib/x86_64-linux-gnu/libssl.so.1.1 AppDir/usr/lib/
+          cp /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 AppDir/usr/lib/
           
           # Patch RPATH of the main binary to find libs in ../lib relative to itself
           # We DO NOT set LD_LIBRARY_PATH so we can verify if RPATH is working correctly
