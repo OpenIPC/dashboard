@@ -157,6 +157,13 @@ jobs:
           if [ -d "/usr/lib/x86_64-linux-gnu/vlc/plugins" ]; then
              cp -r /usr/lib/x86_64-linux-gnu/vlc/plugins/* AppDir/usr/bin/plugins/
           fi
+          
+          # Copy live555 dependencies (required for RTSP support in typical Ubuntu VLC builds)
+          # These libraries are dynamically linked by liblive555_plugin.so but often missed by linuxdeployqt
+          cp /usr/lib/x86_64-linux-gnu/libliveMedia.so.* AppDir/usr/lib/ || true
+          cp /usr/lib/x86_64-linux-gnu/libgroupsock.so.* AppDir/usr/lib/ || true
+          cp /usr/lib/x86_64-linux-gnu/libUsageEnvironment.so.* AppDir/usr/lib/ || true
+          cp /usr/lib/x86_64-linux-gnu/libBasicUsageEnvironment.so.* AppDir/usr/lib/ || true
 
           # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
           # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it, but Ubuntu 22.04+ has OpenSSL 3.
