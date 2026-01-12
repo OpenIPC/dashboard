@@ -85,7 +85,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf
+          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -93,7 +93,7 @@ jobs:
           version: '6.4.2'
           host: 'linux'
           target: 'desktop'
-          modules: 'qtmultimedia'
+          modules: 'qtmultimedia qtwayland'
 
       - name: Install libxcb dependencies
         run: sudo apt-get install -y libxcb-cursor0
@@ -169,7 +169,7 @@ jobs:
             -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
-            -extra-plugins=iconengines,imageformats \
+            -extra-plugins=iconengines,imageformats,platforms,platformthemes \
             -verbose=2 \
             -no-strip \
             -no-translations \
