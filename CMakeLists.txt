@@ -260,10 +260,6 @@ endif()
 
 # Copy OpenIPC QML module to build directory (for deployment)
 # On Linux we might want to instal this, but for local build copying is fine
-    message(WARNING "libVLC plugins directory not found under ${LIBVLC_DIR}; RTSP/codec modules may be missing.")
-endif()
-
-# Copy OpenIPC QML module to build directory (for deployment)
 add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_BINARY_DIR}/OpenIPC $<TARGET_FILE_DIR:appOpenIPC-Dashboard>/OpenIPC
