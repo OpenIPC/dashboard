@@ -145,6 +145,11 @@ jobs:
           mkdir -p AppDir/usr/lib
           cp libs/dahua/lib/Linux64/*.so AppDir/usr/lib/
           cp libs/onnxruntime/lib/Linux64/*.so* AppDir/usr/lib/
+          
+          # Copy OpenIPC assets (QML modules, models) - mirror Windows behavior
+          if [ -d "build/OpenIPC" ]; then
+            cp -r build/OpenIPC AppDir/usr/bin/
+          fi
 
           # Fix OpenSSL: Download and bundle OpenSSL 1.1 for Qt 6.4 compatibility on Ubuntu 22.04+ check
           # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it, but Ubuntu 22.04+ has OpenSSL 3.
@@ -184,6 +189,7 @@ jobs:
             -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
+            -exclude-libs=libglib-2.0.so.0,libgthread-2.0.so.0,libgobject-2.0.so.0,libgmodule-2.0.so.0,libgio-2.0.so.0 \
             -extra-plugins=iconengines,imageformats,platforms,platformthemes,wayland-decoration-client,wayland-graphics-integration-client,wayland-shell-integration \
             -verbose=2 \
             -no-strip \
