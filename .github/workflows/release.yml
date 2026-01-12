@@ -39,14 +39,23 @@ jobs:
       - name: Prepare Release Package
         shell: pwsh
         run: |
-          mkdir release_pack
-          copy build/appOpenIPC-Dashboard.exe release_pack/
+          New-Item -ItemType Directory -Force -Path release_pack
+          Copy-Item build/appOpenIPC-Dashboard.exe -Destination release_pack/
+          
           # Copy DLLs
-          if (Test-Path build/*.dll) { copy build/*.dll release_pack/ }
+          if (Test-Path build/*.dll) { 
+            Copy-Item build/*.dll -Destination release_pack/ 
+          }
+          
           # Copy plugins folder
-          if (Test-Path build/plugins) { xcopy build/plugins release_pack/plugins /E /I }
+          if (Test-Path build/plugins) { 
+            Copy-Item build/plugins -Destination release_pack/ -Recurse 
+          }
+          
           # Copy OpenIPC QML module
-          xcopy build/OpenIPC release_pack/OpenIPC /E /I
+          if (Test-Path build/OpenIPC) {
+            Copy-Item build/OpenIPC -Destination release_pack/ -Recurse
+          }
   
       - name: Zip Artifacts
         run: Compress-Archive -Path release_pack/* -DestinationPath OpenIPC-Dashboard-Windows.zip
