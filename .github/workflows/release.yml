@@ -205,7 +205,3 @@ jobs:
           files: |
             OpenIPC-Dashboard-Installer.exe
             OpenIPC-Dashboard-Linux.AppImage
-        with:
-          files: |
-            OpenIPC-Dashboard-Windows.zip
-            OpenIPC-Dashboard-Linux.tar.gz
