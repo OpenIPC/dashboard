@@ -85,7 +85,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick
+          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -137,14 +137,21 @@ jobs:
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ github.workspace }}/libs/dahua/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib/Linux64:${{ github.workspace }}/libs/onnxruntime/lib
           
           # !IMPORTANT! Copy custom libs to standard location expected by AppImage (usr/lib)
-          # linuxdeployqt doesn't always automatically pull in libs from non-standard paths even if they are in ldd
           mkdir -p AppDir/usr/lib
-          cp libs/dahua/lib/Linux64/libdhnetsdk.so AppDir/usr/lib/
-          cp libs/onnxruntime/lib/Linux64/libonnxruntime.so.1 AppDir/usr/lib/
+          cp libs/dahua/lib/Linux64/*.so AppDir/usr/lib/
+          cp libs/onnxruntime/lib/Linux64/*.so* AppDir/usr/lib/
+          
+          # Patch RPATH of the main binary to find libs in ../lib relative to itself
+          # This ensures that when linuxdeployqt inspects the binary, it sees the libs are resolvable within the AppDir
+          patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/appOpenIPC-Dashboard
+          
+          # Debug: check ldd after patching
+          echo "LDD after patching:"
+          ldd AppDir/usr/bin/appOpenIPC-Dashboard
           
           # Run linuxdeployqt
           # We use -no-strip to avoid potential issues with stripping failing
-          # We use -executable to force it to look at our binary again in the right context
+          # We REMOVE -executable flags as the RPATH should handle it now, and -executable sometimes causes duplicate processing crashes
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
             -unsupported-allow-new-glibc \
@@ -152,9 +159,7 @@ jobs:
             -qmldir=build/OpenIPC \
             -extra-plugins=iconengines,imageformats \
             -verbose=2 \
-            -no-strip \
-            -executable=AppDir/usr/lib/libdhnetsdk.so \
-            -executable=AppDir/usr/lib/libonnxruntime.so.1
+            -no-strip
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
