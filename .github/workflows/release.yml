@@ -150,9 +150,12 @@ jobs:
           # We use -no-strip to avoid potential issues with stripping failing
           # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
           
-          # Use qmake to get the correct plugin path
-          export QT_PLUGIN_PATH=$(qmake -query QT_INSTALL_PLUGINS)
-          echo "Using QT_PLUGIN_PATH: $QT_PLUGIN_PATH"
+          # Verify qmake version
+          echo "Checking qmake version:"
+          qmake --version
+          
+          # UNSET QT_PLUGIN_PATH to avoid crashing linuxdeployqt (which uses Qt5) with Qt6 plugins
+          unset QT_PLUGIN_PATH
           
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
