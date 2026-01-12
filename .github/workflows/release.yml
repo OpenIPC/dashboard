@@ -150,12 +150,14 @@ jobs:
           # We use -no-strip to avoid potential issues with stripping failing
           # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
           
-          # Verify qmake version
-          echo "Checking qmake version:"
-          qmake --version
-          
-          # UNSET QT_PLUGIN_PATH to avoid crashing linuxdeployqt (which uses Qt5) with Qt6 plugins
+          # UNSET QT_PLUGIN_PATH
           unset QT_PLUGIN_PATH
+          
+          # Explicitly set QMAKE path to the Qt6 qmake (linuxdeployqt uses it to find plugins)
+          export QMAKE=${{ env.Qt6_DIR }}/bin/qmake
+          
+          # Use -verbose=0 (less output) to see if we can spot the actual error message at the end
+          # Sometimes verbose output hides the real error or crashes the logger
           
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -appimage \
@@ -165,7 +167,8 @@ jobs:
             -extra-plugins=iconengines,imageformats \
             -verbose=2 \
             -no-strip \
-            -no-translations
+            -no-translations \
+            -qmake=$QMAKE
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
