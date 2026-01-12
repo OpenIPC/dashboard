@@ -127,7 +127,7 @@ jobs:
           
           # Prepare Icon (Convert .ico to .png)
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
-          convert resources/appicon.ico -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
+          convert "resources/appicon.ico[0]" -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
           
           # Copy desktop file
           mkdir -p AppDir/usr/share/applications/
@@ -150,7 +150,8 @@ jobs:
             -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
-            -extra-plugins=iconengines,imageformats
+            -extra-plugins=iconengines,imageformats \
+            -verbose=2
             
       - name: Rename AppImage
         run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
