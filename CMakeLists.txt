@@ -85,7 +85,7 @@ if(WIN32)
             "${GST_ROOT}/lib/gstreamer-1.0/include"
         )
         # Force include these for the upcoming target
-        include_directories(SYSTEM ${GST_INCLUDE_DIRS})
+        include_directories(${GST_INCLUDE_DIRS})
         
         link_directories("${GST_ROOT}/lib")
         set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
@@ -226,6 +226,15 @@ set_source_files_properties(src/ui/I18n.qml PROPERTIES QT_QML_SINGLETON_TYPE TRU
 set(QML_RESOURCES
     src/ui/fonts/MaterialIcons-Regular.ttf
 )
+
+# Hardcoded safety net for Windows CI to ensure headers are found
+if(WIN32 AND EXISTS "C:/gstreamer/1.0/mingw_x86_64")
+     message(STATUS "Adding Hardcoded GStreamer Includes for CI")
+     include_directories("C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0")
+     include_directories("C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0")
+     include_directories("C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include")
+     include_directories("C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include")
+endif()
 
 add_executable(appOpenIPC-Dashboard
     ${SOURCES}
