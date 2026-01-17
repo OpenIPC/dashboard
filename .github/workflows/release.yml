@@ -47,12 +47,16 @@ jobs:
           & curl.exe -L --retry 5 --retry-delay 3 `
             -H "User-Agent: $userAgent" `
             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
+            -H "Accept-Language: en-US,en;q=0.9" `
+            -H "Referer: https://gstreamer.freedesktop.org/download/" `
             -o "gstreamer.msi" "$url_runtime"
             
           Write-Host "Downloading Devel..."
           & curl.exe -L --retry 5 --retry-delay 3 `
             -H "User-Agent: $userAgent" `
             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
+            -H "Accept-Language: en-US,en;q=0.9" `
+            -H "Referer: https://gstreamer.freedesktop.org/download/" `
             -o "gstreamer-devel.msi" "$url_devel"
 
           # Verify downloads
