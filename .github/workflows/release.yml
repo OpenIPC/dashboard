@@ -32,29 +32,56 @@ jobs:
           arch: 'win64_mingw'
           modules: 'qtmultimedia'
 
-      - name: Install GStreamer (MinGW) via Chocolatey
+      - name: Download GStreamer (MinGW) from GitHub Release
+        env:
+           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-           # Chocolatey installs to C:\gstreamer by default for this package
-           choco install gstreamer --version 1.22.8 -y
-           choco install gstreamer-devel --version 1.22.8 -y
+           # Download MSI assets from your specific release "gstreamer-1.26.10"
+           # NOTE: We assume the files attached are named:
+           # gstreamer-1.0-mingw-x86_64-1.22.8.msi OR similar.
+           # Since you mentioned the TAG is "gstreamer-1.26.10" but the files inside often follow standard naming.
+           # I will attempt to download ALL msi files from that tag to be safe, then install them.
            
-           # Verify installation path (Chocolatey gstreamer package usually installs to C:\gstreamer\1.0\mingw_x86_64 or msvc)
-           # We need to detect where it put it exactly.
-           $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
-           if (-not (Test-Path $gstRoot)) {
-               $gstRoot = "C:\gstreamer\1.0\msvc_x86_64" 
-           }
-           Write-Host "Detected GStreamer Root: $gstRoot"
+           gh release download gstreamer-1.26.10 --pattern "*.msi" --repo OpenIPC/dashboard
            
-           if (-not (Test-Path "$gstRoot\bin")) {
-               Write-Error "Could not find GStreamer bin folder"
+           # Identify filenames
+           $msiRuntime = Get-ChildItem -Filter "gstreamer-1.0-mingw-*.msi" | Select-Object -ExpandProperty Name -First 1
+           $msiDevel   = Get-ChildItem -Filter "gstreamer-1.0-devel-mingw-*.msi" | Select-Object -ExpandProperty Name -First 1
+           
+           if (-not $msiRuntime -or -not $msiDevel) {
+               Write-Error "Could not find both runtime and devel MSIs in the downloaded assets. Files found: $(Get-ChildItem *.msi | Out-String)"
                exit 1
            }
-
+           
+           Write-Host "Installing Runtime: $msiRuntime"
+           Start-Process msiexec.exe -ArgumentList '/i', $msiRuntime, '/quiet', '/norestart' -NoNewWindow -Wait
+           
+           Write-Host "Installing Devel: $msiDevel"
+           Start-Process msiexec.exe -ArgumentList '/i', $msiDevel, '/quiet', '/norestart' -NoNewWindow -Wait
+           
+           # GStreamer 1.22+ on MinGW usually goes to C:\gstreamer\1.0\mingw_x86_64
+           # We verify this path.
+           $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
+           if (-not (Test-Path $gstRoot)) {
+               Write-Host "Warning: Standard path not found, searching..."
+               # Fallback search if version changed path structure
+               $gstRoot = Get-ChildItem "C:\gstreamer\1.0" | Where-Object { $_.Name -like "*mingw*" } | Select-Object -ExpandProperty FullName -First 1
+           }
+           
+           if (-not $gstRoot -or -not (Test-Path "$gstRoot\bin")) {
+               Write-Error "Could not determine GStreamer installation root."
+               exit 1
+           }
+           
+           Write-Host "GStreamer installed at: $gstRoot"
+           
            echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=$gstRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
            echo "$gstRoot\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
            echo "PKG_CONFIG_PATH=$gstRoot\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+           
+           echo "Debug: Listing GStreamer Includes"
+           Get-ChildItem -Recurse "$gstRoot\include" | Select-Object FullName -First 20
 
       - name: Configure CMake
         run: |
