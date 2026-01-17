@@ -79,10 +79,39 @@ Window {
     property int playerHue: 0
     property real playerSaturation: 1.0
     property real playerGamma: 1.0
+    property int playerOrientation: 0
+    property bool playerMirror: false
 
     property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
 
-    Component.onCompleted: {
+    // Helper to apply current settings
+    function applyCurrentSettings() {
+        var settings = {
+            "language": language,
+            "recordingsPath": recordingsPath,
+            "screenshotsPath": screenshotsPath,
+            "hwAccel": hwAccel,
+            "notificationsEnabled": notificationsEnabled,
+            "preferredStream": preferredStream,
+            "playerFillMode": playerFillMode,
+            "showStatsOverlay": showStatsOverlay,
+            "defaultAutoplay": defaultAutoplay,
+            "playerBufferMode": playerBufferMode,
+            "playerRtspTransport": playerRtspTransport,
+            "playerHwDecoding": playerHwDecoding,
+            "recordingSegmentDuration": recordingSegmentDuration,
+            "playerBrightness": playerBrightness,
+            "playerContrast": playerContrast,
+            "playerHue": playerHue,
+            "playerSaturation": playerSaturation,
+            "playerGamma": playerGamma,
+            "playerOrientation": playerOrientation,
+            "playerMirror": playerMirror
+        }
+        SystemController.saveAppSettings(settings)
+    }
+
+    function loadSettings() {
         var settings = SystemController.getAppSettings()
         if (settings) {
             if (settings.language) language = settings.language
@@ -104,7 +133,13 @@ Window {
             if (settings.playerHue !== undefined) playerHue = settings.playerHue
             if (settings.playerSaturation !== undefined) playerSaturation = settings.playerSaturation
             if (settings.playerGamma !== undefined) playerGamma = settings.playerGamma
+            if (settings.playerOrientation !== undefined) playerOrientation = settings.playerOrientation
+            if (settings.playerMirror !== undefined) playerMirror = settings.playerMirror
         }
+    }
+
+    Component.onCompleted: {
+        loadSettings()
     }
 
     onLanguageChanged: {
@@ -174,6 +209,10 @@ Window {
         onAccepted: {
             var path = trimFileUrl(selectedFile)
             console.log("Export config to", path)
+            var success = SystemController.exportConfiguration(path)
+            if (success) {
+                 // Maybe show notification
+            }
         }
     }
 
@@ -185,6 +224,12 @@ Window {
         onAccepted: {
             var path = trimFileUrl(selectedFile)
             console.log("Import config from", path)
+            var success = SystemController.importConfiguration(path)
+            if (success) {
+                loadSettings()
+                root.close()
+                // Optional: Notify user
+            }
         }
     }
 
@@ -761,7 +806,7 @@ Window {
                             // anchors.leftMargin: 4
 
                         Text {
-                            text: I18n.t("Трансляция (VLC)")
+                            text: I18n.t("Трансляция (GStreamer)")
                             color: "#ffffff"
                             font.pixelSize: 16
                             font.bold: true
@@ -776,138 +821,14 @@ Window {
                             property int labelWidth: 180
 
                             Text {
-                                text: I18n.t("Предпочтительный поток")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            ComboBox {
-                                id: streamPrefCombo
-                                model: [I18n.t("Авто"), "HD", "SD"]
-                                currentIndex: preferredStream === "hd" ? 1 : preferredStream === "sd" ? 2 : 0
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: streamPrefCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onActivated: {
-                                    if (index === 1) preferredStream = "hd";
-                                    else if (index === 2) preferredStream = "sd";
-                                    else preferredStream = "auto";
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Режим кадра")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            ComboBox {
-                                id: fillModeCombo
-                                model: [I18n.t("Обрезать по краям"), I18n.t("Сохранять пропорции"), I18n.t("Растянуть")]
-                                currentIndex: playerFillMode === 1 ? 1 : (playerFillMode === 0 ? 2 : 0)
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: fillModeCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onActivated: {
-                                    if (index === 1) playerFillMode = 1.0; // fit/keep aspect
-                                    else if (index === 2) playerFillMode = 0.0; // stretch
-                                    else playerFillMode = -1.0; // crop/fill
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Отображать статистику")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            RowLayout {
-                                spacing: 8
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                StyledCheckBox {
-                                    checked: showStatsOverlay
-                                    onToggled: showStatsOverlay = checked
-                                    text: I18n.t("Показывать codec/res/bitrate/fps")
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Автовоспроизведение")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            RowLayout {
-                                spacing: 8
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                StyledCheckBox {
-                                    checked: defaultAutoplay
-                                    onToggled: defaultAutoplay = checked
-                                    text: I18n.t("Запускать поток сразу после загрузки")
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Буферизация (Задержка)")
+                                text: I18n.t("Режим буферизации (Latency)")
                                 color: "#a0aec0"
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
                             ComboBox {
                                 id: bufferModeCombo
-                                model: [I18n.t("Минимальная (Realtime)"), I18n.t("Сбалансированная"), I18n.t("Плавная (Smooth)")]
+                                model: [I18n.t("Стандартная (Stable / 2s)"), I18n.t("Минимальная (Low Latency / 200ms)"), I18n.t("Ультра-низкая (Realtime / 0ms)")]
                                 currentIndex: playerBufferMode
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
@@ -941,15 +862,15 @@ Window {
                             }
 
                             Text {
-                                text: I18n.t("Транспорт RTSP")
+                                text: I18n.t("Протокол RTSP")
                                 color: "#a0aec0"
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
                             ComboBox {
                                 id: rtspTransportCombo
-                                model: ["TCP", "UDP", "HTTP"]
-                                currentIndex: playerRtspTransport === "tcp" ? 0 : (playerRtspTransport === "udp" ? 1 : 2)
+                                model: ["TCP (Interleaved)", "UDP (Unicast)", "UDP (Multicast)", "HTTP (Tunneling)"]
+                                currentIndex: playerRtspTransport === "tcp" ? 0 : (playerRtspTransport === "udp" ? 1 : (playerRtspTransport === "udp_mcast" ? 2 : 3))
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
                                 background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
@@ -979,7 +900,8 @@ Window {
                                 onActivated: {
                                     if (index === 0) playerRtspTransport = "tcp"
                                     else if (index === 1) playerRtspTransport = "udp"
-                                    else if (index === 2) playerRtspTransport = "http"
+                                    else if (index === 2) playerRtspTransport = "udp_mcast"
+                                    else if (index === 3) playerRtspTransport = "http"
                                 }
                             }
 
@@ -1031,7 +953,119 @@ Window {
                                     else playerHwDecoding = "auto"
                                 }
                             }
+
+                            Text {
+                                text: I18n.t("Предпочтительный поток")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            ComboBox {
+                                id: streamPrefCombo
+                                model: [I18n.t("Авто"), "HD", "SD"]
+                                currentIndex: preferredStream === "hd" ? 1 : preferredStream === "sd" ? 2 : 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                contentItem: Text {
+                                    text: streamPrefCombo.displayText
+                                    color: "white"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+                                indicator: Canvas {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 8
+                                    width: 12; height: 8
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.beginPath();
+                                        ctx.moveTo(0, 0);
+                                        ctx.lineTo(width, 0);
+                                        ctx.lineTo(width/2, height);
+                                        ctx.closePath();
+                                        ctx.fill();
+                                    }
+                                }
+                                onActivated: {
+                                    if (index === 1) preferredStream = "hd";
+                                    else if (index === 2) preferredStream = "sd";
+                                    else preferredStream = "auto";
+                                }
+                            }
+                            
+                            Text {
+                                text: I18n.t("Отображать статистику")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            RowLayout {
+                                spacing: 8
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 26
+                                StyledCheckBox {
+                                    checked: showStatsOverlay
+                                    onToggled: showStatsOverlay = checked
+                                    text: I18n.t("Показывать codec/res/bitrate/fps")
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                            }
                         }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#3b4657"
+                        }
+/*
+                            Text {
+                                text: I18n.t("Режим кадра")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            ComboBox {
+                                id: fillModeCombo
+                                model: [I18n.t("Обрезать по краям"), I18n.t("Сохранять пропорции"), I18n.t("Растянуть")]
+                                currentIndex: playerFillMode === 1 ? 1 : (playerFillMode === 0 ? 2 : 0)
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                contentItem: Text {
+                                    text: fillModeCombo.displayText
+                                    color: "white"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                    rightPadding: 24
+                                }
+                                indicator: Canvas {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 8
+                                    width: 12; height: 8
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.beginPath();
+                                        ctx.moveTo(0, 0);
+                                        ctx.lineTo(width, 0);
+                                        ctx.lineTo(width/2, height);
+                                        ctx.closePath();
+                                        ctx.fill();
+                                    }
+                                }
+                                onActivated: {
+                                    if (index === 1) playerFillMode = 1.0; // fit/keep aspect
+                                    else if (index === 2) playerFillMode = 0.0; // stretch
+                                    else playerFillMode = -1.0; // crop/fill
+                                }
+                            }
+*/
 
                         Rectangle {
                             Layout.fillWidth: true
@@ -1053,6 +1087,47 @@ Window {
                             rowSpacing: 10
                             Layout.fillWidth: true
                             property int labelWidth: 180
+                            
+                            // Transform
+                            Text {
+                                text: I18n.t("Поворот / Зеркало")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: adjustmentsGrid.labelWidth
+                            }
+                            RowLayout {
+                                spacing: 10
+                                Layout.fillWidth: true
+                                ComboBox {
+                                    model: ["0°", "90°", "180°", "270°"]
+                                    currentIndex: {
+                                        if (playerOrientation === 90) return 1
+                                        if (playerOrientation === 180) return 2
+                                        if (playerOrientation === 270) return 3
+                                        return 0
+                                    }
+                                    onActivated: {
+                                        if (index === 1) playerOrientation = 90
+                                        else if (index === 2) playerOrientation = 180
+                                        else if (index === 3) playerOrientation = 270
+                                        else playerOrientation = 0
+                                    }
+                                    Layout.preferredWidth: 100
+                                    Layout.preferredHeight: 32
+                                    background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                    contentItem: Text {
+                                        text: parent.displayText
+                                        color: "white"
+                                        verticalAlignment: Text.AlignVCenter
+                                        leftPadding: 8
+                                    }
+                                }
+                                StyledCheckBox {
+                                    text: I18n.t("Зеркально")
+                                    checked: playerMirror
+                                    onToggled: playerMirror = checked
+                                }
+                            }
 
                             // Brightness
                             Text {
@@ -1066,6 +1141,7 @@ Window {
                                 value: playerBrightness
                                 Layout.fillWidth: true
                                 onMoved: playerBrightness = value
+                                onPressedChanged: if (!pressed) applyCurrentSettings()
                             }
                             
                             // Contrast
@@ -1080,6 +1156,7 @@ Window {
                                 value: playerContrast
                                 Layout.fillWidth: true
                                 onMoved: playerContrast = value
+                                onPressedChanged: if (!pressed) applyCurrentSettings()
                             }
                             
                             // Saturation
@@ -1090,10 +1167,11 @@ Window {
                                 Layout.preferredWidth: adjustmentsGrid.labelWidth
                             }
                             Slider {
-                                from: 0.0; to: 3.0
+                                from: 0.0; to: 2.0
                                 value: playerSaturation
                                 Layout.fillWidth: true
                                 onMoved: playerSaturation = value
+                                onPressedChanged: if (!pressed) applyCurrentSettings()
                             }
                             
                             // Gamma
@@ -1108,6 +1186,7 @@ Window {
                                 value: playerGamma
                                 Layout.fillWidth: true
                                 onMoved: playerGamma = value
+                                onPressedChanged: if (!pressed) applyCurrentSettings()
                             }
 
                             // Hue
@@ -1123,8 +1202,9 @@ Window {
                                 value: playerHue
                                 Layout.fillWidth: true
                                 onMoved: playerHue = value
+                                onPressedChanged: if (!pressed) applyCurrentSettings()
                             }
-                            
+
                             // Reset Button
                             Item { Layout.fillWidth: true; Layout.columnSpan: 2; height: 10 }
                             Button {
@@ -1137,6 +1217,9 @@ Window {
                                     playerHue = 0
                                     playerSaturation = 1.0
                                     playerGamma = 1.0
+                                    playerOrientation = 0
+                                    playerMirror = false
+                                    applyCurrentSettings()
                                 }
                                 background: Rectangle { color: "#4a5568"; radius: 4 }
                                 contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -1274,27 +1357,7 @@ Window {
             }
             
             onClicked: {
-                var settings = {
-                    "language": language,
-                    "recordingsPath": recordingsPath,
-                    "screenshotsPath": screenshotsPath,
-                    "hwAccel": hwAccel,
-                    "notificationsEnabled": notificationsEnabled,
-                    "preferredStream": preferredStream,
-                    "playerFillMode": playerFillMode,
-                    "showStatsOverlay": showStatsOverlay,
-                    "defaultAutoplay": defaultAutoplay,
-                    "playerBufferMode": playerBufferMode,
-                    "playerRtspTransport": playerRtspTransport,
-                    "playerHwDecoding": playerHwDecoding,
-                    "recordingSegmentDuration": recordingSegmentDuration,
-                    "playerBrightness": playerBrightness,
-                    "playerContrast": playerContrast,
-                    "playerHue": playerHue,
-                    "playerSaturation": playerSaturation,
-                    "playerGamma": playerGamma
-                }
-                SystemController.saveAppSettings(settings)
+                applyCurrentSettings()
                 root.close()
             }
         }

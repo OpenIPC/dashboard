@@ -34,20 +34,56 @@ find_library(LIBVLCCORE_LIBRARY NAMES libvlccore
     PATHS "${LIBVLC_DIR}/lib" "${LIBVLC_DIR}/win64/lib" "${LIBVLC_DIR}/sdk/lib")
 
 if(NOT LIBVLC_INCLUDE_DIR OR NOT LIBVLC_LIBRARY OR NOT LIBVLCCORE_LIBRARY)
-    if(UNIX AND NOT APPLE)
-        message(STATUS "Trying to find libVLC via pkg-config...")
-        find_package(PkgConfig REQUIRED)
-        pkg_check_modules(LIBVLC REQUIRED libvlc)
-        # Fix for some distros where pkg-config returns include path without vlc/vlc.h suffix
-        find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h PATHS ${LIBVLC_INCLUDE_DIRS})
-        set(LIBVLC_LIBRARY ${LIBVLC_LIBRARIES})
-        set(LIBVLCCORE_LIBRARY "") # PkgConfig usually lumps them or we mostly link against libvlc
+#    if(UNIX AND NOT APPLE)
+#        message(STATUS "Trying to find libVLC via pkg-config...")
+#        find_package(PkgConfig REQUIRED)
+#        pkg_check_modules(LIBVLC REQUIRED libvlc)
+#        # Fix for some distros where pkg-config returns include path without vlc/vlc.h suffix
+#        find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h PATHS ${LIBVLC_INCLUDE_DIRS})
+#        set(LIBVLC_LIBRARY ${LIBVLC_LIBRARIES})
+#        set(LIBVLCCORE_LIBRARY "") # PkgConfig usually lumps them or we mostly link against libvlc
+#    else()
+#        message(FATAL_ERROR "libVLC SDK not found. Set LIBVLC_DIR to the SDK root containing include/ and lib/ (e.g. libs/libvlc/sdk).")
+#    endif()
+endif()
+
+# include_directories(${LIBVLC_INCLUDE_DIR})
+
+# GStreamer Integration
+if(WIN32)
+    set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
+    if(NOT GST_ROOT)
+        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+    endif()
+    
+    # Try standard install locations if env vars are missing
+    if(NOT GST_ROOT)
+        if(EXISTS "C:/gstreamer/1.0/mingw_x86_64")
+            set(GST_ROOT "C:/gstreamer/1.0/mingw_x86_64")
+        elseif(EXISTS "C:/gstreamer/1.0/msvc_x86_64")
+            set(GST_ROOT "C:/gstreamer/1.0/msvc_x86_64")
+        endif()
+    endif()
+
+    if(GST_ROOT)
+        message(STATUS "Found GStreamer Env: ${GST_ROOT}")
+        include_directories(${GST_ROOT}/include/gstreamer-1.0 ${GST_ROOT}/include/glib-2.0 ${GST_ROOT}/lib/glib-2.0/include)
+        link_directories(${GST_ROOT}/lib)
+        set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0)
     else()
-        message(FATAL_ERROR "libVLC SDK not found. Set LIBVLC_DIR to the SDK root containing include/ and lib/ (e.g. libs/libvlc/sdk).")
+        message(WARNING "GStreamer not found via Environment Variables or Standard Paths.")
+        message(FATAL_ERROR "Please install GStreamer 1.0 MinGW 64-bit from https://gstreamer.freedesktop.org/download/ and ensure GSTREAMER_1_0_ROOT_MINGW_X86_64 is set.")
     endif()
 endif()
 
-include_directories(${LIBVLC_INCLUDE_DIR})
+if(NOT GST_LIBRARIES)
+    find_package(PkgConfig REQUIRED) 
+    pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 glib-2.0 gobject-2.0)
+    include_directories(${GST_INCLUDE_DIRS})
+    link_directories(${GST_LIBRARY_DIRS})
+    set(GST_LIBRARIES ${GST_LIBRARIES})
+endif()
+
 
 # ONNX Runtime Setup
 if(WIN32)
@@ -93,8 +129,8 @@ set(SOURCES
     src/backend/CameraModel.h
     src/backend/StatusChecker.cpp
     src/backend/StatusChecker.h
-    src/backend/LibVlcPlayer.cpp
-    src/backend/LibVlcPlayer.h
+    src/backend/gst/GstPlayer.cpp
+    src/backend/gst/GstPlayer.h
     src/backend/AnalyticsModel.cpp
     src/backend/AnalyticsModel.h
     src/backend/analytics/AnalyticsEngine.cpp
@@ -158,7 +194,7 @@ add_executable(appOpenIPC-Dashboard
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
-    set_target_properties(appOpenIPC-Dashboard PROPERTIES WIN32_EXECUTABLE TRUE)
+    # set_target_properties(appOpenIPC-Dashboard PROPERTIES WIN32_EXECUTABLE TRUE)
 else()
     # Configure RPATH to look in the application directory for shared libraries
     set_target_properties(appOpenIPC-Dashboard PROPERTIES 
@@ -176,7 +212,7 @@ qt_add_qml_module(appOpenIPC-Dashboard
 )
 
 target_link_libraries(appOpenIPC-Dashboard
-    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent onnxruntime dhnetsdk ${LIBVLC_LIBRARY} ${LIBVLCCORE_LIBRARY}
+    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent onnxruntime dhnetsdk ${GST_LIBRARIES}
 )
 
 if (UNIX AND NOT APPLE)
@@ -220,43 +256,7 @@ elseif(UNIX)
     endif()
 endif()
 
-# Copy libVLC DLLs to build directory (guard if glob is empty)
-if(WIN32)
-    file(GLOB LIBVLC_DLLS
-        "${LIBVLC_DIR}/bin/*.dll"
-        "${LIBVLC_DIR}/win64/bin/*.dll"
-        "${LIBVLC_DIR}/lib/*.dll"
-        "${LIBVLC_DIR}/sdk/bin/*.dll"
-        "${LIBVLC_DIR}/sdk/lib/*.dll")
-    if(LIBVLC_DLLS)
-        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${LIBVLC_DLLS}
-            $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
-        )
-    else()
-        message(WARNING "libVLC DLLs not found in ${LIBVLC_DIR}; please ensure libvlc.dll and libvlccore.dll are present under bin/ or lib/.")
-    endif()
-endif()
 
-# Copy libVLC plugins directory if present (required for demux/codec modules)
-if(WIN32)
-    if(EXISTS "${LIBVLC_DIR}/plugins")
-        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${LIBVLC_DIR}/plugins"
-            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/plugins"
-        )
-    elseif(EXISTS "${LIBVLC_DIR}/sdk/plugins")
-        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${LIBVLC_DIR}/sdk/plugins"
-            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/plugins"
-        )
-    else()
-        message(WARNING "libVLC plugins directory not found under ${LIBVLC_DIR}; RTSP/codec modules may be missing.")
-    endif()
-endif()
 
 # Copy OpenIPC QML module to build directory (for deployment)
 # On Linux we might want to instal this, but for local build copying is fine

@@ -9,12 +9,17 @@
 #include <QDateTime>
 #include <QTimer>
 #include "backend/SystemController.h"
-#include "backend/LibVlcPlayer.h"
+#include "backend/gst/GstPlayer.h"
 #include "backend/AnalyticsModel.h"
 #include "backend/analytics/AnalyticsEngine.h"
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
 #include <functional>
+
+// Hardcoded GStreamer paths for Windows environment
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace {
 QFile gLogFile;
@@ -64,6 +69,35 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_WIN
+    // Force GStreamer paths to known installation if local bundle is missing
+    // Detailed handling for development environment where plugins are in C:\Program Files\...
+    qputenv("GST_DEBUG", "2"); // Enable warning logs
+    
+    // Explicitly set the plugin path to the standard MinGW 64-bit GStreamer install
+    // This fixes the issue where plugins are not found despite being installed
+    const char* winGstPlugins = "C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64\\lib\\gstreamer-1.0";
+    qputenv("GST_PLUGIN_PATH", winGstPlugins);
+    qputenv("GST_PLUGIN_SYSTEM_PATH", winGstPlugins);
+    
+    // Also ensure bin is in PATH for DLL resolution
+    const char* winGstBin = "C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64\\bin";
+    QString currentPath = qEnvironmentVariable("PATH");
+    if (!currentPath.contains("mingw_x86_64\\bin")) {
+         qputenv("PATH", (QString(winGstBin) + ";" + currentPath).toLocal8Bit());
+    }
+#endif
+
+    // Configure GStreamer paths for standalone deployment
+    // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString localGstPlugins = appDir + "/lib/gstreamer-1.0";
+    if (QDir(localGstPlugins).exists()) {
+        qputenv("GST_PLUGIN_PATH", localGstPlugins.toLocal8Bit());
+        qputenv("GST_PLUGIN_SYSTEM_PATH", ""); // Ignore system install if local exists
+        qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
+    }
+
     // Check for ASKPASS mode
     if (qEnvironmentVariableIsSet("OPENIPC_ASKPASS_MODE")) {
         QTextStream out(stdout);
@@ -71,7 +105,12 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    QGuiApplication app(argc, argv); // Create app first to get standard paths
+    // Force Software rendering to avoid D3D11/OpenGL issues
+    // This MUST be done before QGuiApplication is created
+    // qputenv("QSG_RHI_BACKEND", "software");
+    // QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+
+    QGuiApplication app(argc, argv); 
     app.setOrganizationName("OpenIPC");
     app.setApplicationName("Dashboard");
 
@@ -86,21 +125,13 @@ int main(int argc, char *argv[])
         qInstallMessageHandler(logMessageHandler);
     } else {
         // Fallback to temp if AppData fails
-        gLogFile.setFileName(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/appOpenIPC-Dashboard.log");
-        if (gLogFile.open(QIODevice::Append | QIODevice::Text)) {
-             qInstallMessageHandler(logMessageHandler);
-        }
+        // gLogFile.setFileName(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/appOpenIPC-Dashboard.log");
+        // if (gLogFile.open(QIODevice::Append | QIODevice::Text)) {
+        //      qInstallMessageHandler(logMessageHandler);
+        // }
+        // Simplify fallback logging to stderr if file fails
+        fprintf(stderr, "Failed to open log file, logging to stderr only.\n");
     }
-
-    // Force RHI to OpenGL regardless of external env, so QQuickFramebufferObject works with QOpenGL functions.
-    qunsetenv("QT_QUICK_BACKEND");
-    qputenv("QSG_RHI_BACKEND", "opengl");
-    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGLRhi);
-    
-    // Force Software rendering to avoid D3D11/OpenGL issues in deployed environment
-    // QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-
-    // QGuiApplication app(argc, argv); // Already created above
 
     qInfo().noquote() << "Platform" << QGuiApplication::platformName()
                       << "QSG_RHI_BACKEND=" << qEnvironmentVariable("QSG_RHI_BACKEND")
@@ -117,57 +148,40 @@ int main(int argc, char *argv[])
 
     QQmlApplicationEngine engine;
 
-    // Register LibVlcPlayer
-    qmlRegisterType<LibVlcPlayer>("OpenIPC", 1, 0, "LibVlcPlayer");
+    // Register GStreamer Player
+    qmlRegisterType<GstPlayer>("OpenIPC", 1, 0, "VideoPlayer");
     qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
     qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
     qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
     qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");
 
-    // engine.rootContext()->setContextProperty("systemController", &systemController);
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 
     const QUrl url(u"qrc:/OpenIPC/src/ui/Main.qml"_qs);
-    // const QUrl url(u"qrc:/OpenIPC/src/ui/Test.qml"_qs);
     qInfo() << "engine.load start" << url;
+    
+    // Connect to objectCreated to catch errors early
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
+                     &app, [url](QObject *obj, const QUrl &objUrl) {
+        if (!obj && url == objUrl) {
+            qCritical() << "Failed to load QML app! Object is null.";
+            QCoreApplication::exit(-1);
+        } else {
+            qInfo() << "QML Object created successfully:" << objUrl;
+        }
+    }, Qt::QueuedConnection);
+
     engine.load(url);
     qInfo() << "engine.load finished";
 
-    qInfo() << "engine.load done, rootObjects=" << engine.rootObjects().size();
-
-    qInfo() << "engine.load done, rootObjects=" << engine.rootObjects().size();
-    if (!engine.rootObjects().isEmpty()) {
-        if (auto windowObj = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {
-            qInfo() << "post-load window visible=" << windowObj->isVisible()
-                    << "geometry=" << windowObj->geometry()
-                    << "flags=" << Qt::hex << static_cast<quint64>(windowObj->flags()) << Qt::dec
-                    << "handle=" << windowObj->winId();
-        } else {
-            qWarning() << "post-load root object is not a QWindow";
-        }
+    if (engine.rootObjects().isEmpty()) {
+        qCritical() << "No root objects loaded - Code -1";
+        return -1;
     }
-
-    QTimer::singleShot(200, [&engine]() {
-        qInfo() << "singleShot root objects=" << engine.rootObjects().size();
-        if (!engine.rootObjects().isEmpty()) {
-            if (auto windowObj = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {
-                windowObj->showMaximized();
-                windowObj->requestActivate();
-                qInfo() << "singleShot window visible=" << windowObj->isVisible()
-                        << "geometry=" << windowObj->geometry()
-                        << "flags=" << Qt::hex << static_cast<quint64>(windowObj->flags()) << Qt::dec
-                        << "handle=" << windowObj->winId();
-            } else {
-                qWarning() << "singleShot: root object is not a QWindow";
-            }
-        }
-    });
-
-    // Runtime check: if we still ended up on software or a non-OpenGL backend, warn loudly.
-    auto api = QQuickWindow::graphicsApi();
-    if (api != QSGRendererInterface::OpenGL && api != QSGRendererInterface::OpenGLRhi) {
-        qWarning() << "Scene graph backend is not OpenGL (" << api << "). MDK video will not render."
-                   << "Ensure OpenGL/ANGLE is available or place opengl32sw.dll next to the executable.";
+    
+    if (auto windowObj = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {
+        qInfo() << "Initial window visible=" << windowObj->isVisible();
+        windowObj->show(); // Force show immediate
     }
 
     return app.exec();

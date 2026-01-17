@@ -41,8 +41,109 @@ echo Copying missing Qt DLLs...
 if exist "%QT_BIN_DIR%\Qt6ShaderTools.dll" copy "%QT_BIN_DIR%\Qt6ShaderTools.dll" dist\
 if exist "%QT_BIN_DIR%\Qt6Svg.dll" copy "%QT_BIN_DIR%\Qt6Svg.dll" dist\
 
-echo Copying MDK dependencies...
-copy mdk-sdk\bin\x64\*.dll dist\
+echo Copying GStreamer dependencies...
+set "GST_ROOT=C:\Program Files\gstreamer\1.0\mingw_x86_64"
+set "GST_BIN=%GST_ROOT%\bin"
+set "GST_PLUGINS=%GST_ROOT%\lib\gstreamer-1.0"
+
+:: Create local plugins directory expected by main.cpp
+mkdir dist\lib\gstreamer-1.0
+
+:: Core GStreamer DLLs
+copy "%GST_BIN%\libgstreamer-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstapp-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstbase-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstvideo-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstaudio-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstpbutils-1.0-0.dll" dist\
+copy "%GST_BIN%\libgsttag-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstcontroller-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstnet-1.0-0.dll" dist\
+:: Extended GStreamer Libraries (Required by plugins)
+copy "%GST_BIN%\libgstgl-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstd3d11-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstd3dshader-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstdxva-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstrtp-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstrtsp-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstsdp-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstcodecparsers-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstcodecs-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstallocators-1.0-0.dll" dist\
+copy "%GST_BIN%\libgstriff-1.0-0.dll" dist\
+
+:: Dependencies (GLib, Intl, etc)
+copy "%GST_BIN%\libglib-2.0-0.dll" dist\
+copy "%GST_BIN%\libgobject-2.0-0.dll" dist\
+copy "%GST_BIN%\libgmodule-2.0-0.dll" dist\
+copy "%GST_BIN%\libgio-2.0-0.dll" dist\
+copy "%GST_BIN%\libintl-8.dll" dist\
+copy "%GST_BIN%\libiconv-2.dll" dist\
+copy "%GST_BIN%\libffi-7.dll" dist\
+copy "%GST_BIN%\liborc-0.4-0.dll" dist\
+
+:: Extra Dependencies (ZLib, XML, Soup, SSL, PCRE, etc)
+copy "%GST_BIN%\libz-1.dll" dist\
+copy "%GST_BIN%\libbz2.dll" dist\
+copy "%GST_BIN%\libxml2-2.dll" dist\
+copy "%GST_BIN%\libsoup-3.0-0.dll" dist\
+copy "%GST_BIN%\libnghttp2.dll" dist\
+copy "%GST_BIN%\libsqlite3-0.dll" dist\
+copy "%GST_BIN%\libpsl-5.dll" dist\
+copy "%GST_BIN%\libpcre2-8-0.dll" dist\
+copy "%GST_BIN%\libssl-3-x64.dll" dist\
+copy "%GST_BIN%\libcrypto-3-x64.dll" dist\
+
+:: FFmpeg/Libav dependencies
+copy "%GST_BIN%\libavcodec-61.dll" dist\
+copy "%GST_BIN%\libavformat-61.dll" dist\
+copy "%GST_BIN%\libavutil-59.dll" dist\
+copy "%GST_BIN%\libavfilter-10.dll" dist\
+copy "%GST_BIN%\libswresample-5.dll" dist\
+copy "%GST_BIN%\libswscale-8.dll" dist\
+
+:: Graphics/Text dependencies (Cairo, Pango, Harfbuzz, etc)
+copy "%GST_BIN%\libjpeg-8.dll" dist\
+copy "%GST_BIN%\libpng16.dll" dist\
+copy "%GST_BIN%\libfreetype-6.dll" dist\
+copy "%GST_BIN%\libfontconfig-1.dll" dist\
+copy "%GST_BIN%\libharfbuzz-0.dll" dist\
+copy "%GST_BIN%\libgraphene-1.0-0.dll" dist\
+copy "%GST_BIN%\libpango-1.0-0.dll" dist\
+copy "%GST_BIN%\libpangocairo-1.0-0.dll" dist\
+copy "%GST_BIN%\libpangowin32-1.0-0.dll" dist\
+copy "%GST_BIN%\libcairo-2.dll" dist\
+copy "%GST_BIN%\libcairo-gobject-2.dll" dist\
+
+:: Plugins
+copy "%GST_PLUGINS%\libgstcoreelements.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstplayback.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoconvertscale.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideofiltersbad.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoparsersbad.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstapp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstd3d11.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstmediafoundation.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstopengl.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtsp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtpmanager.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstudp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgsttcp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstsoup.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstlibav.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvpx.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstjpeg.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstisomp4.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgsttypefindfunctions.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstautodetect.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstwasapi.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstdirectsound.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstaudioconvert.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstaudioresample.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvolume.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstalaw.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstmulaw.dll" dist\lib\gstreamer-1.0\
 
 echo Copying ONNX Runtime dependencies...
 copy libs\onnxruntime\lib\*.dll dist\

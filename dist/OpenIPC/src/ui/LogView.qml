@@ -130,7 +130,7 @@ Dialog {
             fileMode: FileDialog.SaveFile
             nameFilters: [I18n.t("Текстовые файлы (*.txt)"), I18n.t("Все файлы (*)")]
             defaultSuffix: "txt"
-            currentFile: "logs.txt"
+            // currentFile: "logs.txt"
             onAccepted: {
                 SystemController.logModel.saveLog(selectedFile)
             }

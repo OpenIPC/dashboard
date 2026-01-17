@@ -8,6 +8,7 @@ Dialog {
     id: root
     title: I18n.t("Архив")
     modal: true
+    parent: Overlay.overlay
     width: isFullScreen ? parent.width : 1280
     height: isFullScreen ? parent.height : 800
     x: isFullScreen ? 0 : (parent.width - width) / 2
@@ -376,13 +377,13 @@ Dialog {
                     width: parentRatio > targetRatio ? videoArea.height * targetRatio : videoArea.width
                     height: parentRatio > targetRatio ? videoArea.height : videoArea.width / targetRatio
 
-                    LibVlcPlayer {
+                    VideoPlayer {
                         id: player
                         anchors.fill: parent
                         url: "" // Set when playing
-                        orientation: 180
+                        // orientation: 0 
                         // fillMode: 0 // IgnoreAspectRatio (Stretch to container)
-                        transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: -1 }
+                        transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: 1 }
                         
                         // Settings bindings
                         hwDecoding: (SystemController.appSettings.playerHwDecoding !== undefined) ? SystemController.appSettings.playerHwDecoding : "auto"
@@ -421,7 +422,7 @@ Dialog {
                     // Timeline
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 40
+                        Layout.preferredHeight: 40
                         color: "transparent"
                         visible: player.duration > 0
                         
@@ -576,13 +577,13 @@ Dialog {
                     // Controls Bar
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 80
+                        Layout.preferredHeight: 80
                         color: "transparent"
                         
                         RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 20
-                            spacing: 20
+                            anchors.margins: 10
+                            spacing: 15
                             
                             // Rewind -10s
                             Button {

@@ -142,6 +142,7 @@ QtObject {
         "Выберите папку": "Choose folder",
         "Язык": "Language",
         "Трансляция": "Streaming",
+        "Трансляция (GStreamer)": "Streaming (GStreamer)",
         "Аналитика": "Analytics",
         "Модули": "Modules",
         "О программе": "About",
@@ -198,6 +199,16 @@ QtObject {
         "Все файлы (*)": "All files (*)",
         "Ошибка": "Error",
         "Ошибка обновления": "Update error",
+        
+        "Режим буферизации (Latency)": "Buffer Mode (Latency)",
+        "Минимальная (Low Latency / 200ms)": "Minimum (Low Latency / 200ms)",
+        "Ультра-низкая (Realtime / 0ms)": "Ultra-Low (Realtime / 0ms)",
+        "Стандартная (Stable / 2s)": "Standard (Stable / 2s)",
+        "Протокол RTSP": "RTSP Protocol",
+        "TCP (Interleaved)": "TCP (Interleaved)",
+        "UDP (Unicast)": "UDP (Unicast)",
+        "UDP (Multicast)": "UDP (Multicast)",
+        "HTTP (Tunneling)": "HTTP (Tunneling)",
         "Нажмите \"Проверить обновления\"": "Click \"Check for updates\""
         ,"Обновления": "Updates"
         ,"Статус": "Status"

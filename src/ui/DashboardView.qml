@@ -706,9 +706,7 @@ Item {
                                 archiveLoader.active = true
                             }
                             
-                            onRecordClicked: {
-                                SystemController.toggleRecording(index)
-                            }
+                            // SystemController.toggleRecording is handled internally by GridCell
                         }
                     }
                 }

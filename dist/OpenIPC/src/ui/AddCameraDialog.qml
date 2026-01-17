@@ -352,7 +352,8 @@ Dialog {
                             parseInt(rtspPortField.text),
                             parseInt(onvifPortField.text),
                             loginField.text,
-                            passwordField.text
+                            passwordField.text,
+                            sdUrlField.text
                         )
                     } else {
                         SystemController.addManualCamera(
@@ -362,7 +363,8 @@ Dialog {
                             parseInt(rtspPortField.text),
                             parseInt(onvifPortField.text),
                             loginField.text,
-                            passwordField.text
+                            passwordField.text,
+                            sdUrlField.text
                         )
                     }
                     root.close()
@@ -382,8 +384,13 @@ Dialog {
         
         if (template === "Hikvision") {
              // Hikvision: /Streaming/Channels/101 (channel 1, stream 01)
+             // Support direct stream ID if value is > 9 (e.g. user enters 102)
+             var val = parseInt(stream)
+             if (val > 9) {
+                 return baseUrl + "/Streaming/Channels/" + val
+             }
              var ch = channelField.text || "1"
-             var profile = parseInt(stream) + 1 // 0->1, 1->2
+             var profile = val + 1 // 0->1, 1->2
              return baseUrl + "/Streaming/Channels/" + ch + "0" + profile
         } else if (template === "Dahua") {
              // Dahua: /cam/realmonitor?channel=1&subtype=0
@@ -396,7 +403,9 @@ Dialog {
     }
 
     function updateUrl() {
-        if (urlTemplateCombo.currentText === "Custom") return;
+        // Use model/index directly to avoid lag with currentText update
+        var template = urlTemplateCombo.model[urlTemplateCombo.currentIndex]
+        if (template === "Custom") return;
         
         var user = loginField.text
         var pass = passwordField.text
@@ -404,7 +413,6 @@ Dialog {
         var stream = hdProfileField.text
         var sdStream = sdProfileField.text
         var rtspPort = rtspPortField.text || "554"
-        var template = urlTemplateCombo.currentText
         
         // Basic validation for button state
         var isValid = ip.length > 0 && rtspPort.length > 0

@@ -42,6 +42,8 @@ public:
     // Helper to generate mock data
     Q_INVOKABLE void generateMockData();
 
+    Q_INVOKABLE QVariantMap getModuleConfig(const QString &moduleId);
+
     QString filterType() const { return m_filterType; }
     void setFilterType(const QString &type);
 

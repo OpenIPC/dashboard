@@ -65,11 +65,26 @@ Item {
     }
 
     onStreamUrlChanged: {
+        console.log("GridCell streamUrl changed:", streamUrl)
         if (streamUrl === "") {
             hdPlayer.running = false
             hdWindow.visible = false
             useHdPreview = false
             useHdFullscreen = true
+        }
+    }
+
+    onSdStreamUrlChanged: {
+        console.log("GridCell sdStreamUrl changed:", sdStreamUrl)
+        // Ensure player picks up the change if we are in SD mode
+        if (!root.useHdPreview && root.sdStreamUrl !== "") {
+             // Force re-evaluation might be needed if player is running
+             var currentUrl = player.url
+             var newUrl = root.sdStreamUrl
+             if (currentUrl !== newUrl) {
+                 console.log("GridCell switching to new SD URL:", newUrl)
+                 // This binding update should be automatic, but logging helps confirm it.
+             }
         }
     }
 
@@ -154,7 +169,7 @@ Item {
         clip: true
         visible: root.streamUrl !== ""
 
-        LibVlcPlayer {
+        VideoPlayer {
             id: player
             anchors.fill: parent
             visible: root.streamUrl !== "" && !hdWindow.visible
@@ -162,9 +177,9 @@ Item {
             // Respect app setting (Crop/Fit/Stretch)
             fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
             
-            // Fix orientation
-            orientation: 180
-            mirror: true
+            // Orientation
+            orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
+            mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
             
             url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
             
@@ -198,7 +213,7 @@ Item {
         }
 
         // Background Recorder (HD preferred)
-        LibVlcPlayer {
+        VideoPlayer {
             id: recorder
             visible: false 
             backgroundMode: true
@@ -402,16 +417,16 @@ Item {
             anchors.fill: parent
             clip: true
 
-            LibVlcPlayer {
+            VideoPlayer {
                 id: hdPlayer
                 anchors.fill: parent
                 // Respect app setting (Crop/Fit/Stretch)
                 fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
                 
-                // Fix orientation (upside down)
-                orientation: 180
-                mirror: true
-                
+                // Use app settings for orientation
+                orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
+                mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
+
                 url: root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
                 
                 // Auto run when window actsally visible
@@ -622,7 +637,7 @@ Item {
                     font.bold: true
                 }
             }
-        Keys.onEscapePressed: hdWindow.close()
+        // Keys.onEscapePressed: hdWindow.close()
     }
 
     // Recording Indicator
@@ -666,13 +681,43 @@ Item {
             anchors.centerIn: parent
             text: statsText()
             color: "white"
-            font.pixelSize: 14
+            font.pixelSize: 10
             font.family: "monospace"
             font.bold: true
             elide: Text.ElideRight
             width: parent.width - 18
             horizontalAlignment: Text.AlignHCenter
         }
+    }
+
+    // Helper functions for stats
+    function statsText() {
+        if (!player || !player.running) return ""
+        // Use properties from GstPlayer if available
+        var codec = player.videoCodec || "H264"
+        var w = player.videoWidth || 0
+        var h = player.videoHeight || 0
+        var fps = player.videoFps || 0
+        var bitrate = player.videoBitrate || 0
+        
+        if (w === 0 || h === 0) return ""
+        
+        var txt = codec + " " + w + "x" + h
+        if (fps > 0) txt += " " + fps + "fps"
+        if (bitrate > 0) txt += " " + bitrate + "kbps"
+        return txt
+    }
+    
+    function hdStatsText() {
+        if (!hdPlayer || !hdPlayer.running) return ""
+        var codec = hdPlayer.videoCodec || "H264"
+        var w = hdPlayer.videoWidth || 0
+        var h = hdPlayer.videoHeight || 0
+        var fps = hdPlayer.videoFps || 0
+        var bitrate = hdPlayer.videoBitrate || 0
+        
+        if (w === 0 || h === 0) return ""
+        return codec + " " + w + "x" + h + " " + fps + "fps " + bitrate + "kbps"
     }
 
     // Periodic stats refresh to keep bitrate/fps live
@@ -1176,46 +1221,7 @@ Item {
         }
     }
 
-    // Build human-readable stats string from player properties
-    function statsText() {
-        if (root.streamUrl === "")
-            return ""
-        var parts = []
-        if (player.videoCodec && player.videoCodec.length) {
-            parts.push(player.videoCodec.toUpperCase())
-        }
-        if (player.videoResolution && player.videoResolution.length) {
-            parts.push(player.videoResolution)
-        }
-        if (player.videoBitrate && player.videoBitrate > 0) {
-            parts.push(player.videoBitrate + " kbps")
-        }
-        if (player.videoFps && player.videoFps > 0) {
-            parts.push(player.videoFps.toFixed(1) + " fps")
-        }
-        return parts.join("  ")
-    }
-
-    // Stats for fullscreen player
-    function hdStatsText() {
-        if (root.streamUrl === "")
-            return ""
-        var parts = []
-        if (hdPlayer.videoCodec && hdPlayer.videoCodec.length) {
-            parts.push(hdPlayer.videoCodec.toUpperCase())
-        }
-        if (hdPlayer.videoResolution && hdPlayer.videoResolution.length) {
-            parts.push(hdPlayer.videoResolution)
-        }
-        if (hdPlayer.videoBitrate && hdPlayer.videoBitrate > 0) {
-            parts.push(hdPlayer.videoBitrate + " kbps")
-        }
-        if (hdPlayer.videoFps && hdPlayer.videoFps > 0) {
-            parts.push(hdPlayer.videoFps.toFixed(1) + " fps")
-        }
-        return parts.join("  ")
-    }
-
+/*
     // Resize Handle (Bottom-Right) - REMOVED
     /*
     Rectangle {

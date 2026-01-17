@@ -74,8 +74,8 @@ public slots:
     void stopService();
     void scanNetwork(const QString &interfaceName = "");
     void addDevice(int index); // Adds from discovery to device list
-    void addManualCamera(const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "");
-    Q_INVOKABLE void updateCamera(int index, const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login, const QString &password);
+    Q_INVOKABLE void addManualCamera(const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
+    Q_INVOKABLE void updateCamera(int index, const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
     void removeDevice(int index); // Removes from device list
     void addCameraToGrid(int index, int slot = -1); // Adds from device list to grid
     void removeCameraFromGrid(int index); // Clears a grid slot but keeps grid size
@@ -88,6 +88,9 @@ public slots:
 
     Q_INVOKABLE void saveAppSettings(const QVariantMap &settings);
     Q_INVOKABLE QVariantMap getAppSettings() const;
+
+    Q_INVOKABLE bool exportConfiguration(const QString &path);
+    Q_INVOKABLE bool importConfiguration(const QString &path);
 
     // Camera groups
     Q_INVOKABLE void addCameraGroup(const QString &groupName);

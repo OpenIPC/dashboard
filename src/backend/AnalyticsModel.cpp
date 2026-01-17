@@ -133,3 +133,12 @@ void AnalyticsModel::applyFilter()
     }
     endResetModel();
 }
+
+QVariantMap AnalyticsModel::getModuleConfig(const QString &moduleId)
+{
+    Q_UNUSED(moduleId);
+    QVariantMap config;
+    // Stub implementation
+    return config;
+}
+

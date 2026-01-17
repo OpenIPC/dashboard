@@ -30,6 +30,18 @@ jobs:
           arch: 'win64_mingw'
           modules: 'qtmultimedia'
 
+      - name: Install GStreamer
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer.msi"
+          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer-devel.msi"
+          
+          Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer.msi', '/quiet', '/norestart' -NoNewWindow -Wait
+          Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer-devel.msi', '/quiet', '/norestart' -NoNewWindow -Wait
+          
+          echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=C:\gstreamer\1.0\mingw_x86_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Configure CMake
         run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$env:Qt6_DIR
 
@@ -47,15 +59,25 @@ jobs:
           if (Test-Path build/*.dll) { 
             Copy-Item build/*.dll -Destination dist/ -Force
           }
-          
-          # Copy libVLC DLLs explicitly (missing in User report)
-          Copy-Item libs/libvlc/sdk/bin/*.dll -Destination dist/ -Force
-          
-          # Copy libVLC plugins (CMake puts them in build/plugins, copy to dist/plugins)
-          if (Test-Path build/plugins) { 
-            Copy-Item build/plugins -Destination dist/ -Recurse -Force
+
+          # Copy GStreamer DLLs
+          $gstBin = "C:\gstreamer\1.0\mingw_x86_64\bin"
+          if (Test-Path $gstBin) {
+              Copy-Item "$gstBin\*.dll" -Destination dist/ -Force
           }
           
+          # Copy Plugins
+          $gstPlugins = "C:\gstreamer\1.0\mingw_x86_64\lib\gstreamer-1.0"
+          if (Test-Path $gstPlugins) {
+              New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
+              Copy-Item "$gstPlugins\*.dll" -Destination dist/lib/gstreamer-1.0 -Force
+          }
+          # Copy Scanner (Check libexec)
+          $gstLibexec = "C:\gstreamer\1.0\mingw_x86_64\libexec\gstreamer-1.0"
+          if (Test-Path "$gstLibexec\gst-plugin-scanner.exe") {
+             Copy-Item "$gstLibexec\gst-plugin-scanner.exe" -Destination dist/lib/gstreamer-1.0 -Force
+          }
+
           # Copy OpenIPC QML module (Custom module)
           if (Test-Path build/OpenIPC) {
             Copy-Item build/OpenIPC -Destination dist/ -Recurse -Force
@@ -93,7 +115,10 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libvlc-dev libvlccore-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev vlc-plugin-base vlc-plugin-video-output liblivemedia-dev
+          sudo apt-get install -y build-essential libgl1-mesa-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev \
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+          gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+          gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -151,19 +176,16 @@ jobs:
             cp -r build/OpenIPC AppDir/usr/bin/
           fi
 
-          # Copy VLC plugins to where LibVlcPlayer.cpp expects them (applicationDirPath() + "/plugins")
-          # On Ubuntu 22.04, plugins are typically in /usr/lib/x86_64-linux-gnu/vlc/plugins/
-          mkdir -p AppDir/usr/bin/plugins
-          if [ -d "/usr/lib/x86_64-linux-gnu/vlc/plugins" ]; then
-             cp -r /usr/lib/x86_64-linux-gnu/vlc/plugins/* AppDir/usr/bin/plugins/
+          # Copy GStreamer plugins
+          mkdir -p AppDir/usr/lib/gstreamer-1.0
+          cp /usr/lib/x86_64-linux-gnu/gstreamer-1.0/*.so AppDir/usr/lib/gstreamer-1.0/
+          # Copy plugin scanner
+          if [ -f "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner" ]; then
+              cp /usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner AppDir/usr/lib/gstreamer-1.0/
+          elif [ -f "/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ]; then
+              cp /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner AppDir/usr/lib/gstreamer-1.0/
           fi
-          
-          # Copy live555 dependencies (required for RTSP support in typical Ubuntu VLC builds)
-          # These libraries are dynamically linked by liblive555_plugin.so but often missed by linuxdeployqt
-          cp /usr/lib/x86_64-linux-gnu/libliveMedia.so.* AppDir/usr/lib/ || true
-          cp /usr/lib/x86_64-linux-gnu/libgroupsock.so.* AppDir/usr/lib/ || true
-          cp /usr/lib/x86_64-linux-gnu/libUsageEnvironment.so.* AppDir/usr/lib/ || true
-          cp /usr/lib/x86_64-linux-gnu/libBasicUsageEnvironment.so.* AppDir/usr/lib/ || true
+
 
           # Fix OpenSSL: Copy system OpenSSL 1.1 libs (standard on Ubuntu 20.04)
           # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it.

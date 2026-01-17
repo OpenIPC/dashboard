@@ -25,7 +25,7 @@ Menu {
     
     MenuItem {
         text: I18n.t("Архив")
-        icon.source: "qrc:/OpenIPC/src/ui/icons/archive.svg" // Placeholder
+        // icon.source: "qrc:/OpenIPC/src/ui/icons/archive.svg" // Placeholder
         onTriggered: contextMenu.archiveRequested()
     }
     
