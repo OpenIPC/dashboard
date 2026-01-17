@@ -116,6 +116,14 @@ if(NOT GST_LIBRARIES)
     set(GST_LIBRARIES ${GST_LIBRARIES})
 endif()
 
+# Explicitly ensure include headers are available to the target (Fixes moc compilation finding headers)
+if(GST_INCLUDE_DIRS)
+    include_directories(${GST_INCLUDE_DIRS})
+endif()
+if(GST_LIBRARY_DIRS)
+    link_directories(${GST_LIBRARY_DIRS})
+endif()
+
 
 # ONNX Runtime Setup
 if(WIN32)
