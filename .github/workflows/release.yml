@@ -66,18 +66,26 @@ jobs:
           } else {
              echo "ERROR: gst.h NOT FOUND at expected path"
           }
-          
-          echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=C:\gstreamer\1.0\mingw_x86_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Configure CMake
         run: |
-           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$env:Qt6_DIR -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64"
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$env:Qt6_DIR -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64"
 
       - name: Build
         run: cmake --build build --config Release
         env:
           PKG_CONFIG_PATH: C:\gstreamer\1.0\mingw_x86_64\lib\pkgconfig
+
+      - name: Upload CMake logs (Windows)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cmake-logs
+          path: |
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+            build/CMakeCache.txt
+            build/compile_commands.json
 
       - name: Prepare Distribution Folder
         shell: pwsh
@@ -167,6 +175,17 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release
+
+      - name: Upload CMake logs (Linux)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-cmake-logs
+          path: |
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+            build/CMakeCache.txt
+            build/compile_commands.json
 
       - name: Helper - Create Desktop File
         run: |
