@@ -31,23 +31,32 @@ jobs:
           modules: 'qtmultimedia'
 
       - name: Download GStreamer
-        shell: bash
+        shell: pwsh
         run: |
-          curl -L --retry 3 --retry-delay 5 \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
-            -H "Accept-Language: en-US,en;q=0.5" \
-            -H "Referer: https://gstreamer.freedesktop.org/download/" \
-            -o gstreamer.msi \
-            "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi"
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $headers = @{
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            "Accept-Language" = "en-US,en;q=0.5"
+            "Referer" = "https://gstreamer.freedesktop.org/download/"
+          }
 
-          curl -L --retry 3 --retry-delay 5 \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
-            -H "Accept-Language: en-US,en;q=0.5" \
-            -H "Referer: https://gstreamer.freedesktop.org/download/" \
-            -o gstreamer-devel.msi \
-            "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"
+          $urls = @(
+            @{ Url = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi"; OutFile = "gstreamer.msi" },
+            @{ Url = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"; OutFile = "gstreamer-devel.msi" }
+          )
+
+          foreach ($item in $urls) {
+            Write-Host "Downloading $($item.Url) -> $($item.OutFile)"
+            Invoke-WebRequest -Uri $item.Url -Headers $headers -OutFile $item.OutFile -MaximumRedirection 10
+
+            $size = (Get-Item $item.OutFile).Length
+            Write-Host "Downloaded size: $size bytes"
+            if ($size -lt 10485760) { # 10 MB minimum sanity check
+              Write-Error "Downloaded MSI too small; likely blocked or HTML response."
+              Exit 1
+            }
+          }
 
       - name: Install GStreamer
         shell: pwsh
