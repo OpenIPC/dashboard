@@ -32,58 +32,29 @@ jobs:
           arch: 'win64_mingw'
           modules: 'qtmultimedia'
 
-      - name: Download GStreamer
+      - name: Install GStreamer (MinGW) via Chocolatey
         shell: pwsh
         run: |
-          # Define URLs for MinGW 64-bit GStreamer
-          $url_runtime = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi"
-          $url_devel   = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"
-          
-          # Use curl.exe explicitly (not PowerShell Invoke-WebRequest) with browser headers
-          # to attempt to pass the WAF/Anti-bot checks.
-          $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          
-          Write-Host "Downloading Runtime..."
-          & curl.exe -L --retry 5 --retry-delay 3 `
-            -H "User-Agent: $userAgent" `
-            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
-            -H "Accept-Language: en-US,en;q=0.9" `
-            -H "Referer: https://gstreamer.freedesktop.org/download/" `
-            -o "gstreamer.msi" "$url_runtime"
-            
-          Write-Host "Downloading Devel..."
-          & curl.exe -L --retry 5 --retry-delay 3 `
-            -H "User-Agent: $userAgent" `
-            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
-            -H "Accept-Language: en-US,en;q=0.9" `
-            -H "Referer: https://gstreamer.freedesktop.org/download/" `
-            -o "gstreamer-devel.msi" "$url_devel"
+           # Chocolatey installs to C:\gstreamer by default for this package
+           choco install gstreamer --version 1.22.8 -y
+           choco install gstreamer-devel --version 1.22.8 -y
+           
+           # Verify installation path (Chocolatey gstreamer package usually installs to C:\gstreamer\1.0\mingw_x86_64 or msvc)
+           # We need to detect where it put it exactly.
+           $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
+           if (-not (Test-Path $gstRoot)) {
+               $gstRoot = "C:\gstreamer\1.0\msvc_x86_64" 
+           }
+           Write-Host "Detected GStreamer Root: $gstRoot"
+           
+           if (-not (Test-Path "$gstRoot\bin")) {
+               Write-Error "Could not find GStreamer bin folder"
+               exit 1
+           }
 
-          # Verify downloads
-          if ((Get-Item "gstreamer.msi").Length -lt 10MB) {
-             Write-Error "gstreamer.msi is too small or invalid. Likely blocked by anti-bot."; exit 1
-          }
-          if ((Get-Item "gstreamer-devel.msi").Length -lt 10MB) {
-             Write-Error "gstreamer-devel.msi is too small or invalid. Likely blocked by anti-bot."; exit 1
-          }
-
-      - name: Install GStreamer
-        shell: pwsh
-        run: |
-          Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer.msi', '/quiet', '/norestart' -NoNewWindow -Wait
-          Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer-devel.msi', '/quiet', '/norestart' -NoNewWindow -Wait
-          
-          echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=C:\gstreamer\1.0\mingw_x86_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "PKG_CONFIG_PATH=C:\gstreamer\1.0\mingw_x86_64\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          
-          echo "Debug: Listing GStreamer Includes"
-          Get-ChildItem -Recurse "C:\gstreamer\1.0\mingw_x86_64\include" | Select-Object FullName -First 20
-          if (Test-Path "C:\gstreamer\1.0\mingw_x86_64\include\gstreamer-1.0\gst\gst.h") {
-             echo "Found gst.h"
-          } else {
-             echo "ERROR: gst.h NOT FOUND at expected path"
-          }
+           echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=$gstRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+           echo "$gstRoot\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+           echo "PKG_CONFIG_PATH=$gstRoot\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Configure CMake
         run: |
