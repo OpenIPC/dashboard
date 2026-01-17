@@ -67,9 +67,14 @@ if(WIN32)
 
     if(GST_ROOT)
         message(STATUS "Found GStreamer Env: ${GST_ROOT}")
-        include_directories(${GST_ROOT}/include/gstreamer-1.0 ${GST_ROOT}/include/glib-2.0 ${GST_ROOT}/lib/glib-2.0/include)
+        include_directories(
+            ${GST_ROOT}/include/gstreamer-1.0 
+            ${GST_ROOT}/include/glib-2.0 
+            ${GST_ROOT}/lib/glib-2.0/include
+            ${GST_ROOT}/lib/gstreamer-1.0/include #${GST_ROOT}/lib/gstreamer-1.0/include needed for gst/gstconfig.h
+        )
         link_directories(${GST_ROOT}/lib)
-        set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0)
+        set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
     else()
         message(WARNING "GStreamer not found via Environment Variables or Standard Paths.")
         message(FATAL_ERROR "Please install GStreamer 1.0 MinGW 64-bit from https://gstreamer.freedesktop.org/download/ and ensure GSTREAMER_1_0_ROOT_MINGW_X86_64 is set.")

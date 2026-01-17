@@ -62,7 +62,8 @@ jobs:
           echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Configure CMake
-        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$env:Qt6_DIR
+        run: |
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$env:Qt6_DIR -D GStreamer_ROOT="C:\gstreamer\1.0\mingw_x86_64"
 
       - name: Build
         run: cmake --build build --config Release
