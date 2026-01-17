@@ -100,6 +100,11 @@ if(NOT GST_LIBRARIES)
     include_directories(${GST_INCLUDE_DIRS})
     link_directories(${GST_LIBRARY_DIRS})
     set(GST_LIBRARIES ${GST_LIBRARIES})
+    
+    # In case PkgConfig fails to supply the correct include path for gst/gstconfig.h on Windows/MinGW
+    if(WIN32 AND DEFINED ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+         include_directories("$ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64}/lib/gstreamer-1.0/include")
+    endif()
 endif()
 
 
