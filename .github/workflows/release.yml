@@ -78,12 +78,18 @@ jobs:
                   Select-Object -First 1
 
                 if ($gstHeader) {
-                  $gstRoot = Split-Path (Split-Path (Split-Path $gstHeader.FullName -Parent) -Parent) -Parent
+                  # gst.h is in <root>\include\gstreamer-1.0\gst\gst.h
+                  # We need <root>, so go up 4 levels from gst.h
+                  $gstRoot = Split-Path (Split-Path (Split-Path (Split-Path $gstHeader.FullName -Parent) -Parent) -Parent) -Parent
                 } else {
                   Write-Error "Could not determine GStreamer installation root."
                   Get-ChildItem -Recurse "C:\gstreamer" | Select-Object FullName -First 120
                   exit 1
                 }
+               }
+
+               if ($gstRoot -match "\\include$") {
+                $gstRoot = Split-Path $gstRoot -Parent
                }
            
            Write-Host "GStreamer installed at: $gstRoot"
