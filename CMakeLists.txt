@@ -49,6 +49,19 @@ endif()
 
 # include_directories(${LIBVLC_INCLUDE_DIR})
 
+if(WIN32)
+    # FORCE Hardcoded GStreamer includes for Windows CI environment
+    # bypassing any detection logic to ensure paths are present
+    set(GST_FORCE_INCLUDE_DIRS
+        "C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0"
+        "C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0"
+        "C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include"
+        "C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include"
+    )
+    message(STATUS "FORCE-ADDING GStreamer Includes: ${GST_FORCE_INCLUDE_DIRS}")
+    include_directories(${GST_FORCE_INCLUDE_DIRS})
+endif()
+
 # GStreamer Integration
 if(WIN32)
     # 1. Check -D GStreamer_ROOT
@@ -227,14 +240,6 @@ set(QML_RESOURCES
     src/ui/fonts/MaterialIcons-Regular.ttf
 )
 
-# Hardcoded safety net for Windows CI to ensure headers are found
-if(WIN32 AND EXISTS "C:/gstreamer/1.0/mingw_x86_64")
-     message(STATUS "Adding Hardcoded GStreamer Includes for CI")
-     include_directories("C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0")
-     include_directories("C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0")
-     include_directories("C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include")
-     include_directories("C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include")
-endif()
 
 add_executable(appOpenIPC-Dashboard
     ${SOURCES}
@@ -271,16 +276,9 @@ endif()
 
 # Explicitly add GStreamer includes to the target property (CRITICAL for AUTOMOC)
 if(WIN32)
-    target_include_directories(appOpenIPC-Dashboard PRIVATE
-        "C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0"
-        "C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0"
-        "C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include"
-        "C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include"
-    )
-    if(GST_INCLUDE_DIRS)
-        target_include_directories(appOpenIPC-Dashboard PRIVATE ${GST_INCLUDE_DIRS})
-    endif()
+    target_include_directories(appOpenIPC-Dashboard PRIVATE ${GST_FORCE_INCLUDE_DIRS})
 endif()
+
 
 # Copy ONNX Runtime DLL to build directory
 if(WIN32)

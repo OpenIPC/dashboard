@@ -6,11 +6,6 @@
 #include <QTimer>
 #include <atomic>
 
-// Fix for Windows build where standard include paths might be messy
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-    // Try to include using relative path if global search fails, though less reliable
-#endif
-
 #include <gst/gst.h>
 
 class GstPlayer : public QQuickItem
