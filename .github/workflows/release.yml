@@ -54,17 +54,20 @@ jobs:
                exit 1
            }
            
-             Write-Host "Extracting Runtime (administrative install): $msiRuntime"
-             New-Item -ItemType Directory -Force -Path "C:\gstreamer" | Out-Null
-             Start-Process msiexec.exe -ArgumentList '/a', $msiRuntime, '/qn', 'TARGETDIR=C:\gstreamer' -NoNewWindow -Wait
-
-             Write-Host "Extracting Devel (administrative install): $msiDevel"
-             Start-Process msiexec.exe -ArgumentList '/a', $msiDevel, '/qn', 'TARGETDIR=C:\gstreamer' -NoNewWindow -Wait
-
-               # After extraction, location can vary. Search for gst.h or gst-launch-1.0.exe
+               # Extract directly into the expected MinGW root to avoid nested paths
                $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
-               if (-not (Test-Path $gstRoot)) {
-                Write-Host "WARNING: Expected path $gstRoot not found. Searching C:\gstreamer..."
+               New-Item -ItemType Directory -Force -Path $gstRoot | Out-Null
+
+               Write-Host "Extracting Runtime (administrative install): $msiRuntime"
+               Start-Process msiexec.exe -ArgumentList '/a', $msiRuntime, '/qn', "TARGETDIR=$gstRoot" -NoNewWindow -Wait
+
+               Write-Host "Extracting Devel (administrative install): $msiDevel"
+               Start-Process msiexec.exe -ArgumentList '/a', $msiDevel, '/qn', "TARGETDIR=$gstRoot" -NoNewWindow -Wait
+
+               # Validate expected header exists
+               $gstHeaderPath = "$gstRoot\include\gstreamer-1.0\gst\gst.h"
+               if (-not (Test-Path $gstHeaderPath)) {
+                Write-Host "WARNING: Expected gst.h not found at $gstHeaderPath. Searching C:\gstreamer..."
                 if (-not (Test-Path "C:\gstreamer")) {
                   Write-Error "CRITICAL: C:\gstreamer directory does not exist after extraction!"
                   exit 1
@@ -77,18 +80,10 @@ jobs:
                 if ($gstHeader) {
                   $gstRoot = Split-Path (Split-Path (Split-Path $gstHeader.FullName -Parent) -Parent) -Parent
                 } else {
-                  $gstBin = Get-ChildItem -Recurse "C:\gstreamer" -Filter "gst-launch-1.0.exe" -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
-                  if ($gstBin) {
-                    $gstRoot = Split-Path $gstBin.FullName -Parent
-                  }
+                  Write-Error "Could not determine GStreamer installation root."
+                  Get-ChildItem -Recurse "C:\gstreamer" | Select-Object FullName -First 120
+                  exit 1
                 }
-               }
-
-               if (-not $gstRoot -or -not (Test-Path "$gstRoot\bin") -and -not (Test-Path "$gstRoot\include")) {
-                 Write-Error "Could not determine GStreamer installation root."
-                 Get-ChildItem -Recurse "C:\gstreamer" | Select-Object FullName -First 80
-                 exit 1
                }
            
            Write-Host "GStreamer installed at: $gstRoot"
