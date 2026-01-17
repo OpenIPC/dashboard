@@ -50,13 +50,20 @@ endif()
 # include_directories(${LIBVLC_INCLUDE_DIR})
 
 if(WIN32)
-    # FORCE Hardcoded GStreamer includes for Windows CI environment
-    # bypassing any detection logic to ensure paths are present
+    # FORCE GStreamer includes for Windows CI environment
+    # Prefer environment-provided path if available
+    if(DEFINED ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+        file(TO_CMAKE_PATH "${GST_ROOT}" GST_ROOT)
+    else()
+        set(GST_ROOT "C:/gstreamer/1.0/mingw_x86_64")
+    endif()
+
     set(GST_FORCE_INCLUDE_DIRS
-        "C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0"
-        "C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0"
-        "C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include"
-        "C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include"
+        "${GST_ROOT}/include/gstreamer-1.0"
+        "${GST_ROOT}/include/glib-2.0"
+        "${GST_ROOT}/lib/glib-2.0/include"
+        "${GST_ROOT}/lib/gstreamer-1.0/include"
     )
     message(STATUS "FORCE-ADDING GStreamer Includes: ${GST_FORCE_INCLUDE_DIRS}")
     include_directories(${GST_FORCE_INCLUDE_DIRS})
