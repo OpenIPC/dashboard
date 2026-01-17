@@ -84,27 +84,36 @@ if(WIN32)
             "${GST_ROOT}/lib/glib-2.0/include"
             "${GST_ROOT}/lib/gstreamer-1.0/include"
         )
+        # Force include these for the upcoming target
+        include_directories(SYSTEM ${GST_INCLUDE_DIRS})
         
-        include_directories(${GST_INCLUDE_DIRS})
         link_directories("${GST_ROOT}/lib")
         set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
     else()
-        message(WARNING "GStreamer not found via Environment Variables or Standard Paths.")
-        message(FATAL_ERROR "Please install GStreamer 1.0 MinGW 64-bit and ensure GSTREAMER_1_0_ROOT_MINGW_X86_64 is set.")
+        # Fallback to pkg-config if manual detection failed
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-app-1.0 gstreamer-video-1.0 gstreamer-pbutils-1.0)
+        include_directories(${GST_INCLUDE_DIRS})
+        link_directories(${GST_LIBRARY_DIRS})
     endif()
 endif()
 
-if(NOT GST_LIBRARIES)
+# Fallback for non-Windows (or if logic above was skipped unexpectedly)
+if(NOT WIN32 AND NOT GST_LIBRARIES)
     find_package(PkgConfig REQUIRED) 
     pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 glib-2.0 gobject-2.0)
     include_directories(${GST_INCLUDE_DIRS})
     link_directories(${GST_LIBRARY_DIRS})
     set(GST_LIBRARIES ${GST_LIBRARIES})
-    
-    # In case PkgConfig fails to supply the correct include path for gst/gstconfig.h on Windows/MinGW
-    if(WIN32 AND DEFINED ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
-         include_directories("$ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64}/lib/gstreamer-1.0/include")
-    endif()
+endif()
+
+if(NOT GST_LIBRARIES)
+    # This block is only reached if logic above failed to set libs
+    find_package(PkgConfig REQUIRED) 
+    pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 glib-2.0 gobject-2.0)
+    include_directories(${GST_INCLUDE_DIRS})
+    link_directories(${GST_LIBRARY_DIRS})
+    set(GST_LIBRARIES ${GST_LIBRARIES})
 endif()
 
 
