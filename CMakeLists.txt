@@ -269,6 +269,19 @@ if (UNIX AND NOT APPLE)
     target_link_libraries(appOpenIPC-Dashboard PRIVATE pthread)
 endif()
 
+# Explicitly add GStreamer includes to the target property (CRITICAL for AUTOMOC)
+if(WIN32)
+    target_include_directories(appOpenIPC-Dashboard PRIVATE
+        "C:/gstreamer/1.0/mingw_x86_64/include/gstreamer-1.0"
+        "C:/gstreamer/1.0/mingw_x86_64/include/glib-2.0"
+        "C:/gstreamer/1.0/mingw_x86_64/lib/glib-2.0/include"
+        "C:/gstreamer/1.0/mingw_x86_64/lib/gstreamer-1.0/include"
+    )
+    if(GST_INCLUDE_DIRS)
+        target_include_directories(appOpenIPC-Dashboard PRIVATE ${GST_INCLUDE_DIRS})
+    endif()
+endif()
+
 # Copy ONNX Runtime DLL to build directory
 if(WIN32)
     add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
