@@ -54,29 +54,24 @@ jobs:
                exit 1
            }
            
-           Write-Host "Installing Runtime: $msiRuntime"
-           Start-Process msiexec.exe -ArgumentList '/i', $msiRuntime, '/quiet', '/norestart' -NoNewWindow -Wait
-           
-           Write-Host "Installing Devel: $msiDevel"
-           Start-Process msiexec.exe -ArgumentList '/i', $msiDevel, '/quiet', '/norestart' -NoNewWindow -Wait
-           
-           # Check default installation path. GStreamer 1.22+ installer should default to C:\gstreamer\1.0\mingw_x86_64
-           # but sometimes it might be different or install failed silently.
-           $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
-           
-           if (-not (Test-Path $gstRoot)) {
-                Write-Host "WARNING: Expected path $gstRoot not found. Searching C:\gstreamer..."
-                if (Test-Path "C:\gstreamer") {
-                    Get-ChildItem -Recurse "C:\gstreamer" | Select-Object FullName -First 20
-                } else {
-                    Write-Error "CRITICAL: C:\gstreamer directory does not exist after installation! MSI install failed silently?"
-                    # Attempt to install with logging to debug
-                    Write-Host "Retrying install WITH LOGGING..."
-                    Start-Process msiexec.exe -ArgumentList '/i', $msiRuntime, '/quiet', '/norestart', '/l*v', 'install_log.txt' -NoNewWindow -Wait
-                    Get-Content install_log.txt -Tail 50
-                    exit 1
-                }
-           }
+             Write-Host "Extracting Runtime (administrative install): $msiRuntime"
+             New-Item -ItemType Directory -Force -Path "C:\gstreamer" | Out-Null
+             Start-Process msiexec.exe -ArgumentList '/a', $msiRuntime, '/qn', 'TARGETDIR=C:\gstreamer' -NoNewWindow -Wait
+
+             Write-Host "Extracting Devel (administrative install): $msiDevel"
+             Start-Process msiexec.exe -ArgumentList '/a', $msiDevel, '/qn', 'TARGETDIR=C:\gstreamer' -NoNewWindow -Wait
+
+             # After extraction, files should be under C:\gstreamer\1.0\mingw_x86_64
+             $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
+             if (-not (Test-Path $gstRoot)) {
+              Write-Host "WARNING: Expected path $gstRoot not found. Searching C:\gstreamer..."
+              if (Test-Path "C:\gstreamer") {
+                Get-ChildItem -Recurse "C:\gstreamer" | Select-Object FullName -First 40
+              } else {
+                Write-Error "CRITICAL: C:\gstreamer directory does not exist after extraction!"
+                exit 1
+              }
+             }
            
            if (-not $gstRoot -or -not (Test-Path "$gstRoot\bin")) {
                Write-Error "Could not determine GStreamer installation root."
