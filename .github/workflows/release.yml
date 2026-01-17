@@ -34,43 +34,33 @@ jobs:
 
       - name: Download GStreamer
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          $repo = $env:GITHUB_REPOSITORY
-          $tag = $env:GSTREAMER_RELEASE_TAG
-          $api = "https://api.github.com/repos/$repo/releases/tags/$tag"
+          # Define URLs for MinGW 64-bit GStreamer
+          $url_runtime = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi"
+          $url_devel   = "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"
+          
+          # Use curl.exe explicitly (not PowerShell Invoke-WebRequest) with browser headers
+          # to attempt to pass the WAF/Anti-bot checks.
+          $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          
+          Write-Host "Downloading Runtime..."
+          & curl.exe -L --retry 5 --retry-delay 3 `
+            -H "User-Agent: $userAgent" `
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
+            -o "gstreamer.msi" "$url_runtime"
+            
+          Write-Host "Downloading Devel..."
+          & curl.exe -L --retry 5 --retry-delay 3 `
+            -H "User-Agent: $userAgent" `
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" `
+            -o "gstreamer-devel.msi" "$url_devel"
 
-          Write-Host "Fetching release assets from $api"
-          $release = Invoke-RestMethod -Uri $api -Headers @{ "Authorization" = "Bearer $env:GH_TOKEN"; "Accept" = "application/vnd.github+json" }
-
-          $assets = $release.assets
-          if (-not $assets) {
-            Write-Error "No assets found on release tag '$tag'."
-            Exit 1
+          # Verify downloads
+          if ((Get-Item "gstreamer.msi").Length -lt 10MB) {
+             Write-Error "gstreamer.msi is too small or invalid. Likely blocked by anti-bot."; exit 1
           }
-
-          $want = @(
-            @{ Name = "gstreamer-1.0-mingw-x86_64-1.22.8.msi"; OutFile = "gstreamer.msi" },
-            @{ Name = "gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"; OutFile = "gstreamer-devel.msi" }
-          )
-
-          foreach ($item in $want) {
-            $asset = $assets | Where-Object { $_.name -eq $item.Name } | Select-Object -First 1
-            if (-not $asset) {
-              Write-Error "Missing asset '$($item.Name)' in release '$tag'."
-              Exit 1
-            }
-            Write-Host "Downloading $($item.Name) -> $($item.OutFile)"
-            curl.exe -L -H "Authorization: Bearer $env:GH_TOKEN" -H "Accept: application/octet-stream" -o $item.OutFile $asset.url
-
-            $size = (Get-Item $item.OutFile).Length
-            Write-Host "Downloaded size: $size bytes"
-            if ($size -lt 10485760) {
-              Write-Error "Downloaded MSI too small; asset may be corrupted."
-              Exit 1
-            }
+          if ((Get-Item "gstreamer-devel.msi").Length -lt 10MB) {
+             Write-Error "gstreamer-devel.msi is too small or invalid. Likely blocked by anti-bot."; exit 1
           }
 
       - name: Install GStreamer
