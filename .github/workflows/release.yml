@@ -30,15 +30,33 @@ jobs:
           arch: 'win64_mingw'
           modules: 'qtmultimedia'
 
+      - name: Download GStreamer
+        shell: bash
+        run: |
+          curl -L --retry 3 --retry-delay 5 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+            -H "Accept-Language: en-US,en;q=0.5" \
+            -H "Referer: https://gstreamer.freedesktop.org/download/" \
+            -o gstreamer.msi \
+            "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi"
+
+          curl -L --retry 3 --retry-delay 5 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+            -H "Accept-Language: en-US,en;q=0.5" \
+            -H "Referer: https://gstreamer.freedesktop.org/download/" \
+            -o gstreamer-devel.msi \
+            "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi"
+
       - name: Install GStreamer
         shell: pwsh
         run: |
-          $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer.msi" -UserAgent $ua
-          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer-devel.msi" -UserAgent $ua
-          
           Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer.msi', '/quiet', '/norestart' -NoNewWindow -Wait
           Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer-devel.msi', '/quiet', '/norestart' -NoNewWindow -Wait
+          
+          echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=C:\gstreamer\1.0\mingw_x86_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           
           echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=C:\gstreamer\1.0\mingw_x86_64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "C:\gstreamer\1.0\mingw_x86_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
