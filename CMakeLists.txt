@@ -67,6 +67,12 @@ if(WIN32)
     )
     message(STATUS "FORCE-ADDING GStreamer Includes: ${GST_FORCE_INCLUDE_DIRS}")
     include_directories(${GST_FORCE_INCLUDE_DIRS})
+
+    # Ensure linker can find GStreamer libs when extracted to custom path
+    if(EXISTS "${GST_ROOT}/lib")
+        message(STATUS "FORCE-ADDING GStreamer LIB DIR: ${GST_ROOT}/lib")
+        link_directories("${GST_ROOT}/lib")
+    endif()
 endif()
 
 # GStreamer Integration
