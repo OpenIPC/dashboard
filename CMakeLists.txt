@@ -51,12 +51,20 @@ endif()
 
 # GStreamer Integration
 if(WIN32)
-    set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
+    # 1. Check -D GStreamer_ROOT
+    if(GStreamer_ROOT)
+        set(GST_ROOT ${GStreamer_ROOT})
+    endif()
+    
+    # 2. Check Environment Variables
+    if(NOT GST_ROOT)
+        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
+    endif()
     if(NOT GST_ROOT)
         set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
     endif()
     
-    # Try standard install locations if env vars are missing
+    # 3. Try standard install locations
     if(NOT GST_ROOT)
         if(EXISTS "C:/gstreamer/1.0/mingw_x86_64")
             set(GST_ROOT "C:/gstreamer/1.0/mingw_x86_64")
@@ -66,18 +74,23 @@ if(WIN32)
     endif()
 
     if(GST_ROOT)
-        message(STATUS "Found GStreamer Env: ${GST_ROOT}")
-        include_directories(
-            ${GST_ROOT}/include/gstreamer-1.0 
-            ${GST_ROOT}/include/glib-2.0 
-            ${GST_ROOT}/lib/glib-2.0/include
-            ${GST_ROOT}/lib/gstreamer-1.0/include #${GST_ROOT}/lib/gstreamer-1.0/include needed for gst/gstconfig.h
+        # Convert to forward slashes for CMake consistency
+        file(TO_CMAKE_PATH "${GST_ROOT}" GST_ROOT)
+        message(STATUS "Found GStreamer Root: ${GST_ROOT}")
+        
+        set(GST_INCLUDE_DIRS
+            "${GST_ROOT}/include/gstreamer-1.0"
+            "${GST_ROOT}/include/glib-2.0"
+            "${GST_ROOT}/lib/glib-2.0/include"
+            "${GST_ROOT}/lib/gstreamer-1.0/include"
         )
-        link_directories(${GST_ROOT}/lib)
+        
+        include_directories(${GST_INCLUDE_DIRS})
+        link_directories("${GST_ROOT}/lib")
         set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
     else()
         message(WARNING "GStreamer not found via Environment Variables or Standard Paths.")
-        message(FATAL_ERROR "Please install GStreamer 1.0 MinGW 64-bit from https://gstreamer.freedesktop.org/download/ and ensure GSTREAMER_1_0_ROOT_MINGW_X86_64 is set.")
+        message(FATAL_ERROR "Please install GStreamer 1.0 MinGW 64-bit and ensure GSTREAMER_1_0_ROOT_MINGW_X86_64 is set.")
     endif()
 endif()
 
