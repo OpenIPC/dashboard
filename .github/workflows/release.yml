@@ -33,8 +33,9 @@ jobs:
       - name: Install GStreamer
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer.msi"
-          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer-devel.msi"
+          $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer.msi" -UserAgent $ua
+          Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.8/mingw/gstreamer-1.0-devel-mingw-x86_64-1.22.8.msi" -OutFile "gstreamer-devel.msi" -UserAgent $ua
           
           Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer.msi', '/quiet', '/norestart' -NoNewWindow -Wait
           Start-Process msiexec.exe -ArgumentList '/i', 'gstreamer-devel.msi', '/quiet', '/norestart' -NoNewWindow -Wait
