@@ -300,6 +300,31 @@ jobs:
             cp /usr/lib/x86_64-linux-gnu/libgstnet-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/liborc-0.4.so.* AppDir/usr/lib/
 
+              # Copy GStreamer bad/libav runtime libs needed for AAC/H265 and MP4 playback
+              for lib in \
+                /usr/lib/x86_64-linux-gnu/libgstcodecparsers-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstcodecs-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstbadaudio-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstadaptivedemux-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstwebrtc-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstsctp-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstwayland-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
+                /usr/lib/x86_64-linux-gnu/libavformat.so.* \
+                /usr/lib/x86_64-linux-gnu/libavutil.so.* \
+                /usr/lib/x86_64-linux-gnu/libswresample.so.* \
+                /usr/lib/x86_64-linux-gnu/libswscale.so.* \
+                /usr/lib/x86_64-linux-gnu/libavfilter.so.* \
+                /usr/lib/x86_64-linux-gnu/libpostproc.so.* \
+                /usr/lib/x86_64-linux-gnu/libfaad.so.* \
+                /usr/lib/x86_64-linux-gnu/libde265.so.* \
+                /usr/lib/x86_64-linux-gnu/libx265.so.* \
+                /usr/lib/x86_64-linux-gnu/libx264.so.*; do
+                if [ -e "$lib" ]; then
+                  cp $lib AppDir/usr/lib/
+                fi
+              done
+
             # Create AppRun wrapper to force bundled GStreamer
             printf '%s\n' \
               '#!/bin/sh' \
