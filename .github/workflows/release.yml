@@ -368,9 +368,16 @@ jobs:
         run: |
           if [ -f OpenIPC-Dashboard-Linux.AppImage ]; then
             echo "AppImage already built"
+            exit 0
+          fi
+          FOUND=$(find . -maxdepth 3 -name "*.AppImage" -type f ! -name "linuxdeployqt-continuous-x86_64.AppImage" | head -n 1)
+          if [ -n "$FOUND" ]; then
+            mv "$FOUND" OpenIPC-Dashboard-Linux.AppImage
+            echo "Moved AppImage: $FOUND"
           else
             echo "OpenIPC-Dashboard-Linux.AppImage not found"
             ls -la
+            find . -maxdepth 3 -name "*.AppImage" -type f -ls || true
             exit 1
           fi
 
