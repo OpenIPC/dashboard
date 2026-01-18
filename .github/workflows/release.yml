@@ -320,7 +320,7 @@ jobs:
           mkdir -p AppDir/usr/share/doc/libc6
           touch AppDir/usr/share/doc/libc6/copyright
           
-          # Run linuxdeployqt
+          # Run linuxdeployqt (deploy only)
           # We use -no-strip to avoid potential issues with stripping failing
           # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
           
@@ -334,8 +334,6 @@ jobs:
           # Sometimes verbose output hides the real error or crashes the logger
           
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
-            -appimage \
-            -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
             -exclude-libs=libglib-2.0.so.0,libgthread-2.0.so.0,libgobject-2.0.so.0,libgmodule-2.0.so.0,libgio-2.0.so.0 \
@@ -344,14 +342,18 @@ jobs:
             -no-strip \
             -no-translations \
             -qmake=$QMAKE
+
+          # Build AppImage explicitly
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir OpenIPC-Dashboard-Linux.AppImage
             
       - name: Rename AppImage
         run: |
-          APPIMAGE=$(ls -1 *.AppImage 2>/dev/null | grep -v linuxdeployqt | head -n 1)
-          if [ -n "$APPIMAGE" ]; then
-            mv "$APPIMAGE" OpenIPC-Dashboard-Linux.AppImage
+          if [ -f OpenIPC-Dashboard-Linux.AppImage ]; then
+            echo "AppImage already built"
           else
-            echo "No application AppImage found"
+            echo "OpenIPC-Dashboard-Linux.AppImage not found"
             ls -la
             exit 1
           fi
