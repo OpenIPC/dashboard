@@ -241,6 +241,8 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          exec > >(tee -a create_appimage.log) 2>&1
+          set -x
           : > linuxdeployqt.log
           : > appimagetool.log
           # Download linuxdeployqt
@@ -392,6 +394,7 @@ jobs:
           path: |
             appimagetool.log
             linuxdeployqt.log
+            create_appimage.log
             
       - name: Rename AppImage
         run: |
