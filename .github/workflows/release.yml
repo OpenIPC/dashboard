@@ -241,6 +241,8 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          : > linuxdeployqt.log
+          : > appimagetool.log
           # Download linuxdeployqt
           wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
           chmod +x linuxdeployqt-continuous-x86_64.AppImage
@@ -340,6 +342,7 @@ jobs:
           # Use -verbose=0 (less output) to see if we can spot the actual error message at the end
           # Sometimes verbose output hides the real error or crashes the logger
           
+          set +e
           ./linuxdeployqt-root/AppRun AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -qmldir=src \
             -qmldir=build/OpenIPC \
@@ -348,7 +351,13 @@ jobs:
             -verbose=2 \
             -no-strip \
             -no-translations \
-            -qmake=$QMAKE | tee linuxdeployqt.log
+            -qmake=$QMAKE 2>&1 | tee linuxdeployqt.log
+          LINUXDEPLOYQT_RC=${PIPESTATUS[0]}
+          set -e
+          if [ $LINUXDEPLOYQT_RC -ne 0 ]; then
+            echo "linuxdeployqt failed with exit code $LINUXDEPLOYQT_RC"
+            exit $LINUXDEPLOYQT_RC
+          fi
           # Pack AppImage explicitly (use appimagetool bundled with linuxdeployqt)
           if [ ! -f ./linuxdeployqt-root/usr/bin/appimagetool ]; then
             echo "appimagetool not found in linuxdeployqt-root"
@@ -357,7 +366,14 @@ jobs:
           fi
           chmod +x ./linuxdeployqt-root/usr/bin/appimagetool
           echo "Using appimagetool: ./linuxdeployqt-root/usr/bin/appimagetool"
-          ARCH=x86_64 VERSION=${VERSION} ./linuxdeployqt-root/usr/bin/appimagetool -v AppDir OpenIPC-Dashboard-Linux.AppImage | tee appimagetool.log
+          set +e
+          ARCH=x86_64 VERSION=${VERSION} ./linuxdeployqt-root/usr/bin/appimagetool -v AppDir OpenIPC-Dashboard-Linux.AppImage 2>&1 | tee appimagetool.log
+          APPIMAGETOOL_RC=${PIPESTATUS[0]}
+          set -e
+          if [ $APPIMAGETOOL_RC -ne 0 ]; then
+            echo "appimagetool failed with exit code $APPIMAGETOOL_RC"
+            exit $APPIMAGETOOL_RC
+          fi
           if [ ! -f OpenIPC-Dashboard-Linux.AppImage ]; then
             echo "AppImage not created"
             find . -maxdepth 2 -name "*.AppImage" -type f -ls || true
