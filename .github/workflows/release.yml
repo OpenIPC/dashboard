@@ -346,7 +346,14 @@ jobs:
             -qmake=$QMAKE
             
       - name: Rename AppImage
-        run: mv OpenIPC_Dashboard-*.AppImage OpenIPC-Dashboard-Linux.AppImage
+        run: |
+          if ls *.AppImage 1> /dev/null 2>&1; then
+            mv *.AppImage OpenIPC-Dashboard-Linux.AppImage
+          else
+            echo "No AppImage found"
+            ls -la
+            exit 1
+          fi
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
