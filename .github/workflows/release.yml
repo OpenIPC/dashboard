@@ -320,7 +320,7 @@ jobs:
           mkdir -p AppDir/usr/share/doc/libc6
           touch AppDir/usr/share/doc/libc6/copyright
           
-          # Run linuxdeployqt (deploy only)
+          # Run linuxdeployqt (deploy + appimage)
           # We use -no-strip to avoid potential issues with stripping failing
           # We use -bundle-non-qt-libs so it attempts to include FUSE or other sys libs if needed
           
@@ -334,6 +334,8 @@ jobs:
           # Sometimes verbose output hides the real error or crashes the logger
           
           ./linuxdeployqt-continuous-x86_64.AppImage AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
+            -appimage \
+            -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
             -exclude-libs=libglib-2.0.so.0,libgthread-2.0.so.0,libgobject-2.0.so.0,libgmodule-2.0.so.0,libgio-2.0.so.0 \
@@ -342,13 +344,8 @@ jobs:
             -no-strip \
             -no-translations \
             -qmake=$QMAKE
-
-          # Build AppImage explicitly
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage --appimage-extract
-          ARCH=x86_64 ./squashfs-root/AppRun AppDir OpenIPC-Dashboard-Linux.AppImage
-          ls -la *.AppImage || true
+          mkdir -p tools
+          mv linuxdeployqt-continuous-x86_64.AppImage tools/
             
       - name: Rename AppImage
         run: |
