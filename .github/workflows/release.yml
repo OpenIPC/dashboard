@@ -347,7 +347,13 @@ jobs:
             -no-translations \
             -qmake=$QMAKE
           # Pack AppImage explicitly (use appimagetool bundled with linuxdeployqt)
+          if [ ! -x ./linuxdeployqt-root/usr/bin/appimagetool ]; then
+            echo "appimagetool not found in linuxdeployqt-root"
+            ls -la linuxdeployqt-root/usr/bin || true
+            exit 1
+          fi
           ARCH=x86_64 ./linuxdeployqt-root/usr/bin/appimagetool AppDir OpenIPC-Dashboard-Linux.AppImage
+          ls -la OpenIPC-Dashboard-Linux.AppImage || true
           ls -la *.AppImage
           mkdir -p tools
           mv linuxdeployqt-continuous-x86_64.AppImage tools/
