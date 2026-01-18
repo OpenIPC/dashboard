@@ -334,10 +334,7 @@ jobs:
           # Use -verbose=0 (less output) to see if we can spot the actual error message at the end
           # Sometimes verbose output hides the real error or crashes the logger
           
-          LINUXDEPLOYQT_OUTPUT=OpenIPC-Dashboard-Linux.AppImage \
           ./squashfs-root/AppRun AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
-            -appimage \
-            -unsupported-allow-new-glibc \
             -qmldir=src \
             -qmldir=build/OpenIPC \
             -exclude-libs=libglib-2.0.so.0,libgthread-2.0.so.0,libgobject-2.0.so.0,libgmodule-2.0.so.0,libgio-2.0.so.0 \
@@ -346,6 +343,11 @@ jobs:
             -no-strip \
             -no-translations \
             -qmake=$QMAKE
+          # Pack AppImage explicitly
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage --appimage-extract
+          ARCH=x86_64 ./squashfs-root/AppRun AppDir OpenIPC-Dashboard-Linux.AppImage
           ls -la *.AppImage || true
           mkdir -p tools
           mv linuxdeployqt-continuous-x86_64.AppImage tools/
