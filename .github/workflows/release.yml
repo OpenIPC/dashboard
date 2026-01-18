@@ -251,14 +251,17 @@ jobs:
           # Prepare AppDir
           mkdir -p AppDir/usr/bin
           cp build/appOpenIPC-Dashboard AppDir/usr/bin/
+          chmod +x AppDir/usr/bin/appOpenIPC-Dashboard
           
           # Prepare Icon (Use existing PNG and resize to ensure 256x256)
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
           convert resources/appicon.png -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/openipc-dashboard.png AppDir/openipc-dashboard.png
           
           # Copy desktop file
           mkdir -p AppDir/usr/share/applications/
           cp appOpenIPC-Dashboard.desktop AppDir/usr/share/applications/
+          cp appOpenIPC-Dashboard.desktop AppDir/appOpenIPC-Dashboard.desktop
           
           # Copy custom libs to standard location expected by AppImage (usr/lib)
           mkdir -p AppDir/usr/lib
@@ -353,7 +356,8 @@ jobs:
             exit 1
           fi
           chmod +x ./linuxdeployqt-root/usr/bin/appimagetool
-          ARCH=x86_64 VERSION=${VERSION} ./linuxdeployqt-root/usr/bin/appimagetool -v AppDir OpenIPC-Dashboard-Linux.AppImage
+          echo "Using appimagetool: ./linuxdeployqt-root/usr/bin/appimagetool"
+          ARCH=x86_64 VERSION=${VERSION} ./linuxdeployqt-root/usr/bin/appimagetool -v AppDir OpenIPC-Dashboard-Linux.AppImage | tee appimagetool.log
           if [ ! -f OpenIPC-Dashboard-Linux.AppImage ]; then
             echo "AppImage not created"
             find . -maxdepth 2 -name "*.AppImage" -type f -ls || true
