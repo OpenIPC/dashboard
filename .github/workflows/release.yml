@@ -103,7 +103,11 @@ jobs:
 
       - name: Configure CMake
         run: |
-           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$env:Qt6_DIR -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64"
+           $qmake = (Get-Command qmake.exe -ErrorAction SilentlyContinue).Source
+           if (-not $qmake) { $qmake = (Get-Command qmake -ErrorAction SilentlyContinue).Source }
+           if (-not $qmake) { Write-Error "qmake not found in PATH"; exit 1 }
+           $qtDir = Split-Path (Split-Path $qmake -Parent) -Parent
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$qtDir -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64"
 
       - name: Build
         run: cmake --build build --config Release
@@ -158,7 +162,9 @@ jobs:
 
           # Run windeployqt to deploy standard Qt dependencies (including Qt.labs.folderlistmodel)
           # We run this on the final dist folder to ensure everything is self-contained
-          $windeployqt = "$env:Qt6_DIR/bin/windeployqt.exe"
+          $windeployqt = (Get-Command windeployqt.exe -ErrorAction SilentlyContinue).Source
+          if (-not $windeployqt) { $windeployqt = (Get-Command windeployqt -ErrorAction SilentlyContinue).Source }
+          if (-not $windeployqt) { Write-Error "windeployqt not found in PATH"; exit 1 }
           & $windeployqt --qmldir src/ui --dir dist dist/appOpenIPC-Dashboard.exe
 
       - name: Install Inno Setup
@@ -296,8 +302,8 @@ jobs:
           # UNSET QT_PLUGIN_PATH
           unset QT_PLUGIN_PATH
           
-          # Explicitly set QMAKE path to the Qt6 qmake (linuxdeployqt uses it to find plugins)
-          export QMAKE=${{ env.Qt6_DIR }}/bin/qmake
+          # Explicitly set QMAKE path (linuxdeployqt uses it to find plugins)
+          export QMAKE="$(command -v qmake)"
           
           # Use -verbose=0 (less output) to see if we can spot the actual error message at the end
           # Sometimes verbose output hides the real error or crashes the logger
