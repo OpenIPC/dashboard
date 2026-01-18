@@ -240,10 +240,13 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           # Download linuxdeployqt
           wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
           chmod +x linuxdeployqt-continuous-x86_64.AppImage
           ./linuxdeployqt-continuous-x86_64.AppImage --appimage-extract
+          rm -rf linuxdeployqt-root
+          mv squashfs-root linuxdeployqt-root
           
           # Prepare AppDir
           mkdir -p AppDir/usr/bin
@@ -334,7 +337,7 @@ jobs:
           # Use -verbose=0 (less output) to see if we can spot the actual error message at the end
           # Sometimes verbose output hides the real error or crashes the logger
           
-          ./squashfs-root/AppRun AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
+          ./linuxdeployqt-root/AppRun AppDir/usr/share/applications/appOpenIPC-Dashboard.desktop \
             -qmldir=src \
             -qmldir=build/OpenIPC \
             -exclude-libs=libglib-2.0.so.0,libgthread-2.0.so.0,libgobject-2.0.so.0,libgmodule-2.0.so.0,libgio-2.0.so.0 \
@@ -347,8 +350,10 @@ jobs:
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
           ./appimagetool-x86_64.AppImage --appimage-extract
-          ARCH=x86_64 ./squashfs-root/AppRun AppDir OpenIPC-Dashboard-Linux.AppImage
-          ls -la *.AppImage || true
+          rm -rf appimagetool-root
+          mv squashfs-root appimagetool-root
+          ARCH=x86_64 ./appimagetool-root/AppRun AppDir OpenIPC-Dashboard-Linux.AppImage
+          ls -la *.AppImage
           mkdir -p tools
           mv linuxdeployqt-continuous-x86_64.AppImage tools/
             
