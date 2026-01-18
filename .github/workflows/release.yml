@@ -347,10 +347,11 @@ jobs:
             
       - name: Rename AppImage
         run: |
-          if ls *.AppImage 1> /dev/null 2>&1; then
-            mv *.AppImage OpenIPC-Dashboard-Linux.AppImage
+          APPIMAGE=$(ls -1 *.AppImage 2>/dev/null | grep -v linuxdeployqt | head -n 1)
+          if [ -n "$APPIMAGE" ]; then
+            mv "$APPIMAGE" OpenIPC-Dashboard-Linux.AppImage
           else
-            echo "No AppImage found"
+            echo "No application AppImage found"
             ls -la
             exit 1
           fi
