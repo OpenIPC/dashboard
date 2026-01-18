@@ -276,6 +276,31 @@ jobs:
               cp /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner AppDir/usr/lib/gstreamer-1.0/
           fi
 
+            # Copy GStreamer core libraries to avoid host/AppImage version mismatch
+            cp /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstbase-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstaudio-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstvideo-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstapp-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstpbutils-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstrtp-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstrtsp-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgsttag-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstnet-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/liborc-0.4.so.* AppDir/usr/lib/
+
+            # Create AppRun wrapper to force bundled GStreamer
+            cat > AppDir/AppRun << 'EOF'
+            #!/bin/sh
+            HERE="$(dirname "$(readlink -f "$0")")"
+            export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
+            export GST_PLUGIN_PATH="$HERE/usr/lib/gstreamer-1.0"
+            export GST_PLUGIN_SCANNER="$HERE/usr/lib/gstreamer-1.0/gst-plugin-scanner"
+            export GST_PLUGIN_SYSTEM_PATH_1_0=""
+            exec "$HERE/usr/bin/appOpenIPC-Dashboard" "$@"
+            EOF
+            chmod +x AppDir/AppRun
+
 
           # Fix OpenSSL: Copy system OpenSSL 1.1 libs (standard on Ubuntu 20.04)
           # We need to provide libssl1.1 because Qt 6.4 binaries are linked against it.
