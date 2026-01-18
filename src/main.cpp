@@ -114,6 +114,7 @@ int main(int argc, char *argv[])
     app.setOrganizationName("OpenIPC");
     app.setApplicationName("Dashboard");
 
+
     QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(logPath);
     gLogFile.setFileName(logPath + "/app.log");

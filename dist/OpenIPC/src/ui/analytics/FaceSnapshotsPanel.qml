@@ -7,12 +7,14 @@ import OpenIPC
 Item {
     id: root
     property var model // AnalyticsEngine
+    property string snapshotsDirOverride: ""
+    property string previewUrl: ""
     
     // Get the snapshots directory from the engine
     property string snapshotsDir: {
+        if (root.snapshotsDirOverride && root.snapshotsDirOverride !== "") return root.snapshotsDirOverride
         if (root.model) {
             var config = root.model.getModuleConfig(0); // 0 = FaceDetector
-            // Handle if config is valid
             if (config && config.snapshotsDir) {
                 return config.snapshotsDir;
             }
@@ -92,7 +94,10 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    onDoubleClicked: Qt.openUrlExternally(fileUrl)
+                    onClicked: {
+                        root.previewUrl = fileUrl
+                        previewPopup.open()
+                    }
                     
                     // Simple hover effect
                     onEntered: parent.border.color = "#3b82f6"
@@ -129,6 +134,31 @@ Item {
         visible: root.snapshotsDir !== ""
         onClicked: {
              Qt.openUrlExternally("file:///" + root.snapshotsDir)
+        }
+    }
+
+    Popup {
+        id: previewPopup
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        x: 0
+        y: 0
+        width: root.width
+        height: root.height
+        background: Rectangle { color: "#000000cc" }
+
+        Image {
+            anchors.fill: parent
+            anchors.margins: 20
+            source: root.previewUrl
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            mipmap: true
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: previewPopup.close()
         }
     }
 }

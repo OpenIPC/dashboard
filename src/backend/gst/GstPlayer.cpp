@@ -1,4 +1,5 @@
 #include "GstPlayer.h"
+#include "../analytics/AnalyticsEngine.h"
 
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
@@ -288,6 +289,17 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
             QImage img(map.data, width, height, QImage::Format_RGBA8888);
             player->m_currentFrame = img.copy(); 
             player->m_frameReady = true;
+        }
+
+        // Analytics processing (queued to main thread)
+        if (player->m_analyticsEngine && !player->m_cameraId.isEmpty()) {
+            QImage analyticsFrame = player->getLastFrame().copy();
+            auto *engine = qobject_cast<AnalyticsEngine *>(player->m_analyticsEngine);
+            if (engine) {
+                QMetaObject::invokeMethod(engine, "processFrame", Qt::QueuedConnection,
+                                          Q_ARG(QImage, analyticsFrame),
+                                          Q_ARG(QString, player->m_cameraId));
+            }
         }
 
         gst_buffer_unmap(buffer, &map);

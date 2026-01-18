@@ -66,15 +66,42 @@ Dialog {
         }
     }
     
-    AnalyticsModel {
-        id: analyticsModel
-        filterType: {
-            if (bar.currentIndex === 0) return "face"
-            if (bar.currentIndex === 1) return "object"
-            if (bar.currentIndex === 2) return "plate"
-            return ""
+    property string evidenceSnapshotsDir: ""
+    property string faceSnapshotsDir: ""
+    property string objectSnapshotsDir: ""
+    property string plateSnapshotsDir: ""
+
+    function refreshEvidenceDir() {
+        var settings = SystemController.analyticsEngine.getSettings()
+        if (settings && settings.evidence && settings.evidence.snapshotsDir) {
+            evidenceSnapshotsDir = settings.evidence.snapshotsDir
+        } else {
+            evidenceSnapshotsDir = ""
         }
-        Component.onCompleted: generateMockData()
+        refreshModuleDirs()
+    }
+
+    function moduleSnapshotsDir(type, fallbackFolder) {
+        var cfg = SystemController.analyticsEngine.getModuleConfig(type)
+        if (cfg && cfg.snapshotsDir) return cfg.snapshotsDir
+        if (evidenceSnapshotsDir && evidenceSnapshotsDir !== "") {
+            return evidenceSnapshotsDir + "/" + fallbackFolder
+        }
+        return ""
+    }
+
+    function refreshModuleDirs() {
+        faceSnapshotsDir = moduleSnapshotsDir(0, "Face_Detector")
+        objectSnapshotsDir = moduleSnapshotsDir(1, "Object_Counter")
+        plateSnapshotsDir = moduleSnapshotsDir(2, "License_Plate")
+    }
+
+    Component.onCompleted: refreshEvidenceDir()
+
+    Connections {
+        target: SystemController.analyticsEngine
+        function onSettingsChanged() { refreshEvidenceDir() }
+        function onModuleConfigChanged(type) { refreshModuleDirs() }
     }
     
     contentItem: ColumnLayout {
@@ -123,19 +150,22 @@ Dialog {
             FaceSnapshotsPanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                model: analyticsModel
+                model: SystemController.analyticsEngine
+                snapshotsDirOverride: faceSnapshotsDir
             }
             
             ObjectCounterPanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                model: analyticsModel
+                model: SystemController.analyticsEngine
+                snapshotsDirOverride: objectSnapshotsDir
             }
             
             LicensePlatePanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                model: analyticsModel
+                model: SystemController.analyticsEngine
+                snapshotsDirOverride: plateSnapshotsDir
             }
         }
     }

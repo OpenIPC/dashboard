@@ -1,60 +1,129 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Qt.labs.folderlistmodel
 import OpenIPC
 
 Item {
     id: root
-    property var model
-    
+    property var model // AnalyticsEngine
+    property string snapshotsDirOverride: ""
+    property string previewUrl: ""
+
+    FolderListModel {
+        id: folderModel
+        folder: root.snapshotsDirOverride ? "file:///" + root.snapshotsDirOverride : ""
+        nameFilters: ["*.jpg", "*.jpeg", "*.png"]
+        showDirs: false
+        sortField: FolderListModel.Time
+        sortReversed: true
+    }
+
     GridView {
         anchors.fill: parent
         anchors.margins: 20
-        cellWidth: 160
-        cellHeight: 200
+        cellWidth: 220
+        cellHeight: 260
         clip: true
-        
-        model: root.model
-        
+
+        model: folderModel
+
         delegate: Item {
-            width: 150
-            height: 190
-            
+            width: 210
+            height: 250
+
             Rectangle {
                 anchors.fill: parent
                 color: "#2d2d2d"
                 radius: 8
-                
+                border.color: "#444"
+                border.width: 1
+
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 8
-                    
+                    spacing: 4
+
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 120
+                        Layout.fillHeight: true
                         color: "#000"
-                        
-                        Text {
-                            anchors.centerIn: parent
-                            text: "OBJ"
-                            color: "#555"
+                        radius: 4
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            source: fileUrl
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            mipmap: true
                         }
                     }
-                    
+
                     Text {
-                        text: model.label
+                        text: fileName
                         color: "white"
-                        font.pixelSize: 14
-                        font.bold: true
+                        font.pixelSize: 11
+                        elide: Text.ElideMiddle
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
                     }
-                    
+
                     Text {
-                        text: Qt.formatDateTime(model.capturedAt, "HH:mm:ss")
+                        text: Qt.formatDateTime(fileModified, "yyyy-MM-dd HH:mm:ss")
                         color: "#aaa"
-                        font.pixelSize: 12
+                        font.pixelSize: 10
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
                     }
                 }
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        root.previewUrl = fileUrl
+                        previewPopup.open()
+                    }
+                    onEntered: parent.border.color = "#3b82f6"
+                    onExited: parent.border.color = "#444"
+                }
             }
+        }
+
+        ScrollBar.vertical: ScrollBar { }
+    }
+
+    Text {
+        anchors.centerIn: parent
+        text: qsTr("No snapshots found")
+        color: "#666"
+        visible: folderModel.count === 0 && root.snapshotsDirOverride !== ""
+        font.pixelSize: 16
+    }
+
+    Popup {
+        id: previewPopup
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        x: 0
+        y: 0
+        width: root.width
+        height: root.height
+        background: Rectangle { color: "#000000cc" }
+
+        Image {
+            anchors.fill: parent
+            anchors.margins: 20
+            source: root.previewUrl
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            mipmap: true
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: previewPopup.close()
         }
     }
 }

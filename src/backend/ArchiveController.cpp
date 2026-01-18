@@ -5,6 +5,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QCoreApplication>
 
 ArchiveController::ArchiveController(QObject *parent) : QObject(parent)
@@ -58,26 +59,31 @@ void ArchiveController::search(const QDateTime &startTime, const QDateTime &endT
             QStringList filters;
             filters << "*.mp4";
             
-            QDirIterator it(recordingsPath, filters, QDir::Files, QDirIterator::NoIteratorFlags);
+            QDirIterator it(recordingsPath, filters, QDir::Files, QDirIterator::Subdirectories);
             while (it.hasNext()) {
                 QString filePath = it.next();
                 QFileInfo fi(filePath);
                 QString fileName = fi.fileName();
                 
                 // Check if file belongs to this camera
-                if (!fileName.startsWith(sanitizedIp)) {
+                if (!fileName.startsWith(sanitizedIp) && !fileName.startsWith(cameraIp)) {
                     continue;
                 }
-                
-                // Parse timestamp from filename: IP_yyyy-MM-dd_HH-mm-ss.mp4
-                // Example: 192_168_1_10_2025-12-25_12-00-00.mp4
-                
-                if (fileName.length() < 24) continue; 
-                
-                // Extract date part: yyyy-MM-dd_HH-mm-ss (19 chars)
-                // It is at the end, before .mp4 (4 chars)
-                QString timeStr = fileName.right(23).left(19); 
-                QDateTime fileTime = QDateTime::fromString(timeStr, "yyyy-MM-dd_HH-mm-ss");
+
+                // Parse timestamp from filename (supports optional milliseconds)
+                QRegularExpression re("(\\d{4}-\\d{2}-\\d{2}[_-]\\d{2}-\\d{2}-\\d{2})(?:-(\\d{3}))?");
+                QRegularExpressionMatch match = re.match(fileName);
+                if (!match.hasMatch()) continue;
+                QString base = match.captured(1);
+                QString ms = match.captured(2);
+                base.replace("-", "-");
+                base.replace("_", "_");
+                QDateTime fileTime;
+                if (!ms.isEmpty()) {
+                    fileTime = QDateTime::fromString(base + "-" + ms, "yyyy-MM-dd_HH-mm-ss-zzz");
+                } else {
+                    fileTime = QDateTime::fromString(base, "yyyy-MM-dd_HH-mm-ss");
+                }
                 
                 if (!fileTime.isValid()) {
                     continue;

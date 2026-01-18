@@ -27,6 +27,8 @@ Item {
     property bool useHdFullscreen: true
     property string manufacturer: ""
     property int recordingSegmentDuration: (SystemController.appSettings.recordingSegmentDuration !== undefined) ? SystemController.appSettings.recordingSegmentDuration : 15
+    property bool analyticsActive: false
+    property bool eventRecordingActive: eventRecorder.recordingPath !== ""
     
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
@@ -62,6 +64,34 @@ Item {
 
     Component.onCompleted: {
         console.info("GridCell completed", index, cameraIp, streamUrl)
+        refreshAnalyticsActive()
+    }
+
+    function refreshAnalyticsActive() {
+        var active = false
+        if (SystemController.analyticsEngine.isModuleEnabled(0) && SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 0)) active = true
+        if (SystemController.analyticsEngine.isModuleEnabled(1) && SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 1)) active = true
+        if (SystemController.analyticsEngine.isModuleEnabled(2) && SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 2)) active = true
+        analyticsActive = active
+        if (!analyticsActive) {
+            detectionModel.clear()
+        }
+    }
+
+    function startEventClip(path, durationMs) {
+        if (!path || path === "") return
+        if (eventRecorder.recordingPath !== "") {
+            return
+        }
+        eventRecorder.recordingPath = path
+        eventClipTimer.stop()
+    }
+
+    function stopEventClip() {
+        if (eventRecorder.recordingPath !== "") {
+            eventRecorder.recordingPath = ""
+        }
+        eventClipTimer.stop()
     }
 
     onStreamUrlChanged: {
@@ -110,6 +140,10 @@ Item {
         target: SystemController.analyticsEngine
         function onFrameProcessed(cameraId, detections) {
             if (cameraId === root.cameraIp) {
+                if (!analyticsActive) {
+                    detectionModel.clear()
+                    return
+                }
                 detectionModel.clear()
                 for (var i = 0; i < detections.length; i++) {
                     var detection = detections[i]
@@ -123,6 +157,17 @@ Item {
                     detection.color = color
                     detectionModel.append(detection)
                 }
+            }
+        }
+        function onModuleStatusChanged() { refreshAnalyticsActive() }
+        function onClipRequested(cameraId, path, durationMs) {
+            if (cameraId === root.cameraIp) {
+                startEventClip(path, durationMs)
+            }
+        }
+        function onClipStopRequested(cameraId, path) {
+            if (cameraId === root.cameraIp) {
+                stopEventClip()
             }
         }
     }
@@ -207,7 +252,21 @@ Item {
             bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
             rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
             
-            analyticsUrl: root.hdStreamUrl
+            analyticsUrl: ""
+            analyticsEngine: null
+            cameraId: root.cameraIp
+        }
+
+        // Hidden analytics player (HD preferred) to ensure snapshots/clips use HD stream
+        VideoPlayer {
+            id: analyticsPlayer
+            visible: false
+            backgroundMode: true
+            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            running: analyticsActive && url !== ""
+            muted: true
+            rtspTransport: player.rtspTransport
+            bufferMode: player.bufferMode
             analyticsEngine: SystemController.analyticsEngine
             cameraId: root.cameraIp
         }
@@ -232,6 +291,19 @@ Item {
             rtspTransport: player.rtspTransport
             bufferMode: player.bufferMode
         }
+
+        // Event Recorder (HD preferred, includes audio)
+        VideoPlayer {
+            id: eventRecorder
+            visible: false
+            backgroundMode: true
+            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            running: recordingPath !== ""
+            muted: false
+            volume: 1.0
+            rtspTransport: player.rtspTransport
+            bufferMode: player.bufferMode
+        }
         
         Timer {
             id: reconnectTimer
@@ -251,6 +323,7 @@ Item {
         Item {
             id: detectionOverlay
             anchors.fill: parent
+            visible: analyticsActive
             
             Repeater {
                 model: detectionModel
@@ -411,6 +484,7 @@ Item {
 
         onClosing: {
             hdPlayer.running = false
+            hdPlayer.url = ""
         }
 
         Item {
@@ -750,6 +824,16 @@ Item {
             } else {
                 running = false
             }
+        }
+    }
+
+    // Event clip stop timer
+    Timer {
+        id: eventClipTimer
+        interval: 5000
+        repeat: false
+        onTriggered: {
+            eventRecorder.recordingPath = ""
         }
     }
 
@@ -1121,6 +1205,7 @@ Item {
                         SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 0, !current)
                         // Force update binding
                         background.color = !current ? "#4299e1" : "transparent"
+                        refreshAnalyticsActive()
                     }
                 }
 
@@ -1147,6 +1232,7 @@ Item {
                         var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 1)
                         SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 1, !current)
                         background.color = !current ? "#4299e1" : "transparent"
+                        refreshAnalyticsActive()
                     }
                 }
 
@@ -1173,6 +1259,7 @@ Item {
                         var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 2)
                         SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 2, !current)
                         background.color = !current ? "#4299e1" : "transparent"
+                        refreshAnalyticsActive()
                     }
                 }
             }

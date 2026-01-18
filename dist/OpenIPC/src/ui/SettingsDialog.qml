@@ -82,6 +82,40 @@ Window {
     property int playerOrientation: 0
     property bool playerMirror: false
 
+    // Evidence settings (analytics-driven)
+    property bool evidenceEnabled: false
+    property bool evidenceSnapshotsEnabled: true
+    property bool evidenceClipsEnabled: true
+    property string evidenceSnapshotsPath: ""
+    property string evidenceClipsPath: ""
+    property int evidencePreSeconds: 5
+    property int evidencePostSeconds: 5
+    property real evidenceMinConfidence: 0.6
+    property int evidenceClipFps: 10
+    property bool evidenceUploadEnabled: false
+    property string evidenceUploadProvider: "local"
+    property string evidenceUploadTarget: ""
+    property string evidenceUploadClientId: ""
+    property string evidenceUploadClientSecret: ""
+    property string oauthUrl: ""
+    property string oauthProvider: ""
+    property string evidenceUploadFolder: ""
+    property string evidenceUploadPath: ""
+    property string evidenceUploadAccessToken: ""
+    property string evidenceUploadRefreshToken: ""
+    property string evidenceUploadExpiresAt: ""
+    property bool evidenceOAuthAdvanced: false
+
+    readonly property var defaultOAuthClientIds: ({
+        "gdrive": "742960614023-ac2alrmie0lmm0pf208ieatgilkkt1el.apps.googleusercontent.com",
+        "dropbox": "4oz9zu8h8s30ofu"
+    })
+
+    function effectiveClientId(provider) {
+        if (!evidenceOAuthAdvanced && defaultOAuthClientIds[provider]) return defaultOAuthClientIds[provider]
+        return evidenceUploadClientId
+    }
+
     property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
 
     // Helper to apply current settings
@@ -109,6 +143,37 @@ Window {
             "playerMirror": playerMirror
         }
         SystemController.saveAppSettings(settings)
+
+        var analyticsSettings = SystemController.analyticsEngine.getSettings()
+        var currentEvidence = (analyticsSettings && analyticsSettings.evidence) ? analyticsSettings.evidence : {}
+        var snapshotsDirToSave = evidenceSnapshotsPath
+        var clipsDirToSave = evidenceClipsPath
+        if (!snapshotsDirToSave || snapshotsDirToSave.trim() === "") {
+            snapshotsDirToSave = currentEvidence.snapshotsDir || ""
+        }
+        if (!clipsDirToSave || clipsDirToSave.trim() === "") {
+            clipsDirToSave = currentEvidence.clipsDir || ""
+        }
+        analyticsSettings["evidence"] = {
+            "enabled": evidenceEnabled,
+            "snapshotsEnabled": evidenceSnapshotsEnabled,
+            "clipsEnabled": evidenceClipsEnabled,
+            "snapshotsDir": snapshotsDirToSave,
+            "clipsDir": clipsDirToSave,
+            "preSeconds": evidencePreSeconds,
+            "postSeconds": evidencePostSeconds,
+            "minConfidence": evidenceMinConfidence,
+            "clipFps": evidenceClipFps,
+            "uploadEnabled": evidenceUploadEnabled,
+            "uploadProvider": evidenceUploadProvider,
+            "uploadTarget": evidenceUploadTarget,
+            "uploadClientId": evidenceUploadClientId,
+            "uploadClientSecret": evidenceUploadClientSecret,
+            "uploadAccessToken": evidenceUploadAccessToken,
+            "uploadRefreshToken": evidenceUploadRefreshToken,
+            "uploadExpiresAt": evidenceUploadExpiresAt
+        }
+        SystemController.analyticsEngine.setSettings(analyticsSettings)
     }
 
     function loadSettings() {
@@ -136,10 +201,86 @@ Window {
             if (settings.playerOrientation !== undefined) playerOrientation = settings.playerOrientation
             if (settings.playerMirror !== undefined) playerMirror = settings.playerMirror
         }
+
+        var analyticsSettings = SystemController.analyticsEngine.getSettings()
+        if (analyticsSettings && analyticsSettings.evidence) {
+            var ev = analyticsSettings.evidence
+            if (ev.enabled !== undefined) evidenceEnabled = ev.enabled
+            if (ev.snapshotsEnabled !== undefined) evidenceSnapshotsEnabled = ev.snapshotsEnabled
+            if (ev.clipsEnabled !== undefined) evidenceClipsEnabled = ev.clipsEnabled
+            if (ev.snapshotsDir) evidenceSnapshotsPath = ev.snapshotsDir
+            if (ev.clipsDir) evidenceClipsPath = ev.clipsDir
+            if (ev.preSeconds !== undefined) evidencePreSeconds = ev.preSeconds
+            if (ev.postSeconds !== undefined) evidencePostSeconds = ev.postSeconds
+            if (ev.minConfidence !== undefined) evidenceMinConfidence = ev.minConfidence
+            if (ev.clipFps !== undefined) evidenceClipFps = ev.clipFps
+            if (ev.uploadEnabled !== undefined) evidenceUploadEnabled = ev.uploadEnabled
+            if (ev.uploadProvider) evidenceUploadProvider = ev.uploadProvider
+            if (ev.uploadTarget) evidenceUploadTarget = ev.uploadTarget
+            if (ev.uploadClientId) evidenceUploadClientId = ev.uploadClientId
+            if (ev.uploadClientSecret) evidenceUploadClientSecret = ev.uploadClientSecret
+            if (ev.uploadAccessToken) evidenceUploadAccessToken = ev.uploadAccessToken
+            if (ev.uploadRefreshToken) evidenceUploadRefreshToken = ev.uploadRefreshToken
+            if (ev.uploadExpiresAt) evidenceUploadExpiresAt = ev.uploadExpiresAt
+            var map = parseTarget(evidenceUploadTarget)
+            evidenceUploadFolder = map.folder || ""
+            evidenceUploadPath = map.path || ""
+        }
     }
 
     Component.onCompleted: {
         loadSettings()
+    }
+
+    Connections {
+        target: SystemController.analyticsEngine
+        function onOauthUrlReady(provider, url) {
+            oauthProvider = provider
+            oauthUrl = url
+            oauthDialog.open()
+        }
+        function onOauthCompleted(provider, accessToken, refreshToken, expiresIn) {
+            oauthProvider = provider
+            var map = parseTarget(evidenceUploadTarget)
+            evidenceUploadAccessToken = accessToken
+            if (refreshToken) evidenceUploadRefreshToken = refreshToken
+            if (expiresIn) evidenceUploadExpiresAt = String(Math.floor(Date.now() / 1000) + expiresIn)
+            if (provider === "gdrive") {
+                map.folder = evidenceUploadFolder || map.folder || ""
+            } else if (provider === "onedrive" || provider === "dropbox" || provider === "yadisk") {
+                map.path = evidenceUploadPath || map.path || "/OpenIPC"
+            }
+            evidenceUploadTarget = buildTarget(map)
+            applyCurrentSettings()
+            oauthDialog.close()
+        }
+        function onOauthError(provider, message) {
+            oauthDialog.close()
+        }
+    }
+
+    function parseTarget(target) {
+        var map = {}
+        if (!target) return map
+        var parts = target.split(";")
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i]
+            var idx = p.indexOf("=")
+            if (idx > 0) {
+                var k = p.substring(0, idx).trim()
+                var v = p.substring(idx + 1).trim()
+                map[k] = v
+            }
+        }
+        return map
+    }
+
+    function buildTarget(map) {
+        var out = []
+        for (var k in map) {
+            if (map[k] !== undefined && map[k] !== "") out.push(k + "=" + map[k])
+        }
+        return out.join(";")
     }
 
     onLanguageChanged: {
@@ -200,6 +341,18 @@ Window {
         onAccepted: screenshotsPath = trimFileUrl(selectedFolder)
     }
 
+    FolderDialog {
+        id: evidenceSnapshotsDialog
+        title: I18n.t("Папка снимков (детекции)")
+        onAccepted: { evidenceSnapshotsPath = trimFileUrl(selectedFolder); applyCurrentSettings() }
+    }
+
+    FolderDialog {
+        id: evidenceClipsDialog
+        title: I18n.t("Папка клипов (детекции)")
+        onAccepted: { evidenceClipsPath = trimFileUrl(selectedFolder); applyCurrentSettings() }
+    }
+
     FileDialog {
         id: exportConfigDialog
         title: I18n.t("Сохранить конфигурацию")
@@ -242,13 +395,6 @@ Window {
             updateProgress = 0
         }
     }
-    
-    // Center logic removed, Window centers itself or uses system positioning
-    // x: (parent.width - width) / 2 
-    // y: (parent.height - height) / 2
-    
-    // Duplicated width/height removed (defined in root properties)
-    
     
     
     // Background Rectangle
@@ -1241,7 +1387,346 @@ Window {
                 // Analytics Tab
                 // -------------------------------------------------
                 Item {
-                    Text { text: "Analytics Settings (Placeholder)"; color: "#a0aec0"; anchors.centerIn: parent }
+                    ScrollView {
+                        anchors.fill: parent
+                        leftPadding: 20
+                        rightPadding: 20
+                        topPadding: 16
+                        bottomPadding: 16
+
+                        contentWidth: availableWidth
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ScrollBar.vertical: StyledScrollBar {
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                        }
+
+                        ColumnLayout {
+                            id: analyticsContent
+                            width: parent.width - 40
+                            spacing: 16
+
+                            Text {
+                                text: I18n.t("События аналитики")
+                                color: "white"
+                                font.pixelSize: 18
+                                font.bold: true
+                            }
+
+                            StyledCheckBox {
+                                text: I18n.t("Включить события")
+                                checked: evidenceEnabled
+                                onToggled: { evidenceEnabled = checked; applyCurrentSettings() }
+                            }
+
+                            RowLayout {
+                                spacing: 12
+                                StyledCheckBox {
+                                    text: I18n.t("Снимки")
+                                    checked: evidenceSnapshotsEnabled
+                                    enabled: evidenceEnabled
+                                    onToggled: { evidenceSnapshotsEnabled = checked; applyCurrentSettings() }
+                                }
+                                StyledCheckBox {
+                                    text: I18n.t("Клипы")
+                                    checked: evidenceClipsEnabled
+                                    enabled: evidenceEnabled
+                                    onToggled: { evidenceClipsEnabled = checked; applyCurrentSettings() }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                Text { text: I18n.t("Папка снимков (детекции)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceSnapshotsPath
+                                    color: "white"
+                                    placeholderText: I18n.t("Выберите папку")
+                                    background: Rectangle { color: "#2b2b2b"; radius: 4 }
+                                    onEditingFinished: { evidenceSnapshotsPath = text; applyCurrentSettings() }
+                                }
+                                Button {
+                                    text: I18n.t("Выберите папку")
+                                    onClicked: evidenceSnapshotsDialog.open()
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                Text { text: I18n.t("Папка клипов (детекции)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceClipsPath
+                                    color: "white"
+                                    placeholderText: I18n.t("Выберите папку")
+                                    background: Rectangle { color: "#2b2b2b"; radius: 4 }
+                                    onEditingFinished: { evidenceClipsPath = text; applyCurrentSettings() }
+                                }
+                                Button {
+                                    text: I18n.t("Выберите папку")
+                                    onClicked: evidenceClipsDialog.open()
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 12
+                                Text { text: I18n.t("До события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
+                                SpinBox {
+                                    from: 0; to: 30
+                                    value: evidencePreSeconds
+                                    onValueModified: { evidencePreSeconds = value; applyCurrentSettings() }
+                                }
+                                Text { text: I18n.t("После события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
+                                SpinBox {
+                                    from: 0; to: 30
+                                    value: evidencePostSeconds
+                                    onValueModified: { evidencePostSeconds = value; applyCurrentSettings() }
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 12
+                                Text { text: I18n.t("Минимальная уверенность"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                Slider {
+                                    Layout.fillWidth: true
+                                    from: 0.1; to: 0.95
+                                    value: evidenceMinConfidence
+                                    onMoved: evidenceMinConfidence = value
+                                    onPressedChanged: if (!pressed) applyCurrentSettings()
+                                }
+                                Text { text: Math.round(evidenceMinConfidence * 100) + "%"; color: "#cbd5e1"; Layout.preferredWidth: 50 }
+                            }
+
+                            RowLayout {
+                                spacing: 12
+                                Text { text: I18n.t("FPS клипа"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                SpinBox {
+                                    from: 5; to: 25
+                                    value: evidenceClipFps
+                                    onValueModified: { evidenceClipFps = value; applyCurrentSettings() }
+                                }
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: "#3b4657" }
+
+                            Text {
+                                text: I18n.t("Очередь выгрузки")
+                                color: "white"
+                                font.pixelSize: 16
+                                font.bold: true
+                            }
+
+                            StyledCheckBox {
+                                text: I18n.t("Включить выгрузку")
+                                checked: evidenceUploadEnabled
+                                onToggled: { evidenceUploadEnabled = checked; applyCurrentSettings() }
+                            }
+
+                            RowLayout {
+                                spacing: 12
+                                Text { text: I18n.t("Провайдер"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                ComboBox {
+                                    Layout.fillWidth: true
+                                    model: [
+                                        { text: I18n.t("Локальная папка (NAS/SMB)"), value: "local" },
+                                        { text: I18n.t("FTP"), value: "ftp" },
+                                        { text: I18n.t("Google Drive"), value: "gdrive" },
+                                        { text: I18n.t("OneDrive"), value: "onedrive" },
+                                        { text: I18n.t("Dropbox"), value: "dropbox" },
+                                        { text: I18n.t("Yandex Disk"), value: "yadisk" }
+                                    ]
+                                    textRole: "text"
+                                    onActivated: {
+                                        evidenceUploadProvider = model[index].value
+                                        applyCurrentSettings()
+                                    }
+                                    Component.onCompleted: {
+                                        var idx = model.findIndex(function(item) { return item.value === evidenceUploadProvider })
+                                        currentIndex = idx >= 0 ? idx : 0
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "local" || evidenceUploadProvider === "ftp"
+                                Text { text: I18n.t("Путь назначения"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceUploadTarget
+                                    color: "#f8fafc"
+                                    placeholderText: I18n.t("Путь / URL / токен")
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle {
+                                        color: "#1f2937"
+                                        radius: 6
+                                        border.color: "#374151"
+                                        border.width: 1
+                                    }
+                                    onEditingFinished: { evidenceUploadTarget = text; applyCurrentSettings() }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
+                                Item { Layout.preferredWidth: 220 }
+                                StyledCheckBox {
+                                    text: I18n.t("Расширенный режим (свой Client ID)")
+                                    checked: evidenceOAuthAdvanced
+                                    onToggled: { evidenceOAuthAdvanced = checked }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: (evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk") && evidenceOAuthAdvanced
+                                Text { text: I18n.t("Client ID"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceUploadClientId
+                                    color: "#f8fafc"
+                                    placeholderText: I18n.t("Введите Client ID приложения")
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
+                                    onEditingFinished: { evidenceUploadClientId = text; applyCurrentSettings() }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "yadisk" && evidenceOAuthAdvanced
+                                Text { text: I18n.t("Client Secret"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceUploadClientSecret
+                                    echoMode: TextInput.Password
+                                    color: "#f8fafc"
+                                    placeholderText: I18n.t("Введите Client Secret")
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
+                                    onEditingFinished: { evidenceUploadClientSecret = text; applyCurrentSettings() }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
+                                Item { Layout.preferredWidth: 220 }
+                                Button {
+                                    text: I18n.t("Авторизоваться")
+                                    onClicked: SystemController.analyticsEngine.startOAuth(evidenceUploadProvider, effectiveClientId(evidenceUploadProvider), evidenceUploadClientSecret)
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "gdrive"
+                                Text { text: I18n.t("ID папки (Drive)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceUploadFolder
+                                    color: "#f8fafc"
+                                    placeholderText: I18n.t("Например: 1A2b3C4D...")
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
+                                    onEditingFinished: {
+                                        evidenceUploadFolder = text
+                                        var map = parseTarget(evidenceUploadTarget)
+                                        map.folder = evidenceUploadFolder
+                                        evidenceUploadTarget = buildTarget(map)
+                                        applyCurrentSettings()
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
+                                Text { text: I18n.t("Путь (папка)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                TextField {
+                                    Layout.fillWidth: true
+                                    text: evidenceUploadPath
+                                    color: "#f8fafc"
+                                    placeholderText: I18n.t("Например: /OpenIPC")
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
+                                    onEditingFinished: {
+                                        evidenceUploadPath = text
+                                        var map = parseTarget(evidenceUploadTarget)
+                                        map.path = evidenceUploadPath
+                                        evidenceUploadTarget = buildTarget(map)
+                                        applyCurrentSettings()
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
+                                Text { text: I18n.t("Статус"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
+                                Text {
+                                    text: (function(){
+                                        return evidenceUploadAccessToken && evidenceUploadAccessToken !== "" ? I18n.t("Авторизован") : I18n.t("Не авторизован")
+                                    })()
+                                    color: (function(){
+                                        return evidenceUploadAccessToken && evidenceUploadAccessToken !== "" ? "#22c55e" : "#f59e0b"
+                                    })()
+                                }
+                            }
+
+                            Text {
+                                text: (function(){
+                                    if (evidenceUploadProvider === "ftp") return I18n.t("FTP пример: ftp://user:pass@host:21/path/  (папка создаётся автоматически)")
+                                        if (evidenceUploadProvider === "gdrive") return I18n.t("Google Drive: нажмите Авторизоваться, затем укажите folder (ID папки)")
+                                    if (evidenceUploadProvider === "onedrive") return I18n.t("OneDrive: нужен Client ID, затем Авторизоваться и указать path=/OpenIPC")
+                                    if (evidenceUploadProvider === "dropbox") return I18n.t("Dropbox: нажмите Авторизоваться, затем укажите path=/OpenIPC. Если app access = App folder, путь считается внутри /Apps/<AppName>. Redirect URI: http://localhost:53682/")
+                                    if (evidenceUploadProvider === "yadisk") return I18n.t("Yandex Disk: нужен Client ID/Secret, затем Авторизоваться и указать path=/OpenIPC")
+                                    if (evidenceUploadProvider === "local") return I18n.t("Локальная папка / NAS: укажите путь, например E:/VMS/Upload")
+                                    return ""
+                                })()
+                                color: "#a0aec0"
+                                wrapMode: Text.Wrap
+                            }
+
+                            Text {
+                                text: (function(){
+                                    if (evidenceUploadProvider === "gdrive") return I18n.t("Google Drive шаги:\n• console.cloud.google.com → создать проект\n• Включить Google Drive API\n• Credentials → OAuth Client ID → Desktop\n• Скопировать Client ID и вставить")
+                                    if (evidenceUploadProvider === "onedrive") return I18n.t("OneDrive шаги:\n• portal.azure.com → App registrations → New\n• Redirect URI: http://127.0.0.1\n• Скопировать Client ID и вставить")
+                                    if (evidenceUploadProvider === "dropbox") return I18n.t("Dropbox шаги:\n• dropbox.com/developers/apps → Create app\n• Scoped access → App folder (или Full Dropbox для записи в корень)\n• Redirect URI: http://localhost:53682/\n• Скопировать App key (Client ID) и вставить")
+                                    if (evidenceUploadProvider === "yadisk") return I18n.t("Yandex Disk шаги:\n• oauth.yandex.com → создать приложение\n• Redirect URI: http://127.0.0.1\n• Скопировать Client ID и Client Secret и вставить")
+                                    return ""
+                                })()
+                                color: "#94a3b8"
+                                wrapMode: Text.Wrap
+                            }
+
+                            Item { Layout.fillHeight: true }
+                        }
+                    }
                 }
                 
                 // -------------------------------------------------
@@ -1313,6 +1798,52 @@ Window {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: oauthDialog
+        modal: true
+        dim: true
+        width: parent.width * 0.6
+        height: parent.height * 0.3
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onRejected: SystemController.analyticsEngine.cancelOAuth()
+
+        background: Rectangle { color: "#111827"; radius: 8 }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 12
+
+            Text {
+                text: I18n.t("Авторизация открыта в браузере. Завершите вход и вернитесь в приложение.")
+                color: "white"
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                text: "<a href=\"" + oauthUrl + "\">" + oauthUrl + "</a>"
+                color: "#9ca3af"
+                wrapMode: Text.Wrap
+                font.pixelSize: 12
+                textFormat: Text.RichText
+                onLinkActivated: Qt.openUrlExternally(link)
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 10
+                Button {
+                    text: I18n.t("Открыть браузер")
+                    onClicked: Qt.openUrlExternally(oauthUrl)
+                }
+                Button {
+                    text: I18n.t("Отмена")
+                    onClicked: { SystemController.analyticsEngine.cancelOAuth(); oauthDialog.close(); }
                 }
             }
         }
