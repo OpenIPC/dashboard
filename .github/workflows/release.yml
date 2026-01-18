@@ -301,15 +301,15 @@ jobs:
             cp /usr/lib/x86_64-linux-gnu/liborc-0.4.so.* AppDir/usr/lib/
 
             # Create AppRun wrapper to force bundled GStreamer
-            cat > AppDir/AppRun << 'EOF'
-            #!/bin/sh
-            HERE="$(dirname "$(readlink -f "$0")")"
-            export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
-            export GST_PLUGIN_PATH="$HERE/usr/lib/gstreamer-1.0"
-            export GST_PLUGIN_SCANNER="$HERE/usr/lib/gstreamer-1.0/gst-plugin-scanner"
-            export GST_PLUGIN_SYSTEM_PATH_1_0=""
-            exec "$HERE/usr/bin/appOpenIPC-Dashboard" "$@"
-            EOF
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'HERE="$(dirname "$(readlink -f "$0")")"' \
+              'export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"' \
+              'export GST_PLUGIN_PATH="$HERE/usr/lib/gstreamer-1.0"' \
+              'export GST_PLUGIN_SCANNER="$HERE/usr/lib/gstreamer-1.0/gst-plugin-scanner"' \
+              'export GST_PLUGIN_SYSTEM_PATH_1_0=""' \
+              'exec "$HERE/usr/bin/appOpenIPC-Dashboard" "$@"' \
+              > AppDir/AppRun
             chmod +x AppDir/AppRun
 
 
