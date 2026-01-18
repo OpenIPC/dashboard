@@ -88,16 +88,6 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // Configure GStreamer paths for standalone deployment
-    // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString localGstPlugins = appDir + "/lib/gstreamer-1.0";
-    if (QDir(localGstPlugins).exists()) {
-        qputenv("GST_PLUGIN_PATH", localGstPlugins.toLocal8Bit());
-        qputenv("GST_PLUGIN_SYSTEM_PATH", ""); // Ignore system install if local exists
-        qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
-    }
-
     // Check for ASKPASS mode
     if (qEnvironmentVariableIsSet("OPENIPC_ASKPASS_MODE")) {
         QTextStream out(stdout);
@@ -113,6 +103,16 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv); 
     app.setOrganizationName("OpenIPC");
     app.setApplicationName("Dashboard");
+
+    // Configure GStreamer paths for standalone deployment
+    // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString localGstPlugins = appDir + "/lib/gstreamer-1.0";
+    if (QDir(localGstPlugins).exists()) {
+        qputenv("GST_PLUGIN_PATH", localGstPlugins.toLocal8Bit());
+        qputenv("GST_PLUGIN_SYSTEM_PATH", ""); // Ignore system install if local exists
+        qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
+    }
 
 
     QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);

@@ -277,9 +277,42 @@ jobs:
             cp -r build/OpenIPC AppDir/usr/bin/
           fi
 
-          # Copy GStreamer plugins
+          # Copy GStreamer plugins (minimal set to avoid missing dependency warnings)
           mkdir -p AppDir/usr/lib/gstreamer-1.0
-          cp /usr/lib/x86_64-linux-gnu/gstreamer-1.0/*.so AppDir/usr/lib/gstreamer-1.0/
+          GST_PLUGIN_DIR="/usr/lib/x86_64-linux-gnu/gstreamer-1.0"
+          GST_PLUGINS=(
+            libgstcoreelements.so
+            libgstplayback.so
+            libgsttypefindfunctions.so
+            libgstapp.so
+            libgstaudioconvert.so
+            libgstaudioresample.so
+            libgstaudioparsers.so
+            libgstvolume.so
+            libgstautodetect.so
+            libgstvideoconvert.so
+            libgstvideoscale.so
+            libgstvideorate.so
+            libgstvideoparsers.so
+            libgstvideoparsersbad.so
+            libgstrtp.so
+            libgstrtpmanager.so
+            libgstrtsp.so
+            libgstudp.so
+            libgsttcp.so
+            libgstisomp4.so
+            libgstmatroska.so
+            libgstmpegtsdemux.so
+            libgstde265.so
+            libgstlibav.so
+            libgstalsa.so
+            libgstpulseaudio.so
+          )
+          for plugin in "${GST_PLUGINS[@]}"; do
+            if [ -f "$GST_PLUGIN_DIR/$plugin" ]; then
+              cp "$GST_PLUGIN_DIR/$plugin" AppDir/usr/lib/gstreamer-1.0/
+            fi
+          done
           # Copy plugin scanner
           if [ -f "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner" ]; then
               cp /usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner AppDir/usr/lib/gstreamer-1.0/
@@ -309,6 +342,9 @@ jobs:
                 /usr/lib/x86_64-linux-gnu/libgstwebrtc-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstsctp-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstwayland-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstisoff-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstmpegts-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgsturidownloader-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
                 /usr/lib/x86_64-linux-gnu/libavformat.so.* \
                 /usr/lib/x86_64-linux-gnu/libavutil.so.* \

@@ -23,7 +23,7 @@ bool YoloDetector::load(const QString &moduleDir)
     QFileInfo fileInfo(modelPath);
     if (!fileInfo.exists() || fileInfo.size() == 0) {
         m_error = QString("Model file not found or empty: %1").arg(modelPath);
-        qWarning() << "YoloDetector:" << m_error;
+        qInfo() << "YoloDetector:" << m_error;
         m_loaded = false;
         return false;
     }

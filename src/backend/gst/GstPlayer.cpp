@@ -695,8 +695,14 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
             if (tags) {
                 gchar *codec = nullptr;
                 if (gst_tag_list_get_string(tags, GST_TAG_VIDEO_CODEC, &codec)) {
-                    if (self->m_videoCodec != QString::fromUtf8(codec)) {
-                        self->m_videoCodec = QString::fromUtf8(codec);
+                    QString codecStr = QString::fromUtf8(codec).trimmed();
+                    // Remove profile suffix like " (Main Profile)" if present
+                    int parenIdx = codecStr.indexOf(" (");
+                    if (parenIdx > 0 && codecStr.endsWith(')')) {
+                        codecStr = codecStr.left(parenIdx).trimmed();
+                    }
+                    if (self->m_videoCodec != codecStr) {
+                        self->m_videoCodec = codecStr;
                         emit self->videoStatsChanged();
                     }
                     g_free(codec);
@@ -705,9 +711,14 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
                 guint bitrate = 0;
                 if (gst_tag_list_get_uint(tags, GST_TAG_BITRATE, &bitrate) || 
                     gst_tag_list_get_uint(tags, GST_TAG_NOMINAL_BITRATE, &bitrate)) {
-                    if (self->m_videoBitrate != (int)bitrate) {
-                        self->m_videoBitrate = (int)bitrate;
-                        emit self->videoStatsChanged();
+                    // GStreamer tag bitrate is in bits per second, convert to kbps
+                    int bitrateKbps = (int)qRound((double)bitrate / 1000.0);
+                    // Ignore clearly bogus values (fallback to measured bitrate)
+                    if (bitrateKbps > 0 && bitrateKbps <= 200000) {
+                        if (self->m_videoBitrate != bitrateKbps) {
+                            self->m_videoBitrate = bitrateKbps;
+                            emit self->videoStatsChanged();
+                        }
                     }
                 }
                 gst_tag_list_unref(tags);
