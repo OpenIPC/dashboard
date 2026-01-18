@@ -348,7 +348,7 @@ jobs:
             -verbose=2 \
             -no-strip \
             -no-translations \
-            -qmake=$QMAKE
+            -qmake=$QMAKE | tee linuxdeployqt.log
           # Pack AppImage explicitly (use appimagetool bundled with linuxdeployqt)
           if [ ! -f ./linuxdeployqt-root/usr/bin/appimagetool ]; then
             echo "appimagetool not found in linuxdeployqt-root"
@@ -369,12 +369,13 @@ jobs:
           mv linuxdeployqt-continuous-x86_64.AppImage tools/
 
       - name: Upload AppImage logs (Linux)
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage-logs
           path: |
             appimagetool.log
+            linuxdeployqt.log
             
       - name: Rename AppImage
         run: |
