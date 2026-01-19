@@ -110,8 +110,15 @@ int main(int argc, char *argv[])
     QString localGstPlugins = appDir + "/lib/gstreamer-1.0";
     if (QDir(localGstPlugins).exists()) {
         qputenv("GST_PLUGIN_PATH", localGstPlugins.toLocal8Bit());
+        qputenv("GST_PLUGIN_PATH_1_0", localGstPlugins.toLocal8Bit());
         qputenv("GST_PLUGIN_SYSTEM_PATH", ""); // Ignore system install if local exists
+        qputenv("GST_PLUGIN_SYSTEM_PATH_1_0", "");
         qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
+
+        QString localScanner = localGstPlugins + "/gst-plugin-scanner.exe";
+        if (QFile::exists(localScanner)) {
+            qputenv("GST_PLUGIN_SCANNER", localScanner.toLocal8Bit());
+        }
     }
 
 

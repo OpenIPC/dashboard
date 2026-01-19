@@ -195,9 +195,22 @@ jobs:
               Copy-Item "$gstPlugins\*.dll" -Destination dist/lib/gstreamer-1.0 -Force
           }
           # Copy Scanner (Check libexec)
-          $gstLibexec = "C:\gstreamer\1.0\mingw_x86_64\libexec\gstreamer-1.0"
-          if (Test-Path "$gstLibexec\gst-plugin-scanner.exe") {
-             Copy-Item "$gstLibexec\gst-plugin-scanner.exe" -Destination dist/lib/gstreamer-1.0 -Force
+          $gstLibexec = Join-Path $gstRoot "libexec\gstreamer-1.0"
+          $scannerCandidates = @(
+            Join-Path $gstLibexec "gst-plugin-scanner.exe",
+            Join-Path $gstRoot "bin\gst-plugin-scanner.exe",
+            Join-Path $gstRoot "lib\gstreamer-1.0\gst-plugin-scanner.exe"
+          )
+          $scannerCopied = $false
+          foreach ($scanner in $scannerCandidates) {
+            if (Test-Path $scanner) {
+              Copy-Item $scanner -Destination dist/lib/gstreamer-1.0 -Force
+              $scannerCopied = $true
+              break
+            }
+          }
+          if (-not $scannerCopied) {
+            Write-Warning "gst-plugin-scanner.exe not found in GStreamer root"
           }
 
           # Copy OpenIPC QML module (Custom module)
