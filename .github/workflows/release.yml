@@ -137,11 +137,29 @@ jobs:
             Copy-Item build/*.dll -Destination dist/ -Force
           }
 
-          # Copy GStreamer DLLs
-          $gstBin = "C:\gstreamer\1.0\mingw_x86_64\bin"
-          if (Test-Path $gstBin) {
-              Copy-Item "$gstBin\*.dll" -Destination dist/ -Force
+          # Resolve GStreamer root from env (set in install step), with fallback search
+          $gstRoot = $env:GSTREAMER_1_0_ROOT_MINGW_X86_64
+          if (-not $gstRoot -or -not (Test-Path $gstRoot)) {
+              $gstHeader = Get-ChildItem -Recurse "C:\gstreamer" -Filter "gst.h" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "gstreamer-1.0\\gst\\gst\.h" } |
+                Select-Object -First 1
+              if ($gstHeader) {
+                $gstRoot = Split-Path (Split-Path (Split-Path (Split-Path $gstHeader.FullName -Parent) -Parent) -Parent) -Parent
+              }
           }
+          if (-not $gstRoot -or -not (Test-Path $gstRoot)) {
+              Write-Error "GStreamer root not found. GSTREAMER_1_0_ROOT_MINGW_X86_64=$($env:GSTREAMER_1_0_ROOT_MINGW_X86_64)"
+              exit 1
+          }
+
+          $gstBin = Join-Path $gstRoot "bin"
+          if (-not (Test-Path $gstBin)) {
+              Write-Error "GStreamer bin not found at: $gstBin"
+              exit 1
+          }
+
+          # Copy GStreamer DLLs
+          Copy-Item "$gstBin\*.dll" -Destination dist/ -Force
 
           # Ensure critical GStreamer/GLib runtime DLLs are present
           $requiredDlls = @(
