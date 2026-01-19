@@ -142,6 +142,33 @@ jobs:
           if (Test-Path $gstBin) {
               Copy-Item "$gstBin\*.dll" -Destination dist/ -Force
           }
+
+          # Ensure critical GStreamer/GLib runtime DLLs are present
+          $requiredDlls = @(
+            "libgstreamer-1.0-0.dll",
+            "libgstbase-1.0-0.dll",
+            "libgstaudio-1.0-0.dll",
+            "libgstvideo-1.0-0.dll",
+            "libglib-2.0-0.dll",
+            "libgobject-2.0-0.dll",
+            "libgio-2.0-0.dll"
+          )
+
+          foreach ($dll in $requiredDlls) {
+            if (Test-Path "$gstBin\$dll") {
+              Copy-Item "$gstBin\$dll" -Destination dist/ -Force
+            }
+          }
+
+          $missing = @()
+          foreach ($dll in $requiredDlls) {
+            if (-not (Test-Path "dist\$dll")) { $missing += $dll }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required GStreamer DLLs in dist: $($missing -join ', ')"
+            Get-ChildItem dist | Select-Object Name | Out-String | Write-Host
+            exit 1
+          }
           
           # Copy Plugins
           $gstPlugins = "C:\gstreamer\1.0\mingw_x86_64\lib\gstreamer-1.0"
@@ -310,6 +337,8 @@ jobs:
             libgstmatroska.so
             libgstmpegtsdemux.so
             libgstde265.so
+            libgstlibav.so
+            libgstopenh264.so
             libgstalsa.so
             libgstpulseaudio.so
           )
@@ -351,6 +380,7 @@ jobs:
                 /usr/lib/x86_64-linux-gnu/libgstmpegts-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgsturidownloader-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libpocketsphinx.so.* \
+                /usr/lib/x86_64-linux-gnu/libopenh264.so.* \
                 /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
                 /usr/lib/x86_64-linux-gnu/libavformat.so.* \
                 /usr/lib/x86_64-linux-gnu/libavutil.so.* \
