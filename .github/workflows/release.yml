@@ -197,9 +197,9 @@ jobs:
           # Copy Scanner (Check libexec)
           $gstLibexec = Join-Path $gstRoot "libexec\gstreamer-1.0"
           $scannerCandidates = @(
-            Join-Path $gstLibexec "gst-plugin-scanner.exe",
-            Join-Path $gstRoot "bin\gst-plugin-scanner.exe",
-            Join-Path $gstRoot "lib\gstreamer-1.0\gst-plugin-scanner.exe"
+            "$gstLibexec\gst-plugin-scanner.exe",
+            "$gstRoot\bin\gst-plugin-scanner.exe",
+            "$gstRoot\lib\gstreamer-1.0\gst-plugin-scanner.exe"
           )
           $scannerCopied = $false
           foreach ($scanner in $scannerCandidates) {
