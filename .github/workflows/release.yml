@@ -288,6 +288,8 @@ jobs:
             libgstaudioconvert.so
             libgstaudioresample.so
             libgstaudioparsers.so
+            libgstaacparse.so
+            libgstfaad.so
             libgstvolume.so
             libgstautodetect.so
             libgstvideoconvert.so
@@ -295,6 +297,10 @@ jobs:
             libgstvideorate.so
             libgstvideoparsers.so
             libgstvideoparsersbad.so
+            libgstvideofilters.so
+            libgstvideofilter.so
+            libgstvideofiltersbad.so
+            libgstdeinterlace.so
             libgstrtp.so
             libgstrtpmanager.so
             libgstrtsp.so
@@ -304,7 +310,6 @@ jobs:
             libgstmatroska.so
             libgstmpegtsdemux.so
             libgstde265.so
-            libgstlibav.so
             libgstalsa.so
             libgstpulseaudio.so
           )
@@ -345,6 +350,7 @@ jobs:
                 /usr/lib/x86_64-linux-gnu/libgstisoff-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstmpegts-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgsturidownloader-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libpocketsphinx.so.* \
                 /usr/lib/x86_64-linux-gnu/libavcodec.so.* \
                 /usr/lib/x86_64-linux-gnu/libavformat.so.* \
                 /usr/lib/x86_64-linux-gnu/libavutil.so.* \
