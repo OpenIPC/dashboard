@@ -188,12 +188,14 @@ jobs:
             exit 1
           }
           
-          # Copy Plugins
-          $gstPlugins = "C:\gstreamer\1.0\mingw_x86_64\lib\gstreamer-1.0"
-          if (Test-Path $gstPlugins) {
+            # Copy Plugins
+            $gstPlugins = Join-Path $gstRoot "lib\gstreamer-1.0"
+            if (Test-Path $gstPlugins) {
               New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
               Copy-Item "$gstPlugins\*.dll" -Destination dist/lib/gstreamer-1.0 -Force
-          }
+            } else {
+              New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
+            }
           # Copy Scanner (Check libexec)
           $gstLibexec = Join-Path $gstRoot "libexec\gstreamer-1.0"
           $scannerCandidates = @(
