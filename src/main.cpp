@@ -123,17 +123,17 @@ int main(int argc, char *argv[])
 
     // Configure GStreamer paths for standalone deployment
     // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString localGstPlugins = appDir + "/lib/gstreamer-1.0";
+    const QString appDirPath = QCoreApplication::applicationDirPath();
+    QString localGstPlugins = appDirPath + "/lib/gstreamer-1.0";
     if (QDir(localGstPlugins).exists()) {
         qputenv("GST_PLUGIN_PATH", localGstPlugins.toLocal8Bit());
         qputenv("GST_PLUGIN_PATH_1_0", localGstPlugins.toLocal8Bit());
         qputenv("GST_PLUGIN_SYSTEM_PATH", ""); // Ignore system install if local exists
         qputenv("GST_PLUGIN_SYSTEM_PATH_1_0", "");
-        qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
+        qputenv("PATH", (appDirPath + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
 
         // Use local registry to avoid stale system cache paths
-        QString localRegistry = appDir + "/gstreamer-registry.bin";
+        QString localRegistry = appDirPath + "/gstreamer-registry.bin";
         qputenv("GST_REGISTRY", localRegistry.toLocal8Bit());
         qputenv("GST_REGISTRY_FORK", "0");
 
