@@ -5,11 +5,15 @@ setlocal
 set "GST_BIN=C:\Program Files\gstreamer\1.0\mingw_x86_64\bin"
 set "GST_PLUGIN_PATH=C:\Program Files\gstreamer\1.0\mingw_x86_64\lib\gstreamer-1.0"
 set "QT_BIN=%~dp06.4.2\mingw_64\bin"
+set "QT_PLUGINS=%~dp06.4.2\mingw_64\plugins"
+set "QT_PLATFORM_PLUGINS=%~dp06.4.2\mingw_64\plugins\platforms"
 set "DAHUA_BIN=%~dp0libs\dahua\bin"
 set "ONNX_BIN=%~dp0libs\onnxruntime\lib"
 
 :: Add to PATH
 set "PATH=%QT_BIN%;%GST_BIN%;%DAHUA_BIN%;%ONNX_BIN%;%PATH%"
+set "QT_PLUGIN_PATH=%QT_PLUGINS%"
+set "QT_QPA_PLATFORM_PLUGIN_PATH=%QT_PLATFORM_PLUGINS%"
 
 echo Starting OpenIPC Dashboard...
 echo GStreamer Path: %GST_BIN%
