@@ -347,11 +347,14 @@ jobs:
           if (-not $upx) { Write-Error "upx not found"; exit 1 }
 
           # Compress EXE and DLLs in dist
-          # Avoid compressing Qt plugins (especially platform plugins), which can break Qt's plugin metadata loader.
+          # Avoid compressing Qt plugins/modules and QML imports, which can break Qt's plugin metadata loader.
           Get-ChildItem dist -Recurse -Include *.exe,*.dll |
             Where-Object {
               $_.FullName -notmatch '\\qt_plugins\\' -and
-              $_.FullName -notmatch '\\platforms\\'
+              $_.FullName -notmatch '\\platforms\\' -and
+              $_.FullName -notmatch '\\plugins\\' -and
+              $_.FullName -notmatch '\\Qt(Qml|Quick|Multimedia|Network|OpenGL|Sql|Svg|Core|Gui|Labs|QmlModels|QmlWorkerScript|QmlXmlListModel)?\\' -and
+              $_.FullName -notmatch '\\qml\\'
             } |
             ForEach-Object {
               & $upx -9 --lzma --force $_.FullName
