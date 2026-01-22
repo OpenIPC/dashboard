@@ -38,10 +38,11 @@ if %errorlevel% neq 0 (
 )
 
 echo Ensuring Qt platform plugins exist...
-if not exist "dist\qt_plugins\platforms" (
-    mkdir "dist\qt_plugins\platforms"
-    xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\platforms" "dist\qt_plugins\platforms"
-)
+if not exist "dist\platforms" mkdir "dist\platforms"
+if not exist "dist\qt_plugins\platforms" mkdir "dist\qt_plugins\platforms"
+rem Always refresh platform plugins from the Qt SDK to avoid stale or stripped DLLs.
+xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\platforms" "dist\platforms"
+xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\platforms" "dist\qt_plugins\platforms"
 
 echo Ensuring common Qt plugin folders exist...
 if not exist "dist\qt_plugins\imageformats" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\imageformats" "dist\qt_plugins\imageformats"
