@@ -808,6 +808,7 @@ Window {
                                     text: I18n.t("Экспорт конфигурации")
                                     Layout.preferredHeight: 32
                                     Layout.preferredWidth: 190
+                                    enabled: SystemController.userManager.canExport()
                                     background: Rectangle { color: "#3b82f6"; radius: 6 }
                                     contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     onClicked: exportConfigDialog.open()
@@ -816,6 +817,7 @@ Window {
                                     text: I18n.t("Импорт конфигурации")
                                     Layout.preferredHeight: 32
                                     Layout.preferredWidth: 190
+                                    enabled: SystemController.userManager.canExport()
                                     background: Rectangle { color: "#e53e3e"; radius: 6 }
                                     contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     onClicked: importConfigDialog.open()

@@ -158,9 +158,6 @@ jobs:
               exit 1
           }
 
-          # Copy GStreamer DLLs
-          Copy-Item "$gstBin\*.dll" -Destination dist/ -Force
-
           # Ensure critical GStreamer/GLib runtime DLLs are present
           $requiredDlls = @(
             "libgstreamer-1.0-0.dll",
@@ -178,6 +175,55 @@ jobs:
             }
           }
 
+          # Copy additional core runtime libs (exclude d3d11/dxva/mf)
+          $extraDlls = @(
+            "libgstpbutils-1.0-0.dll",
+            "libgsttag-1.0-0.dll",
+            "libgstcontroller-1.0-0.dll",
+            "libgstnet-1.0-0.dll",
+            "libgstapp-1.0-0.dll",
+            "libgstrtp-1.0-0.dll",
+            "libgstrtsp-1.0-0.dll",
+            "libgstsdp-1.0-0.dll",
+            "libgstcodecparsers-1.0-0.dll",
+            "libgstcodecs-1.0-0.dll",
+            "libgstallocators-1.0-0.dll",
+            "libgstriff-1.0-0.dll",
+            "liborc-0.4-0.dll",
+            "libintl-8.dll",
+            "libiconv-2.dll",
+            "libffi-7.dll",
+            "libz-1.dll",
+            "libbz2.dll",
+            "libxml2-2.dll",
+            "libsqlite3-0.dll",
+            "libpcre2-8-0.dll",
+            "libssl-3-x64.dll",
+            "libcrypto-3-x64.dll",
+            "libavcodec-61.dll",
+            "libavformat-61.dll",
+            "libavutil-59.dll",
+            "libavfilter-10.dll",
+            "libswresample-5.dll",
+            "libswscale-8.dll",
+            "libjpeg-8.dll",
+            "libpng16.dll",
+            "libfreetype-6.dll",
+            "libfontconfig-1.dll",
+            "libharfbuzz-0.dll",
+            "libgraphene-1.0-0.dll",
+            "libpango-1.0-0.dll",
+            "libpangocairo-1.0-0.dll",
+            "libpangowin32-1.0-0.dll",
+            "libcairo-2.dll",
+            "libcairo-gobject-2.dll"
+          )
+          foreach ($dll in $extraDlls) {
+            if (Test-Path "$gstBin\$dll") {
+              Copy-Item "$gstBin\$dll" -Destination dist/ -Force
+            }
+          }
+
           $missing = @()
           foreach ($dll in $requiredDlls) {
             if (-not (Test-Path "dist\$dll")) { $missing += $dll }
@@ -188,13 +234,48 @@ jobs:
             exit 1
           }
           
-            # Copy Plugins
+            # Copy Plugins (minimal set)
             $gstPlugins = Join-Path $gstRoot "lib\gstreamer-1.0"
+            New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
             if (Test-Path $gstPlugins) {
-              New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
-              Copy-Item "$gstPlugins\*.dll" -Destination dist/lib/gstreamer-1.0 -Force
-            } else {
-              New-Item -ItemType Directory -Path dist/lib/gstreamer-1.0 -Force
+                $pluginList = @(
+                  "libgstcoreelements.dll",
+                  "libgstplayback.dll",
+                  "libgsttypefindfunctions.dll",
+                  "libgstapp.dll",
+                  "libgstaudioconvert.dll",
+                  "libgstaudioresample.dll",
+                  "libgstaudioparsers.dll",
+                  "libgstaacparse.dll",
+                  "libgstfaad.dll",
+                  "libgstvolume.dll",
+                  "libgstautodetect.dll",
+                  "libgstvideoconvert.dll",
+                  "libgstvideoconvertscale.dll",
+                  "libgstvideoscale.dll",
+                  "libgstvideofilters.dll",
+                  "libgstvideofilter.dll",
+                  "libgstvideoparsersbad.dll",
+                  "libgstdeinterlace.dll",
+                  "libgstrtp.dll",
+                  "libgstrtpmanager.dll",
+                  "libgstrtsp.dll",
+                  "libgstudp.dll",
+                  "libgsttcp.dll",
+                  "libgstisomp4.dll",
+                  "libgstmatroska.dll",
+                  "libgstmpegtsdemux.dll",
+                  "libgstde265.dll",
+                  "libgstopenh264.dll",
+                  "libgstlibav.dll",
+                  "libgstwasapi.dll",
+                  "libgstdirectsound.dll"
+                )
+                foreach ($p in $pluginList) {
+                  if (Test-Path "$gstPlugins\$p") {
+                    Copy-Item "$gstPlugins\$p" -Destination dist/lib/gstreamer-1.0 -Force
+                  }
+                }
             }
           # Copy Scanner (Check libexec)
           $gstLibexec = Join-Path $gstRoot "libexec\gstreamer-1.0"
@@ -226,6 +307,23 @@ jobs:
           if (-not $windeployqt) { $windeployqt = (Get-Command windeployqt -ErrorAction SilentlyContinue).Source }
           if (-not $windeployqt) { Write-Error "windeployqt not found in PATH"; exit 1 }
           & $windeployqt --qmldir src/ui --dir dist dist/appOpenIPC-Dashboard.exe
+
+          # Remove debug symbols to reduce size
+          Get-ChildItem dist -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+
+      - name: Install UPX
+        run: choco install upx
+
+      - name: Compress binaries with UPX
+        shell: pwsh
+        run: |
+          $upx = (Get-Command upx.exe -ErrorAction SilentlyContinue).Source
+          if (-not $upx) { Write-Error "upx not found"; exit 1 }
+
+          # Compress EXE and DLLs in dist
+          Get-ChildItem dist -Recurse -Include *.exe,*.dll | ForEach-Object {
+            & $upx -9 --lzma --force $_.FullName
+          }
 
       - name: Install Inno Setup
         run: choco install innosetup

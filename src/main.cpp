@@ -103,6 +103,9 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv); 
     app.setOrganizationName("OpenIPC");
     app.setApplicationName("Dashboard");
+#ifdef APP_VERSION
+    app.setApplicationVersion(QString::fromUtf8(APP_VERSION));
+#endif
 
     // Configure GStreamer paths for standalone deployment
     // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
@@ -115,9 +118,15 @@ int main(int argc, char *argv[])
         qputenv("GST_PLUGIN_SYSTEM_PATH_1_0", "");
         qputenv("PATH", (appDir + ";" + qEnvironmentVariable("PATH")).toLocal8Bit());
 
+        // Use local registry to avoid stale system cache paths
+        QString localRegistry = appDir + "/gstreamer-registry.bin";
+        qputenv("GST_REGISTRY", localRegistry.toLocal8Bit());
+        qputenv("GST_REGISTRY_FORK", "0");
+
         QString localScanner = localGstPlugins + "/gst-plugin-scanner.exe";
         if (QFile::exists(localScanner)) {
             qputenv("GST_PLUGIN_SCANNER", localScanner.toLocal8Bit());
+            qputenv("GST_PLUGIN_SCANNER_1_0", localScanner.toLocal8Bit());
         }
     }
 
@@ -155,6 +164,11 @@ int main(int argc, char *argv[])
     };
 
     QQmlApplicationEngine engine;
+#ifdef APP_VERSION
+    engine.rootContext()->setContextProperty("AppVersion", QString::fromUtf8(APP_VERSION));
+#else
+    engine.rootContext()->setContextProperty("AppVersion", QString());
+#endif
 
     // Register GStreamer Player
     qmlRegisterType<GstPlayer>("OpenIPC", 1, 0, "VideoPlayer");

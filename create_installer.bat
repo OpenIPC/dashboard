@@ -49,6 +49,10 @@ set "GST_PLUGINS=%GST_ROOT%\lib\gstreamer-1.0"
 :: Create local plugins directory expected by main.cpp
 mkdir dist\lib\gstreamer-1.0
 
+:: Copy plugin scanner
+if exist "%GST_ROOT%\libexec\gstreamer-1.0\gst-plugin-scanner.exe" copy "%GST_ROOT%\libexec\gstreamer-1.0\gst-plugin-scanner.exe" dist\lib\gstreamer-1.0\
+if exist "%GST_ROOT%\bin\gst-plugin-scanner.exe" copy "%GST_ROOT%\bin\gst-plugin-scanner.exe" dist\lib\gstreamer-1.0\
+
 :: Core GStreamer DLLs
 copy "%GST_BIN%\libgstreamer-1.0-0.dll" dist\
 copy "%GST_BIN%\libgstapp-1.0-0.dll" dist\
@@ -61,9 +65,6 @@ copy "%GST_BIN%\libgstcontroller-1.0-0.dll" dist\
 copy "%GST_BIN%\libgstnet-1.0-0.dll" dist\
 :: Extended GStreamer Libraries (Required by plugins)
 copy "%GST_BIN%\libgstgl-1.0-0.dll" dist\
-copy "%GST_BIN%\libgstd3d11-1.0-0.dll" dist\
-copy "%GST_BIN%\libgstd3dshader-1.0-0.dll" dist\
-copy "%GST_BIN%\libgstdxva-1.0-0.dll" dist\
 copy "%GST_BIN%\libgstrtp-1.0-0.dll" dist\
 copy "%GST_BIN%\libgstrtsp-1.0-0.dll" dist\
 copy "%GST_BIN%\libgstsdp-1.0-0.dll" dist\
@@ -118,32 +119,35 @@ copy "%GST_BIN%\libcairo-gobject-2.dll" dist\
 :: Plugins
 copy "%GST_PLUGINS%\libgstcoreelements.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstplayback.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstvideoconvertscale.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstvideofiltersbad.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstvideoparsersbad.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstapp.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstd3d11.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstmediafoundation.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstopengl.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstrtsp.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstrtp.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstrtpmanager.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstudp.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgsttcp.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstsoup.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstlibav.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstvpx.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstjpeg.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstisomp4.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgsttypefindfunctions.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstautodetect.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstwasapi.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstdirectsound.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstapp.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioconvert.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioresample.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstaudioparsers.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstaacparse.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstfaad.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstvolume.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstalaw.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstmulaw.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstautodetect.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoconvert.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoconvertscale.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoscale.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideofilters.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideofilter.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvideoparsersbad.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstdeinterlace.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtpmanager.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstrtsp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstudp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgsttcp.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstisomp4.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstmatroska.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstmpegtsdemux.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstde265.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstopenh264.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstlibav.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstwasapi.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstdirectsound.dll" dist\lib\gstreamer-1.0\
 
 echo Copying ONNX Runtime dependencies...
 copy libs\onnxruntime\lib\*.dll dist\

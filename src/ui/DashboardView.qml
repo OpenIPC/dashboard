@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import OpenIPC
 
 Item {
@@ -14,6 +15,43 @@ Item {
     property bool editingLayout: false
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
+
+    // Permissions (live bindings)
+    property int permToken: SystemController.userManager.permissionsVersion + (SystemController.userManager.isLoggedIn ? 1 : 0)
+    function hasPerm(_) {
+        var __ = permToken
+        return true
+    }
+    property bool canLive: (permToken >= 0) && SystemController.userManager.canLiveView()
+    property bool canPlayback: (permToken >= 0) && SystemController.userManager.canPlayback()
+    property bool canPtz: (permToken >= 0) && SystemController.userManager.canPtz()
+    property bool canExport: (permToken >= 0) && SystemController.userManager.canExport()
+    property bool canSettings: (permToken >= 0) && SystemController.userManager.canSettings()
+    property bool canUserManage: (permToken >= 0) && SystemController.userManager.canUserManage()
+
+    function actionAllowed(action) {
+        if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings") return canSettings
+        if (action === "user") return canUserManage
+        if (action === "analytics") return canLive
+        return true
+    }
+
+    function showNoAccess(message) {
+        noAccessDialog.message = message || I18n.t("У вас недостаточно прав для выполнения этого действия.")
+        noAccessDialog.open()
+    }
+
+    function currentUsername() {
+        var u = SystemController.userManager.currentUser
+        if (u && u.username !== undefined) return u.username
+        return ""
+    }
+
+    function isAdminUser() {
+        var u = SystemController.userManager.currentUser
+        if (u && u.username !== undefined && u.username === "admin") return true
+        return SystemController.userManager.isAdmin()
+    }
     
     // Propagate language changes if needed, though I18n is singleton
     property string appLanguage: I18n.language
@@ -668,12 +706,24 @@ Item {
                             status: model.status
                             isRecording: model.isRecording
                             manufacturer: model.manufacturer || ""
+
+                            canLive: root.canLive
+                            canPlayback: root.canPlayback
+                            canPtz: root.canPtz
+                            canExport: root.canExport
+                            canSettings: root.canSettings
+
+                            onPermissionDenied: root.showNoAccess()
                             
                             onCloseClicked: {
                                 SystemController.removeCameraFromGrid(index)
                             }
                             
                             onEditRequested: {
+                                if (!root.canSettings) {
+                                    root.showNoAccess()
+                                    return
+                                }
                                 var ip = model.cameraIp
                                 var idx = SystemController.cameraModel.findIndexByIp(ip)
                                 if (idx >= 0) {
@@ -693,6 +743,10 @@ Item {
                             }
                             
                             onDeleteRequested: {
+                                if (!root.canSettings) {
+                                    root.showNoAccess()
+                                    return
+                                }
                                 var ip = model.cameraIp
                                 var idx = SystemController.cameraModel.findIndexByIp(ip)
                                 if (idx >= 0) {
@@ -702,6 +756,10 @@ Item {
                             }
                             
                             onArchiveRequested: {
+                                if (!root.canPlayback) {
+                                    root.showNoAccess()
+                                    return
+                                }
                                 archiveLoader.pendingCameraIp = model.cameraIp
                                 archiveLoader.active = true
                             }
@@ -761,6 +819,10 @@ Item {
                                         onEntered: parent.hovered = true
                                         onExited: parent.hovered = false
                                         onClicked: {
+                                            if (!actionAllowed(modelData.action)) {
+                                                root.showNoAccess()
+                                                return
+                                            }
                                             if (modelData.action === "search") searchDialog.open()
                                             if (modelData.action === "add_folder") addGroupDialog.open()
                                             if (modelData.action === "add_camera") {
@@ -792,6 +854,16 @@ Item {
                                     property bool hovered: false
                                 }
                             }
+                        }
+                        // Current user label
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 15
+                            Layout.rightMargin: 15
+                            Layout.bottomMargin: 6
+                            text: I18n.t("Пользователь: ") + currentUsername()
+                            color: "#a0aec0"
+                            font.pixelSize: 12
                         }
                         Item { Layout.fillWidth: true } // Spacer
 
@@ -1748,6 +1820,65 @@ Item {
         id: logView
     }
 
+    Dialog {
+        id: noAccessDialog
+        modal: true
+        title: I18n.t("Недостаточно прав")
+        width: 420
+        property string message: I18n.t("У вас недостаточно прав для выполнения этого действия.")
+        parent: Overlay.overlay
+        x: parent ? (parent.width - width) / 2 : 0
+        y: parent ? (parent.height - height) / 2 : 0
+        background: Rectangle {
+            color: "#2a2f33"
+            border.color: "#3c3c3c"
+            radius: 6
+        }
+        header: Rectangle {
+            height: 36
+            color: "#252526"
+            radius: 6
+            border.color: "#3c3c3c"
+            Text {
+                anchors.centerIn: parent
+                text: noAccessDialog.title
+                color: "white"
+                font.bold: true
+                font.pixelSize: 14
+            }
+        }
+        contentItem: Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            clip: true
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 12
+                Text {
+                    text: noAccessDialog.message
+                    color: "#cbd5e1"
+                    wrapMode: Text.WordWrap
+                }
+                Item { Layout.fillHeight: true }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.rightMargin: 24
+                    Layout.bottomMargin: 12
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        text: I18n.t("ОК")
+                        Layout.preferredWidth: 72
+                        Layout.preferredHeight: 28
+                        background: Rectangle { color: "#3b82f6"; radius: 4 }
+                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: noAccessDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
     Loader {
         id: archiveLoader
         active: false
@@ -1769,11 +1900,23 @@ Item {
 
     CameraContextMenu {
         id: deviceContextMenu
+        canLive: root.canLive
+        canPlayback: root.canPlayback
+        canSettings: root.canSettings
+        canExport: root.canExport
         onDeleteRequested: {
+            if (!root.canSettings) {
+                root.showNoAccess()
+                return
+            }
             confirmDeleteDialog.cameraIndex = cameraIndex
             confirmDeleteDialog.open()
         }
         onEditRequested: {
+            if (!root.canSettings) {
+                root.showNoAccess()
+                return
+            }
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             addCameraDialog.isEditMode = true
             addCameraDialog.editIndex = cameraIndex
@@ -1789,6 +1932,10 @@ Item {
         }
         onGroupChanged: root.cameraDataVersion++
         onSshRequested: {
+            if (!root.canSettings) {
+                root.showNoAccess()
+                return
+            }
             // Find camera credentials
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             sshDialog.cameraIp = cam.cameraIp
@@ -1797,17 +1944,26 @@ Item {
             sshDialog.open()
         }
         onArchiveRequested: {
+            if (!root.canPlayback) {
+                root.showNoAccess()
+                return
+            }
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             archiveLoader.pendingCameraIp = cam.cameraIp
             archiveLoader.active = true
         }
         onFileManagerRequested: {
+            if (!root.canExport) {
+                root.showNoAccess()
+                return
+            }
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             fileManagerDialog.cameraIp = cam.cameraIp
             fileManagerDialog.cameraUser = cam.cameraLogin || "root"
             fileManagerDialog.cameraPassword = cam.cameraPassword || ""
             fileManagerDialog.open()
         }
+        onPermissionDenied: root.showNoAccess()
     }
 
     // Group context menu
@@ -1817,6 +1973,7 @@ Item {
 
         MenuItem {
             text: I18n.t("Переименовать группу")
+            enabled: root.canSettings
             onTriggered: {
                 renameGroupDialog.oldName = groupContextMenu.targetGroup
                 renameGroupDialog.newName = groupContextMenu.targetGroup
@@ -1825,6 +1982,7 @@ Item {
         }
         MenuItem {
             text: I18n.t("Удалить группу")
+            enabled: root.canSettings
             onTriggered: SystemController.removeCameraGroup(groupContextMenu.targetGroup)
         }
     }

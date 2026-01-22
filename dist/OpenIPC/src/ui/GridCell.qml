@@ -29,6 +29,12 @@ Item {
     property int recordingSegmentDuration: (SystemController.appSettings.recordingSegmentDuration !== undefined) ? SystemController.appSettings.recordingSegmentDuration : 15
     property bool analyticsActive: false
     property bool eventRecordingActive: eventRecorder.recordingPath !== ""
+    property bool canLive: true
+    property bool canPlayback: true
+    property bool canPtz: true
+    property bool canExport: true
+    property bool canSettings: true
+    property bool effectiveCanLive: canLive || SystemController.userManager.isAdmin() || (SystemController.userManager.currentUser && SystemController.userManager.currentUser.username === "admin")
     
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
@@ -132,6 +138,7 @@ Item {
     signal snapshotClicked()
     signal recordClicked()
     signal audioClicked()
+    signal permissionDenied()
     
     // Shared detection model for both preview and fullscreen
     ListModel { id: detectionModel }
@@ -196,6 +203,10 @@ Item {
     CameraContextMenu {
         id: gridContextMenu
         isGridContext: true
+        canLive: root.canLive
+        canPlayback: root.canPlayback
+        canSettings: root.canSettings
+        canExport: root.canExport
         onDeleteRequested: {
             root.deleteRequested()
         }
@@ -212,7 +223,7 @@ Item {
         id: videoHolder
         anchors.fill: parent
         clip: true
-        visible: root.streamUrl !== ""
+        visible: root.streamUrl !== "" && root.effectiveCanLive
 
         VideoPlayer {
             id: player
@@ -229,7 +240,7 @@ Item {
             url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
             
             // Start only if visible and URL is valid
-            running: visible && root.streamUrl !== ""
+            running: visible && root.streamUrl !== "" && root.effectiveCanLive
             
             muted: {
                 if (SystemController.isArchiveOpen) return true
@@ -354,6 +365,21 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    // No-permission overlay for live view
+    Rectangle {
+        anchors.fill: parent
+        color: "#88000000"
+        visible: !root.effectiveCanLive && root.streamUrl !== ""
+        z: 20
+        Text {
+            anchors.centerIn: parent
+            text: I18n.t("Нет доступа")
+            color: "white"
+            font.bold: true
+            font.pixelSize: 16
         }
     }
 
@@ -570,7 +596,8 @@ Item {
             Item {
                 id: hdPtzOverlay
                 anchors.fill: parent
-                visible: false
+                property bool ptzVisible: false
+                visible: root.canPtz && ptzVisible
                 z: 10
 
                 PtzControlPanel {
@@ -627,7 +654,10 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
-                        onClicked: hdPtzOverlay.visible = !hdPtzOverlay.visible
+                        onClicked: {
+                            if (!root.canPtz) { root.permissionDenied(); return }
+                            hdPtzOverlay.ptzVisible = !hdPtzOverlay.ptzVisible
+                        }
                     }
 
                     Button {
@@ -853,7 +883,8 @@ Item {
     Item {
         id: ptzOverlay
         anchors.fill: parent
-        visible: false
+        property bool ptzVisible: false
+        visible: root.canPtz && ptzVisible
         z: 10
 
         PtzControlPanel {
@@ -880,22 +911,9 @@ Item {
         width: controlsRow.implicitWidth + 12
         color: "#cc000000" // Semi-transparent black
         radius: 6
-        visible: hoverArea.containsMouse || controlsRow.hovered || hdWindow.visible
+        visible: (hoverArea.containsMouse || hdWindow.visible) && root.effectiveCanLive
         border.color: "#55ffffff"
         border.width: 1
-
-        // Hover tracker so the panel stays visible while interacting (MOVED FIRST to be in background)
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-            onEntered: {
-                controlsRow.hovered = true
-            }
-            onExited: {
-                controlsRow.hovered = false
-            }
-        }
         
         Row {
             id: controlsRow
@@ -903,7 +921,6 @@ Item {
             anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            property bool hovered: false
             property bool volumeHovered: false
             
             // PTZ Toggle
@@ -919,7 +936,10 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
-                onClicked: ptzOverlay.visible = !ptzOverlay.visible
+                onClicked: {
+                    if (!root.canPtz) { root.permissionDenied(); return }
+                    ptzOverlay.ptzVisible = !ptzOverlay.ptzVisible
+                }
             }
 
             // Quality toggle SD/HD for preview

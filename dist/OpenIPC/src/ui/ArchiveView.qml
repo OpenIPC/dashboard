@@ -44,6 +44,10 @@ Dialog {
     }
 
     onOpened: {
+        if (!SystemController.userManager.hasPermission(SystemController.userManager.Perm_Playback)) {
+            root.close()
+            return
+        }
         SystemController.isArchiveOpen = true
     }
 

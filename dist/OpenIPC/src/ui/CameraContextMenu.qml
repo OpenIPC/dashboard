@@ -10,6 +10,10 @@ Menu {
     property string cameraName: ""
     property int cameraIndex: -1
     property bool isGridContext: false
+    property bool canPlayback: true
+    property bool canSettings: true
+    property bool canExport: true
+    property bool canLive: true
     
     signal editRequested()
     signal deleteRequested()
@@ -17,6 +21,7 @@ Menu {
     signal fileManagerRequested()
     signal archiveRequested()
     signal groupChanged()
+    signal permissionDenied()
 
     palette.text: "#cccccc"
     palette.windowText: "#cccccc"
@@ -26,7 +31,10 @@ Menu {
     MenuItem {
         text: I18n.t("Архив")
         // icon.source: "qrc:/OpenIPC/src/ui/icons/archive.svg" // Placeholder
-        onTriggered: contextMenu.archiveRequested()
+        onTriggered: {
+            if (!canPlayback) { contextMenu.permissionDenied(); return }
+            contextMenu.archiveRequested()
+        }
     }
     
     MenuSeparator {}
@@ -34,6 +42,7 @@ Menu {
     MenuItem {
         text: I18n.t("Открыть в браузере")
         onTriggered: {
+            if (!canSettings) { contextMenu.permissionDenied(); return }
             console.log("Opening browser for IP: " + cameraIp)
             if (cameraIp !== "") {
                 Qt.openUrlExternally("http://" + cameraIp)
@@ -43,12 +52,18 @@ Menu {
     
     MenuItem {
         text: I18n.t("SSH Терминал")
-        onTriggered: contextMenu.sshRequested()
+        onTriggered: {
+            if (!canSettings) { contextMenu.permissionDenied(); return }
+            contextMenu.sshRequested()
+        }
     }
 
     MenuItem {
         text: I18n.t("Файловый менеджер")
-        onTriggered: contextMenu.fileManagerRequested()
+        onTriggered: {
+            if (!canExport) { contextMenu.permissionDenied(); return }
+            contextMenu.fileManagerRequested()
+        }
     }
     
     MenuSeparator {}
@@ -74,6 +89,7 @@ Menu {
                 leftPadding: 12
             }
             onTriggered: {
+                if (!canSettings) { contextMenu.permissionDenied(); return }
                 SystemController.setCameraGroup(cameraIndex, "")
                 contextMenu.groupChanged()
             }
@@ -92,6 +108,7 @@ Menu {
                     leftPadding: 12
                 }
                 onTriggered: {
+                    if (!canSettings) { contextMenu.permissionDenied(); return }
                     SystemController.setCameraGroup(cameraIndex, modelData)
                     contextMenu.groupChanged()
                 }
@@ -105,12 +122,18 @@ Menu {
     
     MenuItem {
         text: I18n.t("Редактировать камеру")
-        onTriggered: contextMenu.editRequested()
+        onTriggered: {
+            if (!canSettings) { contextMenu.permissionDenied(); return }
+            contextMenu.editRequested()
+        }
     }
     
     MenuItem {
         text: I18n.t("Удалить камеру")
-        onTriggered: contextMenu.deleteRequested()
+        onTriggered: {
+            if (!canSettings) { contextMenu.permissionDenied(); return }
+            contextMenu.deleteRequested()
+        }
     }
     
     background: Rectangle {

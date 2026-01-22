@@ -18,6 +18,8 @@ class UserManager : public QObject
     Q_PROPERTY(QVariantMap currentUser READ currentUser NOTIFY currentUserChanged)
     Q_PROPERTY(QVariantList users READ users NOTIFY usersChanged)
     Q_PROPERTY(bool isLoggedIn READ isLoggedIn NOTIFY isLoggedInChanged)
+    Q_PROPERTY(int permissionsVersion READ permissionsVersion NOTIFY permissionsVersionChanged)
+    Q_PROPERTY(int currentPermissions READ currentPermissions NOTIFY currentUserChanged)
 
 public:
     // Granular permissions (Dahua-style)
@@ -38,26 +40,36 @@ public:
     QVariantMap currentUser() const;
     QVariantList users() const;
     bool isLoggedIn() const;
+    int permissionsVersion() const { return m_permissionsVersion; }
+    int currentPermissions() const { return m_currentUser.permissions; }
 
     Q_INVOKABLE bool login(const QString &username, const QString &password, bool rememberMe = false);
     Q_INVOKABLE void logout();
-    Q_INVOKABLE bool addUser(const QString &username, const QString &password, const QString &role, int permissions = 0);
+    Q_INVOKABLE bool addUser(const QString &username, const QString &password, const QString &role, int permissions = -1);
     Q_INVOKABLE bool deleteUser(const QString &username);
     Q_INVOKABLE bool changePassword(const QString &username, const QString &oldPassword, const QString &newPassword);
     Q_INVOKABLE bool isAdmin() const;
     
     // Permission checks
     Q_INVOKABLE bool hasPermission(int permission) const;
+    Q_INVOKABLE bool canLiveView() const { return hasPermission(Perm_LiveView); }
+    Q_INVOKABLE bool canPlayback() const { return hasPermission(Perm_Playback); }
+    Q_INVOKABLE bool canPtz() const { return hasPermission(Perm_PTZ); }
+    Q_INVOKABLE bool canExport() const { return hasPermission(Perm_Export); }
+    Q_INVOKABLE bool canSettings() const { return hasPermission(Perm_Settings); }
+    Q_INVOKABLE bool canUserManage() const { return hasPermission(Perm_UserManage); }
     Q_INVOKABLE void updateUserPermissions(const QString &username, int permissions);
 
 signals:
     void currentUserChanged();
     void usersChanged();
     void isLoggedInChanged();
+    void permissionsVersionChanged();
 
 private:
     void loadUsers();
     void saveUsers();
+    QString usersFilePath() const;
     QString hashPassword(const QString &password) const;
 
     struct User {
@@ -94,6 +106,7 @@ private:
     QList<User> m_users;
     User m_currentUser;
     bool m_isLoggedIn;
+    int m_permissionsVersion = 0;
 };
 
 #endif // USERMANAGER_H
