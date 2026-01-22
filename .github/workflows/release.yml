@@ -308,6 +308,26 @@ jobs:
           if (-not $windeployqt) { Write-Error "windeployqt not found in PATH"; exit 1 }
           & $windeployqt --qmldir src/ui --dir dist dist/appOpenIPC-Dashboard.exe
 
+          # Ensure Qt platform plugins are bundled (qwindows.dll)
+          $qtBin = Split-Path $windeployqt -Parent
+          $qtRoot = Split-Path $qtBin -Parent
+          $qtPlatforms = Join-Path $qtRoot "plugins\platforms"
+          if (Test-Path $qtPlatforms) {
+            New-Item -ItemType Directory -Force -Path dist/plugins/platforms | Out-Null
+            Copy-Item "$qtPlatforms\*" -Destination dist/plugins/platforms -Force
+          } else {
+            Write-Warning "Qt platforms path not found: $qtPlatforms"
+          }
+
+          # Ensure qt.conf points to correct plugin/qml folders
+          @"
+          [Paths]
+          Prefix=.
+          Plugins=plugins
+          Imports=qml
+          Qml2Imports=qml
+          "@ | Set-Content dist/qt.conf
+
           # Remove debug symbols to reduce size
           Get-ChildItem dist -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 

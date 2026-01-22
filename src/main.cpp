@@ -5,9 +5,12 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 #include <QDateTime>
 #include <QTimer>
+#include <QStandardPaths>
 #include "backend/SystemController.h"
 #include "backend/gst/GstPlayer.h"
 #include "backend/AnalyticsModel.h"
@@ -70,6 +73,17 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 int main(int argc, char *argv[])
 {
 #ifdef Q_OS_WIN
+    // Ensure Qt can find bundled plugins when running from installer
+    const QString appDir = QDir::cleanPath(QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath());
+    const QString qtPluginsDir = appDir + "/plugins";
+    const QString qtPlatformsDir = qtPluginsDir + "/platforms";
+    if (QDir(qtPluginsDir).exists()) {
+        qputenv("QT_PLUGIN_PATH", qtPluginsDir.toLocal8Bit());
+    }
+    if (QDir(qtPlatformsDir).exists()) {
+        qputenv("QT_QPA_PLATFORM_PLUGIN_PATH", qtPlatformsDir.toLocal8Bit());
+    }
+
     // Force GStreamer paths to known installation if local bundle is missing
     // Detailed handling for development environment where plugins are in C:\Program Files\...
     qputenv("GST_DEBUG", "2"); // Enable warning logs
