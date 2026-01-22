@@ -38,15 +38,15 @@ if %errorlevel% neq 0 (
 )
 
 echo Ensuring Qt platform plugins exist...
-if not exist "dist\plugins\platforms" (
-    mkdir "dist\plugins\platforms"
-    xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\platforms" "dist\plugins\platforms"
+if not exist "dist\qt_plugins\platforms" (
+    mkdir "dist\qt_plugins\platforms"
+    xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\platforms" "dist\qt_plugins\platforms"
 )
 
 echo Ensuring common Qt plugin folders exist...
-if not exist "dist\plugins\imageformats" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\imageformats" "dist\plugins\imageformats"
-if not exist "dist\plugins\styles" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\styles" "dist\plugins\styles"
-if not exist "dist\plugins\tls" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\tls" "dist\plugins\tls"
+if not exist "dist\qt_plugins\imageformats" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\imageformats" "dist\qt_plugins\imageformats"
+if not exist "dist\qt_plugins\styles" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\styles" "dist\qt_plugins\styles"
+if not exist "dist\qt_plugins\tls" xcopy /E /I /Y "%QT_BIN_DIR%\..\plugins\tls" "dist\qt_plugins\tls"
 
 echo Copying missing Qt DLLs...
 if exist "%QT_BIN_DIR%\Qt6ShaderTools.dll" copy "%QT_BIN_DIR%\Qt6ShaderTools.dll" dist\
@@ -170,7 +170,7 @@ echo Creating qt.conf...
 (
 echo [Paths]
 echo Prefix=.
-echo Plugins=plugins
+echo Plugins=qt_plugins
 echo Imports=qml
 echo Qml2Imports=qml
 ) > dist\qt.conf

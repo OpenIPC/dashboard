@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 #ifdef Q_OS_WIN
     // Ensure Qt can find bundled plugins when running from installer
     const QString appDir = QDir::cleanPath(QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath());
-    const QString qtPluginsDir = appDir + "/plugins";
+    const QString qtPluginsDir = appDir + "/qt_plugins";
     const QString qtPlatformsDir = qtPluginsDir + "/platforms";
     if (QDir(qtPluginsDir).exists()) {
         qputenv("QT_PLUGIN_PATH", qtPluginsDir.toLocal8Bit());
