@@ -98,6 +98,60 @@ QtObject {
         "Face Snapshots": "Face Snapshots",
         "Object Counter": "Object Counter",
         "License Plates": "License Plates",
+        "Камера": "Camera",
+        "Объект": "Object",
+        "Дата от": "Date from",
+        "Дата до": "Date to",
+        "Сортировка": "Sort",
+        "Сначала новые": "Newest first",
+        "Сначала старые": "Oldest first",
+        "Сбросить": "Reset",
+        "Быстрые фильтры": "Quick filters",
+        "Сегодня": "Today",
+        "7 дней": "7 days",
+        "30 дней": "30 days",
+        "За все время": "All time",
+        "Показано %1 из %2": "Showing %1 of %2",
+        "Открыть папку": "Open folder",
+        "Открыть клип": "Open clip",
+        "Открыть файл": "Open file",
+        "Подогнать": "Fit",
+        "Повернуть влево": "Rotate left",
+        "Повернуть вправо": "Rotate right",
+        "Отразить по горизонтали": "Flip horizontal",
+        "Отразить по вертикали": "Flip vertical",
+        "Слайд-шоу": "Slideshow",
+        "Полный экран": "Fullscreen",
+        "Копировать": "Copy",
+        "Открыть в...": "Open with...",
+        "Печать": "Print",
+        "Свойства": "Properties",
+        "Редактировать": "Edit",
+        "Разрешение": "Resolution",
+        "Создан": "Created",
+        "Изменен": "Modified",
+        "Рисовать": "Draw",
+        "Обрезка": "Crop",
+        "Цвет": "Color",
+        "Сохранить копию": "Save copy",
+        "Сохранить как": "Save as",
+        "Отменить": "Undo",
+        "Отмена обрезки": "Clear crop",
+        "Применить обрезку": "Apply crop",
+        "Текст": "Text",
+        "Выбор цвета": "Color picker",
+        "Введите текст": "Enter text",
+        "Снимки не найдены": "No snapshots found",
+        "Папка снимков не настроена": "Snapshot directory not configured",
+        "Назад": "Previous",
+        "Вперед": "Next",
+        "Все": "All",
+        "Введите для фильтра": "Type to filter",
+        "События": "Events",
+        "Нет событий": "No events",
+        "Выбор": "Select",
+        "Выбрано: %1": "Selected: %1",
+        "Удалить выбранные": "Delete selected",
         
         // File Manager
         "Удаление": "Deletion",
@@ -278,7 +332,7 @@ QtObject {
         ,"Установка обновления...": "Installing update..."
         ,"Обновление установлено": "Update installed"
         ,"Установлена последняя версия": "Latest version installed"
-        ,"Трансляция (MDK)": "Streaming (MDK)"
+        
         ,"Предпочтительный поток": "Preferred stream"
         ,"Режим кадра": "Frame mode"
         ,"Обрезать по краям": "Crop to fill"
@@ -288,7 +342,7 @@ QtObject {
         ,"Показывать codec/res/bitrate/fps": "Show codec/res/bitrate/fps"
         ,"Автовоспроизведение": "Autoplay"
         ,"Запускать поток сразу после загрузки": "Start stream on load"
-        ,"Доступные опции основаны на текущей версии MDK-плеера (FFmpeg, без HW-декодеров). Дополнительные настройки можно будет добавить позже.": "Options reflect the current MDK player build (FFmpeg, no HW decoders). More settings can be added later.",
+        ,"Доступные опции основаны на текущей версии плеера (FFmpeg, без HW-декодеров). Дополнительные настройки можно будет добавить позже.": "Options reflect the current player build (FFmpeg, no HW decoders). More settings can be added later.",
         
         // User Management
         "Управление пользователями": "User Management",
@@ -326,7 +380,7 @@ QtObject {
         "Добавить": "Add",
         "Длительность записи (мин)": "Recording duration (min)",
         "5-60 мин": "5-60 min",
-        "Трансляция (VLC)": "Streaming (VLC)",
+        
         "Предпочтительный поток": "Preferred stream",
         "Авто": "Auto",
         "Режим кадра": "Frame mode",

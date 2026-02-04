@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef Q_OS_WIN
+#include <Windows.h>
+#include <onnxruntime_c_api.h>
+#endif
+
 YoloDetector::YoloDetector(const Options &options)
     : m_options(options)
 {
@@ -33,6 +38,35 @@ bool YoloDetector::load(const QString &moduleDir)
         m_sessionOptions = std::make_unique<Ort::SessionOptions>();
         m_sessionOptions->SetIntraOpNumThreads(1);
         m_sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+#ifdef Q_OS_WIN
+        {
+            using OrtSessionOptionsAppendExecutionProvider_DML_t = OrtStatus* (ORT_API_CALL *)(OrtSessionOptions*, int);
+            HMODULE ortModule = GetModuleHandleW(L"onnxruntime.dll");
+            if (!ortModule) {
+                ortModule = LoadLibraryW(L"onnxruntime.dll");
+            }
+            auto appendDml = ortModule
+                ? reinterpret_cast<OrtSessionOptionsAppendExecutionProvider_DML_t>(
+                      GetProcAddress(ortModule, "OrtSessionOptionsAppendExecutionProvider_DML"))
+                : nullptr;
+
+            if (appendDml) {
+                Ort::UnownedSessionOptions unowned = m_sessionOptions->GetUnowned();
+                OrtSessionOptions* rawOptions = unowned;
+                OrtStatus* status = appendDml(rawOptions, 0);
+                if (status) {
+                    const char* msg = Ort::GetApi().GetErrorMessage(status);
+                    qWarning() << "DirectML EP not available, falling back to CPU:" << msg;
+                    Ort::GetApi().ReleaseStatus(status);
+                } else {
+                    qInfo() << "DirectML EP enabled";
+                }
+            } else {
+                qWarning() << "DirectML EP symbol not found, falling back to CPU";
+            }
+        }
+#endif
 
         // Convert path to wstring for Windows
 #ifdef Q_OS_WIN

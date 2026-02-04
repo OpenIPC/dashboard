@@ -4,6 +4,7 @@
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QDebug>
+#include <QDateTime>
 #include <gst/app/gstappsink.h>
 
 // Ensure gst_init is called once
@@ -23,6 +24,15 @@ GstPlayer::GstPlayer(QQuickItem *parent) : QQuickItem(parent)
     m_statsTimer = new QTimer(this);
     m_statsTimer->setInterval(1000);
     connect(m_statsTimer, &QTimer::timeout, this, &GstPlayer::updateStats);
+
+    m_reconnectTimer = new QTimer(this);
+    m_reconnectTimer->setSingleShot(true);
+    m_reconnectTimer->setInterval(2000);
+    connect(m_reconnectTimer, &QTimer::timeout, this, [this]() {
+        if (!m_running || m_url.isEmpty()) return;
+        qInfo() << "Reconnecting to stream:" << m_url;
+        restartPipeline();
+    });
 }
 
 GstPlayer::~GstPlayer()
@@ -64,6 +74,28 @@ void GstPlayer::setRtspTransport(const QString &transport)
     }
 }
 
+void GstPlayer::setHwDecoding(const QString& value)
+{
+    QString normalized = value.trimmed().toLower();
+    if (normalized.isEmpty()) normalized = "auto";
+    if (m_hwDecoding != normalized) {
+        m_hwDecoding = normalized;
+        emit hwDecodingChanged();
+        if (m_running) restartPipeline();
+    }
+}
+
+void GstPlayer::setHwDecoders(bool value)
+{
+    const QString desired = value ? "auto" : "none";
+    if (m_hwDecoding != desired) {
+        m_hwDecoding = desired;
+        emit hwDecodersChanged();
+        emit hwDecodingChanged();
+        if (m_running) restartPipeline();
+    }
+}
+
 void GstPlayer::setBufferMode(int mode)
 {
     if (m_bufferMode != mode) {
@@ -93,6 +125,7 @@ void GstPlayer::setMuted(bool muted)
              // But GstStreamVolume interface usage in C++ without wrappers is verbose.
              // Simpler: set "mute" property on playbin
              g_object_set(G_OBJECT(m_pipeline), "mute", m_muted, NULL);
+             updatePlaybinAudioFlags();
         }
         emit mutedChanged();
     }
@@ -103,7 +136,6 @@ void GstPlayer::setMuted(bool muted)
 void GstPlayer::setBrightness(float value) {
     // UI likely sends 0.0 to 2.0 (default 1.0). videobalance expects -1.0 to 1.0 (default 0).
     // Let's assume the UI sends the value relative to 1.0 being neutral.
-    // If you used the LibVLC generic logic: 0..2.
     // video_balance brightness: -1.0 (black) ... 0.0 (normal) ... 1.0 (white).
     // Map: (val - 1.0)
     
@@ -282,6 +314,7 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
         {
             // Collect stats
             player->m_frameCountInst++;
+            player->m_lastFrameMs = QDateTime::currentMSecsSinceEpoch();
             // Note: Byte counting moved to source pad probe for correct network bitrate
             
             QMutexLocker locker(&player->m_frameMutex);
@@ -647,6 +680,16 @@ void GstPlayer::updateStats() {
         emit videoStatsChanged();
     }
 
+    // Reconnect watchdog: if no frames for a while, restart pipeline
+    if (m_running && !m_url.isEmpty()) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const qint64 sinceStart = now - m_pipelineStartMs;
+        const qint64 sinceFrame = (m_lastFrameMs > 0) ? (now - m_lastFrameMs) : sinceStart;
+        if (sinceStart > 8000 && sinceFrame > 8000) {
+            QMetaObject::invokeMethod(this, "scheduleReconnect", Qt::QueuedConnection);
+        }
+    }
+
     // Update Position & Duration
     if (m_pipeline && m_running && m_recordingPath.isEmpty()) { // Only for playback
         qint64 dur = duration();
@@ -734,6 +777,12 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
             emit self->errorOccurred(QString::fromUtf8(err->message));
             g_error_free(err);
             g_free(debug);
+            QMetaObject::invokeMethod(self, "scheduleReconnect", Qt::QueuedConnection);
+            break;
+        }
+        case GST_MESSAGE_EOS: {
+            qWarning() << "GStreamer EOS received. Scheduling reconnect.";
+            QMetaObject::invokeMethod(self, "scheduleReconnect", Qt::QueuedConnection);
             break;
         }
         case GST_MESSAGE_WARNING: {
@@ -876,6 +925,13 @@ void GstPlayer::startPipeline()
     stopPipeline();
 
     if (m_url.isEmpty()) return;
+
+    m_pipelineStartMs = QDateTime::currentMSecsSinceEpoch();
+    m_lastFrameMs = 0;
+
+#ifdef Q_OS_WIN
+    applyHwDecodingPreference();
+#endif
 
     GError *error = nullptr;
 
@@ -1025,6 +1081,9 @@ void GstPlayer::startPipeline()
             g_object_set(m_volumeElement, "volume", m_volume, NULL);
             g_object_set(m_volumeElement, "mute", m_muted, NULL);
         }
+
+        // Disable audio chain when muted to avoid wasapi sink errors
+        updatePlaybinAudioFlags();
     } // End Playback Mode
 
     GstStateChangeReturn ret = gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
@@ -1044,9 +1103,72 @@ void GstPlayer::startPipeline()
     }
 }
 
+void GstPlayer::updatePlaybinAudioFlags()
+{
+    if (!m_pipeline) return;
+
+    if (!g_object_class_find_property(G_OBJECT_GET_CLASS(m_pipeline), "flags")) return;
+
+    guint flags = 0;
+    g_object_get(G_OBJECT(m_pipeline), "flags", &flags, NULL);
+
+    // playbin flags: video=0x1, audio=0x2, text=0x4
+    const guint GST_PLAY_FLAG_AUDIO = 0x2;
+
+    if (m_muted) flags &= ~GST_PLAY_FLAG_AUDIO;
+    else flags |= GST_PLAY_FLAG_AUDIO;
+
+    g_object_set(G_OBJECT(m_pipeline), "flags", flags, NULL);
+}
+
+void GstPlayer::applyHwDecodingPreference()
+{
+    auto setRank = [](const char* name, guint rank) {
+        GstRegistry* registry = gst_registry_get();
+        GstPluginFeature* feature = gst_registry_find_feature(registry, name, GST_TYPE_ELEMENT_FACTORY);
+        if (feature) {
+            gst_plugin_feature_set_rank(feature, rank);
+            gst_object_unref(feature);
+        }
+    };
+
+    const bool disableHw = (m_hwDecoding == "none");
+    const bool preferHw = (m_hwDecoding == "auto" || m_hwDecoding == "d3d11" || m_hwDecoding == "dxva2");
+
+    if (disableHw) {
+        // Prefer software decoders
+        setRank("d3d11h264dec", GST_RANK_NONE);
+        setRank("d3d11h265dec", GST_RANK_NONE);
+        setRank("d3d11vp9dec", GST_RANK_NONE);
+        setRank("d3d11av1dec", GST_RANK_NONE);
+        setRank("avdec_h264", GST_RANK_PRIMARY + 50);
+        setRank("avdec_h265", GST_RANK_PRIMARY + 50);
+        setRank("avdec_vp9", GST_RANK_PRIMARY + 50);
+        setRank("avdec_av1", GST_RANK_PRIMARY + 50);
+        setRank("openh264dec", GST_RANK_PRIMARY + 40);
+        return;
+    }
+
+    if (preferHw) {
+        // Prefer D3D11/MFT (DXVA) decoders when available
+        setRank("d3d11h264dec", GST_RANK_PRIMARY + 200);
+        setRank("d3d11h265dec", GST_RANK_PRIMARY + 200);
+        setRank("d3d11vp9dec", GST_RANK_PRIMARY + 150);
+        setRank("d3d11av1dec", GST_RANK_PRIMARY + 150);
+
+        // Keep software decoders as fallback
+        setRank("avdec_h264", GST_RANK_SECONDARY);
+        setRank("avdec_h265", GST_RANK_SECONDARY);
+        setRank("avdec_vp9", GST_RANK_SECONDARY);
+        setRank("avdec_av1", GST_RANK_SECONDARY);
+        setRank("openh264dec", GST_RANK_SECONDARY);
+    }
+}
+
 void GstPlayer::stopPipeline()
 {
     if (m_statsTimer) m_statsTimer->stop();
+    if (m_reconnectTimer) m_reconnectTimer->stop();
 
     if (m_pipeline) {
         // If recording, we must send EOS to finalize the MP4 file
@@ -1091,6 +1213,14 @@ void GstPlayer::stopPipeline()
     m_videoFps = 0; 
     m_videoBitrate = 0;
     emit videoStatsChanged();
+}
+
+void GstPlayer::scheduleReconnect()
+{
+    if (!m_running || m_url.isEmpty()) return;
+    if (m_reconnectTimer && !m_reconnectTimer->isActive()) {
+        m_reconnectTimer->start();
+    }
 }
 
 void GstPlayer::restartPipeline()

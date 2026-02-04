@@ -114,6 +114,13 @@ public slots:
     Q_INVOKABLE void takeDahuaSnapshot(const QString &ip, int port, const QString &login, const QString &password);
     Q_INVOKABLE void notifySnapshotSaved(const QString &path);
     Q_INVOKABLE QString getSnapshotPath(const QString &filename);
+    Q_INVOKABLE bool deleteLocalFile(const QString &fileUrl);
+    Q_INVOKABLE bool localFileExists(const QString &fileUrl) const;
+    Q_INVOKABLE QVariantMap getFileInfo(const QString &fileUrl) const;
+    Q_INVOKABLE bool copyImageToClipboard(const QString &fileUrl);
+    Q_INVOKABLE void copyTextToClipboard(const QString &text);
+    Q_INVOKABLE bool openWithDialog(const QString &fileUrl);
+    Q_INVOKABLE bool printImage(const QString &fileUrl);
 
 private slots:
     void onAuthenticationRequired(QNetworkReply *reply, QAuthenticator *authenticator);

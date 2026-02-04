@@ -15,6 +15,9 @@
 #include <QDirIterator>
 #include <QCoreApplication>
 #include <QImage>
+#include <QImageReader>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QThread>
 #include <QFileInfo>
 #include <QNetworkRequest>
@@ -1292,8 +1295,8 @@ QString SystemController::generateRecordingPath(const QString &ip)
 void SystemController::toggleRecording(int gridIndex)
 {
     // Legacy method kept for ABI compatibility if needed, but implementation removed
-    // Logic moved to client-side (QML + LibVlcPlayer) to avoid ffmpeg dependency
-    qWarning() << "SystemController::toggleRecording is deprecated. Use LibVlcPlayer::setRecordingPath instead.";
+    // Logic moved to client-side (QML + player) to avoid ffmpeg dependency
+    qWarning() << "SystemController::toggleRecording is deprecated. Use the client-side player recording API instead.";
 }
 
 void SystemController::exportRecording(const QString &inputFile, const QString &outputFile, int startMs, int endMs)
@@ -1528,6 +1531,130 @@ QString SystemController::getSnapshotPath(const QString &filename)
     if (savePath.isEmpty()) savePath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
     QDir().mkpath(savePath);
     return QDir(savePath).filePath(filename);
+}
+
+bool SystemController::deleteLocalFile(const QString &fileUrl)
+{
+    if (fileUrl.isEmpty()) return false;
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+    QFileInfo fi(targetPath);
+    if (!fi.exists() || !fi.isFile()) return false;
+    return QFile::remove(targetPath);
+}
+
+bool SystemController::localFileExists(const QString &fileUrl) const
+{
+    if (fileUrl.isEmpty()) return false;
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+    QFileInfo fi(targetPath);
+    return fi.exists() && fi.isFile();
+}
+
+QVariantMap SystemController::getFileInfo(const QString &fileUrl) const
+{
+    QVariantMap info;
+    if (fileUrl.isEmpty()) return info;
+
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+
+    QFileInfo fi(targetPath);
+    info["exists"] = fi.exists();
+    info["filePath"] = fi.absoluteFilePath();
+    info["fileName"] = fi.fileName();
+    info["size"] = fi.exists() ? fi.size() : 0;
+    info["suffix"] = fi.suffix();
+    if (fi.exists()) {
+        info["created"] = fi.birthTime();
+        info["modified"] = fi.lastModified();
+        info["createdText"] = fi.birthTime().toString("yyyy-MM-dd HH:mm:ss");
+        info["modifiedText"] = fi.lastModified().toString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    QImageReader reader(targetPath);
+    QSize size = reader.size();
+    if (size.isValid()) {
+        info["width"] = size.width();
+        info["height"] = size.height();
+    }
+
+    return info;
+}
+
+bool SystemController::copyImageToClipboard(const QString &fileUrl)
+{
+    if (fileUrl.isEmpty()) return false;
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+
+    QImage img(targetPath);
+    if (img.isNull()) return false;
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard) return false;
+    clipboard->setImage(img);
+    return true;
+}
+
+void SystemController::copyTextToClipboard(const QString &text)
+{
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard) return;
+    clipboard->setText(text);
+}
+
+bool SystemController::openWithDialog(const QString &fileUrl)
+{
+    if (fileUrl.isEmpty()) return false;
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+
+#ifdef Q_OS_WIN
+    QString nativePath = QDir::toNativeSeparators(targetPath);
+    return QProcess::startDetached("rundll32.exe", QStringList() << "shell32.dll,OpenAs_RunDLL" << nativePath);
+#else
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(targetPath));
+#endif
+}
+
+bool SystemController::printImage(const QString &fileUrl)
+{
+    if (fileUrl.isEmpty()) return false;
+    QString targetPath = fileUrl;
+    if (targetPath.startsWith("file:///")) {
+        targetPath = targetPath.mid(8);
+    } else if (targetPath.startsWith("file://")) {
+        targetPath = targetPath.mid(7);
+    }
+
+#ifdef Q_OS_WIN
+    const wchar_t *operation = L"print";
+    HINSTANCE result = ShellExecuteW(nullptr, operation, reinterpret_cast<LPCWSTR>(targetPath.utf16()), nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<intptr_t>(result) > 32;
+#else
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(targetPath));
+#endif
 }
 
 void SystemController::setLayoutTemplates(const QVariantList &templates)

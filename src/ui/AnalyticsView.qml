@@ -67,6 +67,7 @@ Dialog {
     }
     
     property string evidenceSnapshotsDir: ""
+    property string evidenceClipsDir: ""
     property string faceSnapshotsDir: ""
     property string objectSnapshotsDir: ""
     property string plateSnapshotsDir: ""
@@ -77,6 +78,11 @@ Dialog {
             evidenceSnapshotsDir = settings.evidence.snapshotsDir
         } else {
             evidenceSnapshotsDir = ""
+        }
+        if (settings && settings.evidence && settings.evidence.clipsDir) {
+            evidenceClipsDir = settings.evidence.clipsDir
+        } else {
+            evidenceClipsDir = ""
         }
         refreshModuleDirs()
     }
@@ -152,6 +158,7 @@ Dialog {
                 Layout.fillHeight: true
                 model: SystemController.analyticsEngine
                 snapshotsDirOverride: faceSnapshotsDir
+                clipsDirOverride: evidenceClipsDir
             }
             
             ObjectCounterPanel {
@@ -159,6 +166,7 @@ Dialog {
                 Layout.fillHeight: true
                 model: SystemController.analyticsEngine
                 snapshotsDirOverride: objectSnapshotsDir
+                clipsDirOverride: evidenceClipsDir
             }
             
             LicensePlatePanel {
@@ -166,6 +174,7 @@ Dialog {
                 Layout.fillHeight: true
                 model: SystemController.analyticsEngine
                 snapshotsDirOverride: plateSnapshotsDir
+                clipsDirOverride: evidenceClipsDir
             }
         }
     }

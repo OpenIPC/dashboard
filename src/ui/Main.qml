@@ -1,12 +1,13 @@
 ﻿import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import OpenIPC
 
 ApplicationWindow {
     id: window
-    width: 1280
-    height: 720
+    width: Math.min(1280, Screen.desktopAvailableWidth || 1280)
+    height: Math.min(720, Screen.desktopAvailableHeight || 720)
     visible: true
     visibility: Window.Maximized
     flags: Qt.Window | Qt.FramelessWindowHint

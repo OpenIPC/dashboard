@@ -13,6 +13,8 @@ AnalyticsView 1.0 src/ui/AnalyticsView.qml
 FaceSnapshotsPanel 1.0 src/ui/analytics/FaceSnapshotsPanel.qml
 ObjectCounterPanel 1.0 src/ui/analytics/ObjectCounterPanel.qml
 LicensePlatePanel 1.0 src/ui/analytics/LicensePlatePanel.qml
+SnapshotBrowser 1.0 src/ui/analytics/SnapshotBrowser.qml
+ImageViewerWindow 1.0 src/ui/analytics/ImageViewerWindow.qml
 UserManagementDialog 1.0 src/ui/UserManagementDialog.qml
 AddUserDialog 1.0 src/ui/AddUserDialog.qml
 ChangePasswordDialog 1.0 src/ui/ChangePasswordDialog.qml

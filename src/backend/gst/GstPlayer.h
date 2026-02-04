@@ -20,7 +20,7 @@ class GstPlayer : public QQuickItem
     Q_PROPERTY(QString rtspTransport READ rtspTransport WRITE setRtspTransport NOTIFY rtspTransportChanged)
     Q_PROPERTY(QString cameraId READ cameraId WRITE setCameraId NOTIFY cameraIdChanged)
     
-    // Stubs for LibVlcPlayer compatibility
+    // Stubs for legacy player API compatibility
     Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
     Q_PROPERTY(QString hwDecoding READ hwDecoding WRITE setHwDecoding NOTIFY hwDecodingChanged)
     Q_PROPERTY(bool hwDecoders READ hwDecoders WRITE setHwDecoders NOTIFY hwDecodersChanged)
@@ -88,12 +88,12 @@ public:
     float gamma() const { return m_gamma; }
     void setGamma(float value);
     
-    QString hwDecoding() const { return "auto"; }
-    void setHwDecoding(const QString&) {}
+    QString hwDecoding() const { return m_hwDecoding; }
+    void setHwDecoding(const QString& value);
     
     // Legacy support property for older configs
-    bool hwDecoders() const { return true; }
-    void setHwDecoders(bool) {}
+    bool hwDecoders() const { return m_hwDecoding != "none"; }
+    void setHwDecoders(bool value);
     
     bool backgroundMode() const { return false; }
     void setBackgroundMode(bool) {}
@@ -207,6 +207,8 @@ private:
     void restartPipeline();
     void updateFlipMethod();
     GstElement* createVideoFilterBin();
+    void applyHwDecodingPreference();
+    void updatePlaybinAudioFlags();
     
     static GstFlowReturn onNewSample(GstElement *sink, GstPlayer *player);
     static void onBusMessage(GstBus *bus, GstMessage *msg, gpointer data);
@@ -218,6 +220,7 @@ private:
     QString m_recordingPath;
     QString m_rtspTransport = "tcp";
     int m_bufferMode = 1;
+    QString m_hwDecoding = "auto";
     bool m_running = false;
     double m_volume = 1.0;
     bool m_muted = false;
@@ -264,11 +267,14 @@ private:
 
     // Stats calculation
     QTimer* m_statsTimer = nullptr;
+    QTimer* m_reconnectTimer = nullptr;
     std::atomic<int> m_frameCountInst{0};
     std::atomic<long long> m_byteCountInst{0};
     
     qint64 m_lastDuration = 0;
     qint64 m_lastPosition = 0;
+    qint64 m_lastFrameMs = 0;
+    qint64 m_pipelineStartMs = 0;
 
     // Recording helpers
     GstElement* m_muxer = nullptr; // Used for dynamic linking during recording
@@ -278,4 +284,5 @@ private:
 
 private slots:
     void updateStats();
+    void scheduleReconnect();
 };

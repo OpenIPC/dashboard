@@ -1,8 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.1 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.1.0 LANGUAGES CXX)
 
-add_compile_definitions(APP_VERSION="${PROJECT_VERSION}")
+# Allow overriding app version from CI (e.g., Git tag), fallback to project version.
+if(DEFINED APP_VERSION AND NOT APP_VERSION STREQUAL "")
+    set(APP_VERSION_STR "${APP_VERSION}")
+else()
+    set(APP_VERSION_STR "${PROJECT_VERSION}")
+endif()
+
+add_compile_definitions(APP_VERSION="${APP_VERSION_STR}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,35 +28,6 @@ endif()
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
-
-# libVLC Setup (expect layout like libs/libvlc/sdk/{include,lib,bin})
-set(LIBVLC_DIR "${CMAKE_SOURCE_DIR}/libs/libvlc/sdk" CACHE PATH "Path to libVLC SDK root (containing include/ lib/ bin/)")
-find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h
-    PATHS
-        "${LIBVLC_DIR}/include"
-        "${LIBVLC_DIR}/win64/include"
-        "${LIBVLC_DIR}/sdk/include"
-)
-find_library(LIBVLC_LIBRARY NAMES libvlc
-    PATHS "${LIBVLC_DIR}/lib" "${LIBVLC_DIR}/win64/lib" "${LIBVLC_DIR}/sdk/lib")
-find_library(LIBVLCCORE_LIBRARY NAMES libvlccore
-    PATHS "${LIBVLC_DIR}/lib" "${LIBVLC_DIR}/win64/lib" "${LIBVLC_DIR}/sdk/lib")
-
-if(NOT LIBVLC_INCLUDE_DIR OR NOT LIBVLC_LIBRARY OR NOT LIBVLCCORE_LIBRARY)
-#    if(UNIX AND NOT APPLE)
-#        message(STATUS "Trying to find libVLC via pkg-config...")
-#        find_package(PkgConfig REQUIRED)
-#        pkg_check_modules(LIBVLC REQUIRED libvlc)
-#        # Fix for some distros where pkg-config returns include path without vlc/vlc.h suffix
-#        find_path(LIBVLC_INCLUDE_DIR vlc/vlc.h PATHS ${LIBVLC_INCLUDE_DIRS})
-#        set(LIBVLC_LIBRARY ${LIBVLC_LIBRARIES})
-#        set(LIBVLCCORE_LIBRARY "") # PkgConfig usually lumps them or we mostly link against libvlc
-#    else()
-#        message(FATAL_ERROR "libVLC SDK not found. Set LIBVLC_DIR to the SDK root containing include/ and lib/ (e.g. libs/libvlc/sdk).")
-#    endif()
-endif()
-
-# include_directories(${LIBVLC_INCLUDE_DIR})
 
 if(WIN32)
     # FORCE GStreamer includes for Windows CI environment
@@ -233,6 +211,8 @@ set(QML_FILES
     src/ui/analytics/FaceSnapshotsPanel.qml
     src/ui/analytics/ObjectCounterPanel.qml
     src/ui/analytics/LicensePlatePanel.qml
+    src/ui/analytics/SnapshotBrowser.qml
+    src/ui/analytics/ImageViewerWindow.qml
     src/ui/UserManagementDialog.qml
     src/ui/AddUserDialog.qml
     src/ui/ChangePasswordDialog.qml
@@ -297,9 +277,32 @@ endif()
 
 # Copy ONNX Runtime DLL to build directory
 if(WIN32)
+    # Prefer DirectML-enabled runtime if present in reference/onnxruntime_directml-*/onnxruntime/capi
+    file(GLOB ORT_DML_DIRS "${CMAKE_SOURCE_DIR}/reference/onnxruntime_directml-*/onnxruntime/capi")
+    if(ORT_DML_DIRS)
+        list(GET ORT_DML_DIRS 0 ORT_DML_DIR)
+    endif()
+
+    if(DEFINED ORT_DML_DIR AND EXISTS "${ORT_DML_DIR}/onnxruntime.dll")
+        set(ORT_RUNTIME_DIR "${ORT_DML_DIR}")
+    else()
+        set(ORT_RUNTIME_DIR "${ONNXRUNTIME_DIR}/lib")
+    endif()
+
+    set(ORT_DLLS "${ORT_RUNTIME_DIR}/onnxruntime.dll")
+    if(EXISTS "${ORT_RUNTIME_DIR}/onnxruntime_providers_shared.dll")
+        list(APPEND ORT_DLLS "${ORT_RUNTIME_DIR}/onnxruntime_providers_shared.dll")
+    endif()
+    if(EXISTS "${ORT_RUNTIME_DIR}/onnxruntime_providers_directml.dll")
+        list(APPEND ORT_DLLS "${ORT_RUNTIME_DIR}/onnxruntime_providers_directml.dll")
+    endif()
+    if(EXISTS "${ORT_RUNTIME_DIR}/DirectML.dll")
+        list(APPEND ORT_DLLS "${ORT_RUNTIME_DIR}/DirectML.dll")
+    endif()
+
     add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${ONNXRUNTIME_DIR}/lib/onnxruntime.dll $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+        ${ORT_DLLS} $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
     )
 elseif(UNIX)
     file(GLOB ONNX_SOS "${ONNXRUNTIME_DIR}/lib/Linux64/*.so*")

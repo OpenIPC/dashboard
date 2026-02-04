@@ -15,6 +15,7 @@ Item {
     property bool editingLayout: false
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
+    property bool isSidebarVisible: true
 
     // Permissions (live bindings)
     property int permToken: SystemController.userManager.permissionsVersion + (SystemController.userManager.isLoggedIn ? 1 : 0)
@@ -543,7 +544,40 @@ Item {
                     }
                 }
 
-                Item { width: 300 } // Spacer to avoid overlap with window controls
+
+                // Toggle Sidebar
+                Rectangle {
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 32
+                    radius: 6
+                    color: sideBg.hovered ? "#2d3442" : "transparent"
+                    border.color: sideBg.hovered ? "#3c4353" : "transparent"
+                    
+                    Item { id: sideBg; property bool hovered: false }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: isSidebarVisible ? "»" : "«" 
+                        color: "white"
+                        font.pixelSize: 18
+                        rotation: 0
+                        verticalAlignment: Text.AlignVCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                    }
+                    ToolTip.visible: sideBg.hovered
+                    ToolTip.text: isSidebarVisible ? I18n.t("Скрыть панель") : I18n.t("Показать панель")
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: sideBg.hovered = true
+                        onExited: sideBg.hovered = false
+                        onClicked: isSidebarVisible = !isSidebarVisible
+                    }
+                }
+
+                Item { width: 260 } // Spacer to avoid overlap with window controls
             }
 
             // Window Controls
@@ -774,6 +808,7 @@ Item {
             Rectangle {
                 Layout.preferredWidth: 300
                 Layout.fillHeight: true
+                visible: isSidebarVisible
                 color: "#252526"
                 
                 ScrollView {

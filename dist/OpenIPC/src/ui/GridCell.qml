@@ -588,7 +588,7 @@ Item {
                 property int fillMode: -1
                 property bool muted: root.isMuted
                 property real volume: root.volume
-                Text { anchors.centerIn: parent; text: "MDK Disabled (HD)"; color: "red" }
+                Text { anchors.centerIn: parent; text: "Streaming Disabled (HD)"; color: "red" }
             }
             */
 
@@ -911,9 +911,14 @@ Item {
         width: controlsRow.implicitWidth + 12
         color: "#cc000000" // Semi-transparent black
         radius: 6
-        visible: (hoverArea.containsMouse || hdWindow.visible) && root.effectiveCanLive
+        // Keep visible while hovering the panel itself to avoid flicker
+        visible: root.effectiveCanLive && (hoverArea.containsMouse || controlsHover.hovered || volumeGroup.sliderShowing)
         border.color: "#55ffffff"
         border.width: 1
+
+        HoverHandler {
+            id: controlsHover
+        }
         
         Row {
             id: controlsRow

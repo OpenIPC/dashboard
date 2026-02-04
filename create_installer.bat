@@ -138,6 +138,11 @@ copy "%GST_PLUGINS%\libgstaudioresample.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioparsers.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaacparse.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstfaad.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstalaw.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstmulaw.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstopus.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstopusparse.dll" dist\lib\gstreamer-1.0\
+copy "%GST_PLUGINS%\libgstvoaacenc.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstvolume.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstautodetect.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstvideoconvert.dll" dist\lib\gstreamer-1.0\
@@ -176,7 +181,7 @@ echo Imports=qml
 echo Qml2Imports=qml
 ) > dist\qt.conf
 
-echo Copying MSVC runtime (if needed by MDK)...
+echo Copying MSVC runtime (if needed)...
 if exist C:\Windows\System32\vcruntime140.dll copy C:\Windows\System32\vcruntime140.dll dist\
 if exist C:\Windows\System32\msvcp140.dll copy C:\Windows\System32\msvcp140.dll dist\
 

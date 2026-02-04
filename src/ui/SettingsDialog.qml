@@ -1756,13 +1756,13 @@ Window {
                         }
                         
                         Text { 
-                            text: "Version " + (AppVersion !== undefined && AppVersion !== "" ? AppVersion : "0.1.0")
+                            text: "Version " + (AppVersion !== undefined && AppVersion !== "" ? AppVersion : "0.1.9")
                             color: "#a0aec0"
                             Layout.alignment: Qt.AlignHCenter
                         }
                         
                         Text { 
-                            text: "© 2025 OpenIPC Project"
+                            text: " 2026 "
                             color: "#626974"
                             Layout.alignment: Qt.AlignHCenter
                         }
