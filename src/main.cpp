@@ -18,6 +18,7 @@
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
 #include <functional>
+#include "config.h"
 
 // Hardcoded GStreamer paths for Windows environment
 #ifdef Q_OS_WIN
@@ -182,6 +183,18 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("AppVersion", QString::fromUtf8(APP_VERSION));
 #else
     engine.rootContext()->setContextProperty("AppVersion", QString());
+#endif
+
+#ifdef APP_AUTHOR
+    engine.rootContext()->setContextProperty("AppAuthor", QString::fromUtf8(APP_AUTHOR));
+#else
+    engine.rootContext()->setContextProperty("AppAuthor", QString("Rinat Ibragimov"));
+#endif
+
+#ifdef APP_BUILD_YEAR
+    engine.rootContext()->setContextProperty("AppBuildYear", QString::fromUtf8(APP_BUILD_YEAR));
+#else
+    engine.rootContext()->setContextProperty("AppBuildYear", QString("2026"));
 #endif
 
     // Register GStreamer Player

@@ -1,0 +1,5 @@
+#pragma once
+
+#define APP_VERSION "@APP_VERSION_STR@"
+#define APP_AUTHOR "@APP_AUTHOR_STR@"
+#define APP_BUILD_YEAR "@APP_BUILD_YEAR@"

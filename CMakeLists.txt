@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.1.0 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.1 LANGUAGES CXX)
 
 # Allow overriding app version from CI (e.g., Git tag), fallback to project version.
 if(DEFINED APP_VERSION AND NOT APP_VERSION STREQUAL "")
@@ -9,7 +9,10 @@ else()
     set(APP_VERSION_STR "${PROJECT_VERSION}")
 endif()
 
-add_compile_definitions(APP_VERSION="${APP_VERSION_STR}")
+set(APP_AUTHOR_STR "Rinat Ibragimov")
+string(TIMESTAMP APP_BUILD_YEAR "%Y")
+
+configure_file(src/config.h.in config.h)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -240,10 +243,11 @@ add_executable(appOpenIPC-Dashboard
     ${SOURCES}
     ${APP_ICON}
 )
+target_include_directories(appOpenIPC-Dashboard PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
-    # set_target_properties(appOpenIPC-Dashboard PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(appOpenIPC-Dashboard PROPERTIES WIN32_EXECUTABLE TRUE)
 else()
     # Configure RPATH to look in the application directory for shared libraries
     set_target_properties(appOpenIPC-Dashboard PROPERTIES 

@@ -1756,13 +1756,19 @@ Window {
                         }
                         
                         Text { 
-                            text: "Version " + (AppVersion !== undefined && AppVersion !== "" ? AppVersion : "0.1.9")
+                            text: "Version " + (AppVersion ? AppVersion : "Unknown")
+                            color: "#a0aec0"
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Text { 
+                            text: "Author: " + (AppAuthor ? AppAuthor : "Rinat Ibragimov")
                             color: "#a0aec0"
                             Layout.alignment: Qt.AlignHCenter
                         }
                         
                         Text { 
-                            text: " 2026 "
+                            text: (AppBuildYear ? AppBuildYear : "2026")
                             color: "#626974"
                             Layout.alignment: Qt.AlignHCenter
                         }

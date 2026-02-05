@@ -109,7 +109,7 @@ jobs:
            $qtDir = Split-Path (Split-Path $qmake -Parent) -Parent
            $appVersion = "${{ github.ref_name }}"
            if ($appVersion.StartsWith('v')) { $appVersion = $appVersion.Substring(1) }
-           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$qtDir -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64" -DAPP_VERSION=$appVersion
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$qtDir -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64" -DAPP_VERSION="$appVersion"
 
       - name: Build
         run: cmake --build build --config Release

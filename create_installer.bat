@@ -89,6 +89,10 @@ copy "%GST_BIN%\libgstriff-1.0-0.dll" dist\
 copy "%GST_BIN%\libglib-2.0-0.dll" dist\
 copy "%GST_BIN%\libgobject-2.0-0.dll" dist\
 copy "%GST_BIN%\libgmodule-2.0-0.dll" dist\
+if not exist dist\libgmodule-2.0-0.dll (
+    echo CRITICAL: libgmodule-2.0-0.dll failed to copy!
+    exit /b 1
+)
 copy "%GST_BIN%\libgio-2.0-0.dll" dist\
 copy "%GST_BIN%\libintl-8.dll" dist\
 copy "%GST_BIN%\libiconv-2.dll" dist\
@@ -136,8 +140,6 @@ copy "%GST_PLUGINS%\libgstapp.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioconvert.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioresample.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstaudioparsers.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstaacparse.dll" dist\lib\gstreamer-1.0\
-copy "%GST_PLUGINS%\libgstfaad.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstalaw.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstmulaw.dll" dist\lib\gstreamer-1.0\
 copy "%GST_PLUGINS%\libgstopus.dll" dist\lib\gstreamer-1.0\
