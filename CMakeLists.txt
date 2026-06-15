@@ -71,6 +71,9 @@ if(WIN32)
         # Convert to forward slashes for CMake consistency
         file(TO_CMAKE_PATH "${GST_ROOT}" GST_ROOT)
         message(STATUS "Found GStreamer Root: ${GST_ROOT}")
+        if(NOT EXISTS "${GST_ROOT}/include/gstreamer-1.0/gst/gst.h")
+            message(FATAL_ERROR "GStreamer headers not found at ${GST_ROOT}/include/gstreamer-1.0/gst/gst.h. Pass the devel package root through -DGStreamer_ROOT or GSTREAMER_1_0_ROOT_MINGW_X86_64.")
+        endif()
         
         set(GST_INCLUDE_DIRS
             "${GST_ROOT}/include/gstreamer-1.0"
@@ -287,7 +290,14 @@ add_executable(appOpenIPC-Dashboard
     ${SOURCES}
     ${APP_ICON}
 )
-target_include_directories(appOpenIPC-Dashboard PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${qtkeychain_SOURCE_DIR} ${qtkeychain_BINARY_DIR} ${libssh_SOURCE_DIR}/include ${libssh_BINARY_DIR}/include)
+target_include_directories(appOpenIPC-Dashboard PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${GST_INCLUDE_DIRS}
+    ${qtkeychain_SOURCE_DIR}
+    ${qtkeychain_BINARY_DIR}
+    ${libssh_SOURCE_DIR}/include
+    ${libssh_BINARY_DIR}/include
+)
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
@@ -317,9 +327,9 @@ if (UNIX AND NOT APPLE)
     target_link_libraries(appOpenIPC-Dashboard PRIVATE pthread)
 endif()
 
-# Explicitly add GStreamer includes to the target property (CRITICAL for AUTOMOC)
-if(WIN32)
-    target_include_directories(appOpenIPC-Dashboard PRIVATE ${GST_FORCE_INCLUDE_DIRS})
+# Explicitly add GStreamer includes to the target property so AUTOMOC sees gst/gst.h.
+if(GST_INCLUDE_DIRS)
+    target_include_directories(appOpenIPC-Dashboard PRIVATE ${GST_INCLUDE_DIRS})
 endif()
 
 
