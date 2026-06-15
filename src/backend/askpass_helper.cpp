@@ -4,6 +4,12 @@
 #include <cstdlib>
 
 int main() {
+    const char* passEnv = std::getenv("SSH_PASS");
+    if (passEnv && *passEnv) {
+        std::cout << passEnv;
+        return 0;
+    }
+
     const char* passFileEnv = std::getenv("SSH_PASS_FILE");
     if (!passFileEnv) {
         return 1;

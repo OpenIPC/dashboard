@@ -6,6 +6,35 @@ import OpenIPC
 
 Item {
     id: root
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#1e1e1e"
+    }
+
+    FontLoader {
+        id: materialIcons
+        source: "qrc:/OpenIPC/src/ui/fonts/MaterialIcons-Regular.ttf"
+    }
+
+    readonly property string iconFontFamily: materialIcons.status === FontLoader.Ready ? materialIcons.name : "Material Icons"
+
+    function normalizePath(path) {
+        if (!path)
+            return ""
+        var str = (typeof path === "string") ? path : path.toString()
+        if (str.startsWith("file:///")) {
+            str = str.substring(8)
+        } else if (str.startsWith("file://")) {
+            str = str.substring(7)
+        }
+        try {
+            str = decodeURIComponent(str)
+        } catch (e) {
+            // keep original
+        }
+        return str
+    }
     
     component StyledCheckBox: CheckBox {
         hoverEnabled: false
@@ -17,14 +46,14 @@ Item {
             y: parent.height / 2 - height / 2
             radius: 3
             color: "#252526"
-            border.color: parent.checked ? "#4caf50" : "#666666"
+            border.color: parent.checked ? "#3b82f6" : "#666666"
             
             Rectangle {
                 width: 10
                 height: 10
                 anchors.centerIn: parent
                 radius: 2
-                color: "#4caf50"
+                color: "#3b82f6"
                 visible: parent.parent.checked
             }
         }
@@ -68,9 +97,9 @@ Item {
             id: moduleDelegate
             width: ListView.view.width
             height: contentLayout.implicitHeight + 32
-            color: "#2d2d2d"
+            color: "#1f2733"
             radius: 6
-            border.color: "#3c3c3c"
+            border.color: "#334155"
             
             property int moduleType: model.type
             property bool isEnabled: SystemController.analyticsEngine.isModuleEnabled(moduleType)
@@ -80,9 +109,8 @@ Item {
             
             // Configuration properties
             property var config: SystemController.analyticsEngine.getModuleConfig(moduleType)
-            property string snapshotsDir: config ? (config.snapshotsDir || "Default directory") : "Default directory"
+            property string snapshotsDir: config ? (normalizePath(config.snapshotsDir || "Default directory")) : "Default directory"
             property string faceSnapshotsMode: config ? (config.faceSnapshotsMode || "standard") : "standard"
-            property bool faceSnapshotKeyConfigured: config ? config.faceSnapshotKeyConfigured : false
             
             Connections {
                 target: SystemController.analyticsEngine
@@ -193,7 +221,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: "#3c3c3c"
+                    color: "#374151"
                 }
                 
                 // Snapshot Directory
@@ -221,18 +249,26 @@ Item {
                         }
                         
                         Button {
-                            text: I18n.t("Choose...")
+                            Layout.preferredHeight: 30
+                            Layout.preferredWidth: 34
+                            ToolTip.visible: hovered
+                            ToolTip.text: I18n.t("Choose...")
+                            background: Rectangle { color: "#4a5568"; radius: 4 }
+                            contentItem: Text {
+                                text: "folder_open"
+                                font.family: iconFontFamily
+                                font.pixelSize: 15
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             onClicked: folderDialog.open()
                             
                             FolderDialog {
                                 id: folderDialog
                                 title: I18n.t("Choose snapshots directory")
                                 onAccepted: {
-                                    var path = folderDialog.selectedFolder.toString()
-                                    // Remove file:/// prefix
-                                    if (path.startsWith("file:///")) {
-                                        path = path.substring(8)
-                                    }
+                                    var path = normalizePath(folderDialog.selectedFolder)
                                     SystemController.analyticsEngine.setModuleConfig(moduleType, { "snapshotsDir": path })
                                 }
                             }
@@ -240,6 +276,19 @@ Item {
                         
                         Button {
                             text: I18n.t("Use default")
+                            background: Rectangle {
+                                radius: 4
+                                color: parent.down ? "#334155" : "#1f2733"
+                                border.color: "#475569"
+                                border.width: 1
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: "#e2e8f0"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 12
+                            }
                             onClicked: {
                                 SystemController.analyticsEngine.setModuleConfig(moduleType, { "snapshotsDir": "" })
                             }
@@ -265,21 +314,20 @@ Item {
                             font.bold: true
                         }
                         
-                        ComboBox {
+                        StyledComboBox {
                             Layout.fillWidth: true
                             Layout.maximumWidth: 300
-                            model: [I18n.t("Disabled"), I18n.t("Standard"), I18n.t("Anonymized"), I18n.t("Encrypted")]
+                            model: [I18n.t("Disabled"), I18n.t("Standard"), I18n.t("Anonymized")]
                             currentIndex: {
                                 switch(moduleDelegate.faceSnapshotsMode) {
                                     case "disabled": return 0;
                                     case "standard": return 1;
                                     case "anonymized": return 2;
-                                    case "encrypted": return 3;
                                     default: return 1;
                                 }
                             }
                             onActivated: {
-                                var modes = ["disabled", "standard", "anonymized", "encrypted"]
+                                var modes = ["disabled", "standard", "anonymized"]
                                 SystemController.analyticsEngine.setModuleConfig(moduleType, { "faceSnapshotsMode": modes[index] })
                             }
                         }
@@ -290,7 +338,6 @@ Item {
                                     case "disabled": return I18n.t("Face snapshots are not captured.");
                                     case "standard": return I18n.t("Faces are saved as-is without additional processing.");
                                     case "anonymized": return I18n.t("Snapshots are blurred before being stored.");
-                                    case "encrypted": return I18n.t("Snapshots are encrypted with your key and stored as .bin files.");
                                     default: return "";
                                 }
                             }
@@ -301,74 +348,12 @@ Item {
                         }
                         
                         Text {
-                            visible: moduleDelegate.faceSnapshotsMode === "encrypted"
-                            text: I18n.t("Encryption requires a 64-character hexadecimal key.")
+                            visible: false
+                            text: ""
                             color: "#f0ad4e"
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                        }
-                    }
-                    
-                    // Encryption Key
-                    ColumnLayout {
-                        visible: moduleType === 0 // Face Detector
-                        Layout.fillWidth: true
-                        spacing: 4
-                        
-                        Text {
-                            text: I18n.t("Snapshot encryption key")
-                            color: "#b5c1d6"
-                            font.pixelSize: 12
-                            font.bold: true
-                        }
-                        
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            
-                            TextField {
-                                id: keyInput
-                                Layout.fillWidth: true
-                                placeholderText: I18n.t("64 hex characters")
-                                maximumLength: 64
-                                color: "white"
-                                background: Rectangle {
-                                    color: "#1e1e1e"
-                                    border.color: "#3c3c3c"
-                                    radius: 4
-                                }
-                            }
-                            
-                            Button {
-                                text: I18n.t("Save")
-                                onClicked: {
-                                    var key = keyInput.text.trim()
-                                    if (key.length === 64 && /^[0-9a-fA-F]+$/.test(key)) {
-                                        SystemController.analyticsEngine.setModuleConfig(moduleType, { "faceSnapshotKeyHex": key })
-                                        keyInput.text = ""
-                                    } else {
-                                        // Show error (maybe a tooltip or text below)
-                                        console.error("Invalid key format")
-                                    }
-                                }
-                            }
-                            
-                            Button {
-                                text: I18n.t("Reset key")
-                                enabled: moduleDelegate.faceSnapshotKeyConfigured
-                                onClicked: {
-                                    SystemController.analyticsEngine.setModuleConfig(moduleType, { "resetFaceSnapshotKey": true })
-                                }
-                            }
-                        }
-                        
-                        Text {
-                            text: moduleDelegate.faceSnapshotKeyConfigured 
-                                ? I18n.t("Key configured. Saving a new key will replace it.") 
-                                : I18n.t("No key configured. Provide one to enable encryption.")
-                            color: moduleDelegate.faceSnapshotKeyConfigured ? "#28a745" : "#b5c1d6"
-                            font.pixelSize: 11
                         }
                     }
                 }

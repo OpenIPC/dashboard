@@ -12,7 +12,7 @@ ApplicationWindow {
     visibility: Window.Maximized
     flags: Qt.Window | Qt.FramelessWindowHint
     title: I18n.t("Dashboard for OpenIPC")
-    color: "#1e1e1e" // Main background
+    color: Theme.appBackground
 
     property string appLanguage: I18n.language
 

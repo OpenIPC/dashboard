@@ -10,14 +10,19 @@
 #include <QMutex>
 #include <QSet>
 #include <QQueue>
+#include <QPointF>
 #include <QTcpServer>
 #include <QUrl>
 #include <QMap>
+#include <QVariantMap>
+#include <QVariantList>
 #include "InferenceBackend.h"
 #include "YoloDetector.h"
 
 class AnalyticsEngine : public QObject {
     Q_OBJECT
+    Q_PROPERTY(QVariantList analyticsEvents READ analyticsEvents NOTIFY analyticsEventsChanged)
+    Q_PROPERTY(QVariantMap analyticsDiagnostics READ analyticsDiagnostics NOTIFY analyticsTelemetryChanged)
 public:
     enum ModuleType {
         FaceDetector,
@@ -50,9 +55,19 @@ public:
 
     Q_INVOKABLE void setModuleConfig(int type, const QVariantMap &config);
     Q_INVOKABLE QVariantMap getModuleConfig(int type) const;
+    Q_INVOKABLE QVariantList analyticsEvents() const;
+    Q_INVOKABLE QVariantMap analyticsDiagnostics() const;
+    Q_INVOKABLE QVariantMap getModuleTelemetry(int type) const;
+    Q_INVOKABLE QVariantList getObjectCounterSummary() const;
+    Q_INVOKABLE QVariantList queryAnalyticsEvents(int type = -1,
+                                                   const QString &cameraId = QString(),
+                                                   const QString &text = QString(),
+                                                   int limit = 500) const;
+    Q_INVOKABLE void clearAnalyticsEvents(int type = -1, const QString &cameraId = QString());
 
     Q_INVOKABLE bool isBusy(const QString &cameraId) const;
     Q_INVOKABLE bool hasActiveModules(const QString &cameraId) const;
+    QVariantMap getPersistedSettings() const;
 
 signals:
     void detectionOccurred(const QString &moduleId, const QString &cameraId, const QVariantMap &detection);
@@ -65,6 +80,9 @@ signals:
     void oauthError(const QString &provider, const QString &message);
     void clipRequested(const QString &cameraId, const QString &path, int durationMs);
     void clipStopRequested(const QString &cameraId, const QString &path);
+    void analyticsEventsChanged();
+    void analyticsTelemetryChanged();
+    void analyticsNotificationRaised(const QVariantMap &event);
 
 private:
     struct ModuleContext {
@@ -82,9 +100,8 @@ private:
         
         // Configuration
         QString snapshotsDir;
-        QString faceSnapshotsMode = "standard"; // disabled, standard, anonymized, encrypted
-        QString faceSnapshotKeyHex;
-        bool faceSnapshotKeyConfigured = false;
+        QString faceSnapshotsMode = "standard"; // disabled, standard, anonymized
+        QVariantMap extraConfig;
     };
 
     QMap<ModuleType, ModuleContext> m_modules;
@@ -146,6 +163,32 @@ private:
         bool streamRequested = false;
     };
 
+    struct TelemetryState {
+        quint64 processedFrames = 0;
+        quint64 skippedFrames = 0;
+        quint64 detections = 0;
+        quint64 events = 0;
+        double totalInferenceMs = 0.0;
+        double lastInferenceMs = 0.0;
+    };
+
+    struct TrackState {
+        QString id;
+        QString label;
+        QRectF bounds;
+        QPointF center;
+        qint64 lastSeenMs = 0;
+        int seenFrames = 0;
+        float confidence = 0.0f;
+        bool counted = false;
+    };
+
+    struct CounterState {
+        qint64 nextTrackNumber = 1;
+        QMap<QString, TrackState> tracks;
+        QMap<QString, int> totalCountByLabel;
+    };
+
     QMap<QString, QVector<BufferedFrame>> m_frameBuffers;
     QMutex m_bufferMutex;
 
@@ -153,19 +196,63 @@ private:
     QMap<QString, qint64> m_lastEventTimes;
     QMutex m_eventMutex;
 
+    QMap<QString, CounterState> m_counterStates;
+    mutable QMutex m_counterMutex;
+
+    QMap<QString, TelemetryState> m_cameraTelemetry;
+    QMap<ModuleType, TelemetryState> m_moduleTelemetry;
+    mutable QMutex m_telemetryMutex;
+
+    QMap<QString, qint64> m_ruleLastTriggeredMs;
+    mutable QMutex m_ruleMutex;
+
+    QVariantList m_analyticsEvents;
+    int m_maxAnalyticsEvents = 250;
+    QString m_eventStorePath;
+    QString m_eventStoreConnectionName;
+    bool m_eventStoreReady = false;
+    mutable QMutex m_eventStoreMutex;
+
     struct UploadTask {
         QString filePath;
         QString provider;
         QString target;
     };
     QQueue<UploadTask> m_uploadQueue;
-    QMutex m_uploadMutex;
+    mutable QMutex m_uploadMutex;
     bool m_uploadActive = false;
 
     void setupModules();
+    QVariantMap buildEvidenceSettings(bool includeSensitiveData) const;
+    QVariantMap telemetryStateToVariant(const TelemetryState &state) const;
+    QVariantMap detectionToVariant(const DetectionBox &box, const QString &moduleId, ModuleType moduleType) const;
+    bool zoneMatches(const QVariantMap &detection, const QString &zonePreset) const;
+    QString countsToText(const QMap<QString, int> &counts) const;
+    QString analyticsSecretKey(const QString &name) const;
+    QString readSecretFromKeychain(const QString &name) const;
+    void writeSecretToKeychain(const QString &name, const QString &value) const;
+    void deleteSecretFromKeychain(const QString &name) const;
     void startDownload(ModuleType type);
     void checkRuntimeAndDownload(ModuleType type);
     void downloadFile(const QString &url, const QString &filePath, ModuleType type, bool isRuntime = false);
+    void recordSkippedFrame(const QString &cameraId);
+    bool moduleHasClipRules(const QVariantMap &extraConfig) const;
+    QString ensurePendingClip(const QString &cameraId, const QVariantMap &detection, qint64 nowMs);
+    QVariantList updateObjectCounterTracking(const QString &cameraId, QVector<DetectionBox> &results, qint64 nowMs);
+    QVariantList evaluateRulesForDetection(const QString &cameraId,
+                                           ModuleType moduleType,
+                                           const QString &moduleId,
+                                           const QVariantMap &detection,
+                                           const QVariantList &rules,
+                                           const QImage &frame,
+                                           qint64 nowMs,
+                                           const QString &existingSnapshotPath = QString(),
+                                           const QString &existingClipPath = QString());
+    void appendAnalyticsEvents(const QVariantList &events);
+    void initEventStore();
+    QVariantList loadRecentAnalyticsEvents(int limit) const;
+    void persistAnalyticsEvents(const QVariantList &events);
+    void deleteStoredAnalyticsEvents(int type = -1, const QString &cameraId = QString());
 
     void appendFrameToBuffer(const QString &cameraId, const QImage &frame, qint64 ts);
     QVector<BufferedFrame> collectFrames(const QString &cameraId, qint64 startMs, qint64 endMs);

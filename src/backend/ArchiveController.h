@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QDateTime>
+#include <QList>
 #include <QVariantList>
 #include <QMutex>
 
@@ -52,7 +53,8 @@ signals:
 private:
     bool m_isSearching = false;
     QList<RecordedFile> m_files;
-    QMutex m_mutex;
+    mutable QMutex m_mutex;
+    quint64 m_searchRequestId = 0;
 };
 
 #endif // ARCHIVECONTROLLER_H

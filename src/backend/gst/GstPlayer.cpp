@@ -298,11 +298,18 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
         gst_structure_get_int(s, "height", &height);
         
         {
-            // Only update stats if changed to reduce main thread load
+            // Update QObject-owned fields on GUI thread only
             if (width != player->m_videoWidth || height != player->m_videoHeight) {
-                player->m_videoWidth = width;
-                player->m_videoHeight = height;
-                QMetaObject::invokeMethod(player, "videoStatsChanged", Qt::QueuedConnection);
+                const int w = width;
+                const int h = height;
+                QMetaObject::invokeMethod(player, [player, w, h]() {
+                    if (!player) return;
+                    if (player->m_videoWidth != w || player->m_videoHeight != h) {
+                        player->m_videoWidth = w;
+                        player->m_videoHeight = h;
+                        emit player->videoStatsChanged();
+                    }
+                }, Qt::QueuedConnection);
             }
 
             // Estimate FPS from timestamp difference if duration is not available
@@ -326,9 +333,13 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
 
         // Analytics processing (queued to main thread)
         if (player->m_analyticsEngine && !player->m_cameraId.isEmpty()) {
-            QImage analyticsFrame = player->getLastFrame().copy();
             auto *engine = qobject_cast<AnalyticsEngine *>(player->m_analyticsEngine);
-            if (engine) {
+            if (engine && engine->hasActiveModules(player->m_cameraId) && !engine->isBusy(player->m_cameraId)) {
+                QImage analyticsFrame;
+                {
+                    QMutexLocker locker(&player->m_frameMutex);
+                    analyticsFrame = player->m_currentFrame;
+                }
                 QMetaObject::invokeMethod(engine, "processFrame", Qt::QueuedConnection,
                                           Q_ARG(QImage, analyticsFrame),
                                           Q_ARG(QString, player->m_cameraId));
@@ -361,10 +372,13 @@ void GstPlayer::onSourcePadAdded(GstElement *, GstPad *pad, gpointer user_data) 
             const gchar *encoding = gst_structure_get_string(s, "encoding-name");
             if (encoding) {
                 QString codec = QString::fromUtf8(encoding);
-                if (self->m_videoCodec != codec) {
-                    self->m_videoCodec = codec;
-                     QMetaObject::invokeMethod(self, "videoStatsChanged", Qt::QueuedConnection);
-                }
+                QMetaObject::invokeMethod(self, [self, codec]() {
+                    if (!self) return;
+                    if (self->m_videoCodec != codec) {
+                        self->m_videoCodec = codec;
+                        emit self->videoStatsChanged();
+                    }
+                }, Qt::QueuedConnection);
             }
         }
         gst_caps_unref(caps);
@@ -744,10 +758,13 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
                     if (parenIdx > 0 && codecStr.endsWith(')')) {
                         codecStr = codecStr.left(parenIdx).trimmed();
                     }
-                    if (self->m_videoCodec != codecStr) {
-                        self->m_videoCodec = codecStr;
-                        emit self->videoStatsChanged();
-                    }
+                    QMetaObject::invokeMethod(self, [self, codecStr]() {
+                        if (!self) return;
+                        if (self->m_videoCodec != codecStr) {
+                            self->m_videoCodec = codecStr;
+                            emit self->videoStatsChanged();
+                        }
+                    }, Qt::QueuedConnection);
                     g_free(codec);
                 }
                 
@@ -758,10 +775,13 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
                     int bitrateKbps = (int)qRound((double)bitrate / 1000.0);
                     // Ignore clearly bogus values (fallback to measured bitrate)
                     if (bitrateKbps > 0 && bitrateKbps <= 200000) {
-                        if (self->m_videoBitrate != bitrateKbps) {
-                            self->m_videoBitrate = bitrateKbps;
-                            emit self->videoStatsChanged();
-                        }
+                        QMetaObject::invokeMethod(self, [self, bitrateKbps]() {
+                            if (!self) return;
+                            if (self->m_videoBitrate != bitrateKbps) {
+                                self->m_videoBitrate = bitrateKbps;
+                                emit self->videoStatsChanged();
+                            }
+                        }, Qt::QueuedConnection);
                     }
                 }
                 gst_tag_list_unref(tags);

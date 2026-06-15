@@ -1,6 +1,7 @@
 #include "StatusChecker.h"
 #include "CameraModel.h"
 #include <QDebug>
+#include <QUrl>
 
 StatusChecker::StatusChecker(CameraModel *model, QObject *parent)
     : QObject(parent), m_model(model), m_timer(new QTimer(this))
@@ -26,17 +27,34 @@ void StatusChecker::checkAll()
     for (int i = 0; i < m_model->rowCount(); ++i) {
         auto cam = m_model->getCamera(i);
         if (cam.ip.isEmpty()) continue;
-        
-        // Use configured port or default RTSP 554
+
+        QString host = cam.ip;
         int port = cam.port > 0 ? cam.port : 554;
-        checkCamera(i, cam.ip, port);
+
+        const QStringList streamUrls = {
+            cam.hdStreamUrl,
+            cam.sdStreamUrl,
+            cam.streamUrl
+        };
+        for (const QString &streamUrl : streamUrls) {
+            const QUrl url(streamUrl);
+            if (!url.isValid() || url.host().isEmpty()) {
+                continue;
+            }
+
+            host = url.host();
+            port = url.port(port > 0 ? port : 554);
+            break;
+        }
+
+        checkCamera(i, cam.ip, host, port);
     }
 }
 
-void StatusChecker::checkCamera(int index, const QString &ip, int port)
+void StatusChecker::checkCamera(int index, const QString &cameraIp, const QString &host, int port)
 {
     QTcpSocket *socket = new QTcpSocket(this);
-    socket->setProperty("cameraIp", ip);
+    socket->setProperty("cameraIp", cameraIp);
     
     connect(socket, &QTcpSocket::connected, this, &StatusChecker::onSocketConnected);
     connect(socket, &QTcpSocket::errorOccurred, this, &StatusChecker::onSocketError);
@@ -44,7 +62,7 @@ void StatusChecker::checkCamera(int index, const QString &ip, int port)
     // Safety cleanup
     connect(socket, &QTcpSocket::disconnected, socket, &QTcpSocket::deleteLater);
 
-    socket->connectToHost(ip, port);
+    socket->connectToHost(host, port);
     
     // Connection timeout - 3 seconds
     QTimer::singleShot(3000, socket, [socket, this]() {

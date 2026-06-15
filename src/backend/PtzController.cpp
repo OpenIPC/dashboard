@@ -375,8 +375,8 @@ void PtzController::sendSoap12(const QString &urlStr, const QString &username, c
     
     // Handle SSL errors just in case, though we are likely on HTTP
     connect(reply, &QNetworkReply::sslErrors, this, [reply](const QList<QSslError> &errors) {
-        qWarning() << "SSL Errors:" << errors;
-        reply->ignoreSslErrors();
+        qWarning() << "SSL verification failed:" << errors;
+        reply->abort();
     });
 
     connect(reply, &QNetworkReply::finished, this, [reply, onFinished, urlStr]() {
@@ -409,8 +409,8 @@ void PtzController::sendSoap11(const QString &urlStr, const QString &username, c
     QNetworkReply *reply = m_nam->post(request, data);
 
     connect(reply, &QNetworkReply::sslErrors, this, [reply](const QList<QSslError> &errors) {
-        qWarning() << "SSL Errors:" << errors;
-        reply->ignoreSslErrors();
+        qWarning() << "SSL verification failed:" << errors;
+        reply->abort();
     });
 
     connect(reply, &QNetworkReply::finished, this, [reply, onFinished, urlStr]() {

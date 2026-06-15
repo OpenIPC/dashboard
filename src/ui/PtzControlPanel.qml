@@ -9,7 +9,6 @@ Item {
     property string cameraIp
     property int cameraPort
     property string cameraLogin
-    property string cameraPassword
     property string iconFontFamily: "Material Icons"
     property bool compact: false
 
@@ -17,6 +16,10 @@ Item {
     height: compact ? 220 : 280
 
     property real ptzSpeed: speedSlider.value
+
+    function currentPassword() {
+        return SystemController.getCameraPassword(root.cameraIp)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -50,8 +53,8 @@ Item {
                     width: root.compact ? 30 : 40; height: root.compact ? 30 : 40
                     background: Item {}
                     contentItem: Text { text: "keyboard_arrow_up"; font.family: root.iconFontFamily; color: "white"; font.pixelSize: root.compact ? 24 : 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, 0, root.ptzSpeed, 0)
-                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), 0, root.ptzSpeed, 0)
+                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                 }
                 // Down
                 Button {
@@ -60,8 +63,8 @@ Item {
                     width: root.compact ? 30 : 40; height: root.compact ? 30 : 40
                     background: Item {}
                     contentItem: Text { text: "keyboard_arrow_down"; font.family: root.iconFontFamily; color: "white"; font.pixelSize: root.compact ? 24 : 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, 0, -root.ptzSpeed, 0)
-                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), 0, -root.ptzSpeed, 0)
+                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                 }
                 // Left
                 Button {
@@ -70,8 +73,8 @@ Item {
                     width: root.compact ? 30 : 40; height: root.compact ? 30 : 40
                     background: Item {}
                     contentItem: Text { text: "keyboard_arrow_left"; font.family: root.iconFontFamily; color: "white"; font.pixelSize: root.compact ? 24 : 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, -root.ptzSpeed, 0, 0)
-                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), -root.ptzSpeed, 0, 0)
+                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                 }
                 // Right
                 Button {
@@ -80,8 +83,8 @@ Item {
                     width: root.compact ? 30 : 40; height: root.compact ? 30 : 40
                     background: Item {}
                     contentItem: Text { text: "keyboard_arrow_right"; font.family: root.iconFontFamily; color: "white"; font.pixelSize: root.compact ? 24 : 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, root.ptzSpeed, 0, 0)
-                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                    onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), root.ptzSpeed, 0, 0)
+                    onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                 }
             }
 
@@ -100,15 +103,15 @@ Item {
                             implicitWidth: root.compact ? 30 : 40; implicitHeight: root.compact ? 24 : 30
                             background: Rectangle { color: parent.down ? "#66ffffff" : "#33ffffff"; radius: 4 }
                             contentItem: Text { text: "-"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, 0, 0, -root.ptzSpeed)
-                            onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                            onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), 0, 0, -root.ptzSpeed)
+                            onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                         }
                         Button {
                             implicitWidth: root.compact ? 30 : 40; implicitHeight: root.compact ? 24 : 30
                             background: Rectangle { color: parent.down ? "#66ffffff" : "#33ffffff"; radius: 4 }
                             contentItem: Text { text: "+"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, 0, 0, root.ptzSpeed)
-                            onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                            onPressed: SystemController.ptzController.move(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), 0, 0, root.ptzSpeed)
+                            onReleased: SystemController.ptzController.stop(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                         }
                     }
                 }
@@ -122,15 +125,15 @@ Item {
                             implicitWidth: root.compact ? 30 : 40; implicitHeight: root.compact ? 24 : 30
                             background: Rectangle { color: parent.down ? "#66ffffff" : "#33ffffff"; radius: 4 }
                             contentItem: Text { text: "-"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onPressed: SystemController.ptzController.focus(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, -root.ptzSpeed)
-                            onReleased: SystemController.ptzController.stopFocus(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                            onPressed: SystemController.ptzController.focus(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), -root.ptzSpeed)
+                            onReleased: SystemController.ptzController.stopFocus(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                         }
                         Button {
                             implicitWidth: root.compact ? 30 : 40; implicitHeight: root.compact ? 24 : 30
                             background: Rectangle { color: parent.down ? "#66ffffff" : "#33ffffff"; radius: 4 }
                             contentItem: Text { text: "+"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onPressed: SystemController.ptzController.focus(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword, root.ptzSpeed)
-                            onReleased: SystemController.ptzController.stopFocus(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                            onPressed: SystemController.ptzController.focus(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword(), root.ptzSpeed)
+                            onReleased: SystemController.ptzController.stopFocus(root.cameraIp, root.cameraPort, root.cameraLogin, root.currentPassword())
                         }
                     }
                 }

@@ -8,9 +8,21 @@ Item {
     property var model // AnalyticsEngine
     property string snapshotsDirOverride: ""
     property string clipsDirOverride: ""
+
+    property string snapshotsDir: {
+        if (root.snapshotsDirOverride && root.snapshotsDirOverride !== "")
+            return root.snapshotsDirOverride
+        if (root.model) {
+            var config = root.model.getModuleConfig(1)
+            if (config && config.snapshotsDir)
+                return config.snapshotsDir
+        }
+        return ""
+    }
+
     SnapshotBrowser {
         anchors.fill: parent
-        snapshotsDir: root.snapshotsDirOverride
+        snapshotsDir: root.snapshotsDir
         clipsDir: root.clipsDirOverride
         moduleBadgeText: I18n.t("Объекты")
     }

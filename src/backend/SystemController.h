@@ -76,6 +76,7 @@ public slots:
     void addDevice(int index); // Adds from discovery to device list
     Q_INVOKABLE void addManualCamera(const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
     Q_INVOKABLE void updateCamera(int index, const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
+    Q_INVOKABLE void updateCameraStatus(const QString &cameraIp, const QString &status);
     void removeDevice(int index); // Removes from device list
     void addCameraToGrid(int index, int slot = -1); // Adds from device list to grid
     void removeCameraFromGrid(int index); // Clears a grid slot but keeps grid size
@@ -109,6 +110,7 @@ public slots:
     Q_INVOKABLE void toggleRecording(int gridIndex);
     Q_INVOKABLE void applyLayoutPreset(int rows, int cols);
     Q_INVOKABLE void applyLayoutTemplate(const QVariantMap &layout);
+    Q_INVOKABLE QString getCameraPassword(const QString &cameraIp) const;
     
     // Dahua SDK
     Q_INVOKABLE void takeDahuaSnapshot(const QString &ip, int port, const QString &login, const QString &password);

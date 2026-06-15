@@ -66,6 +66,10 @@ private:
     void runSshCommand(const QString &cmd, std::function<void(const QString &output, const QString &error)> callback);
     void listDirectory(const QString &path);
     void parseLsOutput(const QString &output);
+    QProcessEnvironment buildSshEnvironment() const;
+    QString askPassExecutablePath() const;
+    QString knownHostsFilePath() const;
+    QStringList commonSshOptions() const;
 
     QList<RemoteFileEntry> m_entries;
     QString m_currentPath;

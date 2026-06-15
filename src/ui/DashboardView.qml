@@ -16,6 +16,16 @@ Item {
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
     property bool isSidebarVisible: true
+    property real sidebarExpandedWidth: 300
+    property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
+    property real sidebarOpenProgress: sidebarExpandedWidth > 0 ? (sidebarWidth / sidebarExpandedWidth) : 0
+
+    Behavior on sidebarWidth {
+        NumberAnimation {
+            duration: 220
+            easing.type: Easing.InOutQuad
+        }
+    }
 
     // Permissions (live bindings)
     property int permToken: SystemController.userManager.permissionsVersion + (SystemController.userManager.isLoggedIn ? 1 : 0)
@@ -29,11 +39,12 @@ Item {
     property bool canExport: (permToken >= 0) && SystemController.userManager.canExport()
     property bool canSettings: (permToken >= 0) && SystemController.userManager.canSettings()
     property bool canUserManage: (permToken >= 0) && SystemController.userManager.canUserManage()
+    property bool canAnalytics: (permToken >= 0) && SystemController.userManager.canAnalytics()
 
     function actionAllowed(action) {
         if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings") return canSettings
         if (action === "user") return canUserManage
-        if (action === "analytics") return canLive
+        if (action === "analytics") return canAnalytics
         return true
     }
 
@@ -53,9 +64,221 @@ Item {
         if (u && u.username !== undefined && u.username === "admin") return true
         return SystemController.userManager.isAdmin()
     }
+
+    property string deviceFilterText: ""
+    property bool emptyHintDismissed: SystemController.appSettings.hideEmptyDashboardHint === true
+
+    function openAddCameraDialog() {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        addCameraDialog.isEditMode = false
+        addCameraDialog.initialName = ""
+        addCameraDialog.initialIp = ""
+        addCameraDialog.initialPort = 554
+        addCameraDialog.initialOnvifPort = 80
+        addCameraDialog.initialLogin = "root"
+        addCameraDialog.initialPassword = ""
+        addCameraDialog.initialHdUrl = ""
+        addCameraDialog.initialSdUrl = ""
+        addCameraDialog.open()
+    }
+
+    function openSearchDialog() {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        searchDialog.open()
+    }
+
+    function openAnalyticsDialog() {
+        if (!canAnalytics) {
+            showNoAccess()
+            return
+        }
+        analyticsDialog.open()
+    }
+
+    function openSettingsDialog() {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        settingsDialog.open()
+    }
+
+    function closeEmptyHint(remember) {
+        emptyHintDismissed = true
+        if (remember) {
+            var settings = SystemController.getAppSettings()
+            settings.hideEmptyDashboardHint = true
+            SystemController.saveAppSettings(settings)
+        }
+    }
+
+    function cameraCount() {
+        var version = cameraDataVersion
+        return SystemController.cameraModel.rowCount()
+    }
+
+    function isOnlineStatus(statusText) {
+        return String(statusText || "").toLowerCase() === "online"
+    }
+
+    function onlineCameraCount() {
+        var version = cameraDataVersion
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var cam = SystemController.cameraModel.getCamera(i)
+            if (isOnlineStatus(cam.status)) count++
+        }
+        return count
+    }
+
+    function filteredCameraCount() {
+        var version = cameraDataVersion
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var cam = SystemController.cameraModel.getCamera(i)
+            if (cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp, cam.status, cam.cameraGroup)) count++
+        }
+        return count
+    }
+
+    function cameraMatchesDeviceFilter(name, ip, statusText, groupName) {
+        var query = deviceFilterText.trim().toLowerCase()
+        if (query === "") return true
+        var haystack = [
+            name || "",
+            ip || "",
+            statusText || "",
+            groupName || ""
+        ].join(" ").toLowerCase()
+        return haystack.indexOf(query) !== -1
+    }
     
     // Propagate language changes if needed, though I18n is singleton
     property string appLanguage: I18n.language
+
+    component SidebarStatPill: Rectangle {
+        property string title: ""
+        property string value: "0"
+        property color accentColor: Theme.accent
+
+        Layout.fillWidth: true
+        implicitHeight: 54
+        radius: Theme.radiusMd
+        color: Theme.panelSoftBackground
+        border.color: Theme.controlBorder
+        border.width: 1
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 2
+
+            Text {
+                text: parent.parent.value
+                color: parent.parent.accentColor
+                font.pixelSize: 16
+                font.bold: true
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: parent.parent.title
+                color: Theme.textMuted
+                font.pixelSize: 10
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+        }
+    }
+
+    component EmptyStateButton: Button {
+        property color buttonColor: Theme.controlBackground
+        property color buttonHoverColor: Theme.cardHover
+        property color buttonTextColor: Theme.textPrimary
+
+        implicitHeight: 36
+        leftPadding: 14
+        rightPadding: 14
+
+        background: Rectangle {
+            color: parent.enabled ? (parent.hovered ? parent.buttonHoverColor : parent.buttonColor) : Theme.controlBackgroundAlt
+            radius: Theme.radiusMd
+            border.color: parent.enabled ? Theme.controlBorderStrong : Theme.controlBorder
+            border.width: 1
+        }
+
+        contentItem: Text {
+            text: parent.text
+            color: parent.enabled ? parent.buttonTextColor : Theme.textMuted
+            font.pixelSize: 13
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+    }
+
+    component SidebarActionButton: Button {
+        id: actionButton
+
+        property string iconPath: ""
+        property string label: ""
+        property string tooltip: ""
+
+        Layout.fillWidth: true
+        implicitHeight: 48
+        padding: 0
+        hoverEnabled: true
+
+        background: Rectangle {
+            color: actionButton.enabled
+                   ? (actionButton.hovered ? Theme.cardHover : Theme.panelSoftBackground)
+                   : Theme.controlBackgroundAlt
+            radius: Theme.radiusMd
+            border.color: actionButton.hovered ? Theme.accent : Theme.controlBorder
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 2
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 23
+
+                SidebarIcon {
+                    anchors.centerIn: parent
+                    width: 18
+                    height: 18
+                    path: actionButton.iconPath
+                    color: actionButton.enabled
+                           ? (actionButton.hovered ? Theme.accent : Theme.textSecondary)
+                           : Theme.textMuted
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: I18n.t(actionButton.label)
+                color: actionButton.enabled ? Theme.textSecondary : Theme.textMuted
+                font.pixelSize: 10
+                font.bold: actionButton.label.indexOf("Поиск") === 0
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+        }
+
+        ToolTip.visible: actionButton.hovered
+        ToolTip.text: I18n.t(actionButton.tooltip)
+        ToolTip.delay: 500
+    }
 
     Connections {
         target: SystemController.cameraModel
@@ -151,7 +374,7 @@ Item {
         }
         
         SystemController.applyLayoutTemplate(template)
-        selectedPresetCells = item.rows * item.cols
+        selectedPresetCells = (layoutCells[index] && layoutCells[index].length > 0) ? layoutCells[index].length : (item.rows * item.cols)
     }
 
     function closeLayout(index) {
@@ -336,8 +559,11 @@ Item {
             currentLayoutIndex = -1
         }
         
-        // Ensure capacity
+        // Ensure capacity: for complex templates use actual visible cell count
         var need = gridRows * gridCols
+        if (currentLayoutIndex >= 0 && layoutCells[currentLayoutIndex] && layoutCells[currentLayoutIndex].length > 0) {
+            need = layoutCells[currentLayoutIndex].length
+        }
         if (SystemController.updateGridSize) {
             SystemController.updateGridSize(need)
         }
@@ -377,7 +603,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
-            color: "#252526"
+            color: Theme.topBarBackground
 
             MouseArea {
                 anchors.fill: parent
@@ -399,7 +625,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 1
-                color: "#333333"
+                color: Theme.panelBorder
             }
 
             RowLayout {
@@ -545,38 +771,6 @@ Item {
                 }
 
 
-                // Toggle Sidebar
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: sideBg.hovered ? "#2d3442" : "transparent"
-                    border.color: sideBg.hovered ? "#3c4353" : "transparent"
-                    
-                    Item { id: sideBg; property bool hovered: false }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: isSidebarVisible ? "»" : "«" 
-                        color: "white"
-                        font.pixelSize: 18
-                        rotation: 0
-                        verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignHCenter
-                        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
-                    }
-                    ToolTip.visible: sideBg.hovered
-                    ToolTip.text: isSidebarVisible ? I18n.t("Скрыть панель") : I18n.t("Показать панель")
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: sideBg.hovered = true
-                        onExited: sideBg.hovered = false
-                        onClicked: isSidebarVisible = !isSidebarVisible
-                    }
-                }
-
                 Item { width: 260 } // Spacer to avoid overlap with window controls
             }
 
@@ -677,13 +871,20 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            Layout.leftMargin: 8
+            Layout.rightMargin: 8
+            Layout.topMargin: 8
+            Layout.bottomMargin: 8
+            spacing: Math.max(0, 8 * sidebarOpenProgress)
 
             // CONTENT AREA (Left)
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: "#1e1e1e"
+                color: Theme.panelBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorder
+                border.width: 1
 
                 GridLayout {
                     id: cameraGrid
@@ -733,7 +934,6 @@ Item {
                             cameraPort: model.cameraPort
                             cameraOnvifPort: model.cameraOnvifPort
                             cameraLogin: model.cameraLogin
-                            cameraPassword: model.cameraPassword
                             streamUrl: model.streamUrl
                             sdStreamUrl: model.sdStreamUrl || model.streamUrl
                             hdStreamUrl: model.hdStreamUrl || model.streamUrl
@@ -769,7 +969,7 @@ Item {
                                     addCameraDialog.initialPort = cam.cameraPort
                                     addCameraDialog.initialOnvifPort = cam.cameraOnvifPort
                                     addCameraDialog.initialLogin = cam.cameraLogin || "root"
-                                    addCameraDialog.initialPassword = cam.cameraPassword || ""
+                                    addCameraDialog.initialPassword = SystemController.getCameraPassword(cam.cameraIp)
                                     addCameraDialog.initialHdUrl = cam.hdStreamUrl || ""
                                     addCameraDialog.initialSdUrl = cam.sdStreamUrl || ""
                                     addCameraDialog.open()
@@ -802,18 +1002,222 @@ Item {
                         }
                     }
                 }
+
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: 24
+                    visible: root.cameraCount() === 0 && !root.emptyHintDismissed
+                    z: 4
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#33000000"
+                        radius: Theme.radiusLg
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: Math.min(560, Math.max(260, parent.width - 48))
+                        height: emptyHintLayout.implicitHeight + 28
+                        radius: Theme.radiusLg
+                        color: "#e5111620"
+                        border.color: Theme.panelBorderStrong
+                        border.width: 1
+
+                        Button {
+                            width: 30
+                            height: 30
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            anchors.topMargin: 8
+                            anchors.rightMargin: 8
+                            text: "x"
+                            background: Rectangle {
+                                radius: Theme.radiusSm
+                                color: parent.hovered ? Theme.cardHover : "transparent"
+                                border.color: "transparent"
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: Theme.textMuted
+                                font.pixelSize: 16
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            onClicked: root.closeEmptyHint(dontShowEmptyHint.checked)
+                        }
+
+                        ColumnLayout {
+                            id: emptyHintLayout
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            anchors.topMargin: 18
+                            spacing: 14
+
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                width: 52
+                                height: 52
+                                radius: 12
+                                color: Theme.panelSoftBackground
+                                border.color: Theme.controlBorderStrong
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    color: Theme.accentHover
+                                    font.pixelSize: 28
+                                    font.bold: true
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Добавьте первую камеру")
+                                color: Theme.textPrimary
+                                font.pixelSize: 22
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Найдите устройства в сети или добавьте RTSP/ONVIF-камеру вручную.")
+                                color: Theme.textMuted
+                                font.pixelSize: 13
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                            }
+
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.maximumWidth: parent.width
+                                spacing: 8
+
+                                EmptyStateButton {
+                                text: I18n.t("Поиск камер")
+                                    enabled: root.canSettings
+                                    buttonColor: Theme.accent
+                                    buttonHoverColor: Theme.accentHover
+                                    onClicked: root.openSearchDialog()
+                                }
+
+                                EmptyStateButton {
+                                    text: I18n.t("Добавить")
+                                    enabled: root.canSettings
+                                    onClicked: root.openAddCameraDialog()
+                                }
+
+                                EmptyStateButton {
+                                    text: I18n.t("Аналитика")
+                                    enabled: root.canAnalytics
+                                    onClicked: root.openAnalyticsDialog()
+                                }
+
+                                EmptyStateButton {
+                                    text: I18n.t("Настройки")
+                                    enabled: root.canSettings
+                                    onClicked: root.openSettingsDialog()
+                                }
+                            }
+
+                            CheckBox {
+                                id: dontShowEmptyHint
+                                Layout.alignment: Qt.AlignHCenter
+                                text: I18n.t("Не показывать при следующем запуске")
+                                checked: false
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: Theme.textMuted
+                                    font.pixelSize: 12
+                                    leftPadding: parent.indicator.width + parent.spacing
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Handle to reopen sidebar when it is hidden
+                Rectangle {
+                    visible: sidebarOpenProgress < 0.01
+                    width: 18
+                    height: 84
+                    radius: 9
+                    anchors.right: parent.right
+                    anchors.rightMargin: -9
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: revealArea.containsMouse ? Theme.cardHover : Theme.cardBackground
+                    border.color: Theme.controlBorderStrong
+                    z: 5
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "«"
+                        color: Theme.textSecondary
+                        font.pixelSize: 16
+                    }
+
+                    MouseArea {
+                        id: revealArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: isSidebarVisible = true
+                    }
+                }
             }
 
             // SIDEBAR (Right)
             Rectangle {
-                Layout.preferredWidth: 300
+                Layout.preferredWidth: sidebarWidth
                 Layout.fillHeight: true
-                visible: isSidebarVisible
-                color: "#252526"
+                visible: true
+                enabled: sidebarOpenProgress > 0.01
+                opacity: sidebarOpenProgress
+                clip: true
+                color: Theme.topBarBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorderStrong
+                border.width: 1
+
+                // Sidebar collapse handle (middle of left edge)
+                Rectangle {
+                    visible: sidebarOpenProgress > 0.01
+                    width: 18
+                    height: 84
+                    radius: 9
+                    anchors.left: parent.left
+                    anchors.leftMargin: -9
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: hideArea.containsMouse ? Theme.cardHover : Theme.cardBackground
+                    border.color: Theme.controlBorderStrong
+                    z: 6
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "»"
+                        color: Theme.textSecondary
+                        font.pixelSize: 16
+                    }
+
+                    MouseArea {
+                        id: hideArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: isSidebarVisible = false
+                    }
+                }
                 
                 ScrollView {
                     id: sidebarScrollView
                     anchors.fill: parent
+                    visible: sidebarOpenProgress > 0.01
                     clip: true
                     ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
@@ -822,71 +1226,50 @@ Item {
                         width: sidebarScrollView.availableWidth
                         spacing: 0
 
-                        // Toolbar Icons
-                        RowLayout {
+                        // Sidebar actions
+                        GridLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 40
-                            Layout.margins: 10
-                            spacing: 10
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.topMargin: 10
+                            Layout.bottomMargin: 10
+                            columns: 4
+                            columnSpacing: 8
+                            rowSpacing: 8
 
                             Repeater {
                                 model: [
-                                    { iconPath: "M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z", action: "search", tooltip: "Поиск" },
-                                    { iconPath: "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z", action: "add_folder", tooltip: "Добавить группу" },
-                                    { iconPath: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z", action: "add_camera", tooltip: "Добавить камеру" },
-                                    { iconPath: "M19.87 18.73l-5.32-5.32C15.2 12.33 15.6 11.22 15.6 10c0-3.09-2.51-5.6-5.6-5.6S4.4 6.91 4.4 10s2.51 5.6 5.6 5.6c1.22 0 2.33-.4 3.41-1.05l5.32 5.32c.39.39 1.02.39 1.41 0l-.27-.27.27.27c.39-.39.39-1.02 0-1.41zM10 14.1c-2.26 0-4.1-1.84-4.1-4.1S7.74 5.9 10 5.9s4.1 1.84 4.1 4.1-1.84 4.1-4.1 4.1z", action: "analytics", tooltip: "Аналитика" },
-                                    { iconPath: "M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.09-.16-.26-.25-.44-.25-.06 0-.12.01-.17.03l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.06-.02-.12-.03-.18-.03-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.09.16.26.25.44.25.06 0 .12-.01.17-.03l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.13-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z", action: "settings", tooltip: "Настройки" },
-                                    { iconPath: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z", action: "logs", tooltip: "Логи" },
-                                    { iconPath: "M10,4 A4,4 0 1,1 10,12 A4,4 0 1,1 10,4 M10.67,13.02C10.45,13.01,10.23,13,10,13c-2.42,0-4.68,0.67-6.61,1.82C2.51,15.34,2,16.32,2,17.35V20h9.26 C10.47,18.87,10,17.49,10,16C10,14.93,10.25,13.93,10.67,13.02z M20.75,16c0-0.22-0.03-0.42-0.06-0.63l1.14-1.01l-1-1.73l-1.45,0.49c-0.32-0.27-0.68-0.48-1.08-0.63L18,11h-2l-0.3,1.49 c-0.4,0.15-0.76,0.36-1.08,0.63l-1.45-0.49l-1,1.73l1.14,1.01c-0.03,0.21-0.06,0.41-0.06,0.63s0.03,0.42,0.06,0.63l-1.14,1.01 l1,1.73l1.45-0.49c0.32,0.27,0.68,0.48,1.08,0.63L16,21h2l0.3-1.49c0.4-0.15,0.76-0.36,1.08-0.63l1.45,0.49l1-1.73l-1.14-1.01 C20.72,16.42,20.75,16.22,20.75,16z M17,18c-1.1,0-2-0.9-2-2s0.9-2,2-2s2,0.9,2,2S18.1,18,17,18z", action: "user", tooltip: "Пользователь" },
-                                    { iconPath: "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z", action: "logout", tooltip: "Выход" }
+                                    { iconPath: "M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z", action: "search", label: "Поиск камер", tooltip: "Поиск камер в сети" },
+                                    { iconPath: "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z", action: "add_folder", label: "Группа", tooltip: "Добавить группу" },
+                                    { iconPath: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z", action: "add_camera", label: "Камера", tooltip: "Добавить камеру" },
+                                    { iconPath: "M19.87 18.73l-5.32-5.32C15.2 12.33 15.6 11.22 15.6 10c0-3.09-2.51-5.6-5.6-5.6S4.4 6.91 4.4 10s2.51 5.6 5.6 5.6c1.22 0 2.33-.4 3.41-1.05l5.32 5.32c.39.39 1.02.39 1.41 0l-.27-.27.27.27c.39-.39.39-1.02 0-1.41zM10 14.1c-2.26 0-4.1-1.84-4.1-4.1S7.74 5.9 10 5.9s4.1 1.84 4.1 4.1-1.84 4.1-4.1 4.1z", action: "analytics", label: "Аналит.", tooltip: "Аналитика" },
+                                    { iconPath: "M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.09-.16-.26-.25-.44-.25-.06 0-.12.01-.17.03l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.06-.02-.12-.03-.18-.03-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.09.16.26.25.44.25.06 0 .12-.01.17-.03l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.13-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z", action: "settings", label: "Настр.", tooltip: "Настройки" },
+                                    { iconPath: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z", action: "logs", label: "Логи", tooltip: "Логи" },
+                                    { iconPath: "M10,4 A4,4 0 1,1 10,12 A4,4 0 1,1 10,4 M10.67,13.02C10.45,13.01,10.23,13,10,13c-2.42,0-4.68,0.67-6.61,1.82C2.51,15.34,2,16.32,2,17.35V20h9.26 C10.47,18.87,10,17.49,10,16C10,14.93,10.25,13.93,10.67,13.02z M20.75,16c0-0.22-0.03-0.42-0.06-0.63l1.14-1.01l-1-1.73l-1.45,0.49c-0.32-0.27-0.68-0.48-1.08-0.63L18,11h-2l-0.3,1.49 c-0.4,0.15-0.76,0.36-1.08,0.63l-1.45-0.49l-1,1.73l1.14,1.01c-0.03,0.21-0.06,0.41-0.06,0.63s0.03,0.42,0.06,0.63l-1.14,1.01 l1,1.73l1.45-0.49c0.32,0.27,0.68,0.48,1.08,0.63L16,21h2l0.3-1.49c0.4-0.15,0.76-0.36,1.08-0.63l1.45,0.49l1-1.73l-1.14-1.01 C20.72,16.42,20.75,16.22,20.75,16z M17,18c-1.1,0-2-0.9-2-2s0.9-2,2-2s2,0.9,2,2S18.1,18,17,18z", action: "user", label: "Польз.", tooltip: "Пользователь" },
+                                    { iconPath: "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z", action: "logout", label: "Выход", tooltip: "Выход" }
                                 ]
 
-                                SidebarIcon {
-                                    width: 20
-                                    height: 20
-                                    path: modelData.iconPath
-                                    color: hovered ? "white" : "#aaaaaa"
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onEntered: parent.hovered = true
-                                        onExited: parent.hovered = false
-                                        onClicked: {
-                                            if (!actionAllowed(modelData.action)) {
-                                                root.showNoAccess()
-                                                return
-                                            }
-                                            if (modelData.action === "search") searchDialog.open()
-                                            if (modelData.action === "add_folder") addGroupDialog.open()
-                                            if (modelData.action === "add_camera") {
-                                                addCameraDialog.isEditMode = false
-                                                addCameraDialog.initialName = ""
-                                                addCameraDialog.initialIp = ""
-                                                addCameraDialog.initialPort = 554
-                                                addCameraDialog.initialOnvifPort = 80
-                                                addCameraDialog.initialLogin = "root"
-                                                addCameraDialog.initialPassword = ""
-                                                addCameraDialog.initialHdUrl = ""
-                                                addCameraDialog.initialSdUrl = ""
-                                                addCameraDialog.open()
-                                            }
-                                            if (modelData.action === "settings") settingsDialog.open()
-                                            if (modelData.action === "analytics") analyticsDialog.open()
-                                            if (modelData.action === "user") userManagementDialog.open()
-                                            if (modelData.action === "logs") logView.open()
-                                            if (modelData.action === "logout") SystemController.userManager.logout()
-
-                                            console.log("Clicked: " + modelData.action)
+                                SidebarActionButton {
+                                    iconPath: modelData.iconPath
+                                    label: modelData.label
+                                    tooltip: modelData.tooltip
+                                    enabled: actionAllowed(modelData.action)
+                                    onClicked: {
+                                        if (!actionAllowed(modelData.action)) {
+                                            root.showNoAccess()
+                                            return
                                         }
+                                        if (modelData.action === "search") root.openSearchDialog()
+                                        if (modelData.action === "add_folder") addGroupDialog.open()
+                                        if (modelData.action === "add_camera") root.openAddCameraDialog()
+                                        if (modelData.action === "settings") root.openSettingsDialog()
+                                        if (modelData.action === "analytics") root.openAnalyticsDialog()
+                                        if (modelData.action === "user") userManagementDialog.open()
+                                        if (modelData.action === "logs") logView.open()
+                                        if (modelData.action === "logout") SystemController.userManager.logout()
+
+                                        console.log("Clicked: " + modelData.action)
                                     }
-
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: I18n.t(modelData.tooltip)
-                                    ToolTip.delay: 500
-
-                                    property bool hovered: false
                                 }
                             }
                         }
@@ -900,6 +1283,57 @@ Item {
                             color: "#a0aec0"
                             font.pixelSize: 12
                         }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.bottomMargin: 8
+                            spacing: 6
+
+                            SidebarStatPill {
+                                title: I18n.t("Всего")
+                                value: String(root.cameraCount())
+                                accentColor: Theme.textPrimary
+                            }
+
+                            SidebarStatPill {
+                                title: I18n.t("Онлайн")
+                                value: String(root.onlineCameraCount())
+                                accentColor: Theme.success
+                            }
+
+                            SidebarStatPill {
+                                title: I18n.t("Офлайн")
+                                value: String(Math.max(0, root.cameraCount() - root.onlineCameraCount()))
+                                accentColor: Theme.danger
+                            }
+                        }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.bottomMargin: 8
+                            implicitHeight: 34
+                            text: root.deviceFilterText
+                            placeholderText: I18n.t("Поиск устройств")
+                            color: Theme.textPrimary
+                            placeholderTextColor: Theme.textMuted
+                            selectionColor: Theme.accent
+                            selectedTextColor: Theme.textPrimary
+                            selectByMouse: true
+                            leftPadding: 10
+                            rightPadding: 10
+                            background: Rectangle {
+                                color: Theme.controlBackground
+                                radius: Theme.radiusSm
+                                border.color: parent.activeFocus ? Theme.accent : Theme.controlBorder
+                                border.width: 1
+                            }
+                            onTextChanged: root.deviceFilterText = text
+                        }
+
                         Item { Layout.fillWidth: true } // Spacer
 
                         // Header "Устройства"
@@ -927,10 +1361,12 @@ Item {
                             id: groupBlock
                             Item {
                                 Layout.fillWidth: true
-                                implicitHeight: layout.implicitHeight
+                                implicitHeight: blockVisible ? layout.implicitHeight : 0
+                                visible: blockVisible
                                 
                                 property string groupName: modelData
                                 readonly property bool isDefaultGroup: groupName === ""
+                                readonly property bool blockVisible: root.deviceFilterText.trim() === "" || groupCount > 0
 
                                 property int groupCount: {
                                     var v = root.cameraDataVersion
@@ -938,7 +1374,7 @@ Item {
                                     for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
                                         var cam = SystemController.cameraModel.getCamera(i)
                                         var g = cam.cameraGroup || ""
-                                        if (g === groupName) count++
+                                        if (g === groupName && root.cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp, cam.status, cam.cameraGroup)) count++
                                     }
                                     return count
                                 }
@@ -1009,6 +1445,7 @@ Item {
 
                                         delegate: Rectangle {
                                             property bool inGroup: (cameraGroup || "") === groupName
+                                                                   && root.cameraMatchesDeviceFilter(cameraName, cameraIp, status, cameraGroup)
                                             width: ListView.view ? ListView.view.width : parent.width
                                             height: inGroup ? 50 : 0
                                             visible: inGroup
@@ -1095,14 +1532,18 @@ Item {
                                                     Layout.fillWidth: true
                                                     spacing: 2
                                                     Text {
-                                                        text: I18n.t("Камера") + " " + cameraIp
+                                                        text: (cameraName && cameraName.trim() !== "")
+                                                              ? cameraName
+                                                              : (I18n.t("Камера") + " " + cameraIp)
                                                         color: "#cccccc"
                                                         font.pixelSize: 12
+                                                        elide: Text.ElideRight
                                                     }
                                                     Text {
                                                         text: cameraIp
                                                         color: "#888888"
                                                         font.pixelSize: 11
+                                                        elide: Text.ElideRight
                                                     }
                                                 }
 
@@ -1153,6 +1594,19 @@ Item {
                             model: [""] .concat(SystemController.cameraGroups)
                             delegate: groupBlock
                         }
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 16
+                            Layout.rightMargin: 16
+                            Layout.topMargin: 10
+                            visible: root.cameraCount() > 0 && root.filteredCameraCount() === 0
+                            text: I18n.t("Ничего не найдено")
+                            color: Theme.textMuted
+                            font.pixelSize: 12
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                        }
                     }
                 }
             }
@@ -1165,7 +1619,15 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 25
-            color: "#1e1e1e" 
+            color: Theme.statusBarBackground
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Theme.panelBorder
+            }
 
             Timer {
                 interval: 1000
@@ -1225,9 +1687,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
-            radius: 10
-            color: "#0f1219"
-            border.color: "#1f2531"
+            radius: Theme.radiusXl
+            color: Theme.panelAltBackground
+            border.color: Theme.panelBorder
         }
         
         // Editor State
@@ -1865,15 +2327,15 @@ Item {
         x: parent ? (parent.width - width) / 2 : 0
         y: parent ? (parent.height - height) / 2 : 0
         background: Rectangle {
-            color: "#2a2f33"
-            border.color: "#3c3c3c"
-            radius: 6
+            color: Theme.panelAltBackground
+            border.color: Theme.panelBorder
+            radius: Theme.radiusMd
         }
         header: Rectangle {
             height: 36
-            color: "#252526"
-            radius: 6
-            border.color: "#3c3c3c"
+            color: Theme.topBarBackground
+            radius: Theme.radiusMd
+            border.color: Theme.panelBorder
             Text {
                 anchors.centerIn: parent
                 text: noAccessDialog.title
@@ -1960,7 +2422,7 @@ Item {
             addCameraDialog.initialPort = cam.cameraPort
             addCameraDialog.initialOnvifPort = cam.cameraOnvifPort
             addCameraDialog.initialLogin = cam.cameraLogin || "root"
-            addCameraDialog.initialPassword = cam.cameraPassword || ""
+            addCameraDialog.initialPassword = SystemController.getCameraPassword(cam.cameraIp)
             addCameraDialog.initialHdUrl = cam.hdStreamUrl || ""
             addCameraDialog.initialSdUrl = cam.sdStreamUrl || ""
             addCameraDialog.open()
@@ -1975,7 +2437,6 @@ Item {
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             sshDialog.cameraIp = cam.cameraIp
             sshDialog.cameraUser = cam.cameraLogin || "root"
-            sshDialog.cameraPassword = cam.cameraPassword || ""
             sshDialog.open()
         }
         onArchiveRequested: {
@@ -1995,7 +2456,6 @@ Item {
             var cam = SystemController.cameraModel.getCamera(cameraIndex)
             fileManagerDialog.cameraIp = cam.cameraIp
             fileManagerDialog.cameraUser = cam.cameraLogin || "root"
-            fileManagerDialog.cameraPassword = cam.cameraPassword || ""
             fileManagerDialog.open()
         }
         onPermissionDenied: root.showNoAccess()

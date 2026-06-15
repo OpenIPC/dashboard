@@ -15,10 +15,9 @@ Window {
 
     property string cameraIp: ""
     property string cameraUser: "root"
-    property string cameraPassword: ""
 
     function open() {
-        remoteModel.connectAndList(cameraIp, cameraUser, cameraPassword)
+        remoteModel.connectAndList(cameraIp, cameraUser, SystemController.getCameraPassword(cameraIp))
         show()
         requestActivate()
     }

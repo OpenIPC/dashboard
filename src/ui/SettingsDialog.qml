@@ -10,8 +10,9 @@ Window {
     width: 680
     height: 600
     visible: false
-    color: "#1e1e1e"
+    color: Theme.appBackground
     flags: Qt.Window | Qt.FramelessWindowHint
+    modality: Qt.ApplicationModal
 
     // Make it non-modal but behave like a standalone window
     function open() {
@@ -31,16 +32,16 @@ Window {
             implicitHeight: 18
             x: parent.leftPadding
             y: parent.height / 2 - height / 2
-            radius: 3
-            color: "#252526"
-            border.color: parent.checked ? "#4caf50" : "#666666"
+            radius: Theme.radiusXs
+            color: Theme.topBarBackground
+            border.color: parent.checked ? Theme.accent : Theme.textFaint
             
             Rectangle {
                 width: 10
                 height: 10
                 anchors.centerIn: parent
                 radius: 2
-                color: "#4caf50"
+                color: Theme.accent
                 visible: parent.parent.checked
             }
         }
@@ -48,9 +49,65 @@ Window {
             text: parent.text
             font: parent.font
             opacity: parent.enabled ? 1.0 : 0.5
-            color: "white"
+            color: Theme.textPrimary
             verticalAlignment: Text.AlignVCenter
             leftPadding: parent.indicator.width + parent.spacing
+        }
+    }
+
+    component StyledSpinBox: SpinBox {
+        id: spinRoot
+        editable: true
+        implicitHeight: 32
+        implicitWidth: 120
+
+        leftPadding: 30
+        rightPadding: 30
+
+        contentItem: TextInput {
+            text: spinRoot.textFromValue(spinRoot.value, spinRoot.locale)
+            font: spinRoot.font
+            color: Theme.textSecondary
+            selectionColor: Theme.accent
+            selectedTextColor: Theme.textPrimary
+            horizontalAlignment: Qt.AlignHCenter
+            verticalAlignment: Qt.AlignVCenter
+            readOnly: !spinRoot.editable
+            validator: spinRoot.validator
+            inputMethodHints: Qt.ImhDigitsOnly
+        }
+
+        background: Rectangle {
+            color: Theme.panelSoftBackground
+            border.color: Theme.controlBorderStrong
+            border.width: 1
+            radius: Theme.radiusSm
+        }
+
+        up.indicator: Rectangle {
+            x: parent.width - width
+            height: parent.height
+            width: 30
+            color: parent.up.pressed ? Theme.cardHover : "transparent"
+            Text {
+                text: "+"
+                color: Theme.textMuted
+                font.pixelSize: 16
+                anchors.centerIn: parent
+            }
+        }
+
+        down.indicator: Rectangle {
+            x: 0
+            height: parent.height
+            width: 30
+            color: parent.down.pressed ? Theme.cardHover : "transparent"
+            Text {
+                text: "-"
+                color: Theme.textMuted
+                font.pixelSize: 16
+                anchors.centerIn: parent
+            }
         }
     }
 
@@ -180,8 +237,8 @@ Window {
         var settings = SystemController.getAppSettings()
         if (settings) {
             if (settings.language) language = settings.language
-            if (settings.recordingsPath) recordingsPath = settings.recordingsPath
-            if (settings.screenshotsPath) screenshotsPath = settings.screenshotsPath
+            if (settings.recordingsPath) recordingsPath = normalizePath(settings.recordingsPath)
+            if (settings.screenshotsPath) screenshotsPath = normalizePath(settings.screenshotsPath)
             if (settings.hwAccel) hwAccel = settings.hwAccel
             if (settings.notificationsEnabled !== undefined) notificationsEnabled = settings.notificationsEnabled
             if (settings.preferredStream) preferredStream = settings.preferredStream
@@ -208,8 +265,8 @@ Window {
             if (ev.enabled !== undefined) evidenceEnabled = ev.enabled
             if (ev.snapshotsEnabled !== undefined) evidenceSnapshotsEnabled = ev.snapshotsEnabled
             if (ev.clipsEnabled !== undefined) evidenceClipsEnabled = ev.clipsEnabled
-            if (ev.snapshotsDir) evidenceSnapshotsPath = ev.snapshotsDir
-            if (ev.clipsDir) evidenceClipsPath = ev.clipsDir
+            if (ev.snapshotsDir) evidenceSnapshotsPath = normalizePath(ev.snapshotsDir)
+            if (ev.clipsDir) evidenceClipsPath = normalizePath(ev.clipsDir)
             if (ev.preSeconds !== undefined) evidencePreSeconds = ev.preSeconds
             if (ev.postSeconds !== undefined) evidencePostSeconds = ev.postSeconds
             if (ev.minConfidence !== undefined) evidenceMinConfidence = ev.minConfidence
@@ -319,8 +376,24 @@ Window {
     function trimFileUrl(url) {
         if (!url)
             return "";
-        var str = url.toString();
-        return str.startsWith("file:///") ? str.substring(8) : str;
+        var str = (typeof url === "string") ? url : url.toString();
+        if (str.startsWith("file:///")) {
+            str = str.substring(8);
+        } else if (str.startsWith("file://")) {
+            str = str.substring(7);
+        }
+        try {
+            str = decodeURIComponent(str);
+        } catch (e) {
+            // Keep original if decode fails
+        }
+        return str;
+    }
+
+    function normalizePath(path) {
+        if (!path)
+            return "";
+        return trimFileUrl(path);
     }
 
     function fileOnly(path) {
@@ -401,10 +474,10 @@ Window {
     Rectangle {
         id: bgRect
         anchors.fill: parent
-        color: "#252526"
-        border.color: "#444444"
+        color: Theme.appBackground
+        border.color: Theme.controlBorder
         border.width: 1
-        radius: 8
+        radius: Theme.radiusLg
         z: -1
     }
     
@@ -415,7 +488,7 @@ Window {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        color: "#2d2d30"
+        color: Theme.topBarBackground
         z: 100
 
         MouseArea {
@@ -430,7 +503,7 @@ Window {
             
             Text {
                 text: I18n.t("Настройки — ") + tabLabels[bar.currentIndex]
-                color: "#ffffff"
+                color: Theme.textPrimary
                 font.bold: true
                 Layout.fillWidth: true
             }
@@ -499,15 +572,15 @@ Window {
                         Layout.preferredWidth: 100
                         
                         background: Rectangle {
-                            color: bar.currentIndex === index ? "#4caf50" : "transparent"
-                            radius: 4
+                            color: bar.currentIndex === index ? "#2d3442" : "transparent"
+                            radius: Theme.radiusSm
                             border.width: 1
-                            border.color: bar.currentIndex === index ? "#4caf50" : "#444444"
+                            border.color: bar.currentIndex === index ? Theme.accent : Theme.textFaint
                         }
                         
                         contentItem: Text {
                             text: parent.text
-                            color: bar.currentIndex === index ? "#ffffff" : "#a0aec0"
+                            color: bar.currentIndex === index ? Theme.textPrimary : Theme.textMuted
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             font.bold: true
@@ -587,7 +660,7 @@ Window {
                                 font.pixelSize: 14
                                 Layout.preferredWidth: generalGrid.labelWidth
                             }
-                            ComboBox {
+                            StyledComboBox {
                                 id: langCombo
                                 model: ["English", "Русский"]
                                 currentIndex: language === "ru" ? 1 : 0
@@ -857,7 +930,7 @@ Window {
                                     enabled: updateStatus !== "checking"
                                     Layout.preferredHeight: 34
                                     Layout.preferredWidth: 190
-                                    background: Rectangle { color: "#4299e1"; radius: 6 }
+                                    background: Rectangle { color: "#3b82f6"; radius: 6 }
                                     contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     onClicked: startUpdateCheck()
                                 }
@@ -884,7 +957,7 @@ Window {
                                             width: (updateProgress / 100) * parent.width
                                             height: parent.height
                                             radius: 4
-                                            color: "#4caf50"
+                                            color: "#3b82f6"
                                             anchors.left: parent.left
                                         }
                                     }
@@ -974,7 +1047,7 @@ Window {
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
-                            ComboBox {
+                            StyledComboBox {
                                 id: bufferModeCombo
                                 model: [I18n.t("Стандартная (Stable / 2s)"), I18n.t("Минимальная (Low Latency / 200ms)"), I18n.t("Ультра-низкая (Realtime / 0ms)")]
                                 currentIndex: playerBufferMode
@@ -1015,7 +1088,7 @@ Window {
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
-                            ComboBox {
+                            StyledComboBox {
                                 id: rtspTransportCombo
                                 model: ["TCP (Interleaved)", "UDP (Unicast)", "UDP (Multicast)", "HTTP (Tunneling)"]
                                 currentIndex: playerRtspTransport === "tcp" ? 0 : (playerRtspTransport === "udp" ? 1 : (playerRtspTransport === "udp_mcast" ? 2 : 3))
@@ -1059,7 +1132,7 @@ Window {
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
-                            ComboBox {
+                            StyledComboBox {
                                 id: hwDecodingCombo
                                 model: [I18n.t("Авто"), "D3D11", "DXVA2", "Off (None)"]
                                 currentIndex: {
@@ -1108,7 +1181,7 @@ Window {
                                 font.pixelSize: 14
                                 Layout.preferredWidth: streamingGrid.labelWidth
                             }
-                            ComboBox {
+                            StyledComboBox {
                                 id: streamPrefCombo
                                 model: [I18n.t("Авто"), "HD", "SD"]
                                 currentIndex: preferredStream === "hd" ? 1 : preferredStream === "sd" ? 2 : 0
@@ -1246,7 +1319,7 @@ Window {
                             RowLayout {
                                 spacing: 10
                                 Layout.fillWidth: true
-                                ComboBox {
+                                StyledComboBox {
                                     model: ["0°", "90°", "180°", "270°"]
                                     currentIndex: {
                                         if (playerOrientation === 90) return 1
@@ -1446,13 +1519,33 @@ Window {
                                 TextField {
                                     Layout.fillWidth: true
                                     text: evidenceSnapshotsPath
-                                    color: "white"
+                                    color: "#f8fafc"
                                     placeholderText: I18n.t("Выберите папку")
-                                    background: Rectangle { color: "#2b2b2b"; radius: 4 }
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle {
+                                        color: "#1f2733"
+                                        radius: 4
+                                        border.color: "#4a5568"
+                                        border.width: 1
+                                    }
                                     onEditingFinished: { evidenceSnapshotsPath = text; applyCurrentSettings() }
                                 }
                                 Button {
-                                    text: I18n.t("Выберите папку")
+                                    Layout.preferredHeight: 30
+                                    Layout.preferredWidth: 34
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: I18n.t("Выберите папку")
+                                    background: Rectangle { color: "#4a5568"; radius: 4 }
+                                    contentItem: Text {
+                                        text: "folder_open"
+                                        font.family: iconFontFamily
+                                        font.pixelSize: 15
+                                        color: "white"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
                                     onClicked: evidenceSnapshotsDialog.open()
                                 }
                             }
@@ -1464,13 +1557,33 @@ Window {
                                 TextField {
                                     Layout.fillWidth: true
                                     text: evidenceClipsPath
-                                    color: "white"
+                                    color: "#f8fafc"
                                     placeholderText: I18n.t("Выберите папку")
-                                    background: Rectangle { color: "#2b2b2b"; radius: 4 }
+                                    placeholderTextColor: "#94a3b8"
+                                    selectionColor: "#3b82f6"
+                                    selectedTextColor: "white"
+                                    background: Rectangle {
+                                        color: "#1f2733"
+                                        radius: 4
+                                        border.color: "#4a5568"
+                                        border.width: 1
+                                    }
                                     onEditingFinished: { evidenceClipsPath = text; applyCurrentSettings() }
                                 }
                                 Button {
-                                    text: I18n.t("Выберите папку")
+                                    Layout.preferredHeight: 30
+                                    Layout.preferredWidth: 34
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: I18n.t("Выберите папку")
+                                    background: Rectangle { color: "#4a5568"; radius: 4 }
+                                    contentItem: Text {
+                                        text: "folder_open"
+                                        font.family: iconFontFamily
+                                        font.pixelSize: 15
+                                        color: "white"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
                                     onClicked: evidenceClipsDialog.open()
                                 }
                             }
@@ -1478,15 +1591,17 @@ Window {
                             RowLayout {
                                 spacing: 12
                                 Text { text: I18n.t("До события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
-                                SpinBox {
+                                StyledSpinBox {
                                     from: 0; to: 30
                                     value: evidencePreSeconds
+                                    Layout.preferredWidth: 110
                                     onValueModified: { evidencePreSeconds = value; applyCurrentSettings() }
                                 }
                                 Text { text: I18n.t("После события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
-                                SpinBox {
+                                StyledSpinBox {
                                     from: 0; to: 30
                                     value: evidencePostSeconds
+                                    Layout.preferredWidth: 110
                                     onValueModified: { evidencePostSeconds = value; applyCurrentSettings() }
                                 }
                             }
@@ -1500,6 +1615,31 @@ Window {
                                     value: evidenceMinConfidence
                                     onMoved: evidenceMinConfidence = value
                                     onPressedChanged: if (!pressed) applyCurrentSettings()
+                                    background: Rectangle {
+                                        x: parent.leftPadding
+                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                                        width: parent.availableWidth
+                                        height: 4
+                                        radius: 2
+                                        color: "#334155"
+
+                                        Rectangle {
+                                            width: parent.width * ((parent.parent.value - parent.parent.from) / (parent.parent.to - parent.parent.from))
+                                            height: parent.height
+                                            radius: 2
+                                            color: "#3b82f6"
+                                        }
+                                    }
+                                    handle: Rectangle {
+                                        x: parent.leftPadding + (parent.availableWidth - width) * ((parent.value - parent.from) / (parent.to - parent.from))
+                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                                        width: 14
+                                        height: 14
+                                        radius: 7
+                                        color: parent.pressed ? "#60a5fa" : "#3b82f6"
+                                        border.width: 1
+                                        border.color: "#93c5fd"
+                                    }
                                 }
                                 Text { text: Math.round(evidenceMinConfidence * 100) + "%"; color: "#cbd5e1"; Layout.preferredWidth: 50 }
                             }
@@ -1507,223 +1647,12 @@ Window {
                             RowLayout {
                                 spacing: 12
                                 Text { text: I18n.t("FPS клипа"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                SpinBox {
+                                StyledSpinBox {
                                     from: 5; to: 25
                                     value: evidenceClipFps
+                                    Layout.preferredWidth: 110
                                     onValueModified: { evidenceClipFps = value; applyCurrentSettings() }
                                 }
-                            }
-
-                            Rectangle { Layout.fillWidth: true; height: 1; color: "#3b4657" }
-
-                            Text {
-                                text: I18n.t("Очередь выгрузки")
-                                color: "white"
-                                font.pixelSize: 16
-                                font.bold: true
-                            }
-
-                            StyledCheckBox {
-                                text: I18n.t("Включить выгрузку")
-                                checked: evidenceUploadEnabled
-                                onToggled: { evidenceUploadEnabled = checked; applyCurrentSettings() }
-                            }
-
-                            RowLayout {
-                                spacing: 12
-                                Text { text: I18n.t("Провайдер"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                ComboBox {
-                                    Layout.fillWidth: true
-                                    model: [
-                                        { text: I18n.t("Локальная папка (NAS/SMB)"), value: "local" },
-                                        { text: I18n.t("FTP"), value: "ftp" },
-                                        { text: I18n.t("Google Drive"), value: "gdrive" },
-                                        { text: I18n.t("OneDrive"), value: "onedrive" },
-                                        { text: I18n.t("Dropbox"), value: "dropbox" },
-                                        { text: I18n.t("Yandex Disk"), value: "yadisk" }
-                                    ]
-                                    textRole: "text"
-                                    onActivated: {
-                                        evidenceUploadProvider = model[index].value
-                                        applyCurrentSettings()
-                                    }
-                                    Component.onCompleted: {
-                                        var idx = model.findIndex(function(item) { return item.value === evidenceUploadProvider })
-                                        currentIndex = idx >= 0 ? idx : 0
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "local" || evidenceUploadProvider === "ftp"
-                                Text { text: I18n.t("Путь назначения"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceUploadTarget
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Путь / URL / токен")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle {
-                                        color: "#1f2937"
-                                        radius: 6
-                                        border.color: "#374151"
-                                        border.width: 1
-                                    }
-                                    onEditingFinished: { evidenceUploadTarget = text; applyCurrentSettings() }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
-                                Item { Layout.preferredWidth: 220 }
-                                StyledCheckBox {
-                                    text: I18n.t("Расширенный режим (свой Client ID)")
-                                    checked: evidenceOAuthAdvanced
-                                    onToggled: { evidenceOAuthAdvanced = checked }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: (evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk") && evidenceOAuthAdvanced
-                                Text { text: I18n.t("Client ID"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceUploadClientId
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Введите Client ID приложения")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
-                                    onEditingFinished: { evidenceUploadClientId = text; applyCurrentSettings() }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "yadisk" && evidenceOAuthAdvanced
-                                Text { text: I18n.t("Client Secret"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceUploadClientSecret
-                                    echoMode: TextInput.Password
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Введите Client Secret")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
-                                    onEditingFinished: { evidenceUploadClientSecret = text; applyCurrentSettings() }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
-                                Item { Layout.preferredWidth: 220 }
-                                Button {
-                                    text: I18n.t("Авторизоваться")
-                                    onClicked: SystemController.analyticsEngine.startOAuth(evidenceUploadProvider, effectiveClientId(evidenceUploadProvider), evidenceUploadClientSecret)
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "gdrive"
-                                Text { text: I18n.t("ID папки (Drive)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceUploadFolder
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Например: 1A2b3C4D...")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
-                                    onEditingFinished: {
-                                        evidenceUploadFolder = text
-                                        var map = parseTarget(evidenceUploadTarget)
-                                        map.folder = evidenceUploadFolder
-                                        evidenceUploadTarget = buildTarget(map)
-                                        applyCurrentSettings()
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
-                                Text { text: I18n.t("Путь (папка)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceUploadPath
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Например: /OpenIPC")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle { color: "#1f2937"; radius: 6; border.color: "#374151"; border.width: 1 }
-                                    onEditingFinished: {
-                                        evidenceUploadPath = text
-                                        var map = parseTarget(evidenceUploadTarget)
-                                        map.path = evidenceUploadPath
-                                        evidenceUploadTarget = buildTarget(map)
-                                        applyCurrentSettings()
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                visible: evidenceUploadProvider === "gdrive" || evidenceUploadProvider === "onedrive" || evidenceUploadProvider === "dropbox" || evidenceUploadProvider === "yadisk"
-                                Text { text: I18n.t("Статус"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                Text {
-                                    text: (function(){
-                                        return evidenceUploadAccessToken && evidenceUploadAccessToken !== "" ? I18n.t("Авторизован") : I18n.t("Не авторизован")
-                                    })()
-                                    color: (function(){
-                                        return evidenceUploadAccessToken && evidenceUploadAccessToken !== "" ? "#22c55e" : "#f59e0b"
-                                    })()
-                                }
-                            }
-
-                            Text {
-                                text: (function(){
-                                    if (evidenceUploadProvider === "ftp") return I18n.t("FTP пример: ftp://user:pass@host:21/path/  (папка создаётся автоматически)")
-                                        if (evidenceUploadProvider === "gdrive") return I18n.t("Google Drive: нажмите Авторизоваться, затем укажите folder (ID папки)")
-                                    if (evidenceUploadProvider === "onedrive") return I18n.t("OneDrive: нужен Client ID, затем Авторизоваться и указать path=/OpenIPC")
-                                    if (evidenceUploadProvider === "dropbox") return I18n.t("Dropbox: нажмите Авторизоваться, затем укажите path=/OpenIPC. Если app access = App folder, путь считается внутри /Apps/<AppName>. Redirect URI: http://localhost:53682/")
-                                    if (evidenceUploadProvider === "yadisk") return I18n.t("Yandex Disk: нужен Client ID/Secret, затем Авторизоваться и указать path=/OpenIPC")
-                                    if (evidenceUploadProvider === "local") return I18n.t("Локальная папка / NAS: укажите путь, например E:/VMS/Upload")
-                                    return ""
-                                })()
-                                color: "#a0aec0"
-                                wrapMode: Text.Wrap
-                            }
-
-                            Text {
-                                text: (function(){
-                                    if (evidenceUploadProvider === "gdrive") return I18n.t("Google Drive шаги:\n• console.cloud.google.com → создать проект\n• Включить Google Drive API\n• Credentials → OAuth Client ID → Desktop\n• Скопировать Client ID и вставить")
-                                    if (evidenceUploadProvider === "onedrive") return I18n.t("OneDrive шаги:\n• portal.azure.com → App registrations → New\n• Redirect URI: http://127.0.0.1\n• Скопировать Client ID и вставить")
-                                    if (evidenceUploadProvider === "dropbox") return I18n.t("Dropbox шаги:\n• dropbox.com/developers/apps → Create app\n• Scoped access → App folder (или Full Dropbox для записи в корень)\n• Redirect URI: http://localhost:53682/\n• Скопировать App key (Client ID) и вставить")
-                                    if (evidenceUploadProvider === "yadisk") return I18n.t("Yandex Disk шаги:\n• oauth.yandex.com → создать приложение\n• Redirect URI: http://127.0.0.1\n• Скопировать Client ID и Client Secret и вставить")
-                                    return ""
-                                })()
-                                color: "#94a3b8"
-                                wrapMode: Text.Wrap
                             }
 
                             Item { Layout.fillHeight: true }
@@ -1820,7 +1749,7 @@ Window {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onRejected: SystemController.analyticsEngine.cancelOAuth()
 
-        background: Rectangle { color: "#111827"; radius: 8 }
+        background: Rectangle { color: Theme.panelAltBackground; radius: Theme.radiusLg }
 
         ColumnLayout {
             anchors.fill: parent
@@ -1829,13 +1758,13 @@ Window {
 
             Text {
                 text: I18n.t("Авторизация открыта в браузере. Завершите вход и вернитесь в приложение.")
-                color: "white"
+                color: Theme.textPrimary
                 wrapMode: Text.Wrap
             }
 
             Text {
                 text: "<a href=\"" + oauthUrl + "\">" + oauthUrl + "</a>"
-                color: "#9ca3af"
+                color: Theme.textMuted
                 wrapMode: Text.Wrap
                 font.pixelSize: 12
                 textFormat: Text.RichText
@@ -1871,7 +1800,7 @@ Window {
             anchors.top: parent.top
             width: parent.width
             height: 1
-            color: "#626974"
+            color: Theme.controlBorder
         }
 
         Button {
@@ -1883,8 +1812,8 @@ Window {
             text: I18n.t("Сохранить")
             
             background: Rectangle {
-                color: "#4299e1"
-                radius: 4
+                color: Theme.accent
+                radius: Theme.radiusSm
             }
             contentItem: Text {
                 text: parent.text
@@ -1913,8 +1842,8 @@ Window {
         
         background: Rectangle {
             color: "#2d3748"
-            radius: 4
-            border.color: "#48bb78" // Green border
+            radius: Theme.radiusSm
+            border.color: Theme.accent
             border.width: 1
         }
         
@@ -1923,7 +1852,7 @@ Window {
             spacing: 8
             Text {
                 text: "✓"
-                color: "#48bb78"
+                color: Theme.accent
                 font.bold: true
                 font.pixelSize: 16
             }

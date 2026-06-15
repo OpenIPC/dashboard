@@ -168,35 +168,11 @@ Dialog {
                     Layout.fillWidth: true
                     spacing: 5
                     Label { text: I18n.t("Камера"); color: "#ccc"; font.bold: true }
-                    ComboBox {
+                    StyledComboBox {
                         id: cameraSelector
                         Layout.fillWidth: true
                         textRole: "cameraName"
                         model: SystemController.cameraModel
-                        
-                        background: Rectangle {
-                            color: "#1e1e1e"
-                            border.color: "#444"
-                            radius: 2
-                        }
-                        contentItem: Text {
-                            text: parent.displayText
-                            color: "#ccc"
-                            leftPadding: 10
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        delegate: ItemDelegate {
-                            width: parent.width
-                            contentItem: Text {
-                                text: model.cameraName
-                                color: "#ccc"
-                                elide: Text.ElideRight
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: Rectangle {
-                                color: highlighted ? "#3f89d6" : "#1e1e1e"
-                            }
-                        }
                     }
                 }
 
@@ -264,7 +240,7 @@ Dialog {
                         var camIndex = cameraSelector.currentIndex
                         if (camIndex >= 0) {
                             var cam = SystemController.cameraModel.getCamera(camIndex)
-                            SystemController.archiveController.login(cam.cameraIp, cam.cameraPort, cam.cameraLogin, cam.cameraPassword)
+                            SystemController.archiveController.login(cam.cameraIp, cam.cameraPort, cam.cameraLogin, "")
                             
                             var start = Date.fromLocaleString(Qt.locale(), startTimeField.text, "yyyy-MM-dd HH:mm:ss")
                             var end = Date.fromLocaleString(Qt.locale(), endTimeField.text, "yyyy-MM-dd HH:mm:ss")
@@ -734,7 +710,7 @@ Dialog {
                             }
 
                             // Speed Control
-                            ComboBox {
+                            StyledComboBox {
                                 Layout.preferredWidth: 80
                                 Layout.preferredHeight: 30
                                 model: ["0.5x", "1.0x", "2.0x", "4.0x", "8.0x"]
@@ -742,30 +718,6 @@ Dialog {
                                 onCurrentTextChanged: {
                                     var rate = parseFloat(currentText.replace("x", ""))
                                     player.playbackRate = rate
-                                }
-                                
-                                background: Rectangle {
-                                    color: "transparent"
-                                    border.color: "#666"
-                                    radius: 4
-                                }
-                                contentItem: Text {
-                                    text: parent.displayText
-                                    color: "#ccc"
-                                    leftPadding: 10
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                delegate: ItemDelegate {
-                                    width: parent.width
-                                    contentItem: Text {
-                                        text: modelData
-                                        color: "#ccc"
-                                        elide: Text.ElideRight
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    background: Rectangle {
-                                        color: highlighted ? "#3f89d6" : "#2a2a2b"
-                                    }
                                 }
                             }
                             

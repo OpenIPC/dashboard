@@ -10,10 +10,36 @@ Rectangle {
     property bool authenticating: false
     property string errorMessage: ""
 
+    function syncFormState() {
+        usernameInput.text = SystemController.userManager.rememberedUsername
+        passwordInput.text = ""
+        confirmPasswordInput.text = ""
+        rememberMeCheck.checked = SystemController.userManager.rememberedUsername !== ""
+        root.errorMessage = ""
+    }
+
+    Component.onCompleted: syncFormState()
+
+    Connections {
+        target: SystemController.userManager
+
+        function onIsLoggedInChanged() {
+            if (!SystemController.userManager.isLoggedIn) {
+                root.syncFormState()
+            }
+        }
+
+        function onRememberedUsernameChanged() {
+            if (!SystemController.userManager.isLoggedIn) {
+                root.syncFormState()
+            }
+        }
+    }
+
     // Center Card
     Rectangle {
         width: 360
-        height: 440
+        height: SystemController.userManager.hasUsers ? 440 : 520
         anchors.centerIn: parent
         color: "#2a2f33"
         radius: 4
@@ -30,7 +56,9 @@ Rectangle {
             // Title
             Text {
                 Layout.fillWidth: true
-                text: I18n.t("Пожалуйста, войдите для\nпродолжения")
+                text: SystemController.userManager.hasUsers
+                    ? I18n.t("Пожалуйста, войдите для продолжения")
+                    : I18n.t("Создайте первого администратора")
                 color: "white"
                 font.pixelSize: 20
                 font.bold: true
@@ -110,6 +138,40 @@ Rectangle {
                 }
             }
 
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 5
+                visible: !SystemController.userManager.hasUsers
+
+                Text {
+                    text: I18n.t("Подтвердите пароль")
+                    color: "#666666"
+                    font.pixelSize: 12
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 40
+                    color: "#333333"
+                    border.color: "#444444"
+                    border.width: 1
+                    radius: 4
+
+                    TextInput {
+                        id: confirmPasswordInput
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        text: ""
+                        echoMode: TextInput.Password
+                        color: "white"
+                        font.pixelSize: 14
+                        verticalAlignment: Text.AlignVCenter
+                        activeFocusOnPress: true
+                        onAccepted: loginButton.clicked()
+                    }
+                }
+            }
+
             // Remember Me
             RowLayout {
                 Layout.fillWidth: true
@@ -162,7 +224,9 @@ Rectangle {
             // Default Credentials Hint
             Text {
                 Layout.fillWidth: true
-                text: I18n.t("Данные по умолчанию: логин admin, пароль admin.")
+                text: SystemController.userManager.hasUsers
+                    ? I18n.t("Будет запомнено только имя пользователя. Пароль всегда требуется вводить заново.")
+                    : I18n.t("Для первого запуска создайте учетную запись администратора.")
                 color: "#888888"
                 font.pixelSize: 11
                 horizontalAlignment: Text.AlignHCenter
@@ -181,7 +245,9 @@ Rectangle {
                 }
                 
                 contentItem: Text {
-                    text: I18n.t("ВОЙТИ")
+                    text: SystemController.userManager.hasUsers
+                        ? I18n.t("ВОЙТИ")
+                        : I18n.t("СОЗДАТЬ АДМИНИСТРАТОРА")
                     color: "white"
                     font.bold: true
                     font.pixelSize: 14
@@ -192,10 +258,25 @@ Rectangle {
                 onClicked: {
                     root.errorMessage = ""
                     if (usernameInput.text === "" || passwordInput.text === "") {
-                        root.errorMessage = I18n.t("Неверный логин или пароль")
+                        root.errorMessage = I18n.t("Введите логин и пароль")
                         return
                     }
-                    
+
+                    if (!SystemController.userManager.hasUsers) {
+                        if (confirmPasswordInput.text === "") {
+                            root.errorMessage = I18n.t("Подтвердите пароль")
+                            return
+                        }
+                        if (passwordInput.text !== confirmPasswordInput.text) {
+                            root.errorMessage = I18n.t("Пароли не совпадают")
+                            return
+                        }
+                        if (!SystemController.userManager.setupInitialAdmin(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
+                            root.errorMessage = I18n.t("Не удалось создать администратора")
+                        }
+                        return
+                    }
+
                     if (!SystemController.userManager.login(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
                         root.errorMessage = I18n.t("Неверный логин или пароль")
                     }

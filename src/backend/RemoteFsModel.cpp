@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -140,7 +142,8 @@ void RemoteFsModel::downloadFile(const QString &fileName, const QString &localDe
 #endif
     
     QStringList args;
-    args << "-r" << "-o" << "StrictHostKeyChecking=no" << "-o" << "UserKnownHostsFile=/dev/null";
+    args << "-r";
+    args << commonSshOptions();
     
     // Add -tt ? scp doesn't like -tt usually, but it needs ASKPASS
     args << (m_user + "@" + m_ip + ":" + remotePath);
@@ -151,25 +154,7 @@ void RemoteFsModel::downloadFile(const QString &fileName, const QString &localDe
 
     // Spawn process with ASKPASS
     QProcess *process = new QProcess(this);
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    
-#ifdef Q_OS_WIN
-    // ASKPASS Setup (Duplicated from SshClient)
-    QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString askPassBat = QDir::toNativeSeparators(tempPath + "/ssh_askpass_fs.bat");
-    QFile batchFile(askPassBat);
-    if (batchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&batchFile);
-        out << "@echo off\n";
-        out << "echo " << m_password << "\n"; 
-        batchFile.close();
-    }
-    env.insert("SSH_ASKPASS", askPassBat);
-    env.insert("SSH_ASKPASS_REQUIRE", "force");
-#endif
-    if (!env.contains("DISPLAY")) env.insert("DISPLAY", "dummy:0");
-    
-    process->setProcessEnvironment(env);
+    process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
             [this, process, fileName](int exitCode, QProcess::ExitStatus status) {
@@ -201,41 +186,25 @@ void RemoteFsModel::uploadFile(const QString &localPath)
 #endif
 
     QStringList args;
-    args << "-r" << "-o" << "StrictHostKeyChecking=no" << "-o" << "UserKnownHostsFile=/dev/null";
+    args << "-r";
+    args << commonSshOptions();
     args << localPath << (m_user + "@" + m_ip + ":" + m_currentPath);
+
+    const QString uploadedFileName = QFileInfo(localPath).fileName();
     
     m_isLoading = true;
     emit isLoadingChanged();
 
     QProcess *process = new QProcess(this);
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    
-#ifdef Q_OS_WIN
-    // Reuse the bat file if it exists, or create new
-    QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString askPassBat = QDir::toNativeSeparators(tempPath + "/ssh_askpass_fs.bat");
-    // Ensure it exists (re-write just in case)
-    QFile batchFile(askPassBat);
-    if (batchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&batchFile);
-        out << "@echo off\n";
-        out << "echo " << m_password << "\n"; 
-        batchFile.close();
-    }
-    env.insert("SSH_ASKPASS", askPassBat);
-    env.insert("SSH_ASKPASS_REQUIRE", "force");
-#endif
-    if (!env.contains("DISPLAY")) env.insert("DISPLAY", "dummy:0");
-    
-    process->setProcessEnvironment(env);
+    process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-            [this, process](int exitCode, QProcess::ExitStatus status) {
+            [this, process, uploadedFileName](int exitCode, QProcess::ExitStatus status) {
         m_isLoading = false;
         emit isLoadingChanged();
         
         if (exitCode == 0) {
-            emit fileUploaded(QFileInfo(process->arguments().at(process->arguments().indexOf("-r")+4)).fileName()); // Hacky path retrieval for signal
+            emit fileUploaded(uploadedFileName);
             refresh();
         } else {
             emit errorOccurred("Upload failed: " + QString::fromUtf8(process->readAllStandardError()));
@@ -252,7 +221,7 @@ void RemoteFsModel::runSshCommand(const QString &cmd, std::function<void(const Q
     QStringList args;
     // No -tt for file operations usually, to keep output clean, unless we really need it for auth? 
     // With ASKPASS we shouldn't need -tt for non-interactive commands.
-    args << "-o" << "StrictHostKeyChecking=no" << "-o" << "UserKnownHostsFile=/dev/null";
+    args << commonSshOptions();
     args << (m_user + "@" + m_ip);
     args << cmd;
 
@@ -260,24 +229,7 @@ void RemoteFsModel::runSshCommand(const QString &cmd, std::function<void(const Q
     emit isLoadingChanged();
 
     QProcess *process = new QProcess(this);
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    
-#ifdef Q_OS_WIN
-    QString tempPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString askPassBat = QDir::toNativeSeparators(tempPath + "/ssh_askpass_fs.bat");
-    QFile batchFile(askPassBat);
-    if (batchFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&batchFile);
-        out << "@echo off\n";
-        out << "echo " << m_password << "\n";
-        batchFile.close();
-    }
-    env.insert("SSH_ASKPASS", askPassBat);
-    env.insert("SSH_ASKPASS_REQUIRE", "force");
-#endif
-    if (!env.contains("DISPLAY")) env.insert("DISPLAY", "dummy:0");
-    
-    process->setProcessEnvironment(env);
+    process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
             [this, process, callback](int exitCode, QProcess::ExitStatus status) {
@@ -446,6 +398,63 @@ void RemoteFsModel::parseLsOutput(const QString &output)
     });
     
     endResetModel();
+}
+
+QProcessEnvironment RemoteFsModel::buildSshEnvironment() const
+{
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString askPassPath = askPassExecutablePath();
+    if (!askPassPath.isEmpty()) {
+        env.insert("SSH_ASKPASS", QDir::toNativeSeparators(askPassPath));
+        env.insert("SSH_ASKPASS_REQUIRE", "force");
+    }
+    if (!m_password.isEmpty()) {
+        env.insert("SSH_PASS", m_password);
+    }
+    if (!env.contains("DISPLAY")) {
+        env.insert("DISPLAY", "dummy:0");
+    }
+    return env;
+}
+
+QString RemoteFsModel::askPassExecutablePath() const
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+    const QString candidate = QDir(appDir).filePath("openipc-askpass.exe");
+#else
+    const QString candidate = QDir(appDir).filePath("openipc-askpass");
+#endif
+    return QFile::exists(candidate) ? candidate : QString();
+}
+
+QString RemoteFsModel::knownHostsFilePath() const
+{
+    const QString dirPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir dir(dirPath);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    const QString path = dir.filePath("known_hosts");
+    QFile file(path);
+    if (!file.exists()) {
+        file.open(QIODevice::WriteOnly);
+        file.close();
+    }
+    return path;
+}
+
+QStringList RemoteFsModel::commonSshOptions() const
+{
+    const QString knownHosts = QDir::toNativeSeparators(knownHostsFilePath());
+    return {
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", QString("UserKnownHostsFile=%1").arg(knownHosts),
+        "-o", "PreferredAuthentications=password,keyboard-interactive",
+        "-o", "PubkeyAuthentication=no",
+        "-o", "BatchMode=no"
+    };
 }
 
 void RemoteFsModel::localDeleteItem(const QString &path)

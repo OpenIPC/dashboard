@@ -17,52 +17,68 @@ Dialog {
     height: parent.height * 0.9
     
     background: Rectangle {
-        color: "#1e1e1e"
-        radius: 8
-        border.color: "#333"
+        color: Theme.panelAltBackground
+        radius: Theme.radiusLg
+        border.color: Theme.panelBorder
         border.width: 1
     }
     
     header: Rectangle {
-        height: 60
+        height: 56
         color: "transparent"
         
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 16
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 14
+            anchors.rightMargin: 54
+            anchors.topMargin: 8
+            anchors.bottomMargin: 8
+            spacing: 0
             
             Text {
                 text: I18n.t("Аналитика")
-                color: "white"
-                font.pixelSize: 20
+                color: Theme.textPrimary
+                font.pixelSize: 18
                 font.bold: true
-                Layout.fillWidth: true
             }
-            
-            Button {
-                text: "✕"
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                background: Rectangle {
-                    color: parent.hovered ? "#c42b1c" : "transparent"
-                    radius: 4
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "white"
-                    font.pixelSize: 16
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: root.close()
+
+            Text {
+                text: I18n.t("Управление ИИ, событиями и правилами")
+                color: Theme.textMuted
+                font.pixelSize: 11
             }
+        }
+
+        Button {
+            text: "✕"
+            width: 32
+            height: 32
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: 8
+            anchors.rightMargin: 10
+            background: Rectangle {
+                color: parent.hovered ? "#c42b1c" : "transparent"
+                radius: Theme.radiusSm
+            }
+            contentItem: Text {
+                text: parent.text
+                color: Theme.textPrimary
+                font.pixelSize: 16
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            onClicked: root.close()
         }
         
         Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: "#333"
+            color: Theme.panelBorder
         }
     }
     
@@ -71,6 +87,16 @@ Dialog {
     property string faceSnapshotsDir: ""
     property string objectSnapshotsDir: ""
     property string plateSnapshotsDir: ""
+    property var analyticsDiagnosticsData: ({})
+    readonly property int summaryColumns: width >= 1500 ? 6 : width >= 1100 ? 3 : 2
+    property int rulesModuleType: 1
+
+    function rulesModuleName(type) {
+        if (type === 0) return I18n.t("Лица")
+        if (type === 1) return I18n.t("Объекты")
+        if (type === 2) return I18n.t("Номера")
+        return I18n.t("Модуль")
+    }
 
     function refreshEvidenceDir() {
         var settings = SystemController.analyticsEngine.getSettings()
@@ -102,79 +128,512 @@ Dialog {
         plateSnapshotsDir = moduleSnapshotsDir(2, "License_Plate")
     }
 
-    Component.onCompleted: refreshEvidenceDir()
+    function refreshAnalyticsDiagnostics() {
+        if (SystemController.analyticsEngine && SystemController.analyticsEngine.analyticsDiagnostics) {
+            analyticsDiagnosticsData = SystemController.analyticsEngine.analyticsDiagnostics
+        } else {
+            analyticsDiagnosticsData = ({})
+        }
+    }
+
+    Component.onCompleted: {
+        refreshEvidenceDir()
+        refreshAnalyticsDiagnostics()
+    }
 
     Connections {
         target: SystemController.analyticsEngine
         function onSettingsChanged() { refreshEvidenceDir() }
         function onModuleConfigChanged(type) { refreshModuleDirs() }
+        function onAnalyticsTelemetryChanged() { refreshAnalyticsDiagnostics() }
+        function onAnalyticsEventsChanged() { refreshAnalyticsDiagnostics() }
     }
     
     contentItem: ColumnLayout {
         spacing: 0
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 0
+            Layout.minimumHeight: 0
+            Layout.maximumHeight: 0
+            color: Theme.panelBackground
+            radius: Theme.radiusLg
+            border.color: Theme.panelBorder
+            border.width: 1
+            Layout.bottomMargin: 0
+            visible: false
+
+            GridLayout {
+                id: summaryGrid
+                anchors.fill: parent
+                anchors.margins: 10
+                columns: root.summaryColumns
+                rowSpacing: 8
+                columnSpacing: 8
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("Обработано кадров")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text { text: String(analyticsDiagnosticsData.processedFrames || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("Пропущено кадров")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text { text: String(analyticsDiagnosticsData.skippedFrames || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("Детекции")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text { text: String(analyticsDiagnosticsData.detections || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("События")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text { text: String(analyticsDiagnosticsData.events || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("Средняя задержка")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: Number(analyticsDiagnosticsData.averageInferenceMs || 0).toFixed(1) + " ms"
+                            color: Theme.textPrimary
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 160
+                    implicitHeight: 60
+                    color: Theme.cardBackground
+                    radius: Theme.radiusMd
+                    border.color: Theme.cardBorder
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+
+                        Text {
+                            text: I18n.t("Активные треки")
+                            color: Theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            Layout.fillWidth: true
+                        }
+                        Text { text: String(analyticsDiagnosticsData.activeTracks || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                    }
+                }
+            }
+        }
         
         // Custom Tab Bar
         TabBar {
             id: bar
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            background: Rectangle { color: "#252526" }
+            Layout.preferredHeight: 40
+            background: Rectangle {
+                color: Theme.panelBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorder
+                border.width: 1
+            }
             
             component CustomTabButton: TabButton {
                 id: tabBtn
-                width: implicitWidth + 40
+                width: implicitWidth + 28
                 background: Rectangle {
-                    color: tabBtn.checked ? "#1e1e1e" : "#2d2d2d"
+                    color: tabBtn.checked ? Theme.panelAltBackground : Theme.cardBackground
                     Rectangle {
                         anchors.bottom: parent.bottom
                         width: parent.width
                         height: 2
-                        color: tabBtn.checked ? "#3b82f6" : "transparent"
+                        color: tabBtn.checked ? Theme.accent : "transparent"
                     }
                 }
                 contentItem: Text {
                     text: tabBtn.text
-                    color: tabBtn.checked ? "#3b82f6" : "#aaaaaa"
-                    font.pixelSize: 14
+                    color: tabBtn.checked ? Theme.accent : Theme.textMuted
+                    font.pixelSize: 13
                     font.bold: tabBtn.checked
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
             }
             
-            CustomTabButton { text: I18n.t("Лица") }
-            CustomTabButton { text: I18n.t("Объекты") }
-            CustomTabButton { text: I18n.t("Номера") }
+            CustomTabButton { text: I18n.t("Обзор") }
+            CustomTabButton { text: I18n.t("Камеры") }
+            CustomTabButton { text: I18n.t("Модули") }
+            CustomTabButton { text: I18n.t("События") }
+            CustomTabButton { text: I18n.t("Правила") }
+            CustomTabButton { text: I18n.t("Архив") }
+            CustomTabButton { text: I18n.t("Диагностика") }
         }
         
         // Content
-        StackLayout {
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: bar.currentIndex
-            
-            FaceSnapshotsPanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: faceSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
-            }
-            
-            ObjectCounterPanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: objectSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
-            }
-            
-            LicensePlatePanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: plateSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
+            color: Theme.panelBackground
+            radius: Theme.radiusLg
+            border.color: Theme.panelBorder
+            border.width: 1
+
+            StackLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                currentIndex: bar.currentIndex
+
+                AnalyticsOverviewPanel {
+                    diagnostics: analyticsDiagnosticsData
+                }
+
+                AnalyticsCamerasPanel {
+                    diagnostics: analyticsDiagnosticsData
+                }
+
+                AnalyticsModulesPanel {
+                }
+
+                EventsPanel {
+                    model: SystemController.analyticsEngine
+                    moduleType: -1
+                    snapshotsDir: evidenceSnapshotsDir
+                    clipsDir: evidenceClipsDir
+                    moduleBadgeText: I18n.t("Лента событий")
+                }
+
+                Item {
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: I18n.t("Модуль")
+                                color: Theme.textMuted
+                                font.pixelSize: 12
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            StyledComboBox {
+                                Layout.preferredWidth: 220
+                                model: [I18n.t("Лица"), I18n.t("Объекты"), I18n.t("Номера")]
+                                currentIndex: root.rulesModuleType
+                                onActivated: root.rulesModuleType = currentIndex
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        RulesPanel {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            model: SystemController.analyticsEngine
+                            moduleType: root.rulesModuleType
+                            moduleName: root.rulesModuleName(root.rulesModuleType)
+                        }
+                    }
+                }
+
+                Item {
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+
+                        TabBar {
+                            id: archiveBar
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 36
+                            background: Rectangle {
+                                color: Theme.panelSoftBackground
+                                radius: Theme.radiusMd
+                                border.color: Theme.cardBorder
+                            }
+
+                            component ArchiveTabButton: TabButton {
+                                id: archiveTabBtn
+                                width: implicitWidth + 28
+                                background: Rectangle {
+                                    color: archiveTabBtn.checked ? Theme.panelAltBackground : Theme.cardBackground
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: 2
+                                        color: archiveTabBtn.checked ? Theme.accent : "transparent"
+                                    }
+                                }
+                                contentItem: Text {
+                                    text: archiveTabBtn.text
+                                    color: archiveTabBtn.checked ? Theme.accent : Theme.textMuted
+                                    font.pixelSize: 13
+                                    font.bold: archiveTabBtn.checked
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            ArchiveTabButton { text: I18n.t("Лица") }
+                            ArchiveTabButton { text: I18n.t("Объекты") }
+                            ArchiveTabButton { text: I18n.t("Номера") }
+                        }
+
+                        StackLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            currentIndex: archiveBar.currentIndex
+
+                            FaceSnapshotsPanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: faceSnapshotsDir
+                                clipsDirOverride: evidenceClipsDir
+                            }
+
+                            ObjectCounterPanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: objectSnapshotsDir
+                                clipsDirOverride: evidenceClipsDir
+                            }
+
+                            LicensePlatePanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: plateSnapshotsDir
+                                clipsDirOverride: evidenceClipsDir
+                            }
+                        }
+                    }
+                }
+
+                ScrollView {
+                    id: diagnosticsScroll
+                    clip: true
+                    contentWidth: availableWidth
+
+                    ColumnLayout {
+                        width: diagnosticsScroll.availableWidth
+                        spacing: 10
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: diagnosticsScroll.availableWidth >= 980 ? 4 : diagnosticsScroll.availableWidth >= 620 ? 2 : 1
+                            columnSpacing: 8
+                            rowSpacing: 8
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("Event store"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text {
+                                        text: analyticsDiagnosticsData.eventStoreReady ? I18n.t("Готов") : I18n.t("Недоступен")
+                                        color: analyticsDiagnosticsData.eventStoreReady ? Theme.success : Theme.danger
+                                        font.pixelSize: 18
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("Буфер событий"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text { text: String(analyticsDiagnosticsData.eventBufferSize || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("Очередь выгрузки"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text { text: String(analyticsDiagnosticsData.uploadQueueDepth || 0); color: Theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("Камер в телеметрии"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text {
+                                        text: String(analyticsDiagnosticsData.cameraStats ? analyticsDiagnosticsData.cameraStats.length : 0)
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 18
+                                        font.bold: true
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: storePathColumn.implicitHeight + 20
+                            radius: Theme.radiusLg
+                            color: Theme.cardBackground
+                            border.color: Theme.cardBorder
+
+                            ColumnLayout {
+                                id: storePathColumn
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 6
+
+                                Text {
+                                    text: I18n.t("Хранилище событий")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: analyticsDiagnosticsData.eventStorePath || I18n.t("Путь не задан")
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WrapAnywhere
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

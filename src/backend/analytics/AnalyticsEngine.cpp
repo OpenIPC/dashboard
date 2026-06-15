@@ -23,8 +23,14 @@
 #include <QUrlQuery>
 #include <QCryptographicHash>
 #include <QRandomGenerator>
+#include <QElapsedTimer>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QTcpSocket>
+#include <keychain.h>
 #include <gst/app/gstappsrc.h>
+#include <algorithm>
 
 static void ensureGstInitOnce() {
     static bool initialized = false;
@@ -60,6 +66,10 @@ AnalyticsEngine::AnalyticsEngine(QObject *parent)
     // Default evidence directories
     m_evidenceSnapshotsDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + "/OpenIPC/Evidence";
     m_evidenceClipsDir = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC/Evidence";
+    m_eventStorePath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/analytics_events.sqlite";
+    m_eventStoreConnectionName = QStringLiteral("analytics_events_%1").arg(reinterpret_cast<quintptr>(this));
+    initEventStore();
+    m_analyticsEvents = loadRecentAnalyticsEvents(m_maxAnalyticsEvents);
 }
 
 AnalyticsEngine::~AnalyticsEngine()
@@ -78,6 +88,324 @@ AnalyticsEngine::~AnalyticsEngine()
             delete file;
         }
     }
+
+    if (!m_eventStoreConnectionName.isEmpty() && QSqlDatabase::contains(m_eventStoreConnectionName)) {
+        {
+            QSqlDatabase db = QSqlDatabase::database(m_eventStoreConnectionName, false);
+            if (db.isOpen()) {
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(m_eventStoreConnectionName);
+    }
+}
+
+QVariantList AnalyticsEngine::analyticsEvents() const
+{
+    return m_analyticsEvents;
+}
+
+QVariantList AnalyticsEngine::queryAnalyticsEvents(int type, const QString &cameraId, const QString &text, int limit) const
+{
+    const QString trimmedCameraId = cameraId.trimmed();
+    const QString trimmedText = text.trimmed();
+    const int safeLimit = qBound(1, limit, 5000);
+
+    {
+        QMutexLocker locker(&m_eventStoreMutex);
+        if (m_eventStoreReady && QSqlDatabase::contains(m_eventStoreConnectionName)) {
+            QSqlDatabase db = QSqlDatabase::database(m_eventStoreConnectionName, false);
+            if (db.isOpen()) {
+                QSqlQuery query(db);
+                query.prepare(
+                    "SELECT payload_json FROM analytics_events "
+                    "WHERE (? < 0 OR module_type = ?) "
+                    "AND (? = '' OR camera_id = ?) "
+                    "AND (? = '' OR label LIKE ? OR message LIKE ? OR rule_name LIKE ? OR event_type LIKE ?) "
+                    "ORDER BY timestamp_ms DESC, rowid DESC LIMIT ?"
+                );
+
+                const QString likeText = "%" + trimmedText + "%";
+                query.addBindValue(type);
+                query.addBindValue(type);
+                query.addBindValue(trimmedCameraId);
+                query.addBindValue(trimmedCameraId);
+                query.addBindValue(trimmedText);
+                query.addBindValue(likeText);
+                query.addBindValue(likeText);
+                query.addBindValue(likeText);
+                query.addBindValue(likeText);
+                query.addBindValue(safeLimit);
+
+                QVariantList result;
+                if (!query.exec()) {
+                    qWarning() << "Failed to query analytics events:" << query.lastError().text();
+                    return result;
+                }
+
+                while (query.next()) {
+                    const QJsonDocument doc = QJsonDocument::fromJson(query.value(0).toString().toUtf8());
+                    if (doc.isObject()) {
+                        result.append(doc.object().toVariantMap());
+                    }
+                }
+                return result;
+            }
+        }
+    }
+
+    QVariantList filtered;
+    for (const QVariant &eventVar : m_analyticsEvents) {
+        const QVariantMap event = eventVar.toMap();
+        if (type >= 0 && event.value("moduleType").toInt() != type) {
+            continue;
+        }
+        if (!trimmedCameraId.isEmpty() && event.value("cameraId").toString() != trimmedCameraId) {
+            continue;
+        }
+        if (!trimmedText.isEmpty()) {
+            const QString haystack = QStringList{
+                event.value("label").toString(),
+                event.value("message").toString(),
+                event.value("ruleName").toString(),
+                event.value("eventType").toString()
+            }.join(" ");
+            if (!haystack.contains(trimmedText, Qt::CaseInsensitive)) {
+                continue;
+            }
+        }
+        filtered.append(event);
+        if (filtered.size() >= safeLimit) {
+            break;
+        }
+    }
+    return filtered;
+}
+
+void AnalyticsEngine::clearAnalyticsEvents(int type, const QString &cameraId)
+{
+    const QString trimmedCameraId = cameraId.trimmed();
+    if (type < 0 && trimmedCameraId.isEmpty()) {
+        if (m_analyticsEvents.isEmpty()) {
+            deleteStoredAnalyticsEvents(type, trimmedCameraId);
+            return;
+        }
+        m_analyticsEvents.clear();
+        deleteStoredAnalyticsEvents(type, trimmedCameraId);
+        emit analyticsEventsChanged();
+        return;
+    }
+
+    QVariantList filtered;
+    bool changed = false;
+
+    for (const QVariant &eventVar : m_analyticsEvents) {
+        const QVariantMap event = eventVar.toMap();
+        bool matches = true;
+
+        if (type >= 0) {
+            matches = matches && (event.value("moduleType").toInt() == type);
+        }
+
+        if (!trimmedCameraId.isEmpty()) {
+            matches = matches && (event.value("cameraId").toString() == trimmedCameraId);
+        }
+
+        if (matches) {
+            changed = true;
+            continue;
+        }
+
+        filtered.append(event);
+    }
+
+    if (!changed) {
+        return;
+    }
+
+    m_analyticsEvents = filtered;
+    deleteStoredAnalyticsEvents(type, trimmedCameraId);
+    emit analyticsEventsChanged();
+}
+
+QVariantMap AnalyticsEngine::telemetryStateToVariant(const TelemetryState &state) const
+{
+    QVariantMap result;
+    result["processedFrames"] = static_cast<qlonglong>(state.processedFrames);
+    result["skippedFrames"] = static_cast<qlonglong>(state.skippedFrames);
+    result["detections"] = static_cast<qlonglong>(state.detections);
+    result["events"] = static_cast<qlonglong>(state.events);
+    result["lastInferenceMs"] = state.lastInferenceMs;
+    result["averageInferenceMs"] = state.processedFrames > 0
+        ? (state.totalInferenceMs / static_cast<double>(state.processedFrames))
+        : 0.0;
+    return result;
+}
+
+QString AnalyticsEngine::countsToText(const QMap<QString, int> &counts) const
+{
+    QStringList parts;
+    for (auto it = counts.begin(); it != counts.end(); ++it) {
+        parts.append(QString("%1: %2").arg(it.key(), QString::number(it.value())));
+    }
+    return parts.join(", ");
+}
+
+QVariantMap AnalyticsEngine::analyticsDiagnostics() const
+{
+    QVariantMap result;
+    QVariantList cameraStats;
+    QVariantList moduleStats;
+
+    quint64 processedFrames = 0;
+    quint64 skippedFrames = 0;
+    quint64 detections = 0;
+    quint64 events = 0;
+    double totalInferenceMs = 0.0;
+    quint64 inferenceSamples = 0;
+
+    {
+        QMutexLocker locker(&m_telemetryMutex);
+
+        for (auto it = m_cameraTelemetry.begin(); it != m_cameraTelemetry.end(); ++it) {
+            QVariantMap entry = telemetryStateToVariant(it.value());
+            entry["cameraId"] = it.key();
+            cameraStats.append(entry);
+
+            processedFrames += it.value().processedFrames;
+            skippedFrames += it.value().skippedFrames;
+            detections += it.value().detections;
+            events += it.value().events;
+            totalInferenceMs += it.value().totalInferenceMs;
+            inferenceSamples += it.value().processedFrames;
+        }
+
+        for (auto it = m_moduleTelemetry.begin(); it != m_moduleTelemetry.end(); ++it) {
+            QVariantMap entry = telemetryStateToVariant(it.value());
+            entry["moduleType"] = static_cast<int>(it.key());
+            entry["moduleName"] = m_modules.contains(it.key()) ? m_modules[it.key()].name : QString::number(static_cast<int>(it.key()));
+            moduleStats.append(entry);
+        }
+    }
+
+    result["processedFrames"] = static_cast<qlonglong>(processedFrames);
+    result["skippedFrames"] = static_cast<qlonglong>(skippedFrames);
+    result["detections"] = static_cast<qlonglong>(detections);
+    result["events"] = static_cast<qlonglong>(events);
+    result["averageInferenceMs"] = inferenceSamples > 0
+        ? (totalInferenceMs / static_cast<double>(inferenceSamples))
+        : 0.0;
+    result["cameraStats"] = cameraStats;
+    result["moduleStats"] = moduleStats;
+    result["eventBufferSize"] = m_analyticsEvents.size();
+    result["eventStoreReady"] = m_eventStoreReady;
+    result["eventStorePath"] = m_eventStorePath;
+    result["objectCounterSummary"] = getObjectCounterSummary();
+
+    {
+        QMutexLocker locker(&m_counterMutex);
+        int activeTracks = 0;
+        for (auto it = m_counterStates.begin(); it != m_counterStates.end(); ++it) {
+            activeTracks += it.value().tracks.size();
+        }
+        result["activeTracks"] = activeTracks;
+    }
+
+    {
+        QMutexLocker locker(&m_uploadMutex);
+        result["uploadQueueDepth"] = m_uploadQueue.size() + (m_uploadActive ? 1 : 0);
+    }
+
+    return result;
+}
+
+QVariantMap AnalyticsEngine::getModuleTelemetry(int type) const
+{
+    const ModuleType moduleType = static_cast<ModuleType>(type);
+    QVariantMap result;
+
+    {
+        QMutexLocker locker(&m_telemetryMutex);
+        result = telemetryStateToVariant(m_moduleTelemetry.value(moduleType));
+    }
+
+    result["moduleType"] = type;
+    result["moduleName"] = m_modules.contains(moduleType) ? m_modules[moduleType].name : QString::number(type);
+
+    if (moduleType == ObjectCounter) {
+        QVariantMap countsMap;
+        QVariantList cameras;
+        QMap<QString, int> aggregateCounts;
+        int activeTracks = 0;
+        int totalUniqueObjects = 0;
+
+        QMutexLocker locker(&m_counterMutex);
+        for (auto it = m_counterStates.begin(); it != m_counterStates.end(); ++it) {
+            QVariantMap cameraEntry;
+            cameraEntry["cameraId"] = it.key();
+            cameraEntry["activeTracks"] = it.value().tracks.size();
+            cameraEntry["countsText"] = countsToText(it.value().totalCountByLabel);
+
+            QVariantMap perCameraCounts;
+            int perCameraTotal = 0;
+            for (auto countIt = it.value().totalCountByLabel.begin(); countIt != it.value().totalCountByLabel.end(); ++countIt) {
+                perCameraCounts.insert(countIt.key(), countIt.value());
+                aggregateCounts[countIt.key()] += countIt.value();
+                perCameraTotal += countIt.value();
+            }
+
+            cameraEntry["counts"] = perCameraCounts;
+            cameraEntry["totalUniqueObjects"] = perCameraTotal;
+            cameras.append(cameraEntry);
+
+            activeTracks += it.value().tracks.size();
+            totalUniqueObjects += perCameraTotal;
+        }
+
+        for (auto it = aggregateCounts.begin(); it != aggregateCounts.end(); ++it) {
+            countsMap.insert(it.key(), it.value());
+        }
+
+        result["activeTracks"] = activeTracks;
+        result["counts"] = countsMap;
+        result["countsText"] = countsToText(aggregateCounts);
+        result["totalUniqueObjects"] = totalUniqueObjects;
+        result["cameras"] = cameras;
+    } else {
+        result["activeTracks"] = 0;
+        result["counts"] = QVariantMap();
+        result["countsText"] = QString();
+        result["totalUniqueObjects"] = 0;
+        result["cameras"] = QVariantList();
+    }
+
+    return result;
+}
+
+QVariantList AnalyticsEngine::getObjectCounterSummary() const
+{
+    QVariantList result;
+    QMutexLocker locker(&m_counterMutex);
+
+    for (auto it = m_counterStates.begin(); it != m_counterStates.end(); ++it) {
+        QVariantMap countsMap;
+        int totalUniqueObjects = 0;
+
+        for (auto countIt = it.value().totalCountByLabel.begin(); countIt != it.value().totalCountByLabel.end(); ++countIt) {
+            countsMap.insert(countIt.key(), countIt.value());
+            totalUniqueObjects += countIt.value();
+        }
+
+        QVariantMap entry;
+        entry["cameraId"] = it.key();
+        entry["activeTracks"] = it.value().tracks.size();
+        entry["counts"] = countsMap;
+        entry["countsText"] = countsToText(it.value().totalCountByLabel);
+        entry["totalUniqueObjects"] = totalUniqueObjects;
+        result.append(entry);
+    }
+
+    return result;
 }
 
 void AnalyticsEngine::initialize()
@@ -307,11 +635,13 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
     });
     
     connect(reply, &QNetworkReply::sslErrors, this, [this, reply](const QList<QSslError> &errors) {
+        QStringList errorMessages;
         qWarning() << "SSL Errors:";
         for (const auto &error : errors) {
             qWarning() << error.errorString();
+            errorMessages.append(error.errorString());
         }
-        reply->ignoreSslErrors(); // TEMPORARY: Ignore SSL errors to test if that's the blocker
+        reply->abort();
     });
 
     connect(reply, &QNetworkReply::finished, this, [this, type, isRuntime, reply]() {
@@ -377,47 +707,639 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
     });
 }
 
+QVariantMap AnalyticsEngine::detectionToVariant(const DetectionBox &box, const QString &moduleId, ModuleType moduleType) const
+{
+    QVariantMap detection;
+    detection["label"] = box.label;
+    detection["confidence"] = box.confidence;
+    detection["x"] = box.bounds.x();
+    detection["y"] = box.bounds.y();
+    detection["w"] = box.bounds.width();
+    detection["h"] = box.bounds.height();
+    detection["moduleId"] = moduleId;
+    detection["moduleType"] = static_cast<int>(moduleType);
+    if (!box.trackId.isEmpty()) {
+        detection["trackId"] = box.trackId;
+    }
+    return detection;
+}
+
+bool AnalyticsEngine::zoneMatches(const QVariantMap &detection, const QString &zonePreset) const
+{
+    const QString normalizedZone = zonePreset.trimmed().toLower();
+    if (normalizedZone.isEmpty() || normalizedZone == "full") {
+        return true;
+    }
+
+    const double x = detection.value("x").toDouble();
+    const double y = detection.value("y").toDouble();
+    const double w = detection.value("w").toDouble();
+    const double h = detection.value("h").toDouble();
+    const double cx = x + (w / 2.0);
+    const double cy = y + (h / 2.0);
+
+    if (normalizedZone == "center") {
+        return cx >= 0.25 && cx <= 0.75 && cy >= 0.25 && cy <= 0.75;
+    }
+    if (normalizedZone == "left") {
+        return cx <= 0.40;
+    }
+    if (normalizedZone == "right") {
+        return cx >= 0.60;
+    }
+    if (normalizedZone == "top") {
+        return cy <= 0.40;
+    }
+    if (normalizedZone == "bottom") {
+        return cy >= 0.60;
+    }
+
+    return true;
+}
+
+void AnalyticsEngine::recordSkippedFrame(const QString &cameraId)
+{
+    QMutexLocker locker(&m_telemetryMutex);
+    m_cameraTelemetry[cameraId].skippedFrames += 1;
+}
+
+bool AnalyticsEngine::moduleHasClipRules(const QVariantMap &extraConfig) const
+{
+    const QVariantList rules = extraConfig.value("rules").toList();
+    for (const QVariant &ruleVar : rules) {
+        const QVariantMap rule = ruleVar.toMap();
+        if (!rule.value("enabled", true).toBool()) {
+            continue;
+        }
+        if (rule.value("actionClip", false).toBool()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString AnalyticsEngine::ensurePendingClip(const QString &cameraId, const QVariantMap &detection, qint64 nowMs)
+{
+    QString clipPath;
+    bool requestStream = false;
+
+    {
+        QMutexLocker locker(&m_eventMutex);
+        PendingEvent &evt = m_pendingEvents[cameraId];
+
+        if (evt.endMs < nowMs) {
+            evt.startMs = nowMs - (m_evidencePreSeconds * 1000);
+            evt.endMs = nowMs + (m_evidencePostSeconds * 1000);
+            evt.detection = detection;
+            evt.snapshotPath.clear();
+            evt.streamRequested = false;
+            evt.clipPath.clear();
+        } else {
+            evt.endMs = nowMs + (m_evidencePostSeconds * 1000);
+            if (evt.detection.isEmpty()) {
+                evt.detection = detection;
+            }
+        }
+
+        if (evt.clipPath.isEmpty()) {
+            const QString dir = ensureDir(m_evidenceClipsDir);
+            if (!dir.isEmpty()) {
+                evt.clipPath = QDir(dir).filePath(buildEvidenceFileName(cameraId, "clip") + ".mp4");
+            }
+        }
+
+        clipPath = evt.clipPath;
+        if (!evt.streamRequested && !clipPath.isEmpty() && receivers(SIGNAL(clipRequested(QString,QString,int))) > 0) {
+            evt.streamRequested = true;
+            requestStream = true;
+        }
+    }
+
+    if (requestStream) {
+        emit clipRequested(cameraId, clipPath, 0);
+    }
+
+    return clipPath;
+}
+
+QVariantList AnalyticsEngine::updateObjectCounterTracking(const QString &cameraId, QVector<DetectionBox> &results, qint64 nowMs)
+{
+    QVariantList generatedEvents;
+    if (results.isEmpty()) {
+        QMutexLocker locker(&m_counterMutex);
+        auto it = m_counterStates.find(cameraId);
+        if (it == m_counterStates.end()) {
+            return generatedEvents;
+        }
+
+        auto trackIt = it->tracks.begin();
+        while (trackIt != it->tracks.end()) {
+            if (nowMs - trackIt->lastSeenMs > 2500) {
+                trackIt = it->tracks.erase(trackIt);
+            } else {
+                ++trackIt;
+            }
+        }
+        return generatedEvents;
+    }
+
+    auto centerForBounds = [](const QRectF &bounds) {
+        return QPointF(bounds.x() + (bounds.width() / 2.0), bounds.y() + (bounds.height() / 2.0));
+    };
+
+    struct MatchCandidate {
+        QString trackId;
+        int detectionIndex = -1;
+        double distanceSquared = 0.0;
+    };
+
+    constexpr double maxTrackingDistanceSquared = 0.14 * 0.14;
+
+    QMutexLocker locker(&m_counterMutex);
+    CounterState &state = m_counterStates[cameraId];
+
+    auto trackIt = state.tracks.begin();
+    while (trackIt != state.tracks.end()) {
+        if (nowMs - trackIt->lastSeenMs > 2500) {
+            trackIt = state.tracks.erase(trackIt);
+        } else {
+            ++trackIt;
+        }
+    }
+
+    QVector<MatchCandidate> candidates;
+    for (auto it = state.tracks.begin(); it != state.tracks.end(); ++it) {
+        for (int i = 0; i < results.size(); ++i) {
+            if (results[i].label.compare(it.value().label, Qt::CaseInsensitive) != 0) {
+                continue;
+            }
+
+            const QPointF detectionCenter = centerForBounds(results[i].bounds);
+            const double dx = detectionCenter.x() - it.value().center.x();
+            const double dy = detectionCenter.y() - it.value().center.y();
+            const double distanceSquared = (dx * dx) + (dy * dy);
+
+            if (distanceSquared <= maxTrackingDistanceSquared) {
+                candidates.append({it.key(), i, distanceSquared});
+            }
+        }
+    }
+
+    std::sort(candidates.begin(), candidates.end(), [](const MatchCandidate &a, const MatchCandidate &b) {
+        return a.distanceSquared < b.distanceSquared;
+    });
+
+    QSet<QString> matchedTracks;
+    QSet<int> matchedDetections;
+    QStringList touchedTrackIds;
+
+    for (const MatchCandidate &candidate : candidates) {
+        if (matchedTracks.contains(candidate.trackId) || matchedDetections.contains(candidate.detectionIndex)) {
+            continue;
+        }
+
+        auto existingTrack = state.tracks.find(candidate.trackId);
+        if (existingTrack == state.tracks.end()) {
+            continue;
+        }
+
+        matchedTracks.insert(candidate.trackId);
+        matchedDetections.insert(candidate.detectionIndex);
+        touchedTrackIds.append(candidate.trackId);
+
+        existingTrack->bounds = results[candidate.detectionIndex].bounds;
+        existingTrack->center = centerForBounds(results[candidate.detectionIndex].bounds);
+        existingTrack->lastSeenMs = nowMs;
+        existingTrack->seenFrames += 1;
+        existingTrack->confidence = results[candidate.detectionIndex].confidence;
+        results[candidate.detectionIndex].trackId = existingTrack->id;
+    }
+
+    for (int i = 0; i < results.size(); ++i) {
+        if (matchedDetections.contains(i)) {
+            continue;
+        }
+
+        TrackState track;
+        track.id = QString::number(state.nextTrackNumber++);
+        track.label = results[i].label;
+        track.bounds = results[i].bounds;
+        track.center = centerForBounds(results[i].bounds);
+        track.lastSeenMs = nowMs;
+        track.seenFrames = 1;
+        track.confidence = results[i].confidence;
+        track.counted = false;
+
+        state.tracks.insert(track.id, track);
+        touchedTrackIds.append(track.id);
+        results[i].trackId = track.id;
+    }
+
+    touchedTrackIds.removeDuplicates();
+
+    for (const QString &trackId : touchedTrackIds) {
+        auto existingTrack = state.tracks.find(trackId);
+        if (existingTrack == state.tracks.end()) {
+            continue;
+        }
+
+        if (existingTrack->counted || existingTrack->seenFrames < 2) {
+            continue;
+        }
+
+        existingTrack->counted = true;
+        state.totalCountByLabel[existingTrack->label] += 1;
+
+        QVariantMap event;
+        event["id"] = QString("counter:%1:%2:%3").arg(cameraId, existingTrack->id, QString::number(nowMs));
+        event["eventType"] = "counter";
+        event["timestampMs"] = nowMs;
+        event["timestampText"] = QDateTime::fromMSecsSinceEpoch(nowMs).toString("yyyy-MM-dd HH:mm:ss.zzz");
+        event["cameraId"] = cameraId;
+        event["moduleId"] = QStringLiteral("Object Counter");
+        event["moduleType"] = static_cast<int>(ObjectCounter);
+        event["label"] = existingTrack->label;
+        event["confidence"] = existingTrack->confidence;
+        event["trackId"] = existingTrack->id;
+        event["x"] = existingTrack->bounds.x();
+        event["y"] = existingTrack->bounds.y();
+        event["w"] = existingTrack->bounds.width();
+        event["h"] = existingTrack->bounds.height();
+        event["countTotal"] = state.totalCountByLabel.value(existingTrack->label);
+        event["activeTracks"] = state.tracks.size();
+        event["countsText"] = countsToText(state.totalCountByLabel);
+        event["message"] = QString("%1 counted on %2").arg(existingTrack->label, cameraId);
+        generatedEvents.append(event);
+    }
+
+    return generatedEvents;
+}
+
+QVariantList AnalyticsEngine::evaluateRulesForDetection(const QString &cameraId,
+                                                        ModuleType moduleType,
+                                                        const QString &moduleId,
+                                                        const QVariantMap &detection,
+                                                        const QVariantList &rules,
+                                                        const QImage &frame,
+                                                        qint64 nowMs,
+                                                        const QString &existingSnapshotPath,
+                                                        const QString &existingClipPath)
+{
+    QVariantList generatedEvents;
+
+    for (const QVariant &ruleVar : rules) {
+        const QVariantMap rule = ruleVar.toMap();
+        if (!rule.value("enabled", true).toBool()) {
+            continue;
+        }
+
+        const QString ruleLabel = rule.value("label").toString().trimmed();
+        const QString detectionLabel = detection.value("label").toString();
+        if (!ruleLabel.isEmpty() && ruleLabel.compare("any", Qt::CaseInsensitive) != 0 && ruleLabel.compare(detectionLabel, Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        if (detection.value("confidence").toDouble() < rule.value("minConfidence", 0.6).toDouble()) {
+            continue;
+        }
+
+        const QString zonePreset = rule.value("zonePreset", "full").toString();
+        if (!zoneMatches(detection, zonePreset)) {
+            continue;
+        }
+
+        QString ruleId = rule.value("id").toString().trimmed();
+        if (ruleId.isEmpty()) {
+            ruleId = rule.value("name").toString().trimmed();
+        }
+        if (ruleId.isEmpty()) {
+            ruleId = QString("%1:%2").arg(detectionLabel, zonePreset);
+        }
+
+        const int cooldownMs = qMax(1000, rule.value("cooldownMs", 5000).toInt());
+        bool allowed = false;
+        const QString cooldownKey = QString("%1:%2:%3").arg(cameraId, QString::number(static_cast<int>(moduleType)), ruleId);
+        {
+            QMutexLocker locker(&m_ruleMutex);
+            const qint64 lastTriggered = m_ruleLastTriggeredMs.value(cooldownKey, 0);
+            if ((nowMs - lastTriggered) >= cooldownMs) {
+                m_ruleLastTriggeredMs[cooldownKey] = nowMs;
+                allowed = true;
+            }
+        }
+
+        if (!allowed) {
+            continue;
+        }
+
+        const bool actionSnapshot = rule.value("actionSnapshot", true).toBool();
+        const bool actionClip = rule.value("actionClip", true).toBool();
+        const bool actionNotify = rule.value("actionNotify", false).toBool();
+        const QString ruleName = rule.value("name").toString().trimmed();
+
+        QVariantMap event = detection;
+        event["id"] = QString("rule:%1:%2:%3:%4").arg(cameraId,
+                                                           QString::number(static_cast<int>(moduleType)),
+                                                           ruleId,
+                                                           QString::number(nowMs));
+        event["eventType"] = "rule";
+        event["timestampMs"] = nowMs;
+        event["timestampText"] = QDateTime::fromMSecsSinceEpoch(nowMs).toString("yyyy-MM-dd HH:mm:ss.zzz");
+        event["cameraId"] = cameraId;
+        event["moduleId"] = moduleId;
+        event["moduleType"] = static_cast<int>(moduleType);
+        event["ruleId"] = ruleId;
+        event["ruleName"] = ruleName;
+        event["zonePreset"] = zonePreset;
+        event["actionSnapshot"] = actionSnapshot;
+        event["actionClip"] = actionClip;
+        event["actionNotify"] = actionNotify;
+        event["message"] = ruleName.isEmpty()
+            ? QString("%1 matched on %2").arg(detectionLabel, cameraId)
+            : QString("%1 matched on %2").arg(ruleName, cameraId);
+
+        if (actionSnapshot) {
+            QString snapshotPath = existingSnapshotPath;
+            if (snapshotPath.isEmpty()) {
+                snapshotPath = saveSnapshotImage(frame, cameraId, detection, moduleId);
+            }
+            if (!snapshotPath.isEmpty()) {
+                event["snapshotPath"] = snapshotPath;
+                event["snapshotUrl"] = QUrl::fromLocalFile(snapshotPath).toString();
+                if (m_uploadEnabled) {
+                    enqueueUpload(snapshotPath);
+                }
+            }
+        }
+
+        if (actionClip) {
+            QString clipPath = existingClipPath;
+            if (clipPath.isEmpty()) {
+                clipPath = ensurePendingClip(cameraId, detection, nowMs);
+            }
+            if (!clipPath.isEmpty()) {
+                event["clipPath"] = clipPath;
+                event["clipUrl"] = QUrl::fromLocalFile(clipPath).toString();
+            }
+        }
+
+        generatedEvents.append(event);
+    }
+
+    return generatedEvents;
+}
+
+void AnalyticsEngine::appendAnalyticsEvents(const QVariantList &events)
+{
+    if (events.isEmpty()) {
+        return;
+    }
+
+    persistAnalyticsEvents(events);
+
+    for (int i = events.size() - 1; i >= 0; --i) {
+        m_analyticsEvents.prepend(events.at(i));
+    }
+
+    while (m_analyticsEvents.size() > m_maxAnalyticsEvents) {
+        m_analyticsEvents.removeLast();
+    }
+
+    emit analyticsEventsChanged();
+}
+
+void AnalyticsEngine::initEventStore()
+{
+    QMutexLocker locker(&m_eventStoreMutex);
+    if (m_eventStorePath.isEmpty() || m_eventStoreConnectionName.isEmpty()) {
+        return;
+    }
+
+    QDir dir(QFileInfo(m_eventStorePath).absolutePath());
+    if (!dir.exists() && !dir.mkpath(".")) {
+        qWarning() << "Failed to create analytics event store directory:" << dir.absolutePath();
+        return;
+    }
+
+    QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", m_eventStoreConnectionName);
+    db.setDatabaseName(m_eventStorePath);
+    if (!db.open()) {
+        qWarning() << "Failed to open analytics event store:" << db.lastError().text();
+        return;
+    }
+
+    QSqlQuery query(db);
+    query.exec("PRAGMA journal_mode=WAL");
+    query.exec("PRAGMA synchronous=NORMAL");
+
+    const bool tableOk = query.exec(
+        "CREATE TABLE IF NOT EXISTS analytics_events ("
+        "id TEXT PRIMARY KEY,"
+        "timestamp_ms INTEGER NOT NULL,"
+        "camera_id TEXT,"
+        "module_type INTEGER,"
+        "module_id TEXT,"
+        "event_type TEXT,"
+        "label TEXT,"
+        "confidence REAL,"
+        "rule_name TEXT,"
+        "message TEXT,"
+        "snapshot_path TEXT,"
+        "clip_path TEXT,"
+        "payload_json TEXT NOT NULL"
+        ")"
+    );
+
+    if (!tableOk) {
+        qWarning() << "Failed to initialize analytics_events table:" << query.lastError().text();
+        db.close();
+        return;
+    }
+
+    query.exec("CREATE INDEX IF NOT EXISTS idx_analytics_events_time ON analytics_events(timestamp_ms DESC)");
+    query.exec("CREATE INDEX IF NOT EXISTS idx_analytics_events_camera ON analytics_events(camera_id)");
+    query.exec("CREATE INDEX IF NOT EXISTS idx_analytics_events_module ON analytics_events(module_type)");
+    query.exec("CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type)");
+
+    m_eventStoreReady = true;
+}
+
+QVariantList AnalyticsEngine::loadRecentAnalyticsEvents(int limit) const
+{
+    QVariantList events;
+    QMutexLocker locker(&m_eventStoreMutex);
+    if (!m_eventStoreReady || !QSqlDatabase::contains(m_eventStoreConnectionName)) {
+        return events;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_eventStoreConnectionName, false);
+    if (!db.isOpen()) {
+        return events;
+    }
+
+    QSqlQuery query(db);
+    query.prepare("SELECT payload_json FROM analytics_events ORDER BY timestamp_ms DESC, rowid DESC LIMIT ?");
+    query.addBindValue(qMax(1, limit));
+    if (!query.exec()) {
+        qWarning() << "Failed to load analytics events:" << query.lastError().text();
+        return events;
+    }
+
+    while (query.next()) {
+        const QByteArray payload = query.value(0).toString().toUtf8();
+        const QJsonDocument doc = QJsonDocument::fromJson(payload);
+        if (doc.isObject()) {
+            events.append(doc.object().toVariantMap());
+        }
+    }
+
+    return events;
+}
+
+void AnalyticsEngine::persistAnalyticsEvents(const QVariantList &events)
+{
+    QMutexLocker locker(&m_eventStoreMutex);
+    if (!m_eventStoreReady || !QSqlDatabase::contains(m_eventStoreConnectionName)) {
+        return;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_eventStoreConnectionName, false);
+    if (!db.isOpen()) {
+        return;
+    }
+
+    if (!db.transaction()) {
+        qWarning() << "Failed to start analytics event transaction:" << db.lastError().text();
+    }
+
+    QSqlQuery query(db);
+    query.prepare(
+        "INSERT OR REPLACE INTO analytics_events ("
+        "id, timestamp_ms, camera_id, module_type, module_id, event_type, label, confidence, "
+        "rule_name, message, snapshot_path, clip_path, payload_json"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+
+    bool ok = true;
+    for (const QVariant &eventVar : events) {
+        const QVariantMap event = eventVar.toMap();
+        QString id = event.value("id").toString();
+        const qint64 timestampMs = event.value("timestampMs").toLongLong();
+        if (id.isEmpty()) {
+            id = QStringLiteral("event:%1:%2:%3")
+                .arg(event.value("cameraId").toString(),
+                     event.value("moduleType").toString(),
+                     QString::number(timestampMs));
+        }
+
+        query.bindValue(0, id);
+        query.bindValue(1, timestampMs > 0 ? timestampMs : QDateTime::currentMSecsSinceEpoch());
+        query.bindValue(2, event.value("cameraId").toString());
+        query.bindValue(3, event.value("moduleType").toInt());
+        query.bindValue(4, event.value("moduleId").toString());
+        query.bindValue(5, event.value("eventType").toString());
+        query.bindValue(6, event.value("label").toString());
+        query.bindValue(7, event.value("confidence").toDouble());
+        query.bindValue(8, event.value("ruleName").toString());
+        query.bindValue(9, event.value("message").toString());
+        query.bindValue(10, event.value("snapshotPath").toString());
+        query.bindValue(11, event.value("clipPath").toString());
+        query.bindValue(12, QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(event)).toJson(QJsonDocument::Compact)));
+
+        if (!query.exec()) {
+            ok = false;
+            qWarning() << "Failed to persist analytics event:" << query.lastError().text();
+        }
+    }
+
+    if (ok) {
+        db.commit();
+    } else {
+        db.rollback();
+    }
+}
+
+void AnalyticsEngine::deleteStoredAnalyticsEvents(int type, const QString &cameraId)
+{
+    QMutexLocker locker(&m_eventStoreMutex);
+    if (!m_eventStoreReady || !QSqlDatabase::contains(m_eventStoreConnectionName)) {
+        return;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_eventStoreConnectionName, false);
+    if (!db.isOpen()) {
+        return;
+    }
+
+    QSqlQuery query(db);
+    if (type < 0 && cameraId.trimmed().isEmpty()) {
+        if (!query.exec("DELETE FROM analytics_events")) {
+            qWarning() << "Failed to clear analytics events:" << query.lastError().text();
+        }
+        return;
+    }
+
+    query.prepare(
+        "DELETE FROM analytics_events "
+        "WHERE (? < 0 OR module_type = ?) "
+        "AND (? = '' OR camera_id = ?)"
+    );
+    query.addBindValue(type);
+    query.addBindValue(type);
+    query.addBindValue(cameraId.trimmed());
+    query.addBindValue(cameraId.trimmed());
+    if (!query.exec()) {
+        qWarning() << "Failed to delete analytics events:" << query.lastError().text();
+    }
+}
+
 void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
 {
-    // Check if we are already processing a frame for this camera
     {
         QMutexLocker locker(&m_processingMutex);
         if (m_processingCameras.contains(cameraId)) {
-            return; // Skip frame to maintain real-time performance
+            recordSkippedFrame(cameraId);
+            return;
         }
-        
-        // Throttling for frame *ingestion* to avoid queue buildup is good,
-        // but we also need snapshot throttling.
         m_processingCameras.insert(cameraId);
     }
 
-    // Prepare data for background thread
     QImage frameCopy = frame;
-    
-    // Collect active backends to avoid accessing m_modules (which is not thread-safe) in the worker thread
+
     struct TaskContext {
         QString moduleId;
         ModuleType moduleType;
         std::shared_ptr<InferenceBackend> backend;
         QString snapshotsDir;
         QString faceSnapshotsMode;
+        QVariantMap extraConfig;
     };
+
     QList<TaskContext> tasks;
+    const bool evidenceEnabled = m_evidenceEnabled;
+    bool frameBufferRequired = evidenceEnabled && m_evidenceClipsEnabled;
 
     for (auto it = m_modules.begin(); it != m_modules.end(); ++it) {
-        ModuleType type = it.key();
-        bool globallyEnabled = it.value().enabled && it.value().status == "ready";
-        bool cameraEnabled = m_cameraModules.value(cameraId).value(type, false);
+        const ModuleType type = it.key();
+        const bool globallyEnabled = it.value().enabled && it.value().status == "ready";
+        const bool cameraEnabled = m_cameraModules.value(cameraId).value(type, false);
 
-        if (globallyEnabled && cameraEnabled) {
-            tasks.append({
-                it.value().name, 
-                type,
-                it.value().backend, 
-                it.value().snapshotsDir, 
-                it.value().faceSnapshotsMode
-            });
+        if (!globallyEnabled || !cameraEnabled) {
+            continue;
         }
+
+        if (evidenceEnabled && moduleHasClipRules(it.value().extraConfig)) {
+            frameBufferRequired = true;
+        }
+
+        tasks.append({
+            it.value().name,
+            type,
+            it.value().backend,
+            it.value().snapshotsDir,
+            it.value().faceSnapshotsMode,
+            it.value().extraConfig
+        });
     }
 
     if (tasks.isEmpty()) {
@@ -426,159 +1348,174 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
         return;
     }
 
-    // Run in background thread
-    (void)QtConcurrent::run([this, frameCopy, cameraId, tasks]() {
+    (void)QtConcurrent::run([this, frameCopy, cameraId, tasks, evidenceEnabled, frameBufferRequired]() {
         QVariantList allDetections;
+        QVariantList generatedEvents;
+        QVariantList moduleStats;
 
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        QElapsedTimer frameTimer;
+        frameTimer.start();
 
-        const bool evidenceActive = (m_evidenceEnabled || m_evidenceSnapshotsEnabled || m_evidenceClipsEnabled);
-
-        // Buffer frames for evidence (pre/post clips)
-        if (evidenceActive) {
+        if (frameBufferRequired) {
             appendFrameToBuffer(cameraId, frameCopy, nowMs);
         }
 
         for (const auto &task : tasks) {
-            if (!task.backend) continue;
+            if (!task.backend) {
+                continue;
+            }
 
+            QElapsedTimer moduleTimer;
+            moduleTimer.start();
             QVector<DetectionBox> results = task.backend->detect(frameCopy);
-            
-            for (const auto &box : results) {
-                QVariantMap detection;
-                detection["label"] = box.label;
-                detection["confidence"] = box.confidence;
-                detection["x"] = box.bounds.x();
-                detection["y"] = box.bounds.y();
-                detection["w"] = box.bounds.width();
-                detection["h"] = box.bounds.height();
-                detection["moduleId"] = task.moduleId;
-                
+            const double moduleInferenceMs = static_cast<double>(moduleTimer.nsecsElapsed()) / 1000000.0;
+
+            QVariantList taskEvents;
+            const QVariantList rules = task.extraConfig.value("rules").toList();
+            const bool hasConfiguredRules = !rules.isEmpty();
+
+            if (task.moduleType == ObjectCounter) {
+                const QVariantList counterEvents = updateObjectCounterTracking(cameraId, results, nowMs);
+                if (evidenceEnabled) {
+                    for (const QVariant &counterEventVar : counterEvents) {
+                        taskEvents.append(counterEventVar);
+                    }
+                }
+            }
+
+            for (const DetectionBox &box : results) {
+                const QVariantMap detection = detectionToVariant(box, task.moduleId, task.moduleType);
                 allDetections.append(detection);
 
-                // Evidence capture (generic snapshot + event scheduling)
-                if (evidenceActive && box.confidence >= m_evidenceMinConfidence) {
-                    bool shouldTrigger = false;
+                QString existingSnapshotPath;
+                QString existingClipPath;
+
+                if (evidenceEnabled && box.confidence >= m_evidenceMinConfidence) {
+                    bool shouldTriggerEvidence = false;
+                    const QString eventKey = cameraId + ":" + QString::number(static_cast<int>(task.moduleType));
+
                     {
                         QMutexLocker eventLocker(&m_eventMutex);
-                        qint64 last = m_lastEventTimes.value(cameraId, 0);
-                        if (nowMs - last >= m_evidenceCooldownMs) {
-                            shouldTrigger = true;
-                            m_lastEventTimes[cameraId] = nowMs;
+                        const qint64 lastTriggered = m_lastEventTimes.value(eventKey, 0);
+                        if ((nowMs - lastTriggered) >= m_evidenceCooldownMs) {
+                            shouldTriggerEvidence = true;
+                            m_lastEventTimes[eventKey] = nowMs;
                         }
                     }
 
-                    if (shouldTrigger) {
-                        // Create or extend pending event
-                        {
-                            QMutexLocker eventLocker(&m_eventMutex);
-                            PendingEvent &evt = m_pendingEvents[cameraId];
-                            if (evt.endMs < nowMs) {
-                                evt.startMs = nowMs - (m_evidencePreSeconds * 1000);
-                                evt.endMs = nowMs + (m_evidencePostSeconds * 1000);
-                                evt.detection = detection;
-                                evt.snapshotPath.clear();
-                                evt.clipPath.clear();
-                                evt.streamRequested = false;
-                            } else {
-                                evt.endMs = nowMs + (m_evidencePostSeconds * 1000);
-                            }
-                        }
-
-                        if (m_evidenceClipsEnabled && receivers(SIGNAL(clipRequested(QString,QString,int))) > 0) {
-                            QString dir = ensureDir(m_evidenceClipsDir);
-                            if (!dir.isEmpty()) {
-                                QString name = buildEvidenceFileName(cameraId, "clip");
-                                QString path = QDir(dir).filePath(name + ".mp4");
-                                emit clipRequested(cameraId, path, 0);
-                                QMutexLocker eventLocker(&m_eventMutex);
-                                m_pendingEvents[cameraId].streamRequested = true;
-                                m_pendingEvents[cameraId].clipPath = path;
-                            }
+                    if (shouldTriggerEvidence) {
+                        if (m_evidenceClipsEnabled) {
+                            existingClipPath = ensurePendingClip(cameraId, detection, nowMs);
                         }
 
                         if (m_evidenceSnapshotsEnabled) {
-                            QString snapshotPath = saveSnapshotImage(frameCopy, cameraId, detection, task.moduleId);
-                            if (!snapshotPath.isEmpty()) {
-                                QMutexLocker eventLocker(&m_eventMutex);
-                                m_pendingEvents[cameraId].snapshotPath = snapshotPath;
-                                if (m_uploadEnabled) {
-                                    enqueueUpload(snapshotPath);
-                                }
+                            existingSnapshotPath = saveSnapshotImage(frameCopy, cameraId, detection, task.moduleId);
+                            if (!existingSnapshotPath.isEmpty() && m_uploadEnabled) {
+                                enqueueUpload(existingSnapshotPath);
                             }
+                        }
+
+                        if (!hasConfiguredRules) {
+                            QVariantMap genericEvent = detection;
+                            genericEvent["id"] = QString("detection:%1:%2:%3:%4")
+                                .arg(cameraId,
+                                     QString::number(static_cast<int>(task.moduleType)),
+                                     box.label,
+                                     QString::number(nowMs));
+                            genericEvent["eventType"] = "detection";
+                            genericEvent["timestampMs"] = nowMs;
+                            genericEvent["timestampText"] = QDateTime::fromMSecsSinceEpoch(nowMs).toString("yyyy-MM-dd HH:mm:ss.zzz");
+                            genericEvent["cameraId"] = cameraId;
+                            genericEvent["moduleId"] = task.moduleId;
+                            genericEvent["moduleType"] = static_cast<int>(task.moduleType);
+                            genericEvent["message"] = QString("%1 detected on %2").arg(box.label, cameraId);
+
+                            if (!existingSnapshotPath.isEmpty()) {
+                                genericEvent["snapshotPath"] = existingSnapshotPath;
+                                genericEvent["snapshotUrl"] = QUrl::fromLocalFile(existingSnapshotPath).toString();
+                            }
+
+                            if (!existingClipPath.isEmpty()) {
+                                genericEvent["clipPath"] = existingClipPath;
+                                genericEvent["clipUrl"] = QUrl::fromLocalFile(existingClipPath).toString();
+                            }
+
+                            taskEvents.append(genericEvent);
                         }
                     }
                 }
 
-                // --- Snapshot Logic ---
-                // Only save if directory is configured and exists
-                if (!task.snapshotsDir.isEmpty() && QDir(task.snapshotsDir).exists()) {
-                    
-                    // Throttling: Check if we saved recently for this camera + module
-                    // We need a thread-safe check. 
-                    // Using invokeMethod to check/update state on main thread is too slow for blocking the worker.
-                    // Accessing m_lastSnapshotTimes with mutex here.
+                if (evidenceEnabled) {
+                    const QVariantList ruleEvents = evaluateRulesForDetection(cameraId,
+                                                                              task.moduleType,
+                                                                              task.moduleId,
+                                                                              detection,
+                                                                              rules,
+                                                                              frameCopy,
+                                                                              nowMs,
+                                                                              existingSnapshotPath,
+                                                                              existingClipPath);
+                    for (const QVariant &ruleEventVar : ruleEvents) {
+                        taskEvents.append(ruleEventVar);
+                    }
+                }
+
+                if (evidenceEnabled && !task.snapshotsDir.isEmpty() && QDir(task.snapshotsDir).exists()) {
                     bool canSnapshot = false;
-                    QString key = cameraId + "_" + QString::number(task.moduleType);
-                    qint64 now = QDateTime::currentMSecsSinceEpoch();
-                    
+                    const QString key = cameraId + "_" + QString::number(task.moduleType);
+                    const qint64 snapshotNow = QDateTime::currentMSecsSinceEpoch();
+
                     {
                         QMutexLocker snapshotLocker(&m_snapshotMutex);
-                        qint64 last = m_lastSnapshotTimes.value(key, 0);
-                        if (now - last > 1000) { // Limit: 1 snapshot per second per module per camera
-                            m_lastSnapshotTimes[key] = now;
+                        const qint64 last = m_lastSnapshotTimes.value(key, 0);
+                        if (snapshotNow - last > 1000) {
+                            m_lastSnapshotTimes[key] = snapshotNow;
                             canSnapshot = true;
                         }
                     }
 
-                    if (canSnapshot && box.confidence > 0.6) { // Ensure quality
+                    if (canSnapshot && box.confidence > 0.6f) {
                         if (task.moduleType == FaceDetector && task.faceSnapshotsMode != "disabled") {
-                            // Calculate rect with padding (50% larger)
-                            int x = (int)(box.bounds.x() * frameCopy.width());
-                            int y = (int)(box.bounds.y() * frameCopy.height());
-                            int w = (int)(box.bounds.width() * frameCopy.width());
-                            int h = (int)(box.bounds.height() * frameCopy.height());
+                            int x = static_cast<int>(box.bounds.x() * frameCopy.width());
+                            int y = static_cast<int>(box.bounds.y() * frameCopy.height());
+                            int w = static_cast<int>(box.bounds.width() * frameCopy.width());
+                            int h = static_cast<int>(box.bounds.height() * frameCopy.height());
 
-                            // Apply padding
-                            int padW = w / 2;
-                            int padH = h / 2;
-                            
+                            const int padW = w / 2;
+                            const int padH = h / 2;
+
                             x -= padW / 2;
                             y -= padH / 2;
                             w += padW;
                             h += padH;
 
-                            // Clamp values
                             x = std::max(0, x);
                             y = std::max(0, y);
                             w = std::min(frameCopy.width() - x, w);
                             h = std::min(frameCopy.height() - y, h);
-                            
-                            QRect faceRect(x, y, w, h);
+
+                            const QRect faceRect(x, y, w, h);
                             if (w > 10 && h > 10) {
                                 QImage faceImg = frameCopy.copy(faceRect);
-                                
-                                // TODO: Implement "anonymized" blur if needed
                                 if (task.faceSnapshotsMode == "anonymized") {
-                                    // Scale down and up to pixelate
-                                    faceImg = faceImg.scaled(w/10, h/10).scaled(w, h);
+                                    faceImg = faceImg.scaled(qMax(1, w / 10), qMax(1, h / 10)).scaled(w, h);
                                 }
-                                
-                                QString filename = QString("%1/face_%2_%3.jpg")
+
+                                const QString filename = QString("%1/face_%2_%3.jpg")
                                     .arg(task.snapshotsDir)
                                     .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss-zzz"))
-                                    .arg((int)(box.confidence * 100));
-                                    
+                                    .arg(static_cast<int>(box.confidence * 100));
                                 faceImg.save(filename, "JPG", 100);
                             }
                         } else if (task.moduleType == LicensePlate) {
-                            int x = (int)(box.bounds.x() * frameCopy.width());
-                            int y = (int)(box.bounds.y() * frameCopy.height());
-                            int w = (int)(box.bounds.width() * frameCopy.width());
-                            int h = (int)(box.bounds.height() * frameCopy.height());
+                            int x = static_cast<int>(box.bounds.x() * frameCopy.width());
+                            int y = static_cast<int>(box.bounds.y() * frameCopy.height());
+                            int w = static_cast<int>(box.bounds.width() * frameCopy.width());
+                            int h = static_cast<int>(box.bounds.height() * frameCopy.height());
 
-                            int padW = w / 3;
-                            int padH = h / 3;
+                            const int padW = w / 3;
+                            const int padH = h / 3;
 
                             x -= padW / 2;
                             y -= padH / 2;
@@ -590,41 +1527,81 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
                             w = std::min(frameCopy.width() - x, w);
                             h = std::min(frameCopy.height() - y, h);
 
-                            QRect plateRect(x, y, w, h);
+                            const QRect plateRect(x, y, w, h);
                             if (w > 10 && h > 10) {
                                 QImage plateImg = frameCopy.copy(plateRect);
-                                QString filename = QString("%1/plate_%2_%3.jpg")
+                                const QString filename = QString("%1/plate_%2_%3.jpg")
                                     .arg(task.snapshotsDir)
                                     .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_HH-mm-ss-zzz"))
-                                    .arg((int)(box.confidence * 100));
+                                    .arg(static_cast<int>(box.confidence * 100));
                                 plateImg.save(filename, "JPG", 95);
                             }
                         }
                     }
                 }
-                // ---------------------
+            }
+
+            QVariantMap moduleTelemetry;
+            moduleTelemetry["moduleType"] = static_cast<int>(task.moduleType);
+            moduleTelemetry["detections"] = results.size();
+            moduleTelemetry["events"] = taskEvents.size();
+            moduleTelemetry["inferenceMs"] = moduleInferenceMs;
+            moduleStats.append(moduleTelemetry);
+
+            for (const QVariant &eventVar : taskEvents) {
+                generatedEvents.append(eventVar);
             }
         }
 
-        // Check if any pending events are ready to finalize clips
-        if (evidenceActive && m_evidenceClipsEnabled) {
+        if (evidenceEnabled) {
             scheduleClipIfReady(cameraId, nowMs);
         }
+        const double frameInferenceMs = static_cast<double>(frameTimer.nsecsElapsed()) / 1000000.0;
 
-        // Report back to main thread
-        QMetaObject::invokeMethod(this, [this, cameraId, allDetections]() {
+        QMetaObject::invokeMethod(this, [this, cameraId, allDetections, generatedEvents, moduleStats, frameInferenceMs]() {
             {
                 QMutexLocker locker(&m_processingMutex);
                 m_processingCameras.remove(cameraId);
             }
-            
-            // Emit individual detections for specific listeners
-            for (const auto &detVar : allDetections) {
-                QVariantMap det = detVar.toMap();
-                emit detectionOccurred(det["moduleId"].toString(), cameraId, det);
+
+            {
+                QMutexLocker locker(&m_telemetryMutex);
+                TelemetryState &cameraTelemetry = m_cameraTelemetry[cameraId];
+                cameraTelemetry.processedFrames += 1;
+                cameraTelemetry.detections += static_cast<quint64>(allDetections.size());
+                cameraTelemetry.events += static_cast<quint64>(generatedEvents.size());
+                cameraTelemetry.lastInferenceMs = frameInferenceMs;
+                cameraTelemetry.totalInferenceMs += frameInferenceMs;
+
+                for (const QVariant &moduleStatVar : moduleStats) {
+                    const QVariantMap moduleStat = moduleStatVar.toMap();
+                    const ModuleType moduleType = static_cast<ModuleType>(moduleStat.value("moduleType").toInt());
+                    TelemetryState &moduleTelemetry = m_moduleTelemetry[moduleType];
+                    moduleTelemetry.processedFrames += 1;
+                    moduleTelemetry.detections += static_cast<quint64>(moduleStat.value("detections").toInt());
+                    moduleTelemetry.events += static_cast<quint64>(moduleStat.value("events").toInt());
+                    moduleTelemetry.lastInferenceMs = moduleStat.value("inferenceMs").toDouble();
+                    moduleTelemetry.totalInferenceMs += moduleTelemetry.lastInferenceMs;
+                }
             }
 
-            // Emit batch for UI overlay
+            if (!generatedEvents.isEmpty()) {
+                appendAnalyticsEvents(generatedEvents);
+                for (const QVariant &eventVar : generatedEvents) {
+                    const QVariantMap event = eventVar.toMap();
+                    if (event.value("actionNotify").toBool()) {
+                        emit analyticsNotificationRaised(event);
+                    }
+                }
+            }
+
+            emit analyticsTelemetryChanged();
+
+            for (const QVariant &detVar : allDetections) {
+                const QVariantMap det = detVar.toMap();
+                emit detectionOccurred(det.value("moduleId").toString(), cameraId, det);
+            }
+
             emit frameProcessed(cameraId, allDetections);
         });
     });
@@ -654,7 +1631,19 @@ bool AnalyticsEngine::hasActiveModules(const QString &cameraId) const
 
 void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType type, bool enabled)
 {
-    m_cameraModules[cameraId][type] = enabled;
+    const bool previous = m_cameraModules.value(cameraId).value(type, false);
+    if (previous == enabled) {
+        return;
+    }
+
+    if (enabled) {
+        m_cameraModules[cameraId][type] = true;
+    } else if (m_cameraModules.contains(cameraId)) {
+        m_cameraModules[cameraId].remove(type);
+        if (m_cameraModules[cameraId].isEmpty()) {
+            m_cameraModules.remove(cameraId);
+        }
+    }
 
     if (enabled) {
         if (m_modules.contains(type)) {
@@ -689,7 +1678,15 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
         {
             QMutexLocker eventLocker(&m_eventMutex);
             m_pendingEvents.remove(cameraId);
-            m_lastEventTimes.remove(cameraId);
+            auto lastEventIt = m_lastEventTimes.begin();
+            const QString prefix = cameraId + ":";
+            while (lastEventIt != m_lastEventTimes.end()) {
+                if (lastEventIt.key() == cameraId || lastEventIt.key().startsWith(prefix)) {
+                    lastEventIt = m_lastEventTimes.erase(lastEventIt);
+                } else {
+                    ++lastEventIt;
+                }
+            }
         }
         {
             QMutexLocker snapshotLocker(&m_snapshotMutex);
@@ -703,7 +1700,25 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
                 }
             }
         }
+        {
+            QMutexLocker counterLocker(&m_counterMutex);
+            m_counterStates.remove(cameraId);
+        }
+        {
+            QMutexLocker ruleLocker(&m_ruleMutex);
+            auto it = m_ruleLastTriggeredMs.begin();
+            const QString prefix = cameraId + ":";
+            while (it != m_ruleLastTriggeredMs.end()) {
+                if (it.key().startsWith(prefix)) {
+                    it = m_ruleLastTriggeredMs.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
     }
+
+    emit settingsChanged();
 }
 
 bool AnalyticsEngine::isCameraModuleEnabled(const QString &cameraId, ModuleType type) const
@@ -716,20 +1731,62 @@ QVariantMap AnalyticsEngine::getSettings() const
     QVariantMap settings;
     QVariantMap modules;
     QVariantMap moduleConfigs;
+    QVariantMap cameraModules;
     for (auto it = m_modules.begin(); it != m_modules.end(); ++it) {
         QVariantMap moduleSettings;
         moduleSettings["enabled"] = it.value().enabled;
         modules[QString::number(it.key())] = moduleSettings;
 
-        QVariantMap cfg;
+        QVariantMap cfg = it.value().extraConfig;
         if (!it.value().snapshotsDir.isEmpty()) cfg["snapshotsDir"] = it.value().snapshotsDir;
         if (!it.value().faceSnapshotsMode.isEmpty()) cfg["faceSnapshotsMode"] = it.value().faceSnapshotsMode;
-        if (!it.value().faceSnapshotKeyHex.isEmpty()) cfg["faceSnapshotKeyHex"] = it.value().faceSnapshotKeyHex;
         moduleConfigs[QString::number(it.key())] = cfg;
+    }
+    for (auto cameraIt = m_cameraModules.begin(); cameraIt != m_cameraModules.end(); ++cameraIt) {
+        QVariantMap assignments;
+        for (auto moduleIt = cameraIt.value().begin(); moduleIt != cameraIt.value().end(); ++moduleIt) {
+            assignments[QString::number(static_cast<int>(moduleIt.key()))] = moduleIt.value();
+        }
+        if (!assignments.isEmpty()) {
+            cameraModules[cameraIt.key()] = assignments;
+        }
     }
     settings["modules"] = modules;
     settings["moduleConfigs"] = moduleConfigs;
-    settings["evidence"] = getEvidenceSettings();
+    settings["cameraModules"] = cameraModules;
+    settings["evidence"] = buildEvidenceSettings(true);
+    return settings;
+}
+
+QVariantMap AnalyticsEngine::getPersistedSettings() const
+{
+    QVariantMap settings;
+    QVariantMap modules;
+    QVariantMap moduleConfigs;
+    QVariantMap cameraModules;
+    for (auto it = m_modules.begin(); it != m_modules.end(); ++it) {
+        QVariantMap moduleSettings;
+        moduleSettings["enabled"] = it.value().enabled;
+        modules[QString::number(it.key())] = moduleSettings;
+
+        QVariantMap cfg = it.value().extraConfig;
+        if (!it.value().snapshotsDir.isEmpty()) cfg["snapshotsDir"] = it.value().snapshotsDir;
+        if (!it.value().faceSnapshotsMode.isEmpty()) cfg["faceSnapshotsMode"] = it.value().faceSnapshotsMode;
+        moduleConfigs[QString::number(it.key())] = cfg;
+    }
+    for (auto cameraIt = m_cameraModules.begin(); cameraIt != m_cameraModules.end(); ++cameraIt) {
+        QVariantMap assignments;
+        for (auto moduleIt = cameraIt.value().begin(); moduleIt != cameraIt.value().end(); ++moduleIt) {
+            assignments[QString::number(static_cast<int>(moduleIt.key()))] = moduleIt.value();
+        }
+        if (!assignments.isEmpty()) {
+            cameraModules[cameraIt.key()] = assignments;
+        }
+    }
+    settings["modules"] = modules;
+    settings["moduleConfigs"] = moduleConfigs;
+    settings["cameraModules"] = cameraModules;
+    settings["evidence"] = buildEvidenceSettings(false);
     return settings;
 }
 
@@ -763,9 +1820,33 @@ void AnalyticsEngine::setSettings(const QVariantMap &settings)
     if (settings.contains("evidence")) {
         setEvidenceSettings(settings.value("evidence").toMap());
     }
+
+    if (settings.contains("cameraModules")) {
+        QMap<QString, QMap<ModuleType, bool>> restoredCameraModules;
+        QVariantMap cameras = settings.value("cameraModules").toMap();
+        for (auto cameraIt = cameras.begin(); cameraIt != cameras.end(); ++cameraIt) {
+            const QString cameraId = cameraIt.key();
+            QVariantMap assignments = cameraIt.value().toMap();
+            for (auto moduleIt = assignments.begin(); moduleIt != assignments.end(); ++moduleIt) {
+                const int type = moduleIt.key().toInt();
+                if (m_modules.contains(static_cast<ModuleType>(type)) && moduleIt.value().toBool()) {
+                    restoredCameraModules[cameraId][static_cast<ModuleType>(type)] = true;
+                }
+            }
+        }
+        if (restoredCameraModules != m_cameraModules) {
+            m_cameraModules = restoredCameraModules;
+            emit settingsChanged();
+        }
+    }
 }
 
 QVariantMap AnalyticsEngine::getEvidenceSettings() const
+{
+    return buildEvidenceSettings(true);
+}
+
+QVariantMap AnalyticsEngine::buildEvidenceSettings(bool includeSensitiveData) const
 {
     QVariantMap s;
     s["enabled"] = m_evidenceEnabled;
@@ -783,10 +1864,14 @@ QVariantMap AnalyticsEngine::getEvidenceSettings() const
     s["uploadProvider"] = m_uploadProvider;
     s["uploadTarget"] = m_uploadTarget;
     s["uploadClientId"] = m_uploadClientId;
-    s["uploadClientSecret"] = m_uploadClientSecret;
-    s["uploadAccessToken"] = m_uploadAccessToken;
-    s["uploadRefreshToken"] = m_uploadRefreshToken;
     s["uploadExpiresAt"] = (qint64)m_uploadExpiresAt;
+
+    if (includeSensitiveData) {
+        s["uploadClientSecret"] = m_uploadClientSecret;
+        s["uploadAccessToken"] = m_uploadAccessToken;
+        s["uploadRefreshToken"] = m_uploadRefreshToken;
+    }
+
     return s;
 }
 
@@ -823,12 +1908,43 @@ void AnalyticsEngine::setEvidenceSettings(const QVariantMap &settings)
     if (settings.contains("uploadProvider")) setIfChanged(m_uploadProvider, settings.value("uploadProvider").toString());
     if (settings.contains("uploadTarget")) setIfChanged(m_uploadTarget, settings.value("uploadTarget").toString());
     if (settings.contains("uploadClientId")) setIfChanged(m_uploadClientId, settings.value("uploadClientId").toString());
-    if (settings.contains("uploadClientSecret")) setIfChanged(m_uploadClientSecret, settings.value("uploadClientSecret").toString());
-    if (settings.contains("uploadAccessToken")) setIfChanged(m_uploadAccessToken, settings.value("uploadAccessToken").toString());
-    if (settings.contains("uploadRefreshToken")) setIfChanged(m_uploadRefreshToken, settings.value("uploadRefreshToken").toString());
     if (settings.contains("uploadExpiresAt")) {
         qint64 v = settings.value("uploadExpiresAt").toLongLong();
-        if (m_uploadExpiresAt != v) m_uploadExpiresAt = v;
+        if (m_uploadExpiresAt != v) {
+            m_uploadExpiresAt = v;
+            changed = true;
+        }
+    }
+
+    auto syncSecret = [&](const QString &settingName, QString &field) {
+        if (settings.contains(settingName)) {
+            const QString value = settings.value(settingName).toString();
+            if (field != value) {
+                field = value;
+                changed = true;
+            }
+
+            if (value.isEmpty()) {
+                deleteSecretFromKeychain(settingName);
+            } else {
+                writeSecretToKeychain(settingName, value);
+            }
+            return;
+        }
+
+        const QString storedValue = readSecretFromKeychain(settingName);
+        if (field != storedValue) {
+            field = storedValue;
+            changed = true;
+        }
+    };
+
+    syncSecret("uploadClientSecret", m_uploadClientSecret);
+    syncSecret("uploadAccessToken", m_uploadAccessToken);
+    syncSecret("uploadRefreshToken", m_uploadRefreshToken);
+
+    if (settings.contains("uploadClientSecret") || settings.contains("uploadAccessToken") || settings.contains("uploadRefreshToken")) {
+        qInfo() << "AnalyticsEngine: upload secrets synchronized to keychain";
     }
 
     // Keep buffer large enough to cover pre/post
@@ -840,6 +1956,47 @@ void AnalyticsEngine::setEvidenceSettings(const QVariantMap &settings)
     if (changed) {
         emit settingsChanged();
     }
+}
+
+QString AnalyticsEngine::analyticsSecretKey(const QString &name) const
+{
+    return QStringLiteral("analytics/upload/%1").arg(name);
+}
+
+QString AnalyticsEngine::readSecretFromKeychain(const QString &name) const
+{
+    QKeychain::ReadPasswordJob job(QStringLiteral("OpenIPC"));
+    job.setKey(analyticsSecretKey(name));
+
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+
+    return job.textData();
+}
+
+void AnalyticsEngine::writeSecretToKeychain(const QString &name, const QString &value) const
+{
+    QKeychain::WritePasswordJob job(QStringLiteral("OpenIPC"));
+    job.setKey(analyticsSecretKey(name));
+    job.setTextData(value);
+
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+}
+
+void AnalyticsEngine::deleteSecretFromKeychain(const QString &name) const
+{
+    QKeychain::DeletePasswordJob job(QStringLiteral("OpenIPC"));
+    job.setKey(analyticsSecretKey(name));
+
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
 }
 
 static QString base64Url(const QByteArray &data)
@@ -1063,25 +2220,43 @@ void AnalyticsEngine::setModuleConfig(int type, const QVariantMap &config)
     
     if (config.contains("faceSnapshotsMode")) {
         QString newMode = config["faceSnapshotsMode"].toString();
+        if (newMode == "encrypted") {
+            qWarning() << "Encrypted face snapshots are not available; using anonymized mode";
+            newMode = "anonymized";
+        }
+        if (newMode != "disabled" && newMode != "standard" && newMode != "anonymized") {
+            newMode = "standard";
+        }
         if (ctx.faceSnapshotsMode != newMode) {
             ctx.faceSnapshotsMode = newMode;
             changed = true;
         }
     }
     
-    if (config.contains("faceSnapshotKeyHex")) {
-        QString newKey = config["faceSnapshotKeyHex"].toString();
-        if (ctx.faceSnapshotKeyHex != newKey) {
-            ctx.faceSnapshotKeyHex = newKey;
-            ctx.faceSnapshotKeyConfigured = !newKey.isEmpty();
+    for (auto it = config.begin(); it != config.end(); ++it) {
+        const QString key = it.key();
+        if (key == "snapshotsDir" ||
+            key == "faceSnapshotsMode" ||
+            key == "faceSnapshotKeyHex" ||
+            key == "resetFaceSnapshotKey" ||
+            key == "faceSnapshotKeyConfigured" ||
+            key == "enabled") {
+            continue;
+        }
+
+        const QVariant value = it.value();
+        if (!value.isValid() || value.isNull()) {
+            if (ctx.extraConfig.contains(key)) {
+                ctx.extraConfig.remove(key);
+                changed = true;
+            }
+            continue;
+        }
+
+        if (!ctx.extraConfig.contains(key) || ctx.extraConfig.value(key) != value) {
+            ctx.extraConfig.insert(key, value);
             changed = true;
         }
-    }
-    
-    if (config.contains("resetFaceSnapshotKey") && config["resetFaceSnapshotKey"].toBool()) {
-        ctx.faceSnapshotKeyHex = "";
-        ctx.faceSnapshotKeyConfigured = false;
-        changed = true;
     }
     
     if (changed) {
@@ -1095,11 +2270,9 @@ QVariantMap AnalyticsEngine::getModuleConfig(int type) const
     if (!m_modules.contains((ModuleType)type)) return QVariantMap();
     
     const ModuleContext &ctx = m_modules[(ModuleType)type];
-    QVariantMap config;
+    QVariantMap config = ctx.extraConfig;
     config["snapshotsDir"] = ctx.snapshotsDir;
     config["faceSnapshotsMode"] = ctx.faceSnapshotsMode;
-    config["faceSnapshotKeyConfigured"] = ctx.faceSnapshotKeyConfigured;
-    // Do not return the actual key for security, just whether it's configured
     
     return config;
 }

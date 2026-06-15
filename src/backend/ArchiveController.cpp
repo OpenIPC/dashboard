@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QMetaObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QCoreApplication>
@@ -30,22 +31,37 @@ void ArchiveController::login(const QString &ip, int port, const QString &userna
 
 void ArchiveController::logout()
 {
-    // No SDK logout needed for local files
+    // No SDK logout needed for local files, but invalidate pending async work.
+    ++m_searchRequestId;
+    if (m_isSearching) {
+        m_isSearching = false;
+        emit isSearchingChanged();
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        m_files.clear();
+    }
+    emit searchResultsChanged();
 }
 
 void ArchiveController::search(const QDateTime &startTime, const QDateTime &endTime, const QString &cameraIp, const QString &recordingsPath)
 {
-    if (m_isSearching) {
-        qWarning() << "Already searching";
-        return;
+    const quint64 requestId = ++m_searchRequestId;
+    if (!m_isSearching) {
+        m_isSearching = true;
+        emit isSearchingChanged();
     }
 
-    m_isSearching = true;
-    emit isSearchingChanged();
-    m_files.clear();
+    {
+        QMutexLocker locker(&m_mutex);
+        m_files.clear();
+    }
     emit searchResultsChanged();
 
-    QtConcurrent::run([this, startTime, endTime, cameraIp, recordingsPath]() {
+    QPointer<ArchiveController> controller(this);
+    QtConcurrent::run([controller, requestId, startTime, endTime, cameraIp, recordingsPath]() {
+        QList<RecordedFile> foundFiles;
         int nFileCount = 0;
         
         QDir dir(recordingsPath);
@@ -97,49 +113,85 @@ void ArchiveController::search(const QDateTime &startTime, const QDateTime &endT
                     rf.fileName = fileName;
                     rf.filePath = filePath;
                     rf.type = 0;
-                    
-                    QMutexLocker locker(&m_mutex);
-                    m_files.append(rf);
+
+                    foundFiles.append(rf);
                     nFileCount++;
                 }
             }
         }
 
-        m_isSearching = false;
-        emit isSearchingChanged();
-        emit searchResultsChanged();
-        emit searchFinished(nFileCount);
+        if (!controller) {
+            return;
+        }
+
+        QMetaObject::invokeMethod(controller, [controller, requestId, foundFiles, nFileCount]() {
+            if (!controller || controller->m_searchRequestId != requestId) {
+                return;
+            }
+
+            {
+                QMutexLocker locker(&controller->m_mutex);
+                controller->m_files = foundFiles;
+            }
+
+            controller->m_isSearching = false;
+            emit controller->isSearchingChanged();
+            emit controller->searchResultsChanged();
+            emit controller->searchFinished(nFileCount);
+        }, Qt::QueuedConnection);
     });
 }
 
 void ArchiveController::download(int index, const QString &savePath)
 {
-    if (index < 0 || index >= m_files.size()) {
-        emit downloadError(index, "Invalid index");
-        return;
+    RecordedFile rf;
+    {
+        QMutexLocker locker(&m_mutex);
+        if (index < 0 || index >= m_files.size()) {
+            emit downloadError(index, "Invalid index");
+            return;
+        }
+        rf = m_files[index];
     }
 
-    RecordedFile rf = m_files[index];
-    
-    QtConcurrent::run([this, index, rf, savePath]() {
-        if (QFile::exists(savePath)) {
-            QFile::remove(savePath);
+    QPointer<ArchiveController> controller(this);
+    QtConcurrent::run([controller, index, rf, savePath]() {
+        const QString errorText = [savePath, rf]() -> QString {
+            if (QFile::exists(savePath)) {
+                QFile::remove(savePath);
+            }
+
+            if (QFile::copy(rf.filePath, savePath)) {
+                return QString();
+            }
+
+            return QStringLiteral("Failed to copy file");
+        }();
+
+        if (!controller) {
+            return;
         }
-        
-        if (QFile::copy(rf.filePath, savePath)) {
-            emit downloadProgress(index, 100);
-            emit downloadFinished(index);
-        } else {
-            emit downloadError(index, "Failed to copy file");
-        }
+
+        QMetaObject::invokeMethod(controller, [controller, index, errorText]() {
+            if (!controller) {
+                return;
+            }
+
+            if (errorText.isEmpty()) {
+                emit controller->downloadProgress(index, 100);
+                emit controller->downloadFinished(index);
+            } else {
+                emit controller->downloadError(index, errorText);
+            }
+        }, Qt::QueuedConnection);
     });
 }
 
-
-
 void ArchiveController::exportVideo(const QString &inputFile, const QString &outputFile, qint64 startMs, qint64 endMs)
 {
-    QtConcurrent::run([this, inputFile, outputFile, startMs, endMs]() {
+    QPointer<ArchiveController> controller(this);
+    QtConcurrent::run([controller, inputFile, outputFile, startMs, endMs]() {
+        QString errorText;
         // Check for ffmpeg
         QString ffmpegPath = QCoreApplication::applicationDirPath() + "/ffmpeg.exe";
         if (!QFile::exists(ffmpegPath)) {
@@ -164,28 +216,35 @@ void ArchiveController::exportVideo(const QString &inputFile, const QString &out
         process.start();
         
         if (!process.waitForStarted()) {
-             emit exportError("Failed to start ffmpeg. Ensure ffmpeg.exe is in the application folder.");
-             return;
+            errorText = QStringLiteral("Failed to start ffmpeg. Ensure ffmpeg.exe is in the application folder.");
+        } else if (!process.waitForFinished(-1)) {
+            errorText = QStringLiteral("ffmpeg process failed or timed out.");
+        } else if (process.exitCode() != 0) {
+            errorText = QStringLiteral("ffmpeg returned error: ") + QString::fromUtf8(process.readAllStandardError());
         }
-        
-        if (!process.waitForFinished(-1)) {
-             emit exportError("ffmpeg process failed or timed out.");
-             return;
+
+        if (!controller) {
+            return;
         }
-        
-        if (process.exitCode() == 0) {
-            emit exportFinished();
-        } else {
-            emit exportError("ffmpeg returned error: " + process.readAllStandardError());
-        }
+
+        QMetaObject::invokeMethod(controller, [controller, errorText]() {
+            if (!controller) {
+                return;
+            }
+
+            if (errorText.isEmpty()) {
+                emit controller->exportFinished();
+            } else {
+                emit controller->exportError(errorText);
+            }
+        }, Qt::QueuedConnection);
     });
 }
 
 QVariantList ArchiveController::searchResults() const
 {
     QVariantList list;
-    // QMutexLocker locker(&m_mutex); // Can't use locker in const method easily without mutable mutex
-    // Assuming called from main thread after search finished
+    QMutexLocker locker(&m_mutex);
     
     for (const auto &f : m_files) {
         QVariantMap map;

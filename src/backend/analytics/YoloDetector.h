@@ -5,13 +5,6 @@
 #include <QMap>
 #include <QMutex>
 
-// Define ORT_API_MANUAL_INIT before including onnxruntime_cxx_api.h
-// to prevent it from trying to use features not available in the C API struct
-// or to force a specific initialization mode if needed.
-// However, the error suggests missing members in OrtApi struct for the C++ wrapper.
-// Let's try to define the API version before including.
-#include <onnxruntime_cxx_api.h>
-
 // This class wraps the ONNX Runtime C++ API
 class YoloDetector : public InferenceBackend {
 public:
@@ -32,25 +25,25 @@ public:
     QString getError() const override;
 
 private:
+    struct Impl;
+    struct PreprocessInfo {
+        int inputW = 640;
+        int inputH = 640;
+        int sourceW = 0;
+        int sourceH = 0;
+        float scale = 1.0f;
+        int padX = 0;
+        int padY = 0;
+    };
+
     Options m_options;
     bool m_loaded = false;
     QString m_error;
-    
-    // ONNX Runtime resources
-    std::unique_ptr<Ort::Env> m_env;
-    std::unique_ptr<Ort::Session> m_session;
-    std::unique_ptr<Ort::SessionOptions> m_sessionOptions;
-    
-    // Model input/output info
-    std::vector<const char*> m_inputNodeNames;
-    std::vector<const char*> m_outputNodeNames;
-    std::vector<std::string> m_inputNodeNamesAllocated;
-    std::vector<std::string> m_outputNodeNamesAllocated;
-    std::vector<int64_t> m_inputShape;
+    std::unique_ptr<Impl> m_impl;
     
     // Helper for NMS (Non-Maximum Suppression)
     void applyNMS(QVector<DetectionBox> &detections);
     
     // Helper for preprocessing
-    std::vector<float> preprocess(const QImage &img, int &outW, int &outH);
+    std::vector<float> preprocess(const QImage &img, PreprocessInfo &info);
 };

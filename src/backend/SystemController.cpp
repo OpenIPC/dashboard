@@ -24,6 +24,8 @@
 #include <QAuthenticator>
 #include <QUrlQuery>
 #include <QDesktopServices>
+#include <QEventLoop>
+#include <keychain.h>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <psapi.h>
@@ -398,6 +400,15 @@ void SystemController::addManualCamera(const QString &name, const QString &ip, c
 
     if (!m_cameraModel->contains(cam.ip)) {
             m_cameraModel->addCamera(cam);
+            
+            if (!cam.password.isEmpty() && !cam.ip.isEmpty()) {
+                auto job = new QKeychain::WritePasswordJob("OpenIPC");
+                job->setAutoDelete(true);
+                job->setKey(cam.ip);
+                job->setTextData(cam.password);
+                job->start();
+            }
+            
             saveState();
     }
 }
@@ -435,6 +446,21 @@ void SystemController::updateCamera(int index, const QString &name, const QStrin
     cam.password = password;
     
     m_cameraModel->setCamera(index, cam);
+    
+    if (!cam.ip.isEmpty()) {
+        if (cam.password.isEmpty()) {
+            auto job = new QKeychain::DeletePasswordJob("OpenIPC");
+            job->setAutoDelete(true);
+            job->setKey(cam.ip);
+            job->start();
+        } else {
+            auto job = new QKeychain::WritePasswordJob("OpenIPC");
+            job->setAutoDelete(true);
+            job->setKey(cam.ip);
+            job->setTextData(cam.password);
+            job->start();
+        }
+    }
 
     // Update grid model if this camera is present
     bool gridUpdated = false;
@@ -467,11 +493,38 @@ void SystemController::updateCamera(int index, const QString &name, const QStrin
     saveState();
 }
 
+void SystemController::updateCameraStatus(const QString &cameraIp, const QString &status)
+{
+    const QString ip = cameraIp.trimmed();
+    const QString normalizedStatus = status.trimmed();
+    if (ip.isEmpty() || normalizedStatus.isEmpty()) {
+        return;
+    }
+
+    const int listIndex = m_cameraModel->findIndexByIp(ip);
+    if (listIndex >= 0) {
+        m_cameraModel->setStatus(listIndex, normalizedStatus);
+    }
+
+    for (int i = 0; i < m_gridModel->rowCount(); ++i) {
+        const Camera gridCamera = m_gridModel->getCamera(i);
+        if (gridCamera.ip == ip) {
+            m_gridModel->setStatus(i, normalizedStatus);
+        }
+    }
+}
+
 void SystemController::removeDevice(int index)
 {
     // Also remove from grid if present
     Camera cam = m_cameraModel->getCamera(index);
     if (!cam.ip.isEmpty()) {
+        // Delete password from keychain
+        auto job = new QKeychain::DeletePasswordJob("OpenIPC");
+        job->setAutoDelete(true);
+        job->setKey(cam.ip);
+        job->start();
+        
         // Find in grid model and remove
         // This is a bit inefficient but works for small lists
         for (int i = 0; i < m_gridModel->rowCount(); ++i) {
@@ -631,7 +684,8 @@ QJsonObject SystemController::cameraToJson(const Camera &cam)
     obj["port"] = cam.port;
     obj["onvifPort"] = cam.onvifPort;
     obj["login"] = cam.login;
-    obj["password"] = cam.password;
+    // Do not save password in plain text JSON anymore
+    // obj["password"] = cam.password;
     obj["group"] = cam.group;
     return obj;
 }
@@ -649,8 +703,30 @@ Camera SystemController::cameraFromJson(const QJsonObject &obj)
     cam.port = obj.value("port").toInt(80);
     cam.onvifPort = obj.value("onvifPort").toInt(80);
     cam.login = obj.value("login").toString();
-    cam.password = obj.value("password").toString();
     cam.group = obj.value("group").toString();
+    
+    // Migration & Loading logic for passwords
+    if (obj.contains("password")) {
+        // Legacy plain text password found. Migrate to keychain.
+        cam.password = obj.value("password").toString();
+        if (!cam.password.isEmpty() && !cam.ip.isEmpty()) {
+            auto job = new QKeychain::WritePasswordJob("OpenIPC");
+            job->setAutoDelete(true);
+            job->setKey(cam.ip);
+            job->setTextData(cam.password);
+            job->start();
+        }
+    } else if (!cam.ip.isEmpty()) {
+        // Load from keychain asynchronously
+        auto job = new QKeychain::ReadPasswordJob("OpenIPC");
+        job->setAutoDelete(true);
+        job->setKey(cam.ip);
+        QString ip = cam.ip;
+        // We need a way to update the model when the job finishes.
+        // Since cameraFromJson returns a copy, we can't update it directly here.
+        // We will handle the async update in loadState or via a signal.
+    }
+    
     return cam;
 }
 
@@ -684,7 +760,7 @@ void SystemController::performSave()
     }
     root["cameras"] = cameras;
     root["grid"] = grid;
-    root["analytics"] = QJsonObject::fromVariantMap(m_analyticsEngine->getSettings());
+    root["analytics"] = QJsonObject::fromVariantMap(m_analyticsEngine->getPersistedSettings());
     root["appSettings"] = QJsonObject::fromVariantMap(m_appSettings);
     root["cameraGroups"] = groups;
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
@@ -907,8 +983,37 @@ void SystemController::loadState()
 
     const QJsonArray cameras = root.value("cameras").toArray();
     for (const auto &v : cameras) {
-        m_cameraModel->addCamera(cameraFromJson(v.toObject()));
-        const QString groupName = v.toObject().value("group").toString();
+        QJsonObject obj = v.toObject();
+        Camera cam = cameraFromJson(obj);
+        m_cameraModel->addCamera(cam);
+        
+        // If password wasn't in JSON, load it from keychain
+        if (!obj.contains("password") && !cam.ip.isEmpty()) {
+            auto job = new QKeychain::ReadPasswordJob("OpenIPC");
+            job->setAutoDelete(true);
+            job->setKey(cam.ip);
+            connect(job, &QKeychain::Job::finished, this, [this, ip = cam.ip, job]() {
+                if (!job->error()) {
+                    int idx = m_cameraModel->findIndexByIp(ip);
+                    if (idx >= 0) {
+                        Camera c = m_cameraModel->getCamera(idx);
+                        c.password = job->textData();
+                        m_cameraModel->setCamera(idx, c);
+                    }
+                    // Also update grid model if present
+                    for (int i = 0; i < m_gridModel->rowCount(); ++i) {
+                        Camera gc = m_gridModel->getCamera(i);
+                        if (gc.ip == ip) {
+                            gc.password = job->textData();
+                            m_gridModel->setCamera(i, gc);
+                        }
+                    }
+                }
+            });
+            job->start();
+        }
+
+        const QString groupName = obj.value("group").toString();
         if (!groupName.isEmpty() && !m_cameraGroups.contains(groupName, Qt::CaseInsensitive)) {
             m_cameraGroups.append(groupName);
         }
@@ -1394,7 +1499,7 @@ void SystemController::applyLayoutTemplate(const QVariantMap &layout)
 {
     int rows = layout.value("rows", 1).toInt();
     int cols = layout.value("cols", 1).toInt();
-    
+
     // If no specific cells defined, use uniform preset
     if (!layout.contains("cells")) {
         applyLayoutPreset(rows, cols);
@@ -1429,6 +1534,31 @@ void SystemController::applyLayoutTemplate(const QVariantMap &layout)
     
     setGridRows(rows);
     setGridCols(cols);
+}
+
+QString SystemController::getCameraPassword(const QString &cameraIp) const
+{
+    if (cameraIp.isEmpty()) {
+        return QString();
+    }
+
+    Camera camera = m_cameraModel->findByIp(cameraIp);
+    if (camera.password.isEmpty()) {
+        camera = m_gridModel->findByIp(cameraIp);
+    }
+    if (!camera.password.isEmpty()) {
+        return camera.password;
+    }
+
+    QKeychain::ReadPasswordJob job(QStringLiteral("OpenIPC"));
+    job.setKey(cameraIp);
+
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+
+    return job.textData();
 }
 
 void SystemController::takeDahuaSnapshot(const QString &ip, int port, const QString &login, const QString &password)
@@ -1491,6 +1621,7 @@ void SystemController::takeDahuaSnapshot(const QString &ip, int port, const QStr
         QImage img;
         if (img.loadFromData(data)) {
             qInfo() << "Snapshot downloaded. Resolution:" << img.width() << "x" << img.height();
+
             
             // Explicitly rotate 180 degrees using QTransform
             QTransform transform;
@@ -1776,7 +1907,7 @@ bool SystemController::exportConfiguration(const QString &path)
     }
     root["cameras"] = cameras;
     root["grid"] = grid;
-    root["analytics"] = QJsonObject::fromVariantMap(m_analyticsEngine->getSettings());
+    root["analytics"] = QJsonObject::fromVariantMap(m_analyticsEngine->getPersistedSettings());
     root["appSettings"] = QJsonObject::fromVariantMap(m_appSettings);
     root["cameraGroups"] = groups;
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);

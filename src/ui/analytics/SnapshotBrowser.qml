@@ -27,6 +27,11 @@ Item {
     property var selectedMap: ({})
     property int selectedCount: 0
     property int selectedVersion: 0
+    readonly property color panelColor: Theme.panelBackground
+    readonly property color panelBorderColor: Theme.panelBorder
+    readonly property color controlBgColor: Theme.panelSoftBackground
+    readonly property color controlBorderColor: Theme.controlBorder
+    readonly property bool hasActiveFilters: cameraFilter !== "" || labelFilter.trim() !== "" || startDateFilter.trim() !== "" || endDateFilter.trim() !== "" || !sortNewest
 
     function parseMeta(fileName) {
         var result = { cameraId: "", label: "", capturedAtMs: 0, capturedAtText: "", timestampKey: "" }
@@ -117,6 +122,17 @@ Item {
         }
         clearSelection()
         if (folderModel.refresh) folderModel.refresh()
+        rebuildFilteredModel()
+    }
+
+    function clearFilters() {
+        cameraCombo.currentIndex = 0
+        cameraFilter = ""
+        labelField.text = ""
+        startDateField.text = ""
+        endDateField.text = ""
+        sortCombo.currentIndex = 0
+        sortNewest = true
         rebuildFilteredModel()
     }
 
@@ -270,431 +286,366 @@ Item {
     ListModel { id: cameraOptionsModel }
     ListModel { id: dateGroupsModel }
 
+    Rectangle {
+        anchors.fill: parent
+        color: root.panelColor
+        radius: Theme.radiusLg
+        border.color: root.panelBorderColor
+        border.width: 1
+        z: -1
+    }
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 20
-        spacing: 12
+        anchors.margins: 10
+        spacing: 8
 
-        // Filters
+        // Filters + quick period
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 104
-            color: "#1e1e1e"
-            radius: 6
-            border.color: "#333"
+            Layout.preferredHeight: 112
+            color: root.panelColor
+            radius: Theme.radiusLg
+            border.color: root.panelBorderColor
 
-            RowLayout {
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 12
+                anchors.margins: 10
+                spacing: 6
 
-                ColumnLayout {
-                    Layout.preferredWidth: 220
-                    spacing: 4
-                    Text { text: I18n.t("Камера"); color: "#aaa"; font.pixelSize: 12 }
-                    ComboBox {
-                        id: cameraCombo
-                        Layout.fillWidth: true
-                        model: cameraOptionsModel
-                        textRole: "text"
-                        onActivated: function(index) {
-                            cameraFilter = cameraOptionsModel.get(index).value
-                            rebuildFilteredModel()
-                        }
-                        contentItem: Text {
-                            text: cameraCombo.displayText
-                            color: "#ddd"
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            leftPadding: 8
-                            rightPadding: 24
-                        }
-                        background: Rectangle {
-                            color: "#2a2a2a"
-                            radius: 4
-                            border.color: "#3a3a3a"
-                        }
-                        indicator: Canvas {
-                            width: 16
-                            height: 16
-                            x: cameraCombo.width - width - 8
-                            y: (cameraCombo.height - height) / 2
-                            contextType: "2d"
-                            onPaint: {
-                                context.reset()
-                                context.fillStyle = "#aaa"
-                                context.beginPath()
-                                context.moveTo(0, 4)
-                                context.lineTo(16, 4)
-                                context.lineTo(8, 12)
-                                context.closePath()
-                                context.fill()
-                            }
-                        }
-                        popup: Popup {
-                            y: cameraCombo.height + 4
-                            width: cameraCombo.width
-                            padding: 4
-                            background: Rectangle { color: "#1e1e1e"; radius: 4; border.color: "#333" }
-                            contentItem: ListView {
-                                implicitHeight: Math.min(contentHeight, 240)
-                                model: cameraCombo.popup.visible ? cameraCombo.delegateModel : null
-                                clip: true
-                                delegate: ItemDelegate {
-                                    width: parent.width
-                                    contentItem: Text {
-                                        text: modelData
-                                        color: "#ddd"
-                                        elide: Text.ElideRight
-                                    }
-                                    background: Rectangle {
-                                        color: highlighted ? "#2d2d2d" : "transparent"
-                                    }
-                                }
+                Text {
+                    text: I18n.t("Лента + фильтры")
+                    color: Theme.textMuted
+                    font.pixelSize: 11
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    ColumnLayout {
+                        Layout.preferredWidth: 190
+                        spacing: 2
+                        Text { text: I18n.t("Камера"); color: "#aaa"; font.pixelSize: 11 }
+                        StyledComboBox {
+                            id: cameraCombo
+                            Layout.fillWidth: true
+                            model: cameraOptionsModel
+                            textRole: "text"
+                            implicitHeight: 30
+                            onActivated: function(index) {
+                                cameraFilter = cameraOptionsModel.get(index).value
+                                rebuildFilteredModel()
                             }
                         }
                     }
-                }
 
-                ColumnLayout {
-                    Layout.preferredWidth: 220
-                    spacing: 4
-                    Text { text: I18n.t("Объект"); color: "#aaa"; font.pixelSize: 12 }
-                    TextField {
-                        id: labelField
-                        Layout.fillWidth: true
-                        placeholderText: I18n.t("Введите для фильтра")
-                        onTextChanged: {
-                            labelFilter = text
-                            rebuildFilteredModel()
-                        }
-                        color: "#ddd"
-                        selectionColor: "#3b82f6"
-                        placeholderTextColor: "#777"
-                        background: Rectangle { color: "#2a2a2a"; radius: 4; border.color: "#3a3a3a" }
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.preferredWidth: 170
-                    spacing: 4
-                    Text { text: I18n.t("Дата от"); color: "#aaa"; font.pixelSize: 12 }
-                    TextField {
-                        id: startDateField
-                        Layout.fillWidth: true
-                        placeholderText: "yyyy-MM-dd"
-                        onTextChanged: {
-                            startDateFilter = text
-                            rebuildFilteredModel()
-                        }
-                        color: "#ddd"
-                        selectionColor: "#3b82f6"
-                        placeholderTextColor: "#777"
-                        background: Rectangle { color: "#2a2a2a"; radius: 4; border.color: "#3a3a3a" }
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.preferredWidth: 170
-                    spacing: 4
-                    Text { text: I18n.t("Дата до"); color: "#aaa"; font.pixelSize: 12 }
-                    TextField {
-                        id: endDateField
-                        Layout.fillWidth: true
-                        placeholderText: "yyyy-MM-dd"
-                        onTextChanged: {
-                            endDateFilter = text
-                            rebuildFilteredModel()
-                        }
-                        color: "#ddd"
-                        selectionColor: "#3b82f6"
-                        placeholderTextColor: "#777"
-                        background: Rectangle { color: "#2a2a2a"; radius: 4; border.color: "#3a3a3a" }
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.preferredWidth: 160
-                    spacing: 4
-                    Text { text: I18n.t("Сортировка"); color: "#aaa"; font.pixelSize: 12 }
-                    ComboBox {
-                        id: sortCombo
-                        Layout.fillWidth: true
-                        model: [I18n.t("Сначала новые"), I18n.t("Сначала старые")]
-                        onActivated: function(index) {
-                            sortNewest = (currentIndex === 0)
-                            rebuildFilteredModel()
-                        }
-                        contentItem: Text {
-                            text: sortCombo.displayText
-                            color: "#ddd"
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                            leftPadding: 8
-                            rightPadding: 24
-                        }
-                        background: Rectangle {
-                            color: "#2a2a2a"
-                            radius: 4
-                            border.color: "#3a3a3a"
-                        }
-                        indicator: Canvas {
-                            width: 16
-                            height: 16
-                            x: sortCombo.width - width - 8
-                            y: (sortCombo.height - height) / 2
-                            contextType: "2d"
-                            onPaint: {
-                                context.reset()
-                                context.fillStyle = "#aaa"
-                                context.beginPath()
-                                context.moveTo(0, 4)
-                                context.lineTo(16, 4)
-                                context.lineTo(8, 12)
-                                context.closePath()
-                                context.fill()
+                    ColumnLayout {
+                        Layout.preferredWidth: 190
+                        spacing: 2
+                        Text { text: I18n.t("Объект"); color: "#aaa"; font.pixelSize: 11 }
+                        TextField {
+                            id: labelField
+                            Layout.fillWidth: true
+                            implicitHeight: 30
+                            placeholderText: I18n.t("Введите для фильтра")
+                            onTextChanged: {
+                                labelFilter = text
+                                rebuildFilteredModel()
                             }
+                            color: Theme.textSecondary
+                            selectionColor: Theme.accent
+                            placeholderTextColor: "#777"
+                            background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
                         }
-                        popup: Popup {
-                            y: sortCombo.height + 4
-                            width: sortCombo.width
-                            padding: 4
-                            background: Rectangle { color: "#1e1e1e"; radius: 4; border.color: "#333" }
-                            contentItem: ListView {
-                                implicitHeight: Math.min(contentHeight, 200)
-                                model: sortCombo.popup.visible ? sortCombo.delegateModel : null
-                                clip: true
-                                delegate: ItemDelegate {
-                                    width: parent.width
-                                    contentItem: Text {
-                                        text: modelData
-                                        color: "#ddd"
-                                        elide: Text.ElideRight
-                                    }
-                                    background: Rectangle {
-                                        color: highlighted ? "#2d2d2d" : "transparent"
-                                    }
-                                }
+                    }
+
+                    ColumnLayout {
+                        Layout.preferredWidth: 150
+                        spacing: 2
+                        Text { text: I18n.t("Дата от"); color: "#aaa"; font.pixelSize: 11 }
+                        TextField {
+                            id: startDateField
+                            Layout.fillWidth: true
+                            implicitHeight: 30
+                            placeholderText: "2026-02-17"
+                            onTextChanged: {
+                                startDateFilter = text
+                                rebuildFilteredModel()
+                            }
+                            color: Theme.textSecondary
+                            selectionColor: Theme.accent
+                            placeholderTextColor: "#777"
+                            background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.preferredWidth: 150
+                        spacing: 2
+                        Text { text: I18n.t("Дата до"); color: "#aaa"; font.pixelSize: 11 }
+                        TextField {
+                            id: endDateField
+                            Layout.fillWidth: true
+                            implicitHeight: 30
+                            placeholderText: "2026-02-17"
+                            onTextChanged: {
+                                endDateFilter = text
+                                rebuildFilteredModel()
+                            }
+                            color: Theme.textSecondary
+                            selectionColor: Theme.accent
+                            placeholderTextColor: "#777"
+                            background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.preferredWidth: 150
+                        spacing: 2
+                        Text { text: I18n.t("Сортировка"); color: "#aaa"; font.pixelSize: 11 }
+                        StyledComboBox {
+                            id: sortCombo
+                            Layout.fillWidth: true
+                            implicitHeight: 30
+                            model: [I18n.t("Сначала новые"), I18n.t("Сначала старые")]
+                            onActivated: function(index) {
+                                sortNewest = (currentIndex === 0)
+                                rebuildFilteredModel()
                             }
                         }
                     }
-                }
 
-                Item { Layout.fillWidth: true }
+                    Item { Layout.fillWidth: true }
 
-                ColumnLayout {
-                    spacing: 4
-                    Text { text: ""; color: "transparent"; font.pixelSize: 12 }
                     Button {
-                        text: I18n.t("Сбросить")
+                        text: I18n.t("Очистить")
+                        enabled: root.hasActiveFilters
+                        implicitHeight: 30
                         contentItem: Text {
                             text: parent.text
                             color: "#ddd"
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
                         background: Rectangle {
-                            color: parent.hovered ? "#2d2d2d" : "#252526"
-                            radius: 4
-                            border.color: "#3a3a3a"
+                            color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                            radius: Theme.radiusSm
+                            border.color: root.controlBorderColor
                         }
-                        onClicked: {
-                            cameraCombo.currentIndex = 0
-                            cameraFilter = ""
-                            labelField.text = ""
-                            startDateField.text = ""
-                            endDateField.text = ""
-                            sortCombo.currentIndex = 0
-                            sortNewest = true
-                            rebuildFilteredModel()
-                        }
+                        onClicked: clearFilters()
                     }
                 }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Text {
+                        text: I18n.t("Быстрый период")
+                        color: "#888"
+                        font.pixelSize: 11
+                    }
+
+                    Button {
+                        text: I18n.t("Сегодня")
+                        implicitHeight: 28
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#ddd"
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                            radius: Theme.radiusSm
+                            border.color: root.controlBorderColor
+                        }
+                        onClicked: {
+                            var now = new Date()
+                            var start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                            var end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+                            startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
+                            endDateField.text = Qt.formatDateTime(end, "yyyy-MM-dd")
+                        }
+                    }
+
+                    Button {
+                        text: I18n.t("7 дней")
+                        implicitHeight: 28
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#ddd"
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                            radius: Theme.radiusSm
+                            border.color: root.controlBorderColor
+                        }
+                        onClicked: {
+                            var now = new Date()
+                            var start = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000)
+                            startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
+                            endDateField.text = Qt.formatDateTime(now, "yyyy-MM-dd")
+                        }
+                    }
+
+                    Button {
+                        text: I18n.t("30 дней")
+                        implicitHeight: 28
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#ddd"
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                            radius: Theme.radiusSm
+                            border.color: root.controlBorderColor
+                        }
+                        onClicked: {
+                            var now = new Date()
+                            var start = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000)
+                            startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
+                            endDateField.text = Qt.formatDateTime(now, "yyyy-MM-dd")
+                        }
+                    }
+
+                    Button {
+                        text: I18n.t("За все время")
+                        implicitHeight: 28
+                        contentItem: Text {
+                            text: parent.text
+                            color: "#ddd"
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                            radius: Theme.radiusSm
+                            border.color: root.controlBorderColor
+                        }
+                        onClicked: {
+                            startDateField.text = ""
+                            endDateField.text = ""
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+                }
             }
-        }
-
-        // Presets
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Text {
-                text: I18n.t("Быстрые фильтры")
-                color: "#888"
-                font.pixelSize: 12
-            }
-
-            Button {
-                text: I18n.t("Сегодня")
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
-                    radius: 4
-                    border.color: "#3a3a3a"
-                }
-                onClicked: {
-                    var now = new Date()
-                    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-                    var end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-                    startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
-                    endDateField.text = Qt.formatDateTime(end, "yyyy-MM-dd")
-                }
-            }
-
-            Button {
-                text: I18n.t("7 дней")
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
-                    radius: 4
-                    border.color: "#3a3a3a"
-                }
-                onClicked: {
-                    var now = new Date()
-                    var start = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000)
-                    startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
-                    endDateField.text = Qt.formatDateTime(now, "yyyy-MM-dd")
-                }
-            }
-
-            Button {
-                text: I18n.t("30 дней")
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
-                    radius: 4
-                    border.color: "#3a3a3a"
-                }
-                onClicked: {
-                    var now = new Date()
-                    var start = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000)
-                    startDateField.text = Qt.formatDateTime(start, "yyyy-MM-dd")
-                    endDateField.text = Qt.formatDateTime(now, "yyyy-MM-dd")
-                }
-            }
-
-            Button {
-                text: I18n.t("За все время")
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
-                    radius: 4
-                    border.color: "#3a3a3a"
-                }
-                onClicked: {
-                    startDateField.text = ""
-                    endDateField.text = ""
-                }
-            }
-
-            Item { Layout.fillWidth: true }
         }
 
         // Info row
-        RowLayout {
+        Rectangle {
             Layout.fillWidth: true
-            spacing: 12
-            Text {
-                text: I18n.t("Показано %1 из %2", [filteredCount, totalCount])
-                color: "#888"
-                font.pixelSize: 12
-            }
-            Item { Layout.fillWidth: true }
-            Button {
-                text: I18n.t("Открыть папку")
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+            Layout.preferredHeight: 30
+            color: root.panelColor
+            radius: Theme.radiusLg
+            border.color: root.panelBorderColor
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 6
+                spacing: 8
+
+                Text {
+                    text: I18n.t("Показано %1 из %2", [filteredCount, totalCount])
+                    color: "#888"
+                    font.pixelSize: 11
                 }
-                background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
-                    radius: 4
-                    border.color: "#3a3a3a"
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: I18n.t("Открыть папку снимков")
+                    implicitHeight: 26
+                    contentItem: Text {
+                        text: parent.text
+                        color: "#ddd"
+                        font.pixelSize: 11
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        color: parent.hovered ? Theme.cardHover : root.controlBgColor
+                        radius: Theme.radiusSm
+                        border.color: root.controlBorderColor
+                    }
+                    visible: root.snapshotsDir !== ""
+                    onClicked: Qt.openUrlExternally("file:///" + root.snapshotsDir)
                 }
-                visible: root.snapshotsDir !== ""
-                onClicked: Qt.openUrlExternally("file:///" + root.snapshotsDir)
             }
         }
 
-        RowLayout {
+        Rectangle {
             Layout.fillWidth: true
-            spacing: 12
+            Layout.preferredHeight: 34
+            color: root.panelColor
+            radius: Theme.radiusLg
+            border.color: root.panelBorderColor
 
-            Button {
-                text: I18n.t("Выбор")
-                checkable: true
-                checked: root.selectionMode
-                onClicked: {
-                    root.selectionMode = checked
-                    if (!root.selectionMode) clearSelection()
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: parent.checked ? "#3b82f6" : "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    color: parent.checked ? "#1e1e1e" : (parent.hovered ? "#2d2d2d" : "#252526")
-                    radius: 4
-                    border.color: parent.checked ? "#3b82f6" : "#3a3a3a"
-                }
-            }
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 6
+                spacing: 8
 
-            Text {
-                text: root.selectedCount > 0 ? I18n.t("Выбрано: %1", [root.selectedCount]) : ""
-                color: "#aaa"
-                font.pixelSize: 12
-                visible: root.selectedCount > 0
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Button {
-                text: I18n.t("Удалить выбранные")
-                visible: root.selectedCount > 0
-                contentItem: Text {
-                    text: parent.text
-                    color: "#ddd"
-                    font.pixelSize: 12
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                Button {
+                    text: I18n.t("Режим выбора")
+                    checkable: true
+                    checked: root.selectionMode
+                    implicitHeight: 26
+                    onClicked: {
+                        root.selectionMode = checked
+                        if (!root.selectionMode) clearSelection()
+                    }
+                    contentItem: Text {
+                        text: parent.text
+                        color: parent.checked ? "#3b82f6" : "#ddd"
+                        font.pixelSize: 11
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        color: parent.checked ? Theme.panelSoftBackground : (parent.hovered ? Theme.cardHover : root.controlBgColor)
+                        radius: Theme.radiusSm
+                        border.color: parent.checked ? Theme.accent : root.controlBorderColor
+                    }
                 }
-                background: Rectangle {
-                    color: parent.hovered ? "#3b1f1f" : "#2a1f1f"
-                    radius: 4
-                    border.color: "#6b2a2a"
+
+                Text {
+                    text: root.selectedCount > 0 ? I18n.t("Выбрано: %1", [root.selectedCount]) : ""
+                    color: "#aaa"
+                    font.pixelSize: 11
+                    visible: root.selectedCount > 0
                 }
-                onClicked: deleteSelected()
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    text: I18n.t("Удалить выбранные") + " (" + root.selectedCount + ")"
+                    visible: root.selectedCount > 0
+                    implicitHeight: 26
+                    contentItem: Text {
+                        text: parent.text
+                        color: "#ddd"
+                        font.pixelSize: 11
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        color: parent.hovered ? "#3b1f1f" : "#2a1f1f"
+                        radius: Theme.radiusSm
+                        border.color: "#6b2a2a"
+                    }
+                    onClicked: deleteSelected()
+                }
             }
         }
 
@@ -702,14 +653,14 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 12
+            spacing: 10
 
             Rectangle {
-                Layout.preferredWidth: 190
+                Layout.preferredWidth: 170
                 Layout.fillHeight: true
-                color: "#1e1e1e"
-                radius: 6
-                border.color: "#333"
+                color: root.panelColor
+                radius: Theme.radiusLg
+                border.color: root.panelBorderColor
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -717,7 +668,7 @@ Item {
                     spacing: 8
 
                     Text {
-                        text: I18n.t("События")
+                        text: I18n.t("Даты")
                         color: "#aaa"
                         font.pixelSize: 12
                     }
@@ -730,11 +681,11 @@ Item {
                         clip: true
                         currentIndex: root.selectedDateIndex
 
-                            delegate: ItemDelegate {
-                                width: dateList.width
+                        delegate: ItemDelegate {
+                            width: dateList.width
                             onClicked: {
                                 root.selectedDateIndex = index
-                                    root.applyDateFilter(model.value)
+                                root.applyDateFilter(model.value)
                             }
                             contentItem: Text {
                                 text: model.text
@@ -743,7 +694,7 @@ Item {
                             }
                             background: Rectangle {
                                 color: index === root.selectedDateIndex ? "#2d2d2d" : "transparent"
-                                radius: 4
+                                radius: Theme.radiusSm
                             }
                         }
                     }
@@ -761,9 +712,17 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
+                Rectangle {
+                    anchors.fill: parent
+                    color: root.panelColor
+                    radius: Theme.radiusLg
+                    border.color: root.panelBorderColor
+                }
+
                 GridView {
                     id: gridView
                     anchors.fill: parent
+                    anchors.margins: 8
                     cellWidth: 220
                     cellHeight: 260
                     clip: true
@@ -775,9 +734,9 @@ Item {
 
                         Rectangle {
                             anchors.fill: parent
-                            color: "#2d2d2d"
-                            radius: 8
-                            border.color: "#444"
+                            color: Theme.cardBackground
+                            radius: Theme.radiusLg
+                            border.color: Theme.cardBorder
                             border.width: 1
 
                             ColumnLayout {
@@ -808,8 +767,8 @@ Item {
                                         spacing: 6
 
                                         Rectangle {
-                                            color: "#2563eb"
-                                            radius: 4
+                                                color: Theme.accent
+                                                radius: Theme.radiusSm
                                             visible: cameraId !== ""
                                             Text {
                                                 text: cameraId
@@ -820,8 +779,8 @@ Item {
                                         }
 
                                         Rectangle {
-                                            color: "#16a34a"
-                                            radius: 4
+                                            color: Theme.success
+                                            radius: Theme.radiusSm
                                             visible: label !== ""
                                             Text {
                                                 text: label
@@ -833,7 +792,7 @@ Item {
 
                                         Rectangle {
                                             color: "#6b7280"
-                                            radius: 4
+                                            radius: Theme.radiusSm
                                             visible: label === "" && root.moduleBadgeText !== ""
                                             Text {
                                                 text: root.moduleBadgeText
@@ -896,8 +855,8 @@ Item {
                                         imageViewer.openWithModel(filteredModel, index)
                                     }
                                 }
-                                onEntered: parent.border.color = "#3b82f6"
-                                onExited: parent.border.color = "#444"
+                                onEntered: parent.border.color = Theme.accent
+                                onExited: parent.border.color = Theme.cardBorder
                             }
                         }
                     }
@@ -910,11 +869,30 @@ Item {
                     anchors.fill: parent
                     visible: filteredModel.count === 0 && root.snapshotsDir !== ""
 
-                    Text {
+                    Column {
                         anchors.centerIn: parent
-                        text: I18n.t("Снимки не найдены")
-                        color: "#666"
-                        font.pixelSize: 16
+                        spacing: 8
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "🔍"
+                            color: Theme.textMuted
+                            font.pixelSize: 26
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: I18n.t("Снимки не найдены")
+                            color: Theme.textMuted
+                            font.pixelSize: 16
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: I18n.t("Попробуйте очистить фильтры или выбрать другой период")
+                            color: Theme.textFaint
+                            font.pixelSize: 12
+                        }
                     }
                 }
 
@@ -922,11 +900,30 @@ Item {
                     anchors.fill: parent
                     visible: root.snapshotsDir === ""
 
-                    Text {
+                    Column {
                         anchors.centerIn: parent
-                        text: I18n.t("Папка снимков не настроена")
-                        color: "#666"
-                        font.pixelSize: 16
+                        spacing: 8
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "📁"
+                            color: Theme.textMuted
+                            font.pixelSize: 26
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: I18n.t("Папка снимков не настроена")
+                            color: Theme.textMuted
+                            font.pixelSize: 16
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: I18n.t("Укажите путь в настройках аналитики")
+                            color: Theme.textFaint
+                            font.pixelSize: 12
+                        }
                     }
                 }
             }

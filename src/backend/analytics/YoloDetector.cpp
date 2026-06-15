@@ -2,24 +2,48 @@
 #include <QFile>
 #include <QDir>
 #include <QDebug>
+#include <QPainter>
 #include <QThread>
 #include <algorithm>
 #include <cmath>
 
+#define ORT_API_MANUAL_INIT
+#include <onnxruntime_cxx_api.h>
+
 #ifdef Q_OS_WIN
 #include <Windows.h>
-#include <onnxruntime_c_api.h>
 #endif
+
+struct YoloDetector::Impl {
+    std::unique_ptr<Ort::Env> env;
+    std::unique_ptr<Ort::Session> session;
+    std::unique_ptr<Ort::SessionOptions> sessionOptions;
+    std::vector<const char*> inputNodeNames;
+    std::vector<const char*> outputNodeNames;
+    std::vector<std::string> inputNodeNamesStorage;
+    std::vector<std::string> outputNodeNamesStorage;
+    std::vector<int64_t> inputShape;
+};
+
+namespace {
+void ensureOrtApiInitialized()
+{
+    static const bool initialized = []() {
+        Ort::InitApi();
+        return true;
+    }();
+
+    (void)initialized;
+}
+}
 
 YoloDetector::YoloDetector(const Options &options)
     : m_options(options)
+    , m_impl(std::make_unique<Impl>())
 {
 }
 
-YoloDetector::~YoloDetector()
-{
-    // Smart pointers will handle cleanup
-}
+YoloDetector::~YoloDetector() = default;
 
 bool YoloDetector::load(const QString &moduleDir)
 {
@@ -34,10 +58,12 @@ bool YoloDetector::load(const QString &moduleDir)
     }
 
     try {
-        m_env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "OpenIPCDashboard");
-        m_sessionOptions = std::make_unique<Ort::SessionOptions>();
-        m_sessionOptions->SetIntraOpNumThreads(1);
-        m_sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        ensureOrtApiInitialized();
+
+        m_impl->env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "OpenIPCDashboard");
+        m_impl->sessionOptions = std::make_unique<Ort::SessionOptions>();
+        m_impl->sessionOptions->SetIntraOpNumThreads(1);
+        m_impl->sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 #ifdef Q_OS_WIN
         {
@@ -52,7 +78,7 @@ bool YoloDetector::load(const QString &moduleDir)
                 : nullptr;
 
             if (appendDml) {
-                Ort::UnownedSessionOptions unowned = m_sessionOptions->GetUnowned();
+                Ort::UnownedSessionOptions unowned = m_impl->sessionOptions->GetUnowned();
                 OrtSessionOptions* rawOptions = unowned;
                 OrtStatus* status = appendDml(rawOptions, 0);
                 if (status) {
@@ -71,42 +97,42 @@ bool YoloDetector::load(const QString &moduleDir)
         // Convert path to wstring for Windows
 #ifdef Q_OS_WIN
         std::wstring modelPathW = modelPath.toStdWString();
-        m_session = std::make_unique<Ort::Session>(*m_env, modelPathW.c_str(), *m_sessionOptions);
+        m_impl->session = std::make_unique<Ort::Session>(*m_impl->env, modelPathW.c_str(), *m_impl->sessionOptions);
 #else
         std::string modelPathStr = modelPath.toStdString();
-        m_session = std::make_unique<Ort::Session>(*m_env, modelPathStr.c_str(), *m_sessionOptions);
+        m_impl->session = std::make_unique<Ort::Session>(*m_impl->env, modelPathStr.c_str(), *m_impl->sessionOptions);
 #endif
 
         // Get input info
         Ort::AllocatorWithDefaultOptions allocator;
-        size_t numInputNodes = m_session->GetInputCount();
-        m_inputNodeNames.clear();
-        m_inputNodeNamesAllocated.clear();
+        size_t numInputNodes = m_impl->session->GetInputCount();
+        m_impl->inputNodeNames.clear();
+        m_impl->inputNodeNamesStorage.clear();
 
         for (size_t i = 0; i < numInputNodes; i++) {
-            auto inputName = m_session->GetInputNameAllocated(i, allocator);
-            m_inputNodeNamesAllocated.push_back(inputName.get());
-            m_inputNodeNames.push_back(m_inputNodeNamesAllocated.back().c_str());
+            auto inputName = m_impl->session->GetInputNameAllocated(i, allocator);
+            m_impl->inputNodeNamesStorage.emplace_back(inputName.get());
+            m_impl->inputNodeNames.push_back(m_impl->inputNodeNamesStorage.back().c_str());
             
-            auto typeInfo = m_session->GetInputTypeInfo(i);
+            auto typeInfo = m_impl->session->GetInputTypeInfo(i);
             auto tensorInfo = typeInfo.GetTensorTypeAndShapeInfo();
-            m_inputShape = tensorInfo.GetShape();
+            m_impl->inputShape = tensorInfo.GetShape();
         }
 
         // Get output info
-        size_t numOutputNodes = m_session->GetOutputCount();
-        m_outputNodeNames.clear();
-        m_outputNodeNamesAllocated.clear();
+        size_t numOutputNodes = m_impl->session->GetOutputCount();
+        m_impl->outputNodeNames.clear();
+        m_impl->outputNodeNamesStorage.clear();
 
         for (size_t i = 0; i < numOutputNodes; i++) {
-            auto outputName = m_session->GetOutputNameAllocated(i, allocator);
-            m_outputNodeNamesAllocated.push_back(outputName.get());
-            m_outputNodeNames.push_back(m_outputNodeNamesAllocated.back().c_str());
+            auto outputName = m_impl->session->GetOutputNameAllocated(i, allocator);
+            m_impl->outputNodeNamesStorage.emplace_back(outputName.get());
+            m_impl->outputNodeNames.push_back(m_impl->outputNodeNamesStorage.back().c_str());
         }
 
         qInfo() << "YoloDetector: Loaded model from" << modelPath;
-        if (m_inputShape.size() >= 4) {
-            qInfo() << "Input shape:" << m_inputShape[0] << m_inputShape[1] << m_inputShape[2] << m_inputShape[3];
+        if (m_impl->inputShape.size() >= 4) {
+            qInfo() << "Input shape:" << m_impl->inputShape[0] << m_impl->inputShape[1] << m_impl->inputShape[2] << m_impl->inputShape[3];
         }
         
         m_loaded = true;
@@ -136,30 +162,50 @@ QString YoloDetector::getError() const
     return m_error;
 }
 
-std::vector<float> YoloDetector::preprocess(const QImage &img, int &outW, int &outH)
+std::vector<float> YoloDetector::preprocess(const QImage &img, PreprocessInfo &info)
 {
-    // Target size from model input (usually 640x640)
-    // m_inputShape is usually [1, 3, 640, 640]
     int targetW = 640;
     int targetH = 640;
     
-    if (m_inputShape.size() == 4) {
-        targetH = m_inputShape[2];
-        targetW = m_inputShape[3];
+    if (m_impl && m_impl->inputShape.size() == 4) {
+        const int modelH = static_cast<int>(m_impl->inputShape[2]);
+        const int modelW = static_cast<int>(m_impl->inputShape[3]);
+        if (modelH > 0) {
+            targetH = modelH;
+        }
+        if (modelW > 0) {
+            targetW = modelW;
+        }
     }
 
-    outW = targetW;
-    outH = targetH;
+    info.inputW = targetW;
+    info.inputH = targetH;
+    info.sourceW = img.width();
+    info.sourceH = img.height();
 
-    // Resize image
-    QImage scaled = img.scaled(targetW, targetH, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    scaled = scaled.convertToFormat(QImage::Format_RGB888);
+    const float scaleX = info.sourceW > 0 ? static_cast<float>(targetW) / static_cast<float>(info.sourceW) : 1.0f;
+    const float scaleY = info.sourceH > 0 ? static_cast<float>(targetH) / static_cast<float>(info.sourceH) : 1.0f;
+    info.scale = std::min(scaleX, scaleY);
+
+    const int resizedW = std::max(1, static_cast<int>(std::round(info.sourceW * info.scale)));
+    const int resizedH = std::max(1, static_cast<int>(std::round(info.sourceH * info.scale)));
+    info.padX = (targetW - resizedW) / 2;
+    info.padY = (targetH - resizedH) / 2;
+
+    QImage canvas(targetW, targetH, QImage::Format_RGB888);
+    canvas.fill(QColor(114, 114, 114));
+
+    QImage scaled = img.scaled(resizedW, resizedH, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+        .convertToFormat(QImage::Format_RGB888);
+    QPainter painter(&canvas);
+    painter.drawImage(info.padX, info.padY, scaled);
+    painter.end();
 
     // Convert to float CHW
     std::vector<float> inputTensorValues(targetW * targetH * 3);
     
-    const uchar* bits = scaled.bits();
-    int stride = scaled.bytesPerLine();
+    const uchar* bits = canvas.bits();
+    int stride = canvas.bytesPerLine();
 
     // Optimize: Reduce implicit coercion and access
     // Pre-calculate inverse 255
@@ -185,44 +231,60 @@ std::vector<float> YoloDetector::preprocess(const QImage &img, int &outW, int &o
 QVector<DetectionBox> YoloDetector::detect(const QImage &frame)
 {
     QVector<DetectionBox> results;
-    if (!m_loaded || frame.isNull()) return results;
+    if (!m_loaded || frame.isNull() || !m_impl || !m_impl->session) return results;
 
     try {
-        int inputW, inputH;
-        std::vector<float> inputTensorValues = preprocess(frame, inputW, inputH);
+        PreprocessInfo preprocessInfo;
+        std::vector<float> inputTensorValues = preprocess(frame, preprocessInfo);
         
         // Create input tensor
         Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        std::vector<int64_t> inputShape = {1, 3, inputH, inputW};
+        std::vector<int64_t> inputShape = {1, 3, preprocessInfo.inputH, preprocessInfo.inputW};
         
         Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
             memoryInfo, inputTensorValues.data(), inputTensorValues.size(), inputShape.data(), inputShape.size());
 
         // Run inference
-        auto outputTensors = m_session->Run(
+        auto outputTensors = m_impl->session->Run(
             Ort::RunOptions{nullptr}, 
-            m_inputNodeNames.data(), 
+            m_impl->inputNodeNames.data(), 
             &inputTensor, 
             1, 
-            m_outputNodeNames.data(), 
-            m_outputNodeNames.size()
+            m_impl->outputNodeNames.data(), 
+            m_impl->outputNodeNames.size()
         );
 
         // Get output data
         float* floatArr = outputTensors[0].GetTensorMutableData<float>();
         auto outputInfo = outputTensors[0].GetTensorTypeAndShapeInfo();
-        auto outputShape = outputInfo.GetShape(); // [1, channels, anchors]
+        auto outputShape = outputInfo.GetShape(); // commonly [1, channels, anchors] or [1, anchors, channels]
 
         // Important: Manual memory release logic for raw float vector is not needed as vector handles it.
         // But ONNX Runtime internal tensors are RAII.
         
-        int batchSize = outputShape[0];
-        int channels = outputShape[1]; // 4 + num_classes
-        int anchors = outputShape[2];  // 8400
+        if (outputShape.size() < 3) {
+            qWarning() << "Unexpected YOLO output shape rank:" << outputShape.size();
+            return results;
+        }
+
+        const int dim1 = static_cast<int>(outputShape[1]);
+        const int dim2 = static_cast<int>(outputShape[2]);
+        const bool channelsFirst = dim1 <= dim2;
+        const int channels = channelsFirst ? dim1 : dim2;
+        const int anchors = channelsFirst ? dim2 : dim1;
+        if (channels <= 4 || anchors <= 0) {
+            qWarning() << "Unexpected YOLO output shape:" << dim1 << dim2;
+            return results;
+        }
 
         int numClasses = channels - 4;
         
         QVector<DetectionBox> candidates;
+        auto outputValue = [floatArr, channelsFirst, anchors, channels](int channel, int anchor) {
+            return channelsFirst
+                ? floatArr[channel * anchors + anchor]
+                : floatArr[anchor * channels + channel];
+        };
 
         for (int i = 0; i < anchors; ++i) {
             // Find best class confidence
@@ -230,7 +292,7 @@ QVector<DetectionBox> YoloDetector::detect(const QImage &frame)
             int maxClassIdx = -1;
 
             for (int c = 0; c < numClasses; ++c) {
-                float conf = floatArr[(4 + c) * anchors + i];
+                float conf = outputValue(4 + c, i);
                 if (conf > maxConf) {
                     maxConf = conf;
                     maxClassIdx = c;
@@ -238,18 +300,40 @@ QVector<DetectionBox> YoloDetector::detect(const QImage &frame)
             }
 
             if (maxConf > m_options.confidenceThreshold) {
-                float cx = floatArr[0 * anchors + i];
-                float cy = floatArr[1 * anchors + i];
-                float w = floatArr[2 * anchors + i];
-                float h = floatArr[3 * anchors + i];
+                float cx = outputValue(0, i);
+                float cy = outputValue(1, i);
+                float w = outputValue(2, i);
+                float h = outputValue(3, i);
 
-                float x = cx - w / 2.0f;
-                float y = cy - h / 2.0f;
+                if (cx <= 1.5f && cy <= 1.5f && w <= 1.5f && h <= 1.5f) {
+                    cx *= preprocessInfo.inputW;
+                    w *= preprocessInfo.inputW;
+                    cy *= preprocessInfo.inputH;
+                    h *= preprocessInfo.inputH;
+                }
+
+                float x1 = (cx - w / 2.0f - preprocessInfo.padX) / preprocessInfo.scale;
+                float y1 = (cy - h / 2.0f - preprocessInfo.padY) / preprocessInfo.scale;
+                float x2 = (cx + w / 2.0f - preprocessInfo.padX) / preprocessInfo.scale;
+                float y2 = (cy + h / 2.0f - preprocessInfo.padY) / preprocessInfo.scale;
+
+                x1 = std::clamp(x1, 0.0f, static_cast<float>(preprocessInfo.sourceW));
+                y1 = std::clamp(y1, 0.0f, static_cast<float>(preprocessInfo.sourceH));
+                x2 = std::clamp(x2, 0.0f, static_cast<float>(preprocessInfo.sourceW));
+                y2 = std::clamp(y2, 0.0f, static_cast<float>(preprocessInfo.sourceH));
+
+                const float boxW = x2 - x1;
+                const float boxH = y2 - y1;
+                if (boxW <= 1.0f || boxH <= 1.0f || preprocessInfo.sourceW <= 0 || preprocessInfo.sourceH <= 0) {
+                    continue;
+                }
 
                 DetectionBox box;
                 box.confidence = maxConf;
-                // Normalize coordinates to 0..1
-                box.bounds = QRectF(x / inputW, y / inputH, w / inputW, h / inputH);
+                box.bounds = QRectF(x1 / preprocessInfo.sourceW,
+                                    y1 / preprocessInfo.sourceH,
+                                    boxW / preprocessInfo.sourceW,
+                                    boxH / preprocessInfo.sourceH);
                 
                 if (maxClassIdx < m_options.classLabels.size()) {
                     box.label = m_options.classLabels[maxClassIdx];
@@ -296,6 +380,7 @@ void YoloDetector::applyNMS(QVector<DetectionBox> &detections)
 
         for (int j = i + 1; j < detections.size(); ++j) {
             if (suppressed[j]) continue;
+            if (detections[i].label != detections[j].label) continue;
 
             // Calculate IoU
             QRectF rect1 = detections[i].bounds;
@@ -309,13 +394,17 @@ void YoloDetector::applyNMS(QVector<DetectionBox> &detections)
             float unionArea = (rect1.width() * rect1.height()) + 
                               (rect2.width() * rect2.height()) - intersectArea;
 
+            if (unionArea <= 0.0f) {
+                continue;
+            }
+
             float iou = intersectArea / unionArea;
 
             // Also suppress if one box is largely contained within another (e.g. > 80% overlap)
             float rect1Area = rect1.width() * rect1.height();
             float rect2Area = rect2.width() * rect2.height();
-            float containment1 = intersectArea / rect1Area;
-            float containment2 = intersectArea / rect2Area;
+            float containment1 = rect1Area > 0.0f ? intersectArea / rect1Area : 0.0f;
+            float containment2 = rect2Area > 0.0f ? intersectArea / rect2Area : 0.0f;
 
             if (iou > m_options.nmsThreshold || containment1 > 0.8f || containment2 > 0.8f) {
                 suppressed[j] = true;

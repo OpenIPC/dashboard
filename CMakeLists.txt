@@ -17,14 +17,15 @@ configure_file(src/config.h.in config.h)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent Multimedia)
+include(CTest)
+
+find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent Multimedia Sql Test)
 
 # Force native rcc executable to avoid picking up python-based rcc from VS Code extensions
-if(WIN32 AND EXISTS "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
-    set(QT_RCC_EXECUTABLE "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
-    set(CMAKE_AUTORCC_EXECUTABLE "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
-    if(TARGET Qt6::rcc)
-        set_target_properties(Qt6::rcc PROPERTIES IMPORTED_LOCATION "C:/OpenIPC-Dashboard-Cpp/6.4.2/mingw_64/bin/rcc.exe")
+if(WIN32 AND TARGET Qt6::rcc)
+    get_target_property(QT_RCC_EXECUTABLE Qt6::rcc IMPORTED_LOCATION)
+    if(QT_RCC_EXECUTABLE)
+        set(CMAKE_AUTORCC_EXECUTABLE "${QT_RCC_EXECUTABLE}")
     endif()
 endif()
 
@@ -32,30 +33,8 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-if(WIN32)
-    # FORCE GStreamer includes for Windows CI environment
-    # Prefer environment-provided path if available
-    if(DEFINED ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
-        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
-        file(TO_CMAKE_PATH "${GST_ROOT}" GST_ROOT)
-    else()
-        set(GST_ROOT "C:/gstreamer/1.0/mingw_x86_64")
-    endif()
-
-    set(GST_FORCE_INCLUDE_DIRS
-        "${GST_ROOT}/include/gstreamer-1.0"
-        "${GST_ROOT}/include/glib-2.0"
-        "${GST_ROOT}/lib/glib-2.0/include"
-        "${GST_ROOT}/lib/gstreamer-1.0/include"
-    )
-    message(STATUS "FORCE-ADDING GStreamer Includes: ${GST_FORCE_INCLUDE_DIRS}")
-    include_directories(${GST_FORCE_INCLUDE_DIRS})
-
-    # Ensure linker can find GStreamer libs when extracted to custom path
-    if(EXISTS "${GST_ROOT}/lib")
-        message(STATUS "FORCE-ADDING GStreamer LIB DIR: ${GST_ROOT}/lib")
-        link_directories("${GST_ROOT}/lib")
-    endif()
+if(WIN32 AND MINGW)
+    add_link_options("-Wl,--disable-high-entropy-va" "-Wl,--disable-dynamicbase")
 endif()
 
 # GStreamer Integration
@@ -67,10 +46,11 @@ if(WIN32)
     
     # 2. Check Environment Variables
     if(NOT GST_ROOT)
-        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
-    endif()
-    if(NOT GST_ROOT)
-        set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+        if(DEFINED ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
+            set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MSVC_X86_64})
+        elseif(DEFINED ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+            set(GST_ROOT $ENV{GSTREAMER_1_0_ROOT_MINGW_X86_64})
+        endif()
     endif()
     
     # 3. Try standard install locations
@@ -93,11 +73,20 @@ if(WIN32)
             "${GST_ROOT}/lib/glib-2.0/include"
             "${GST_ROOT}/lib/gstreamer-1.0/include"
         )
-        # Force include these for the upcoming target
         include_directories(${GST_INCLUDE_DIRS})
-        
         link_directories("${GST_ROOT}/lib")
         set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
+        set(GST_RUNTIME_DLLS
+            "${GST_ROOT}/bin/libffi-7.dll"
+            "${GST_ROOT}/bin/libglib-2.0-0.dll"
+            "${GST_ROOT}/bin/libgmodule-2.0-0.dll"
+            "${GST_ROOT}/bin/libgobject-2.0-0.dll"
+            "${GST_ROOT}/bin/libgstapp-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstbase-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstreamer-1.0-0.dll"
+            "${GST_ROOT}/bin/libintl-8.dll"
+            "${GST_ROOT}/bin/libpcre2-8-0.dll"
+        )
     else()
         # Fallback to pkg-config if manual detection failed
         find_package(PkgConfig REQUIRED)
@@ -166,6 +155,42 @@ elseif(UNIX)
     endif()
 endif()
 
+# libssh Setup via FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    libssh
+    GIT_REPOSITORY https://git.libssh.org/projects/libssh.git
+    GIT_TAG        libssh-0.10.6
+)
+# Disable building tests and examples for libssh
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build bundled dependencies statically" FORCE)
+set(WITH_EXAMPLES OFF CACHE BOOL "Disable libssh examples" FORCE)
+set(WITH_TESTING OFF CACHE BOOL "Disable libssh testing" FORCE)
+set(WITH_SERVER OFF CACHE BOOL "Disable libssh server" FORCE)
+set(WITH_ZLIB OFF CACHE BOOL "Disable optional libssh zlib compression" FORCE)
+FetchContent_MakeAvailable(libssh)
+
+# QtKeychain Setup via FetchContent
+FetchContent_Declare(
+    qtkeychain
+    GIT_REPOSITORY https://github.com/frankosterfeld/qtkeychain.git
+    GIT_TAG        0.14.2
+)
+set(BUILD_WITH_QT6 ON CACHE BOOL "Build qtkeychain with Qt6" FORCE)
+set(BUILD_TRANSLATIONS OFF CACHE BOOL "Disable qtkeychain translations" FORCE)
+set(BUILD_TEST_APPLICATION OFF CACHE BOOL "Disable qtkeychain test app" FORCE)
+FetchContent_MakeAvailable(qtkeychain)
+
+set(BUNDLED_RUNTIME_TARGETS)
+foreach(_runtime_target ssh qt6keychain)
+    if(TARGET ${_runtime_target})
+        get_target_property(_runtime_target_type ${_runtime_target} TYPE)
+        if(_runtime_target_type STREQUAL "SHARED_LIBRARY" OR _runtime_target_type STREQUAL "MODULE_LIBRARY")
+            list(APPEND BUNDLED_RUNTIME_TARGETS $<TARGET_FILE:${_runtime_target}>)
+        endif()
+    endif()
+endforeach()
+
 set(SOURCES
     src/main.cpp
     src/backend/SystemController.cpp
@@ -202,9 +227,11 @@ set(SOURCES
 set(APP_ICON resources/appicon.rc)
 
 set(QML_FILES
+    src/ui/Theme.qml
     src/ui/Main.qml
     src/ui/SettingsDialog.qml
     src/ui/ModulesSettingsPanel.qml
+    src/ui/StyledComboBox.qml
     src/ui/GridCell.qml
     src/ui/SidebarIcon.qml
     src/ui/CameraSearchDialog.qml
@@ -214,6 +241,11 @@ set(QML_FILES
     src/ui/analytics/FaceSnapshotsPanel.qml
     src/ui/analytics/ObjectCounterPanel.qml
     src/ui/analytics/LicensePlatePanel.qml
+    src/ui/analytics/AnalyticsOverviewPanel.qml
+    src/ui/analytics/AnalyticsCamerasPanel.qml
+    src/ui/analytics/AnalyticsModulesPanel.qml
+    src/ui/analytics/EventsPanel.qml
+    src/ui/analytics/RulesPanel.qml
     src/ui/analytics/SnapshotBrowser.qml
     src/ui/analytics/ImageViewerWindow.qml
     src/ui/UserManagementDialog.qml
@@ -233,17 +265,21 @@ set(QML_FILES
 
 # Mark the localization helper as a QML singleton so it can be imported from the module
 set_source_files_properties(src/ui/I18n.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(src/ui/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 set(QML_RESOURCES
     src/ui/fonts/MaterialIcons-Regular.ttf
 )
 
+add_executable(openipc-askpass
+    src/backend/askpass_helper.cpp
+)
 
 add_executable(appOpenIPC-Dashboard
     ${SOURCES}
     ${APP_ICON}
 )
-target_include_directories(appOpenIPC-Dashboard PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(appOpenIPC-Dashboard PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${qtkeychain_SOURCE_DIR} ${qtkeychain_BINARY_DIR} ${libssh_SOURCE_DIR}/include ${libssh_BINARY_DIR}/include)
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
@@ -265,7 +301,7 @@ qt_add_qml_module(appOpenIPC-Dashboard
 )
 
 target_link_libraries(appOpenIPC-Dashboard
-    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent onnxruntime dhnetsdk ${GST_LIBRARIES}
+    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent Qt6::Sql onnxruntime dhnetsdk ${GST_LIBRARIES} ssh qt6keychain
 )
 
 if (UNIX AND NOT APPLE)
@@ -347,6 +383,32 @@ add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
     ${CMAKE_BINARY_DIR}/OpenIPC $<TARGET_FILE_DIR:appOpenIPC-Dashboard>/OpenIPC
 )
 
+add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:openipc-askpass>
+    $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+)
+
+# Copy libssh and qtkeychain DLLs to build directory
+if(WIN32)
+    if(BUNDLED_RUNTIME_TARGETS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${BUNDLED_RUNTIME_TARGETS}
+            $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+        )
+    endif()
+
+    if(GST_RUNTIME_DLLS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${GST_RUNTIME_DLLS}
+                $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+            COMMENT "Deploying GStreamer runtime dependencies"
+        )
+    endif()
+endif()
+
 # Run windeployqt to deploy Qt dependencies
 if(WIN32)
     # Find windeployqt relative to the Qt6::Core library location if possible, or use a hardcoded guess based on environment
@@ -364,4 +426,57 @@ if(WIN32)
             "$<TARGET_FILE:appOpenIPC-Dashboard>"
         COMMENT "Deploying Qt dependencies using windeployqt"
     )
+endif()
+
+if(WIN32)
+    set(APP_EXTRA_RUNTIME_DLLS)
+
+    get_filename_component(COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_runtime_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+        if(EXISTS "${COMPILER_BIN_DIR}/${_runtime_dll}")
+            list(APPEND APP_EXTRA_RUNTIME_DLLS "${COMPILER_BIN_DIR}/${_runtime_dll}")
+        endif()
+    endforeach()
+
+    if(OPENSSL_INCLUDE_DIR)
+        get_filename_component(_OPENIPC_OPENSSL_ROOT "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
+        foreach(_openssl_dll libcrypto-3-x64__.dll libssl-3-x64__.dll)
+            if(EXISTS "${_OPENIPC_OPENSSL_ROOT}/bin/${_openssl_dll}")
+                list(APPEND APP_EXTRA_RUNTIME_DLLS "${_OPENIPC_OPENSSL_ROOT}/bin/${_openssl_dll}")
+            endif()
+        endforeach()
+    endif()
+
+    if(APP_EXTRA_RUNTIME_DLLS)
+        add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${APP_EXTRA_RUNTIME_DLLS}
+                $<TARGET_FILE_DIR:appOpenIPC-Dashboard>
+            COMMENT "Deploying compiler and OpenSSL runtime dependencies"
+        )
+    endif()
+endif()
+
+if(BUILD_TESTING)
+    add_executable(user_manager_tests
+        tests/UserManagerTests.cpp
+        src/backend/UserManager.cpp
+        src/backend/UserManager.h
+    )
+
+    target_include_directories(user_manager_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(user_manager_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME user_manager_tests COMMAND user_manager_tests)
+
+    if(WIN32)
+        set_tests_properties(user_manager_tests PROPERTIES
+            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
+        )
+    endif()
 endif()

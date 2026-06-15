@@ -11,9 +11,9 @@ struct Camera {
     Q_PROPERTY(int cameraPort MEMBER port)
     Q_PROPERTY(int cameraOnvifPort MEMBER onvifPort)
     Q_PROPERTY(QString cameraLogin MEMBER login)
-    Q_PROPERTY(QString cameraPassword MEMBER password)
     Q_PROPERTY(QString hdStreamUrl MEMBER hdStreamUrl)
     Q_PROPERTY(QString sdStreamUrl MEMBER sdStreamUrl)
+    Q_PROPERTY(QString status MEMBER status)
     Q_PROPERTY(QString cameraGroup MEMBER group)
     Q_PROPERTY(bool isRecording MEMBER isRecording)
 
@@ -52,7 +52,6 @@ public:
         PortRole,
         OnvifPortRole,
         LoginRole,
-        PasswordRole,
         GroupRole,
         IsRecordingRole,
         SpanRowsRole,

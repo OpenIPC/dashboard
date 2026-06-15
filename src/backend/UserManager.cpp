@@ -1,31 +1,55 @@
 #include "UserManager.h"
-#include <QDebug>
 
-UserManager::UserManager(QObject *parent) : QObject(parent), m_isLoggedIn(false)
+#include <QDebug>
+#include <QFileInfo>
+#include <QMessageAuthenticationCode>
+#include <QRandomGenerator>
+
+namespace {
+constexpr int kPasswordIterations = 120000;
+constexpr int kPasswordKeyLength = 32;
+constexpr int kPasswordSaltLength = 16;
+constexpr char kPasswordAlgorithm[] = "pbkdf2-sha256";
+
+QByteArray randomSalt(int length)
+{
+    QByteArray salt(length, Qt::Uninitialized);
+    for (int i = 0; i < length; ++i) {
+        salt[i] = static_cast<char>(QRandomGenerator::global()->bounded(256));
+    }
+    return salt;
+}
+}
+
+UserManager::UserManager(QObject *parent)
+    : QObject(parent)
+    , m_isLoggedIn(false)
 {
     loadUsers();
-    if (m_users.isEmpty()) {
-        // Create default admin user with full permissions
-        addUser("admin", "admin", "admin", Perm_All);
-    }
 
-    // Check for remembered session
     QSettings settings;
     if (settings.value("auth/remember", false).toBool()) {
-        QString username = settings.value("auth/username").toString();
+        const QString username = settings.value("auth/username").toString().trimmed();
         for (const auto &user : m_users) {
             if (user.username == username) {
-                m_currentUser = user;
-                m_isLoggedIn = true;
+                m_rememberedUsername = username;
                 break;
             }
+        }
+
+        if (m_rememberedUsername.isEmpty()) {
+            settings.setValue("auth/remember", false);
+            settings.remove("auth/username");
         }
     }
 }
 
 QVariantMap UserManager::currentUser() const
 {
-    if (!m_isLoggedIn) return QVariantMap();
+    if (!m_isLoggedIn) {
+        return QVariantMap();
+    }
+
     return QVariantMap{
         {"username", m_currentUser.username},
         {"role", m_currentUser.role},
@@ -53,44 +77,49 @@ bool UserManager::isLoggedIn() const
 
 bool UserManager::login(const QString &username, const QString &password, bool rememberMe)
 {
-    // Refresh users from disk to ensure latest permissions are used
     loadUsers();
-    QString hash = hashPassword(password);
-    for (const auto &user : m_users) {
-        if (user.username == username && user.passwordHash == hash) {
-            m_currentUser = user;
-            // Force admin to full permissions
-            if (m_currentUser.username == "admin" || m_currentUser.role == "admin") {
-                if ((m_currentUser.permissions & Perm_All) != Perm_All) {
-                    m_currentUser.permissions = Perm_All;
-                    for (int i = 0; i < m_users.size(); ++i) {
-                        if (m_users[i].username == m_currentUser.username) {
-                            m_users[i].permissions = Perm_All;
-                            break;
-                        }
-                    }
-                    saveUsers();
-                }
-            }
-            m_isLoggedIn = true;
-            qInfo() << "Logged in as" << m_currentUser.username << "permissions" << m_currentUser.permissions;
+    const QString normalizedUsername = username.trimmed();
 
-            QSettings settings;
-            if (rememberMe) {
-                settings.setValue("auth/remember", true);
-                settings.setValue("auth/username", username);
-            } else {
-                settings.setValue("auth/remember", false);
-                settings.remove("auth/username");
-            }
-
-            emit currentUserChanged();
-            emit isLoggedInChanged();
-            m_permissionsVersion++;
-            emit permissionsVersionChanged();
-            return true;
+    for (int i = 0; i < m_users.size(); ++i) {
+        User &storedUser = m_users[i];
+        bool needsUpgrade = false;
+        if (storedUser.username != normalizedUsername || !verifyPassword(storedUser, password, &needsUpgrade)) {
+            continue;
         }
+
+        bool changed = false;
+        if ((storedUser.username == "admin" || storedUser.role == "admin")
+            && (storedUser.permissions & Perm_All) != Perm_All) {
+            storedUser.permissions = Perm_All;
+            changed = true;
+        }
+
+        if (needsUpgrade) {
+            setPassword(storedUser, password);
+            changed = true;
+        }
+
+        if (changed) {
+            saveUsers();
+        }
+
+        m_currentUser = storedUser;
+        m_isLoggedIn = true;
+        qInfo() << "Logged in as" << m_currentUser.username << "permissions" << m_currentUser.permissions;
+
+        if (rememberMe) {
+            setRememberedUsername(normalizedUsername);
+        } else {
+            setRememberedUsername(QString());
+        }
+
+        emit currentUserChanged();
+        emit isLoggedInChanged();
+        m_permissionsVersion++;
+        emit permissionsVersionChanged();
+        return true;
     }
+
     return false;
 }
 
@@ -99,35 +128,73 @@ void UserManager::logout()
     m_isLoggedIn = false;
     m_currentUser = User();
 
-    QSettings settings;
-    settings.setValue("auth/remember", false);
-    settings.remove("auth/username");
-
     emit currentUserChanged();
     emit isLoggedInChanged();
     m_permissionsVersion++;
     emit permissionsVersionChanged();
 }
 
+bool UserManager::setupInitialAdmin(const QString &username, const QString &password, bool rememberMe)
+{
+    loadUsers();
+    const QString normalizedUsername = username.trimmed();
+    if (!m_users.isEmpty() || normalizedUsername.isEmpty() || password.isEmpty()) {
+        return false;
+    }
+
+    User adminUser;
+    adminUser.username = normalizedUsername;
+    adminUser.role = QStringLiteral("admin");
+    adminUser.permissions = Perm_All;
+    setPassword(adminUser, password);
+
+    m_users.append(adminUser);
+    saveUsers();
+    emit usersChanged();
+
+    m_currentUser = adminUser;
+    m_isLoggedIn = true;
+    if (rememberMe) {
+        setRememberedUsername(normalizedUsername);
+    } else {
+        setRememberedUsername(QString());
+    }
+
+    emit currentUserChanged();
+    emit isLoggedInChanged();
+    m_permissionsVersion++;
+    emit permissionsVersionChanged();
+    return true;
+}
+
 bool UserManager::addUser(const QString &username, const QString &password, const QString &role, int permissions)
 {
+    const QString normalizedUsername = username.trimmed();
+    if (normalizedUsername.isEmpty() || password.isEmpty()) {
+        return false;
+    }
+
     for (const auto &user : m_users) {
-        if (user.username == username) return false; // User already exists
+        if (user.username == normalizedUsername) {
+            return false;
+        }
     }
 
     User newUser;
-    newUser.username = username;
-    newUser.passwordHash = hashPassword(password);
+    newUser.username = normalizedUsername;
     newUser.role = role;
-    
-    // If permissions not specified (<0), set defaults based on role
+    setPassword(newUser, password);
+
     if (permissions < 0) {
-        if (role == "admin" || username == "admin") newUser.permissions = Perm_All;
-        else newUser.permissions = Perm_LiveView | Perm_Playback | Perm_PTZ;
+        if (role == "admin" || normalizedUsername == "admin") {
+            newUser.permissions = Perm_All;
+        } else {
+            newUser.permissions = Perm_LiveView | Perm_Playback | Perm_PTZ | Perm_Analytics;
+        }
     } else {
-        newUser.permissions = (role == "admin" || username == "admin") ? Perm_All : permissions;
+        newUser.permissions = (role == "admin" || normalizedUsername == "admin") ? Perm_All : permissions;
     }
-    
+
     m_users.append(newUser);
     saveUsers();
     emit usersChanged();
@@ -138,113 +205,150 @@ bool UserManager::addUser(const QString &username, const QString &password, cons
 
 bool UserManager::hasPermission(int permission) const
 {
-    if (!m_isLoggedIn) return false;
-    if (m_currentUser.username == "admin" || m_currentUser.role == "admin") return true;
-    if ((m_currentUser.permissions & Perm_All) == Perm_All) return true;
+    if (!m_isLoggedIn) {
+        return false;
+    }
+    if (m_currentUser.username == "admin" || m_currentUser.role == "admin") {
+        return true;
+    }
+    if ((m_currentUser.permissions & Perm_All) == Perm_All) {
+        return true;
+    }
     return (m_currentUser.permissions & permission) == permission;
 }
 
 void UserManager::updateUserPermissions(const QString &username, int permissions)
 {
     for (int i = 0; i < m_users.size(); ++i) {
-        if (m_users[i].username == username) {
-            if (m_users[i].username == "admin" || m_users[i].role == "admin") {
-                m_users[i].permissions = Perm_All;
-            } else {
-                m_users[i].permissions = permissions;
-            }
-            
-            // If updating current user, refresh session
-            if (m_isLoggedIn && m_currentUser.username == username) {
-                m_currentUser.permissions = m_users[i].permissions;
-                emit currentUserChanged();
-            }
-            
-            saveUsers();
-            emit usersChanged();
-            m_permissionsVersion++;
-            emit permissionsVersionChanged();
-            return;
+        if (m_users[i].username != username) {
+            continue;
         }
+
+        if (m_users[i].username == "admin" || m_users[i].role == "admin") {
+            m_users[i].permissions = Perm_All;
+        } else {
+            m_users[i].permissions = permissions;
+        }
+
+        if (m_isLoggedIn && m_currentUser.username == username) {
+            m_currentUser.permissions = m_users[i].permissions;
+            emit currentUserChanged();
+        }
+
+        saveUsers();
+        emit usersChanged();
+        m_permissionsVersion++;
+        emit permissionsVersionChanged();
+        return;
     }
 }
 
 bool UserManager::deleteUser(const QString &username)
 {
     for (int i = 0; i < m_users.size(); ++i) {
-        if (m_users[i].username == username) {
-            // Prevent deleting the last admin
-            if (m_users[i].role == "admin") {
-                int adminCount = 0;
-                for (const auto &u : m_users) {
-                    if (u.role == "admin") adminCount++;
-                }
-                if (adminCount <= 1) return false;
-            }
-            
-            m_users.removeAt(i);
-            saveUsers();
-            emit usersChanged();
-            m_permissionsVersion++;
-            emit permissionsVersionChanged();
-            return true;
+        if (m_users[i].username != username) {
+            continue;
         }
+
+        if (m_users[i].role == "admin") {
+            int adminCount = 0;
+            for (const auto &user : m_users) {
+                if (user.role == "admin") {
+                    adminCount++;
+                }
+            }
+            if (adminCount <= 1) {
+                return false;
+            }
+        }
+
+        m_users.removeAt(i);
+        saveUsers();
+        emit usersChanged();
+        m_permissionsVersion++;
+        emit permissionsVersionChanged();
+        return true;
     }
+
     return false;
 }
 
 bool UserManager::changePassword(const QString &username, const QString &oldPassword, const QString &newPassword)
 {
-    QString oldHash = hashPassword(oldPassword);
-    for (int i = 0; i < m_users.size(); ++i) {
-        if (m_users[i].username == username) {
-            // Verify old password
-            if (m_users[i].passwordHash != oldHash) {
-                return false;
-            }
-
-            m_users[i].passwordHash = hashPassword(newPassword);
-            saveUsers();
-            return true;
-        }
+    if (newPassword.isEmpty()) {
+        return false;
     }
+
+    for (int i = 0; i < m_users.size(); ++i) {
+        if (m_users[i].username != username) {
+            continue;
+        }
+
+        if (!verifyPassword(m_users[i], oldPassword)) {
+            return false;
+        }
+
+        setPassword(m_users[i], newPassword);
+        saveUsers();
+        return true;
+    }
+
     return false;
 }
 
 bool UserManager::isAdmin() const
 {
-    return m_isLoggedIn && (m_currentUser.username == "admin" || m_currentUser.role == "admin" || (m_currentUser.permissions & Perm_All) == Perm_All);
+    return m_isLoggedIn
+        && (m_currentUser.username == "admin"
+            || m_currentUser.role == "admin"
+            || (m_currentUser.permissions & Perm_All) == Perm_All);
 }
 
 void UserManager::loadUsers()
 {
-    QString path = usersFilePath();
+    const QString path = usersFilePath();
     qInfo() << "UserManager users file:" << path;
+
+    m_users.clear();
+
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "Could not open users file:" << path;
+    if (!file.exists()) {
+        qInfo() << "Users file does not exist yet:" << path;
+        emit usersChanged();
+        m_permissionsVersion++;
+        emit permissionsVersionChanged();
         return;
     }
 
-    QByteArray data = file.readAll();
-    QJsonDocument doc = QJsonDocument::fromJson(data);
-    QJsonArray array = doc.array();
-
-    m_users.clear();
-    bool changed = false;
-    for (const auto &val : array) {
-        User u = User::fromJson(val.toObject());
-        if (u.username == "admin" || u.role == "admin") {
-            if ((u.permissions & Perm_All) != Perm_All) {
-                u.permissions = Perm_All;
-                changed = true;
-            }
-        }
-        m_users.append(u);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Could not open users file:" << path;
+        emit usersChanged();
+        m_permissionsVersion++;
+        emit permissionsVersionChanged();
+        return;
     }
+
+    const QByteArray data = file.readAll();
+    const QJsonDocument doc = QJsonDocument::fromJson(data);
+    const QJsonArray array = doc.array();
+
+    bool changed = false;
+    for (const auto &value : array) {
+        User user = User::fromJson(value.toObject());
+        if ((user.username == "admin" || user.role == "admin") && (user.permissions & Perm_All) != Perm_All) {
+            user.permissions = Perm_All;
+            changed = true;
+        } else if ((user.permissions & Perm_LiveView) && !(user.permissions & Perm_Analytics)) {
+            user.permissions |= Perm_Analytics;
+            changed = true;
+        }
+        m_users.append(user);
+    }
+
     if (changed) {
         saveUsers();
     }
+
     emit usersChanged();
     m_permissionsVersion++;
     emit permissionsVersionChanged();
@@ -252,7 +356,7 @@ void UserManager::loadUsers()
 
 void UserManager::saveUsers()
 {
-    QString path = usersFilePath();
+    const QString path = usersFilePath();
     QDir dir = QFileInfo(path).dir();
     if (!dir.exists()) {
         dir.mkpath(".");
@@ -269,33 +373,119 @@ void UserManager::saveUsers()
         array.append(user.toJson());
     }
 
-    QJsonDocument doc(array);
+    const QJsonDocument doc(array);
     file.write(doc.toJson());
 
-    // If we wrote to AppConfigLocation, remove stale AppDataLocation copy to avoid confusion
-    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
-    QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
+    const QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
+    const QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
     if (path == configPath && QFile::exists(dataPath) && dataPath != configPath) {
         QFile::remove(dataPath);
     }
 }
 
-QString UserManager::hashPassword(const QString &password) const
+QString UserManager::hashLegacyPassword(const QString &password) const
 {
     return QString(QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 
+QByteArray UserManager::derivePasswordKey(const QString &password, const QByteArray &salt, int iterations, int keyLength) const
+{
+    if (iterations <= 0 || keyLength <= 0) {
+        return QByteArray();
+    }
+
+    const QByteArray secret = password.toUtf8();
+    const int hashLength = 32;
+    const int blockCount = (keyLength + hashLength - 1) / hashLength;
+    QByteArray derived;
+    derived.reserve(blockCount * hashLength);
+
+    for (int blockIndex = 1; blockIndex <= blockCount; ++blockIndex) {
+        QByteArray blockSalt = salt;
+        blockSalt.append(static_cast<char>((blockIndex >> 24) & 0xFF));
+        blockSalt.append(static_cast<char>((blockIndex >> 16) & 0xFF));
+        blockSalt.append(static_cast<char>((blockIndex >> 8) & 0xFF));
+        blockSalt.append(static_cast<char>(blockIndex & 0xFF));
+
+        QByteArray u = QMessageAuthenticationCode::hash(blockSalt, secret, QCryptographicHash::Sha256);
+        QByteArray t = u;
+        for (int iteration = 1; iteration < iterations; ++iteration) {
+            u = QMessageAuthenticationCode::hash(u, secret, QCryptographicHash::Sha256);
+            for (int byteIndex = 0; byteIndex < t.size(); ++byteIndex) {
+                t[byteIndex] = static_cast<char>(t[byteIndex] ^ u[byteIndex]);
+            }
+        }
+
+        derived.append(t);
+    }
+
+    derived.truncate(keyLength);
+    return derived;
+}
+
+void UserManager::setPassword(User &user, const QString &password) const
+{
+    const QByteArray salt = randomSalt(kPasswordSaltLength);
+    user.passwordSalt = QString::fromLatin1(salt.toHex());
+    user.passwordIterations = kPasswordIterations;
+    user.passwordAlgorithm = QString::fromLatin1(kPasswordAlgorithm);
+    user.passwordHash = QString::fromLatin1(derivePasswordKey(password, salt, user.passwordIterations, kPasswordKeyLength).toHex());
+}
+
+bool UserManager::verifyPassword(const User &user, const QString &password, bool *needsUpgrade) const
+{
+    if (needsUpgrade) {
+        *needsUpgrade = false;
+    }
+
+    if (user.passwordAlgorithm == QLatin1StringView(kPasswordAlgorithm) && !user.passwordSalt.isEmpty() && user.passwordIterations > 0) {
+        const QByteArray salt = QByteArray::fromHex(user.passwordSalt.toLatin1());
+        const QString derivedHash = QString::fromLatin1(
+            derivePasswordKey(password, salt, user.passwordIterations, kPasswordKeyLength).toHex());
+        return !derivedHash.isEmpty() && derivedHash == user.passwordHash;
+    }
+
+    const bool matchesLegacy = hashLegacyPassword(password) == user.passwordHash;
+    if (matchesLegacy && needsUpgrade) {
+        *needsUpgrade = true;
+    }
+    return matchesLegacy;
+}
+
+void UserManager::setRememberedUsername(const QString &username)
+{
+    const QString normalizedUsername = username.trimmed();
+
+    QSettings settings;
+    if (normalizedUsername.isEmpty()) {
+        settings.setValue("auth/remember", false);
+        settings.remove("auth/username");
+    } else {
+        settings.setValue("auth/remember", true);
+        settings.setValue("auth/username", normalizedUsername);
+    }
+
+    if (m_rememberedUsername == normalizedUsername) {
+        return;
+    }
+
+    m_rememberedUsername = normalizedUsername;
+    emit rememberedUsernameChanged();
+}
+
 QString UserManager::usersFilePath() const
 {
-    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
-    QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
+    const QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
+    const QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
 
-    bool hasConfig = QFile::exists(configPath);
-    bool hasData = QFile::exists(dataPath);
+    const bool hasConfig = QFile::exists(configPath);
+    const bool hasData = QFile::exists(dataPath);
 
     if (hasData && !hasConfig) {
         QDir dir = QFileInfo(configPath).dir();
-        if (!dir.exists()) dir.mkpath(".");
+        if (!dir.exists()) {
+            dir.mkpath(".");
+        }
         QFile::copy(dataPath, configPath);
         QFile::remove(dataPath);
         return configPath;

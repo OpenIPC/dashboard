@@ -26,7 +26,7 @@ private slots:
 private:
     CameraModel *m_model;
     QTimer *m_timer;
-    void checkCamera(int index, const QString &ip, int port);
+    void checkCamera(int index, const QString &cameraIp, const QString &host, int port);
 };
 
 #endif // STATUSCHECKER_H

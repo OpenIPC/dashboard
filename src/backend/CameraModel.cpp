@@ -40,8 +40,6 @@ QVariant CameraModel::data(const QModelIndex &index, int role) const
         return camera.onvifPort;
     case LoginRole:
         return camera.login;
-    case PasswordRole:
-        return camera.password;
     case GroupRole:
         return camera.group;
     case IsRecordingRole:
@@ -72,7 +70,6 @@ QHash<int, QByteArray> CameraModel::roleNames() const
     roles[PortRole] = "cameraPort";
     roles[OnvifPortRole] = "cameraOnvifPort";
     roles[LoginRole] = "cameraLogin";
-    roles[PasswordRole] = "cameraPassword";
     roles[GroupRole] = "cameraGroup";
     roles[IsRecordingRole] = "isRecording";
     roles[SpanRowsRole] = "spanRows";

@@ -14,12 +14,11 @@ Window {
     
     property string cameraIp: ""
     property string cameraUser: "root"
-    property string cameraPassword: ""
     
     function open() {
         outputArea.text = ""
         inputField.text = ""
-        sshClient.connectToHost(cameraIp, cameraUser, cameraPassword)
+        sshClient.connectToHost(cameraIp, cameraUser, SystemController.getCameraPassword(cameraIp))
         inputField.forceActiveFocus()
         show()
         requestActivate()

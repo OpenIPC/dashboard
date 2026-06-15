@@ -11,6 +11,9 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QStandardPaths>
+#include <QPointer>
+#include <QMutex>
+#include <QMutexLocker>
 #include "backend/SystemController.h"
 #include "backend/gst/GstPlayer.h"
 #include "backend/AnalyticsModel.h"
@@ -18,6 +21,8 @@
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
 #include <functional>
+#include <atomic>
+#include <cstdio>
 #include "config.h"
 
 // Hardcoded GStreamer paths for Windows environment
@@ -26,11 +31,23 @@
 #endif
 
 namespace {
-QFile gLogFile;
-std::function<void(QtMsgType, const QString&)> gLogCallback;
+struct LogState {
+    QFile logFile;
+    QMutex logMutex;
+    std::function<void(QtMsgType, const QString&)> logCallback;
+    std::atomic_bool logTeardown{false};
+};
+
+LogState &logState()
+{
+    static LogState state;
+    return state;
+}
 
 void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
+    LogState &state = logState();
+
     // Filter out annoying warnings
     if (msg.contains("No QSGTexture provided from updateSampledImage")) {
         return;
@@ -50,19 +67,48 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
     
     QString formattedMsg = QString("%1 [%2] %3").arg(QDateTime::currentDateTime().toString(Qt::ISODate), level, msg);
 
-    // Write to file
-    if (gLogFile.isOpen()) {
-        QTextStream ts(&gLogFile);
-        ts << formattedMsg << '\n';
-        ts.flush();
+    std::function<void(QtMsgType, const QString&)> callbackCopy;
+
+    {
+        QMutexLocker locker(&state.logMutex);
+        // Write to file (thread-safe)
+        if (state.logFile.isOpen()) {
+            // Log rotation: 10 MB limit
+            if (state.logFile.size() > 10 * 1024 * 1024) {
+                QString logPath = state.logFile.fileName();
+                state.logFile.close();
+                
+                // Rotate up to 5 files
+                for (int i = 4; i >= 1; --i) {
+                    QString oldFile = QString("%1.%2").arg(logPath).arg(i);
+                    QString newFile = QString("%1.%2").arg(logPath).arg(i + 1);
+                    if (QFile::exists(oldFile)) {
+                        QFile::remove(newFile);
+                        QFile::rename(oldFile, newFile);
+                    }
+                }
+                QFile::remove(logPath + ".1");
+                QFile::rename(logPath, logPath + ".1");
+                
+                state.logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+            }
+            
+            QTextStream ts(&state.logFile);
+            ts << formattedMsg << '\n';
+            ts.flush();
+        }
+
+        if (!state.logTeardown.load(std::memory_order_relaxed)) {
+            callbackCopy = state.logCallback;
+        }
     }
     
     // Write to stderr so it shows up in the terminal
     fprintf(stderr, "%s\n", qPrintable(formattedMsg));
     fflush(stderr);
 
-    if (gLogCallback) {
-        gLogCallback(type, msg);
+    if (callbackCopy) {
+        callbackCopy(type, msg);
     }
 
     if (type == QtFatalMsg)
@@ -103,13 +149,6 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // Check for ASKPASS mode
-    if (qEnvironmentVariableIsSet("OPENIPC_ASKPASS_MODE")) {
-        QTextStream out(stdout);
-        out << qEnvironmentVariable("SSH_PASS") << Qt::endl;
-        return 0;
-    }
-
     // Force Software rendering to avoid D3D11/OpenGL issues
     // This MUST be done before QGuiApplication is created
     // qputenv("QSG_RHI_BACKEND", "software");
@@ -145,16 +184,20 @@ int main(int argc, char *argv[])
         }
     }
 
-
     QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(logPath);
-    gLogFile.setFileName(logPath + "/app.log");
+    LogState &state = logState();
+    state.logFile.setFileName(logPath + "/app.log");
     
-    if (gLogFile.open(QIODevice::Append | QIODevice::Text)) {
-        QTextStream ts(&gLogFile);
+    const bool useCustomLogger = (qEnvironmentVariable("OPENIPC_USE_CUSTOM_LOGGER") == "1");
+
+    if (state.logFile.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream ts(&state.logFile);
         ts << QDateTime::currentDateTime().toString(Qt::ISODate) << " [INF] app start" << '\n';
         ts.flush();
-        qInstallMessageHandler(logMessageHandler);
+        if (useCustomLogger) {
+            qInstallMessageHandler(logMessageHandler);
+        }
     } else {
         // Fallback to temp if AppData fails
         // gLogFile.setFileName(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/appOpenIPC-Dashboard.log");
@@ -169,14 +212,26 @@ int main(int argc, char *argv[])
                       << "QSG_RHI_BACKEND=" << qEnvironmentVariable("QSG_RHI_BACKEND")
                       << "QT_QUICK_BACKEND=" << qEnvironmentVariable("QT_QUICK_BACKEND")
                       << "graphicsApi=" << QQuickWindow::graphicsApi();
-    qInfo() << "Log file path:" << gLogFile.fileName();
+    qInfo() << "Custom Qt message handler enabled:" << useCustomLogger;
+    qInfo() << "Log file path:" << state.logFile.fileName();
 
     // Register the C++ backend controller FIRST to ensure it outlives the engine
     SystemController systemController;    
+    QPointer<SystemController> systemControllerPtr(&systemController);
     // Hook up logging to SystemController
-    gLogCallback = [&](QtMsgType type, const QString &msg) {
-        systemController.addLog(type, msg);
+    state.logCallback = [systemControllerPtr](QtMsgType type, const QString &msg) {
+        if (systemControllerPtr) {
+            systemControllerPtr->addLog(type, msg);
+        }
     };
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, []() {
+        // Stop forwarding logs into QObject-based models during teardown.
+        LogState &state = logState();
+        state.logTeardown.store(true, std::memory_order_relaxed);
+        QMutexLocker locker(&state.logMutex);
+        state.logCallback = nullptr;
+    });
 
     QQmlApplicationEngine engine;
 #ifdef APP_VERSION

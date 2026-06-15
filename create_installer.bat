@@ -28,6 +28,9 @@ echo Creating distribution folder...
 cd ..
 mkdir dist
 copy build_release\appOpenIPC-Dashboard.exe dist\
+copy build_release\openipc-askpass.exe dist\
+copy build_release\libssh.dll dist\
+copy build_release\libqt6keychain.dll dist\
 xcopy /E /I /Y build_release\OpenIPC dist\OpenIPC
 
 echo Deploying Qt dependencies...

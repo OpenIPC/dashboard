@@ -13,7 +13,6 @@ Item {
     property int cameraPort: 554
     property int cameraOnvifPort: 80
     property string cameraLogin: "admin"
-    property string cameraPassword: ""
     property string streamUrl: ""
     property string sdStreamUrl: ""
     property string hdStreamUrl: ""
@@ -35,6 +34,10 @@ Item {
     property bool canExport: true
     property bool canSettings: true
     property bool effectiveCanLive: canLive || SystemController.userManager.isAdmin() || (SystemController.userManager.currentUser && SystemController.userManager.currentUser.username === "admin")
+    readonly property bool hasCamera: root.cameraIp !== "" || root.cameraName !== "" || root.streamUrl !== ""
+    readonly property bool statusOnline: String(root.status || "").toLowerCase() === "online"
+    property double lastFrameSeenMs: 0
+    property double lastStatusPushMs: 0
     
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
@@ -84,6 +87,23 @@ Item {
         }
     }
 
+    function pushCameraStatus(newStatus) {
+        if (!root.hasCamera || root.cameraIp === "" || !SystemController.updateCameraStatus)
+            return
+
+        var now = Date.now()
+        if (newStatus === "Online") {
+            root.lastFrameSeenMs = now
+            if (root.statusOnline && (now - root.lastStatusPushMs) < 10000)
+                return
+        } else if ((now - root.lastFrameSeenMs) < 8000) {
+            return
+        }
+
+        root.lastStatusPushMs = now
+        SystemController.updateCameraStatus(root.cameraIp, newStatus)
+    }
+
     function startEventClip(path, durationMs) {
         if (!path || path === "") return
         if (eventRecorder.recordingPath !== "") {
@@ -98,6 +118,12 @@ Item {
             eventRecorder.recordingPath = ""
         }
         eventClipTimer.stop()
+    }
+
+    function statusCaption() {
+        if (!hasCamera) return I18n.t("Свободно")
+        if (root.status && root.status !== "") return I18n.t(root.status)
+        return root.streamUrl === "" ? I18n.t("Нет потока") : I18n.t("Подключение")
     }
 
     onStreamUrlChanged: {
@@ -183,9 +209,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "#000000"
-        border.color: root.isRecording ? "#ff0000" : (root.isSelected ? "#1976d2" : "#444444")
+        border.color: root.isRecording ? Theme.danger : (root.isSelected ? Theme.accent : Theme.textFaint)
         border.width: root.isRecording ? 2 : (root.isSelected ? 2 : 1)
-        radius: 4
+        radius: Theme.radiusSm
 
         MouseArea {
             anchors.fill: parent
@@ -237,7 +263,8 @@ Item {
             orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
             mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
             
-            url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            property bool fallbackToSd: false
+            url: (root.useHdPreview && !fallbackToSd) && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
             
             // Start only if visible and URL is valid
             running: visible && root.streamUrl !== "" && root.effectiveCanLive
@@ -266,6 +293,45 @@ Item {
             analyticsUrl: ""
             analyticsEngine: null
             cameraId: root.cameraIp
+            
+            property string lastError: ""
+            onFrameReady: root.pushCameraStatus("Online")
+            onErrorOccurred: function(msg) {
+                lastError = msg;
+                errorTimer.restart();
+                root.pushCameraStatus("Offline")
+                
+                // Auto-fallback to SD if HD fails
+                if (root.useHdPreview && !fallbackToSd && root.sdStreamUrl !== "") {
+                    console.warn("HD stream failed, falling back to SD stream for camera:", root.cameraIp);
+                    fallbackToSd = true;
+                }
+            }
+            
+            Timer {
+                id: errorTimer
+                interval: 5000
+                onTriggered: player.lastError = ""
+            }
+            
+            Rectangle {
+                anchors.centerIn: parent
+                width: errorText.width + 20
+                height: errorText.height + 10
+                color: "#80000000"
+                radius: 4
+                visible: player.lastError !== ""
+                
+                Text {
+                    id: errorText
+                    anchors.centerIn: parent
+                    text: player.lastError
+                    color: "#ff5555"
+                    font.pixelSize: 12 * root.uiScale
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
         }
 
         // Hidden analytics player (HD preferred) to ensure snapshots/clips use HD stream
@@ -357,7 +423,9 @@ Item {
                         Text {
                             id: labelText
                             anchors.centerIn: parent
-                            text: model.label + " " + Math.round(model.confidence * 100) + "%"
+                            text: model.label
+                                  + ((model.trackId !== undefined && model.trackId !== "") ? (" #" + model.trackId) : "")
+                                  + " " + Math.round(model.confidence * 100) + "%"
                             color: "white"
                             font.pixelSize: 10
                             font.bold: true
@@ -392,13 +460,152 @@ Item {
         
         ColumnLayout {
             anchors.centerIn: parent
-            spacing: 10
+            width: Math.min(parent.width - 24, 260)
+            spacing: 8
+
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                width: 42
+                height: 42
+                radius: 10
+                color: root.hasCamera ? "#151b26" : "#101827"
+                border.color: root.hasCamera ? "#303848" : Theme.controlBorder
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.hasCamera ? "videocam" : "add"
+                    color: root.hasCamera ? Theme.textMuted : Theme.accentHover
+                    font.family: root.iconFontFamily
+                    font.pixelSize: 22
+                }
+            }
             
             Text {
-                text: root.streamUrl === "" ? I18n.t("No Signal") : I18n.t("Loading...")
-                color: "#666666"
+                Layout.fillWidth: true
+                text: root.hasCamera ? root.statusCaption() : I18n.t("Свободная ячейка")
+                color: root.hasCamera ? Theme.textMuted : Theme.textSecondary
                 font.pixelSize: 14
-                Layout.alignment: Qt.AlignHCenter
+                font.bold: !root.hasCamera
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: !root.hasCamera
+                text: I18n.t("Перетащите камеру из списка устройств")
+                color: Theme.textFaint
+                font.pixelSize: 11
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.hasCamera && player.lastError !== ""
+                text: player.lastError
+                color: Theme.danger
+                font.pixelSize: 11
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 8
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
+        visible: root.hasCamera
+        height: 24
+        width: Math.min(statusLabel.implicitWidth + 30, (root.width * 0.62) / root.uiScale)
+        radius: Theme.radiusMd
+        color: "#d0000000"
+        border.color: Theme.overlayBorder
+        border.width: 1
+        clip: true
+        z: 6
+
+        Row {
+            id: statusOverlayRow
+            anchors.centerIn: parent
+            width: parent.width - 16
+            spacing: 6
+
+            Rectangle {
+                width: 8
+                height: 8
+                radius: 4
+                anchors.verticalCenter: parent.verticalCenter
+                color: root.statusOnline ? Theme.success : Theme.danger
+            }
+
+            Text {
+                id: statusLabel
+                text: root.statusCaption()
+                color: Theme.textPrimary
+                font.pixelSize: 11
+                font.bold: true
+                width: parent.width - 14
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: 38 * root.uiScale
+        anchors.leftMargin: 8 * root.uiScale
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
+        visible: root.hasCamera && (root.analyticsActive || root.isRecording || root.eventRecordingActive)
+        height: 22
+        width: Math.min(flagsRow.implicitWidth + 14, (root.width * 0.62) / root.uiScale)
+        radius: Theme.radiusMd
+        color: "#d0000000"
+        border.color: Theme.overlayBorder
+        border.width: 1
+        clip: true
+        z: 6
+
+        Row {
+            id: flagsRow
+            anchors.centerIn: parent
+            width: parent.width - 14
+            spacing: 8
+
+            Text {
+                visible: root.analyticsActive
+                text: "AI"
+                color: Theme.accentHover
+                font.pixelSize: 10
+                font.bold: true
+            }
+
+            Text {
+                visible: root.isRecording
+                text: "REC"
+                color: Theme.danger
+                font.pixelSize: 10
+                font.bold: true
+            }
+
+            Text {
+                visible: root.eventRecordingActive
+                text: "EVT"
+                color: Theme.warning
+                font.pixelSize: 10
+                font.bold: true
             }
         }
     }
@@ -470,11 +677,11 @@ Item {
 
         onEntered: (drag) => {
             // Visual feedback for drop target?
-            root.border.color = "#00ff00"
+            root.border.color = Theme.success
             drag.accept(Qt.MoveAction)
         }
         onExited: {
-            root.border.color = root.isSelected ? "#1976d2" : "#444444"
+            root.border.color = root.isSelected ? Theme.accent : Theme.textFaint
         }
         onDropped: (drop) => {
             // Handle grid cell swap
@@ -495,7 +702,7 @@ Item {
                 }
             }
 
-            root.border.color = root.isSelected ? "#1976d2" : "#444444"
+            root.border.color = root.isSelected ? Theme.accent : Theme.textFaint
             drop.accept()
         }
     }
@@ -570,7 +777,9 @@ Item {
                             Text {
                                 id: hdLabelText
                                 anchors.centerIn: parent
-                                text: model.label + " " + Math.round(model.confidence * 100) + "%"
+                                text: model.label
+                                      + ((model.trackId !== undefined && model.trackId !== "") ? (" #" + model.trackId) : "")
+                                      + " " + Math.round(model.confidence * 100) + "%"
                                 color: "white"
                                 font.pixelSize: 12
                                 font.bold: true
@@ -609,7 +818,6 @@ Item {
                     cameraIp: root.cameraIp
                     cameraPort: root.cameraOnvifPort
                     cameraLogin: root.cameraLogin
-                    cameraPassword: root.cameraPassword
                     iconFontFamily: root.iconFontFamily
                     compact: false
                 }
@@ -771,12 +979,12 @@ Item {
         scale: root.uiScale
         transformOrigin: Item.BottomLeft
         color: "#e0000000" // darker for readability
-        radius: 6
+        radius: Theme.radiusMd
         visible: (SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay) && statsText() !== ""
         height: 30
         // Limit width to 45% of cell width (accounting for scale) to prevent overlap
         width: Math.min(Math.max(110, statsLabel.implicitWidth + 18), (root.width * 0.45) / root.uiScale)
-        border.color: "#44ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
         clip: true
 
@@ -895,7 +1103,6 @@ Item {
             cameraIp: root.cameraIp
             cameraPort: root.cameraOnvifPort
             cameraLogin: root.cameraLogin
-            cameraPassword: root.cameraPassword
             iconFontFamily: root.iconFontFamily
             compact: true
         }
@@ -910,10 +1117,10 @@ Item {
         height: 40
         width: controlsRow.implicitWidth + 12
         color: "#cc000000" // Semi-transparent black
-        radius: 6
+        radius: Theme.radiusMd
         // Keep visible while hovering the panel itself to avoid flicker
         visible: root.effectiveCanLive && (hoverArea.containsMouse || controlsHover.hovered || volumeGroup.sliderShowing)
-        border.color: "#55ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
 
         HoverHandler {
@@ -1149,7 +1356,7 @@ Item {
                 }
                 onClicked: {
                     if (root.manufacturer === "Dahua") {
-                        SystemController.takeDahuaSnapshot(root.cameraIp, root.cameraPort, root.cameraLogin, root.cameraPassword)
+                        SystemController.takeDahuaSnapshot(root.cameraIp, root.cameraPort, root.cameraLogin, SystemController.getCameraPassword(root.cameraIp))
                     } else {
                         var fileName = "snapshot_" + root.cameraIp.replace(/\./g, "_") + "_" + Qt.formatDateTime(new Date(), "yyyyMMdd_HHmmss_zzz") + ".png"
                         var fullPath = SystemController.getSnapshotPath(fileName)
@@ -1299,12 +1506,12 @@ Item {
         scale: root.uiScale
         transformOrigin: Item.BottomRight
         color: "#e0000000"
-        radius: 6
+        radius: Theme.radiusMd
         visible: root.cameraName !== "" || root.cameraIp !== ""
         height: 24
         // Limit width to 45% of cell width (accounting for scale) to prevent overlap
         width: Math.min(Math.max(100, infoRow.implicitWidth + 16), (root.width * 0.45) / root.uiScale)
-        border.color: "#44ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
         clip: true
 
@@ -1315,7 +1522,9 @@ Item {
             width: parent.width - 16
             
             Text {
-                text: root.cameraName !== "" ? root.cameraName : "Camera"
+                text: (root.cameraName && root.cameraName.trim() !== "")
+                      ? root.cameraName
+                      : (root.cameraIp && root.cameraIp !== "" ? root.cameraIp : I18n.t("Камера"))
                 color: "white"
                 font.pixelSize: 11
                 font.bold: true

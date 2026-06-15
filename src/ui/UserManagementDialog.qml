@@ -225,6 +225,7 @@ Dialog {
             cbExport.checked = (currentPerms & 0x08)
             cbSettings.checked = (currentPerms & 0x10)
             cbUsers.checked = (currentPerms & 0x20)
+            cbAnalytics.checked = (currentPerms & 0x40)
         }
         
         contentItem: ColumnLayout {
@@ -272,6 +273,7 @@ Dialog {
             StyledCheckBox { id: cbPlay; text: I18n.t("Архив (Playback)") }
             StyledCheckBox { id: cbPtz; text: I18n.t("Управление PTZ") }
             StyledCheckBox { id: cbExport; text: I18n.t("Экспорт") }
+            StyledCheckBox { id: cbAnalytics; text: I18n.t("Аналитика") }
             StyledCheckBox { id: cbSettings; text: I18n.t("Настройки системы") }
             StyledCheckBox { id: cbUsers; text: I18n.t("Управление пользователями") }
             
@@ -296,6 +298,7 @@ Dialog {
                         if (cbExport.checked) p |= 0x08
                         if (cbSettings.checked) p |= 0x10
                         if (cbUsers.checked) p |= 0x20
+                        if (cbAnalytics.checked) p |= 0x40
                         
                         SystemController.userManager.updateUserPermissions(permDialog.username, p)
                         permDialog.close()

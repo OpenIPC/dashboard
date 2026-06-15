@@ -7,12 +7,15 @@
             "description": "Target Qt 6.4.2 MinGW 64-bit",
             "generator": "MinGW Makefiles",
             "binaryDir": "${sourceDir}/build",
+            "environment": {
+                "PATH": "${sourceDir}/6.4.2/mingw_64/bin;$penv{PATH}"
+            },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_PREFIX_PATH": "${sourceDir}/6.4.2/mingw_64",
-                "CMAKE_C_COMPILER": "gcc.exe",
-                "CMAKE_CXX_COMPILER": "g++.exe",
-                "CMAKE_MAKE_PROGRAM": "mingw32-make.exe"
+                "CMAKE_C_COMPILER": "${sourceDir}/6.4.2/mingw_64/bin/gcc.exe",
+                "CMAKE_CXX_COMPILER": "${sourceDir}/6.4.2/mingw_64/bin/g++.exe",
+                "CMAKE_MAKE_PROGRAM": "${sourceDir}/6.4.2/mingw_64/bin/mingw32-make.exe"
             }
         }
     ],
@@ -20,6 +23,15 @@
         {
             "name": "qt-mingw-release",
             "configurePreset": "qt-mingw"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "qt-mingw-tests",
+            "configurePreset": "qt-mingw",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }
