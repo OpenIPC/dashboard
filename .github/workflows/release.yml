@@ -95,11 +95,20 @@ jobs:
            Write-Host "GStreamer installed at: $gstRoot"
            
            echo "GSTREAMER_1_0_ROOT_MINGW_X86_64=$gstRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+           echo "OPENSSL_ROOT_DIR=$gstRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
            echo "$gstRoot\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
            echo "PKG_CONFIG_PATH=$gstRoot\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
            
            echo "Debug: Listing GStreamer Includes"
            Get-ChildItem -Recurse "$gstRoot\include" | Select-Object FullName -First 20
+           if (-not (Test-Path "$gstRoot\include\openssl\ssl.h")) {
+               Write-Error "OpenSSL headers not found in GStreamer devel package at $gstRoot\include\openssl\ssl.h"
+               exit 1
+           }
+           if (-not (Test-Path "$gstRoot\lib\libssl.dll.a") -or -not (Test-Path "$gstRoot\lib\libcrypto.dll.a")) {
+               Write-Error "OpenSSL import libraries not found in GStreamer devel package at $gstRoot\lib"
+               exit 1
+           }
 
       - name: Configure CMake
         run: |
@@ -109,7 +118,7 @@ jobs:
            $qtDir = Split-Path (Split-Path $qmake -Parent) -Parent
            $appVersion = "${{ github.ref_name }}"
            if ($appVersion.StartsWith('v')) { $appVersion = $appVersion.Substring(1) }
-           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$qtDir -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64" -DAPP_VERSION="$appVersion"
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH=$qtDir -DGStreamer_ROOT="C:/gstreamer/1.0/mingw_x86_64" -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" -DAPP_VERSION="$appVersion"
 
       - name: Build
         run: cmake --build build --config Release

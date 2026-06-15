@@ -173,6 +173,9 @@ set(WITH_EXAMPLES OFF CACHE BOOL "Disable libssh examples" FORCE)
 set(WITH_TESTING OFF CACHE BOOL "Disable libssh testing" FORCE)
 set(WITH_SERVER OFF CACHE BOOL "Disable libssh server" FORCE)
 set(WITH_ZLIB OFF CACHE BOOL "Disable optional libssh zlib compression" FORCE)
+set(WITH_GCRYPT OFF CACHE BOOL "Disable optional libssh GCrypt backend" FORCE)
+set(WITH_MBEDTLS OFF CACHE BOOL "Disable optional libssh mbedTLS backend" FORCE)
+set(WITH_OPENSSL ON CACHE BOOL "Use OpenSSL for libssh crypto" FORCE)
 FetchContent_MakeAvailable(libssh)
 
 # QtKeychain Setup via FetchContent
@@ -445,7 +448,7 @@ if(WIN32)
 
     if(OPENSSL_INCLUDE_DIR)
         get_filename_component(_OPENIPC_OPENSSL_ROOT "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
-        foreach(_openssl_dll libcrypto-3-x64__.dll libssl-3-x64__.dll)
+        foreach(_openssl_dll libcrypto-3-x64.dll libssl-3-x64.dll)
             if(EXISTS "${_OPENIPC_OPENSSL_ROOT}/bin/${_openssl_dll}")
                 list(APPEND APP_EXTRA_RUNTIME_DLLS "${_OPENIPC_OPENSSL_ROOT}/bin/${_openssl_dll}")
             endif()
