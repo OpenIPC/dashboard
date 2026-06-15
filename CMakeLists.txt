@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.1 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.2 LANGUAGES CXX)
+
+# CMake 4 removes compatibility with projects that declare very old minimum
+# versions. Some bundled dependencies still do that, so keep their policy floor
+# explicit while they are consumed through FetchContent.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy compatibility for bundled dependencies" FORCE)
 
 # Allow overriding app version from CI (e.g., Git tag), fallback to project version.
 if(DEFINED APP_VERSION AND NOT APP_VERSION STREQUAL "")
