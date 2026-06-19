@@ -9,60 +9,76 @@ Dialog {
     modal: true
     dim: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    
+
     // Center in parent
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
     width: parent.width * 0.9
     height: parent.height * 0.9
-    
+
     background: Rectangle {
-        color: "#1e1e1e"
-        radius: 8
-        border.color: "#333"
+        color: Theme.panelAltBackground
+        radius: Theme.radiusLg
+        border.color: Theme.panelBorder
         border.width: 1
     }
     
     header: Rectangle {
-        height: 60
+        height: 56
         color: "transparent"
         
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 16
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 14
+            anchors.rightMargin: 54
+            anchors.topMargin: 8
+            anchors.bottomMargin: 8
+            spacing: 0
             
             Text {
                 text: I18n.t("Аналитика")
-                color: "white"
-                font.pixelSize: 20
+                color: Theme.textPrimary
+                font.pixelSize: 18
                 font.bold: true
-                Layout.fillWidth: true
             }
-            
-            Button {
-                text: "✕"
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                background: Rectangle {
-                    color: parent.hovered ? "#c42b1c" : "transparent"
-                    radius: 4
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "white"
-                    font.pixelSize: 16
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: root.close()
+
+            Text {
+                text: I18n.t("Просмотр и фильтрация")
+                color: Theme.textMuted
+                font.pixelSize: 11
             }
+        }
+
+        Button {
+            text: "✕"
+            width: 32
+            height: 32
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.topMargin: 8
+            anchors.rightMargin: 10
+            background: Rectangle {
+                color: parent.hovered ? "#c42b1c" : "transparent"
+                radius: Theme.radiusSm
+            }
+            contentItem: Text {
+                text: parent.text
+                color: Theme.textPrimary
+                font.pixelSize: 16
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            onClicked: root.close()
         }
         
         Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: "#333"
+            color: Theme.panelBorder
         }
     }
     
@@ -117,25 +133,30 @@ Dialog {
         TabBar {
             id: bar
             Layout.fillWidth: true
-            Layout.preferredHeight: 48
-            background: Rectangle { color: "#252526" }
+            Layout.preferredHeight: 40
+            background: Rectangle {
+                color: Theme.panelBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorder
+                border.width: 1
+            }
             
             component CustomTabButton: TabButton {
                 id: tabBtn
-                width: implicitWidth + 40
+                width: implicitWidth + 28
                 background: Rectangle {
-                    color: tabBtn.checked ? "#1e1e1e" : "#2d2d2d"
+                    color: tabBtn.checked ? Theme.panelAltBackground : Theme.cardBackground
                     Rectangle {
                         anchors.bottom: parent.bottom
                         width: parent.width
                         height: 2
-                        color: tabBtn.checked ? "#3b82f6" : "transparent"
+                        color: tabBtn.checked ? Theme.accent : "transparent"
                     }
                 }
                 contentItem: Text {
                     text: tabBtn.text
-                    color: tabBtn.checked ? "#3b82f6" : "#aaaaaa"
-                    font.pixelSize: 14
+                    color: tabBtn.checked ? Theme.accent : Theme.textMuted
+                    font.pixelSize: 13
                     font.bold: tabBtn.checked
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -148,33 +169,36 @@ Dialog {
         }
         
         // Content
-        StackLayout {
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: bar.currentIndex
-            
-            FaceSnapshotsPanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: faceSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
-            }
-            
-            ObjectCounterPanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: objectSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
-            }
-            
-            LicensePlatePanel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                model: SystemController.analyticsEngine
-                snapshotsDirOverride: plateSnapshotsDir
-                clipsDirOverride: evidenceClipsDir
+            color: Theme.panelBackground
+            radius: Theme.radiusLg
+            border.color: Theme.panelBorder
+            border.width: 1
+
+            StackLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                currentIndex: bar.currentIndex
+
+                FaceSnapshotsPanel {
+                    model: SystemController.analyticsEngine
+                    snapshotsDirOverride: faceSnapshotsDir
+                    clipsDirOverride: evidenceClipsDir
+                }
+
+                ObjectCounterPanel {
+                    model: SystemController.analyticsEngine
+                    snapshotsDirOverride: objectSnapshotsDir
+                    clipsDirOverride: evidenceClipsDir
+                }
+
+                LicensePlatePanel {
+                    model: SystemController.analyticsEngine
+                    snapshotsDirOverride: plateSnapshotsDir
+                    clipsDirOverride: evidenceClipsDir
+                }
             }
         }
     }

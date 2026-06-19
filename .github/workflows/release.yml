@@ -705,6 +705,9 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download Windows Installer
         uses: actions/download-artifact@v4
         with:
@@ -718,6 +721,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          name: OpenIPC Dashboard ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: |
             OpenIPC-Dashboard-Installer.exe
             OpenIPC-Dashboard-Linux.AppImage

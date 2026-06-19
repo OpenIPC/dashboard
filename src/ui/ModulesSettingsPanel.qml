@@ -22,18 +22,7 @@ Item {
     function normalizePath(path) {
         if (!path)
             return ""
-        var str = (typeof path === "string") ? path : path.toString()
-        if (str.startsWith("file:///")) {
-            str = str.substring(8)
-        } else if (str.startsWith("file://")) {
-            str = str.substring(7)
-        }
-        try {
-            str = decodeURIComponent(str)
-        } catch (e) {
-            // keep original
-        }
-        return str
+        return SystemController.normalizeLocalPath((typeof path === "string") ? path : path.toString())
     }
     
     component StyledCheckBox: CheckBox {
@@ -326,7 +315,7 @@ Item {
                                     default: return 1;
                                 }
                             }
-                            onActivated: {
+                            onUserSelected: {
                                 var modes = ["disabled", "standard", "anonymized"]
                                 SystemController.analyticsEngine.setModuleConfig(moduleType, { "faceSnapshotsMode": modes[index] })
                             }

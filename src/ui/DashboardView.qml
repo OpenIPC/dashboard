@@ -15,7 +15,7 @@ Item {
     property bool editingLayout: false
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
-    property bool isSidebarVisible: true
+    property bool isSidebarVisible: SystemController.appSettings.sidebarVisible !== false
     property real sidebarExpandedWidth: 300
     property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
     property real sidebarOpenProgress: sidebarExpandedWidth > 0 ? (sidebarWidth / sidebarExpandedWidth) : 0
@@ -42,7 +42,7 @@ Item {
     property bool canAnalytics: (permToken >= 0) && SystemController.userManager.canAnalytics()
 
     function actionAllowed(action) {
-        if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings") return canSettings
+        if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings" || action === "camex") return canSettings
         if (action === "user") return canUserManage
         if (action === "analytics") return canAnalytics
         return true
@@ -107,6 +107,24 @@ Item {
             return
         }
         settingsDialog.open()
+    }
+
+    function openCamexDialog() {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        camexDialog.open()
+    }
+
+    function setSidebarVisible(visible) {
+        if (isSidebarVisible === visible) {
+            return
+        }
+        isSidebarVisible = visible
+        var settings = SystemController.getAppSettings()
+        settings.sidebarVisible = visible
+        SystemController.saveAppSettings(settings)
     }
 
     function closeEmptyHint(remember) {
@@ -287,6 +305,17 @@ Item {
         function onRowsRemoved(parent, first, last) { root.cameraDataVersion++ }
         function onModelReset() { root.cameraDataVersion++ }
         function onDataChanged(topLeft, bottomRight, roles) { root.cameraDataVersion++ }
+    }
+
+    Connections {
+        target: SystemController
+        ignoreUnknownSignals: true
+        function onAppSettingsChanged() {
+            var nextVisible = SystemController.appSettings.sidebarVisible !== false
+            if (root.isSidebarVisible !== nextVisible) {
+                root.isSidebarVisible = nextVisible
+            }
+        }
     }
 
     function setGrid(r, c) {
@@ -950,6 +979,10 @@ Item {
                             onPermissionDenied: root.showNoAccess()
                             
                             onCloseClicked: {
+                                if (!root.canSettings) {
+                                    root.showNoAccess()
+                                    return
+                                }
                                 SystemController.removeCameraFromGrid(index)
                             }
                             
@@ -1167,7 +1200,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: isSidebarVisible = true
+                        onClicked: root.setSidebarVisible(true)
                     }
                 }
             }
@@ -1210,7 +1243,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: isSidebarVisible = false
+                        onClicked: root.setSidebarVisible(false)
                     }
                 }
                 
@@ -1270,6 +1303,20 @@ Item {
 
                                         console.log("Clicked: " + modelData.action)
                                     }
+                                }
+                            }
+
+                            SidebarActionButton {
+                                iconPath: "M12 2C8.13 2 5 5.13 5 9c0 1.47.45 2.83 1.22 3.95L3.6 15.57 5.03 17l2.62-2.62C8.84 15.39 10.36 16 12 16s3.16-.61 4.35-1.62L18.97 17l1.43-1.43-2.62-2.62C18.55 11.83 19 10.47 19 9c0-3.87-3.13-7-7-7zm0 2c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5zm-1 2v2H9v2h2v2h2v-2h2V8h-2V6h-2z"
+                                label: "Camex"
+                                tooltip: "Удаленный доступ Camex"
+                                enabled: actionAllowed("camex")
+                                onClicked: {
+                                    if (!actionAllowed("camex")) {
+                                        root.showNoAccess()
+                                        return
+                                    }
+                                    root.openCamexDialog()
                                 }
                             }
                         }
@@ -1463,6 +1510,10 @@ Item {
 
                                                 onClicked: (mouse) => {
                                                     if (mouse.button === Qt.RightButton) {
+                                                        if (!root.canSettings) {
+                                                            root.showNoAccess()
+                                                            return
+                                                        }
                                                         deviceContextMenu.cameraIp = cameraIp
                                                         deviceContextMenu.cameraName = cameraName
                                                         deviceContextMenu.cameraIndex = index
@@ -1471,11 +1522,15 @@ Item {
                                                 }
                                                 onDoubleClicked: addToGrid()
 
-                                                drag.target: dragProxy
+                                                drag.target: root.canSettings ? dragProxy : null
                                                 drag.axis: Drag.XAndYAxis
                                                 drag.threshold: 10
 
                                                 onPressed: (mouse) => {
+                                                    if (!root.canSettings) {
+                                                        root.showNoAccess()
+                                                        return
+                                                    }
                                                     if (mouse.button === Qt.LeftButton) {
                                                         var pos = mapToItem(root, mouse.x, mouse.y)
                                                         dragProxy.x = pos.x - dragProxy.width/2
@@ -1501,6 +1556,10 @@ Item {
                                                 }
 
                                                 function addToGrid() {
+                                                    if (!root.canSettings) {
+                                                        root.showNoAccess()
+                                                        return
+                                                    }
                                                     var slots = SystemController.gridCapacity()
                                                     var target = -1
                                                     for (var i = 0; i < slots; ++i) {
@@ -1551,10 +1610,17 @@ Item {
                                                     text: "x"
                                                     color: "#888888"
                                                     font.pixelSize: 16
+                                                    visible: root.canSettings
                                                     MouseArea {
                                                         anchors.fill: parent
                                                         cursorShape: Qt.PointingHandCursor
-                                                        onClicked: SystemController.removeDevice(index)
+                                                        onClicked: {
+                                                            if (!root.canSettings) {
+                                                                root.showNoAccess()
+                                                                return
+                                                            }
+                                                            SystemController.removeDevice(index)
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1567,10 +1633,15 @@ Item {
                                     anchors.fill: parent
                                     z: 1
                                     keys: ["camera"]
+                                    enabled: root.canSettings
                                     onEntered: (drag) => {
                                         drag.accept(Qt.MoveAction)
                                     }
                                     onDropped: (drop) => {
+                                        if (!root.canSettings) {
+                                            root.showNoAccess()
+                                            return
+                                        }
                                         var idx = drop.mimeData.getData("application/camera-index")
                                         if (idx !== undefined && idx !== null) {
                                             SystemController.setCameraGroup(parseInt(idx), groupName)
@@ -1680,16 +1751,17 @@ Item {
         modal: true
         focus: true
         x: (parent.width - width) / 2
-        y: (parent.height - height) / 2 - 60
+        y: (parent.height - height) / 2
         padding: 0
-        implicitWidth: 800
-        implicitHeight: 600
+        width: Math.min(parent.width - 96, 1000)
+        height: Math.min(parent.height - 96, 680)
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
             radius: Theme.radiusXl
             color: Theme.panelAltBackground
-            border.color: Theme.panelBorder
+            border.color: Theme.panelBorderStrong
+            border.width: 1
         }
         
         // Editor State
@@ -1864,25 +1936,25 @@ Item {
             // Header
             Rectangle {
                 Layout.fillWidth: true
-                height: 40
-                color: "transparent"
+                Layout.preferredHeight: 50
+                color: Theme.panelBackground
                 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 18
+                    anchors.leftMargin: 22
                     anchors.rightMargin: 18
                     spacing: 10
                     Text {
                         text: layoutDialogTitle.toUpperCase()
-                        color: "#93a3c4"
-                        font.pixelSize: 12
+                        color: Theme.textMuted
+                        font.pixelSize: 13
                         font.bold: true
                     }
                     Item { Layout.fillWidth: true }
                     Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: "#1f2531"
-                        border.color: "#2b3344"
+                        width: 30; height: 30; radius: 15
+                        color: Theme.panelSoftBackground
+                        border.color: Theme.controlBorder
                         Text { anchors.centerIn: parent; text: "×"; color: "#b0b8c8"; font.pixelSize: 14 }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: layoutDialog.close() }
                     }
@@ -1892,7 +1964,7 @@ Item {
                     anchors.bottom: parent.bottom
                     width: parent.width
                     height: 1
-                    color: "#1f2531"
+                    color: Theme.panelBorder
                 }
             }
 
@@ -1904,32 +1976,36 @@ Item {
                 
                 // LEFT PANEL: Presets
                 Rectangle {
-                    Layout.preferredWidth: 200
+                    Layout.preferredWidth: 230
                     Layout.fillHeight: true
-                    color: "#131720"
+                    color: Theme.panelBackground
                     
                     ListView {
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 5
+                        anchors.margins: 12
+                        spacing: 6
                         clip: true
                         model: layoutPresets
                         delegate: Rectangle {
                             width: parent.width
-                            height: 36
-                            color: selectedPresetId === modelData.id ? "#2563eb" : "transparent"
-                            radius: 4
+                            height: 42
+                            color: selectedPresetId === modelData.id ? Theme.accent : (presetHover.containsMouse ? Theme.cardHover : "transparent")
+                            radius: Theme.radiusMd
+                            border.color: selectedPresetId === modelData.id ? Theme.accentHover : "transparent"
+                            border.width: 1
                             
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
-                                spacing: 10
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 10
+                                spacing: 12
                                 
                                 // Icon
                                 Rectangle {
-                                    width: 20; height: 20
+                                    width: 22; height: 22
+                                    radius: Theme.radiusXs
                                     color: "transparent"
-                                    border.color: selectedPresetId === modelData.id ? "white" : "#4b556a"
+                                    border.color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.controlBorderStrong
                                     border.width: 1
                                     
                                     // Mini grid
@@ -1942,7 +2018,7 @@ Item {
                                             model: Math.min(modelData.cols * modelData.rows, 9)
                                             Rectangle {
                                                 width: 4; height: 4
-                                                color: selectedPresetId === modelData.id ? "white" : "#4b556a"
+                                                color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.textMuted
                                             }
                                         }
                                     }
@@ -1950,13 +2026,19 @@ Item {
                                 
                                 Text {
                                     text: modelData.type === "complex" ? modelData.label : I18n.t("%1 ячеек", [modelData.cells.length > 0 ? modelData.cells.length : (modelData.rows * modelData.cols)])
-                                    color: selectedPresetId === modelData.id ? "white" : "#94a3b8"
+                                    color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.textMuted
                                     font.pixelSize: 13
+                                    font.bold: selectedPresetId === modelData.id
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
                                 }
                             }
                             
                             MouseArea {
+                                id: presetHover
                                 anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     selectedPresetId = modelData.id
                                     // If preset selected, update editor base to match preset for visualization?
@@ -1968,22 +2050,28 @@ Item {
                         
                         footer: Rectangle {
                             width: parent.width
-                            height: 36
-                            color: selectedPresetId === "custom" ? "#2563eb" : "transparent"
-                            radius: 4
+                            height: 42
+                            color: selectedPresetId === "custom" ? Theme.accent : "transparent"
+                            radius: Theme.radiusMd
+                            border.color: selectedPresetId === "custom" ? Theme.accentHover : "transparent"
+                            border.width: 1
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
-                                spacing: 10
-                                Text { text: "?"; color: selectedPresetId === "custom" ? "white" : "#4b556a"; font.bold: true }
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 10
+                                spacing: 12
+                                Text { text: "?"; color: selectedPresetId === "custom" ? Theme.textPrimary : Theme.textMuted; font.bold: true }
                                 Text {
                                     text: I18n.t("Свой")
-                                    color: selectedPresetId === "custom" ? "white" : "#94a3b8"
+                                    color: selectedPresetId === "custom" ? Theme.textPrimary : Theme.textMuted
                                     font.pixelSize: 13
+                                    font.bold: selectedPresetId === "custom"
                                 }
                             }
                             MouseArea {
                                 anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
                                 onClicked: selectedPresetId = "custom"
                             }
                         }
@@ -1993,7 +2081,7 @@ Item {
                         anchors.right: parent.right
                         width: 1
                         height: parent.height
-                        color: "#1f2531"
+                        color: Theme.panelBorder
                     }
                 }
                 
@@ -2011,28 +2099,35 @@ Item {
                         // Controls
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 15
+                            Layout.preferredHeight: 42
+                            spacing: 10
                             
-                            Text { text: I18n.t("Ряд"); color: "#94a3b8" }
+                            Text { text: I18n.t("Ряд"); color: Theme.textMuted; font.pixelSize: 13 }
                             TextField {
                                 id: customRowsField
                                 text: layoutDialog.editorBaseRows
-                                color: "white"
-                                Layout.preferredWidth: 60
-                                background: Rectangle { color: "#121724"; border.color: "#243047"; radius: 4 }
+                                color: Theme.textPrimary
+                                horizontalAlignment: TextInput.AlignHCenter
+                                verticalAlignment: TextInput.AlignVCenter
+                                Layout.preferredWidth: 74
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: Theme.controlBackground; border.color: customRowsField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
                                 onEditingFinished: {
                                     var val = parseInt(text)
                                     if (val > 0 && val <= 12) layoutDialog.initEditor(val, layoutDialog.editorBaseCols)
                                 }
                             }
                             
-                            Text { text: I18n.t("Столбцов"); color: "#94a3b8" }
+                            Text { text: I18n.t("Столбцов"); color: Theme.textMuted; font.pixelSize: 13 }
                             TextField {
                                 id: customColsField
                                 text: layoutDialog.editorBaseCols
-                                color: "white"
-                                Layout.preferredWidth: 60
-                                background: Rectangle { color: "#121724"; border.color: "#243047"; radius: 4 }
+                                color: Theme.textPrimary
+                                horizontalAlignment: TextInput.AlignHCenter
+                                verticalAlignment: TextInput.AlignVCenter
+                                Layout.preferredWidth: 74
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: Theme.controlBackground; border.color: customColsField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
                                 onEditingFinished: {
                                     var val = parseInt(text)
                                     if (val > 0 && val <= 12) layoutDialog.initEditor(layoutDialog.editorBaseRows, val)
@@ -2043,7 +2138,7 @@ Item {
                             Text {
                                 property real ratio: (layoutDialog.editorBaseCols / layoutDialog.editorBaseRows) / (16/9)
                                 text: "AR: " + ratio.toFixed(2) + " (1.0 = 16:9)"
-                                color: (ratio > 0.8 && ratio < 1.2) ? "#4ade80" : "#f87171"
+                                color: (ratio > 0.8 && ratio < 1.2) ? Theme.success : Theme.danger
                                 font.pixelSize: 11
                                 visible: true
                             }
@@ -2052,8 +2147,10 @@ Item {
                             
                             Button {
                                 text: I18n.t("Сброс")
-                                background: Rectangle { color: "#2d3442"; radius: 4 }
-                                contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 78
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: parent.hovered ? Theme.cardHover : Theme.cardBackground; radius: Theme.radiusMd; border.color: Theme.controlBorder }
+                                contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: layoutDialog.resetEditor()
                             }
                             
@@ -2067,16 +2164,20 @@ Item {
                                     var cell = layoutDialog.editorCells[idx]
                                     return cell && (cell.spanR > 1 || cell.spanC > 1)
                                 }
-                                background: Rectangle { color: parent.enabled ? "#2d3442" : "#1f2531"; radius: 4; border.color: parent.enabled ? "#4b556a" : "transparent" }
-                                contentItem: Text { text: parent.text; color: parent.enabled ? "white" : "#444"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 90
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: parent.enabled ? (parent.hovered ? Theme.cardHover : Theme.cardBackground) : Theme.controlBackgroundAlt; radius: Theme.radiusMd; border.color: parent.enabled ? Theme.controlBorderStrong : Theme.controlBorder }
+                                contentItem: Text { text: parent.text; color: parent.enabled ? Theme.textPrimary : Theme.textFaint; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: layoutDialog.unmergeSelection()
                             }
 
                             Button {
                                 text: I18n.t("Объединить")
                                 enabled: layoutDialog.selectionStart.x >= 0
-                                background: Rectangle { color: parent.enabled ? "#2563eb" : "#2d3442"; radius: 4 }
-                                contentItem: Text { text: parent.text; color: parent.enabled ? "white" : "#666"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 112
+                                Layout.preferredHeight: 32
+                                background: Rectangle { color: parent.enabled ? (parent.hovered ? Theme.accentHover : Theme.accent) : Theme.controlBackgroundAlt; radius: Theme.radiusMd; border.color: parent.enabled ? Theme.accentHover : Theme.controlBorder }
+                                contentItem: Text { text: parent.text; color: parent.enabled ? Theme.textPrimary : Theme.textFaint; font.pixelSize: 13; font.bold: parent.enabled; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: layoutDialog.mergeSelection()
                             }
                         }
@@ -2085,8 +2186,10 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            color: "#0f1219"
-                            border.color: "#2b3344"
+                            color: Theme.controlBackground
+                            border.color: Theme.panelBorderStrong
+                            border.width: 1
+                            radius: Theme.radiusLg
                             
                             // Grid Container
                             Item {
@@ -2107,22 +2210,22 @@ Item {
                                         y: modelData.r * gridContainer.cellH
                                         width: modelData.spanC * gridContainer.cellW
                                         height: modelData.spanR * gridContainer.cellH
-                                        color: "#1f2937" // Darker base
-                                        border.color: "#374151"
+                                        color: Theme.cardBackground
+                                        border.color: Theme.panelBorderStrong
                                         border.width: 1
                                         
                                         // Inner "Screen" look
                                         Rectangle {
                                             anchors.fill: parent
                                             anchors.margins: 2
-                                            color: "#111827"
-                                            border.color: "#1f2937"
+                                            color: Theme.panelAltBackground
+                                            border.color: Theme.panelBorder
                                             
                                             // Cell Index
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: (index + 1)
-                                                color: "#374151"
+                                                color: Theme.controlBorderStrong
                                                 font.pixelSize: Math.min(parent.width, parent.height) * 0.4
                                                 font.bold: true
                                             }
@@ -2132,7 +2235,7 @@ Item {
                                                 visible: modelData.spanR > 1 || modelData.spanC > 1
                                                 anchors.fill: parent
                                                 color: "transparent"
-                                                border.color: "#3b82f6"
+                                                border.color: Theme.accent
                                                 border.width: 2
                                                 opacity: 0.5
                                             }
@@ -2147,9 +2250,9 @@ Item {
                                     y: Math.min(layoutDialog.selectionStart.y, layoutDialog.selectionEnd.y) * gridContainer.cellH
                                     width: (Math.abs(layoutDialog.selectionEnd.x - layoutDialog.selectionStart.x) + 1) * gridContainer.cellW
                                     height: (Math.abs(layoutDialog.selectionEnd.y - layoutDialog.selectionStart.y) + 1) * gridContainer.cellH
-                                    color: "#2563eb"
+                                    color: Theme.accent
                                     opacity: 0.3
-                                    border.color: "#60a5fa"
+                                    border.color: Theme.accentHover
                                     border.width: 2
                                 }
                                 
@@ -2190,13 +2293,15 @@ Item {
                         // Name Field
                         RowLayout {
                             Layout.fillWidth: true
-                            Text { text: I18n.t("Имя:"); color: "#94a3b8" }
+                            Text { text: I18n.t("Имя:"); color: Theme.textMuted; font.pixelSize: 13 }
                             TextField {
                                 id: nameField
                                 Layout.fillWidth: true
                                 placeholderText: I18n.t("Название раскладки")
-                                color: "white"
-                                background: Rectangle { color: "#121724"; border.color: "#243047"; radius: 4 }
+                                Layout.preferredHeight: 32
+                                color: Theme.textPrimary
+                                verticalAlignment: TextInput.AlignVCenter
+                                background: Rectangle { color: Theme.controlBackground; border.color: nameField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
                             }
                         }
                     }
@@ -2206,14 +2311,14 @@ Item {
             // Footer
             Rectangle {
                 Layout.fillWidth: true
-                height: 60
-                color: "transparent"
+                Layout.preferredHeight: 64
+                color: Theme.panelBackground
                 
                 Rectangle {
                     anchors.top: parent.top
                     width: parent.width
                     height: 1
-                    color: "#1f2531"
+                    color: Theme.panelBorder
                 }
                 
                 RowLayout {
@@ -2224,15 +2329,19 @@ Item {
                     
                     Button {
                         text: I18n.t("Отмена")
-                        background: Rectangle { color: "#2d3442"; radius: 4 }
-                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        Layout.preferredWidth: 92
+                        Layout.preferredHeight: 34
+                        background: Rectangle { color: parent.hovered ? Theme.cardHover : Theme.cardBackground; radius: Theme.radiusMd; border.color: Theme.controlBorder }
+                        contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         onClicked: layoutDialog.close()
                     }
                     
                     Button {
                         text: I18n.t("OK")
-                        background: Rectangle { color: "#2563eb"; radius: 4 }
-                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        Layout.preferredWidth: 74
+                        Layout.preferredHeight: 34
+                        background: Rectangle { color: parent.hovered ? Theme.accentHover : Theme.accent; radius: Theme.radiusMd; border.color: Theme.accentHover }
+                        contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         onClicked: {
                             // If custom, use editor cells. If preset, use preset.
                             if (selectedPresetId === "custom") {
@@ -2307,6 +2416,10 @@ Item {
     
     AnalyticsView {
         id: analyticsDialog
+    }
+
+    CamexView {
+        id: camexDialog
     }
 
     UserManagementDialog {
@@ -2591,6 +2704,11 @@ Item {
                     contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     onClicked: {
                         if (confirmDeleteDialog.cameraIndex >= 0) {
+                            if (!root.canSettings) {
+                                root.showNoAccess()
+                                confirmDeleteDialog.close()
+                                return
+                            }
                             SystemController.removeDevice(confirmDeleteDialog.cameraIndex)
                         }
                         confirmDeleteDialog.close()

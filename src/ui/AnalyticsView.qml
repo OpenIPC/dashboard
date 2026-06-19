@@ -425,7 +425,7 @@ Dialog {
                                 Layout.preferredWidth: 220
                                 model: [I18n.t("Лица"), I18n.t("Объекты"), I18n.t("Номера")]
                                 currentIndex: root.rulesModuleType
-                                onActivated: root.rulesModuleType = currentIndex
+                                onUserSelected: root.rulesModuleType = currentIndex
                             }
 
                             Item { Layout.fillWidth: true }
@@ -596,6 +596,52 @@ Dialog {
                                     Text {
                                         text: String(analyticsDiagnosticsData.cameraStats ? analyticsDiagnosticsData.cameraStats.length : 0)
                                         color: Theme.textPrimary
+                                        font.pixelSize: 18
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("AI FPS"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text {
+                                        text: String(analyticsDiagnosticsData.analyticsTargetFps || 0)
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 18
+                                        font.bold: true
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 180
+                                implicitHeight: 76
+                                radius: Theme.radiusLg
+                                color: Theme.cardBackground
+                                border.color: Theme.cardBorder
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 3
+                                    Text { text: I18n.t("AI-задачи"); color: Theme.textMuted; font.pixelSize: 11 }
+                                    Text {
+                                        text: String(analyticsDiagnosticsData.analyticsActiveJobs || 0)
+                                              + " / "
+                                              + String(analyticsDiagnosticsData.analyticsMaxParallelJobs || 0)
+                                        color: Number(analyticsDiagnosticsData.analyticsActiveJobs || 0) > 0 ? Theme.success : Theme.textPrimary
                                         font.pixelSize: 18
                                         font.bold: true
                                     }

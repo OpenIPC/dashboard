@@ -30,9 +30,11 @@ UserManager::UserManager(QObject *parent)
     QSettings settings;
     if (settings.value("auth/remember", false).toBool()) {
         const QString username = settings.value("auth/username").toString().trimmed();
+        const QString password = settings.value("auth/password").toString();
         for (const auto &user : m_users) {
             if (user.username == username) {
                 m_rememberedUsername = username;
+                m_rememberedPassword = password;
                 break;
             }
         }
@@ -40,6 +42,7 @@ UserManager::UserManager(QObject *parent)
         if (m_rememberedUsername.isEmpty()) {
             settings.setValue("auth/remember", false);
             settings.remove("auth/username");
+            settings.remove("auth/password");
         }
     }
 }
@@ -108,9 +111,9 @@ bool UserManager::login(const QString &username, const QString &password, bool r
         qInfo() << "Logged in as" << m_currentUser.username << "permissions" << m_currentUser.permissions;
 
         if (rememberMe) {
-            setRememberedUsername(normalizedUsername);
+            setRememberedCredentials(normalizedUsername, password);
         } else {
-            setRememberedUsername(QString());
+            setRememberedCredentials(QString(), QString());
         }
 
         emit currentUserChanged();
@@ -120,6 +123,22 @@ bool UserManager::login(const QString &username, const QString &password, bool r
         return true;
     }
 
+    return false;
+}
+
+bool UserManager::loginWithRememberedCredentials()
+{
+    if (m_rememberedUsername.isEmpty() || m_rememberedPassword.isEmpty()) {
+        return false;
+    }
+
+    const QString username = m_rememberedUsername;
+    const QString password = m_rememberedPassword;
+    if (login(username, password, true)) {
+        return true;
+    }
+
+    setRememberedCredentials(QString(), QString());
     return false;
 }
 
@@ -155,9 +174,9 @@ bool UserManager::setupInitialAdmin(const QString &username, const QString &pass
     m_currentUser = adminUser;
     m_isLoggedIn = true;
     if (rememberMe) {
-        setRememberedUsername(normalizedUsername);
+        setRememberedCredentials(normalizedUsername, password);
     } else {
-        setRememberedUsername(QString());
+        setRememberedCredentials(QString(), QString());
     }
 
     emit currentUserChanged();
@@ -264,6 +283,9 @@ bool UserManager::deleteUser(const QString &username)
 
         m_users.removeAt(i);
         saveUsers();
+        if (m_rememberedUsername == username) {
+            setRememberedCredentials(QString(), QString());
+        }
         emit usersChanged();
         m_permissionsVersion++;
         emit permissionsVersionChanged();
@@ -290,6 +312,9 @@ bool UserManager::changePassword(const QString &username, const QString &oldPass
 
         setPassword(m_users[i], newPassword);
         saveUsers();
+        if (m_rememberedUsername == username) {
+            setRememberedCredentials(username, newPassword);
+        }
         return true;
     }
 
@@ -337,9 +362,6 @@ void UserManager::loadUsers()
         User user = User::fromJson(value.toObject());
         if ((user.username == "admin" || user.role == "admin") && (user.permissions & Perm_All) != Perm_All) {
             user.permissions = Perm_All;
-            changed = true;
-        } else if ((user.permissions & Perm_LiveView) && !(user.permissions & Perm_Analytics)) {
-            user.permissions |= Perm_Analytics;
             changed = true;
         }
         m_users.append(user);
@@ -452,25 +474,39 @@ bool UserManager::verifyPassword(const User &user, const QString &password, bool
     return matchesLegacy;
 }
 
-void UserManager::setRememberedUsername(const QString &username)
+void UserManager::setRememberedCredentials(const QString &username, const QString &password)
 {
     const QString normalizedUsername = username.trimmed();
+    const bool remember = !normalizedUsername.isEmpty() && !password.isEmpty();
 
     QSettings settings;
-    if (normalizedUsername.isEmpty()) {
+    if (!remember) {
         settings.setValue("auth/remember", false);
         settings.remove("auth/username");
+        settings.remove("auth/password");
     } else {
         settings.setValue("auth/remember", true);
         settings.setValue("auth/username", normalizedUsername);
+        settings.setValue("auth/password", password);
     }
 
-    if (m_rememberedUsername == normalizedUsername) {
+    const QString nextUsername = remember ? normalizedUsername : QString();
+    const QString nextPassword = remember ? password : QString();
+    const bool usernameChanged = m_rememberedUsername != nextUsername;
+    const bool passwordChanged = m_rememberedPassword != nextPassword;
+
+    if (!usernameChanged && !passwordChanged) {
         return;
     }
 
-    m_rememberedUsername = normalizedUsername;
-    emit rememberedUsernameChanged();
+    m_rememberedUsername = nextUsername;
+    m_rememberedPassword = nextPassword;
+    if (usernameChanged) {
+        emit rememberedUsernameChanged();
+    }
+    if (passwordChanged) {
+        emit rememberedPasswordChanged();
+    }
 }
 
 QString UserManager::usersFilePath() const

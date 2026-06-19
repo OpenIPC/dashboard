@@ -41,12 +41,16 @@ public:
     Q_INVOKABLE float getModuleProgress(ModuleType type) const;
     Q_INVOKABLE QString getModuleStatus(ModuleType type) const; // "not_installed", "downloading", "ready", "error"
     Q_INVOKABLE QString getModuleError(ModuleType type) const;
+    Q_INVOKABLE QVariantMap getModuleDiagnostics(int type) const;
+    Q_INVOKABLE void reloadModule(int type);
     Q_INVOKABLE void processFrame(const QImage &frame, const QString &cameraId);
     
     Q_INVOKABLE QVariantMap getSettings() const;
     Q_INVOKABLE void setSettings(const QVariantMap &settings);
     Q_INVOKABLE QVariantMap getEvidenceSettings() const;
     Q_INVOKABLE void setEvidenceSettings(const QVariantMap &settings);
+    Q_INVOKABLE QVariantMap getPerformanceSettings() const;
+    Q_INVOKABLE void setPerformanceSettings(const QVariantMap &settings);
     Q_INVOKABLE void startOAuth(const QString &provider, const QString &clientId, const QString &clientSecret = QString());
     Q_INVOKABLE void cancelOAuth();
 
@@ -66,6 +70,7 @@ public:
     Q_INVOKABLE void clearAnalyticsEvents(int type = -1, const QString &cameraId = QString());
 
     Q_INVOKABLE bool isBusy(const QString &cameraId) const;
+    Q_INVOKABLE bool canAcceptFrame(const QString &cameraId) const;
     Q_INVOKABLE bool hasActiveModules(const QString &cameraId) const;
     QVariantMap getPersistedSettings() const;
 
@@ -114,6 +119,10 @@ private:
 
     mutable QMutex m_processingMutex;
     QSet<QString> m_processingCameras;
+    QMap<QString, qint64> m_lastAcceptedFrameMs;
+    int m_analyticsTargetFps = 3;
+    int m_analyticsMaxParallelJobs = 2;
+    QString m_analyticsPerformancePreset = "balanced";
     
     // Throttling for snapshots: Key = "cameraId_moduleType", Value = timestamp ms
     QMap<QString, qint64> m_lastSnapshotTimes;
@@ -170,6 +179,10 @@ private:
         quint64 events = 0;
         double totalInferenceMs = 0.0;
         double lastInferenceMs = 0.0;
+        qint64 lastProcessedMs = 0;
+        qint64 lastSkippedMs = 0;
+        qint64 lastDetectionMs = 0;
+        qint64 lastEventMs = 0;
     };
 
     struct TrackState {
@@ -223,6 +236,7 @@ private:
     bool m_uploadActive = false;
 
     void setupModules();
+    int analyticsFrameIntervalMs() const;
     QVariantMap buildEvidenceSettings(bool includeSensitiveData) const;
     QVariantMap telemetryStateToVariant(const TelemetryState &state) const;
     QVariantMap detectionToVariant(const DetectionBox &box, const QString &moduleId, ModuleType moduleType) const;
@@ -232,9 +246,11 @@ private:
     QString readSecretFromKeychain(const QString &name) const;
     void writeSecretToKeychain(const QString &name, const QString &value) const;
     void deleteSecretFromKeychain(const QString &name) const;
+    void cancelModuleDownload(ModuleType type);
     void startDownload(ModuleType type);
     void checkRuntimeAndDownload(ModuleType type);
-    void downloadFile(const QString &url, const QString &filePath, ModuleType type, bool isRuntime = false);
+    void downloadFile(const QString &url, const QString &filePath, ModuleType type,
+                      bool isRuntime = false, int retryCount = 0);
     void recordSkippedFrame(const QString &cameraId);
     bool moduleHasClipRules(const QVariantMap &extraConfig) const;
     QString ensurePendingClip(const QString &cameraId, const QVariantMap &detection, qint64 nowMs);

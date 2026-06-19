@@ -447,7 +447,7 @@ Item {
 
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: width >= 1180 ? 5 : width >= 780 ? 3 : 1
+                    columns: width >= 1280 ? 6 : width >= 860 ? 3 : 1
                     columnSpacing: 8
                     rowSpacing: 8
 
@@ -477,6 +477,16 @@ Item {
                         value: I18n.t("С AI: %1", [root.camerasWithAnalyticsCount])
                         hint: I18n.t("Назначений: %1", [root.enabledCameraModulesCount])
                         ok: root.camerasWithAnalyticsCount > 0
+                    }
+
+                    PipelineStep {
+                        title: I18n.t("AI-кадры")
+                        value: I18n.t("FPS: %1", [root.metricValue(root.moduleTelemetry, "analyticsTargetFps", 0)])
+                        hint: I18n.t("Задач: %1/%2", [
+                            root.metricValue(root.moduleTelemetry, "analyticsActiveJobs", 0),
+                            root.metricValue(root.moduleTelemetry, "analyticsMaxParallelJobs", 0)
+                        ])
+                        ok: root.camerasWithAnalyticsCount > 0 && root.metricValue(root.moduleTelemetry, "analyticsTargetFps", 0) > 0
                     }
 
                     PipelineStep {

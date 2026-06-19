@@ -1,5 +1,6 @@
 #include "AnalyticsEngine.h"
 #include "YoloDetector.h"
+#include "../PathUtils.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QDebug>
@@ -239,6 +240,10 @@ QVariantMap AnalyticsEngine::telemetryStateToVariant(const TelemetryState &state
     result["averageInferenceMs"] = state.processedFrames > 0
         ? (state.totalInferenceMs / static_cast<double>(state.processedFrames))
         : 0.0;
+    result["lastProcessedMs"] = static_cast<qlonglong>(state.lastProcessedMs);
+    result["lastSkippedMs"] = static_cast<qlonglong>(state.lastSkippedMs);
+    result["lastDetectionMs"] = static_cast<qlonglong>(state.lastDetectionMs);
+    result["lastEventMs"] = static_cast<qlonglong>(state.lastEventMs);
     return result;
 }
 
@@ -249,6 +254,12 @@ QString AnalyticsEngine::countsToText(const QMap<QString, int> &counts) const
         parts.append(QString("%1: %2").arg(it.key(), QString::number(it.value())));
     }
     return parts.join(", ");
+}
+
+int AnalyticsEngine::analyticsFrameIntervalMs() const
+{
+    const int targetFps = qBound(1, m_analyticsTargetFps, 30);
+    return qMax(1, qRound(1000.0 / static_cast<double>(targetFps)));
 }
 
 QVariantMap AnalyticsEngine::analyticsDiagnostics() const
@@ -263,15 +274,13 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
     quint64 events = 0;
     double totalInferenceMs = 0.0;
     quint64 inferenceSamples = 0;
+    QSet<QString> cameraIds;
 
     {
         QMutexLocker locker(&m_telemetryMutex);
 
         for (auto it = m_cameraTelemetry.begin(); it != m_cameraTelemetry.end(); ++it) {
-            QVariantMap entry = telemetryStateToVariant(it.value());
-            entry["cameraId"] = it.key();
-            cameraStats.append(entry);
-
+            cameraIds.insert(it.key());
             processedFrames += it.value().processedFrames;
             skippedFrames += it.value().skippedFrames;
             detections += it.value().detections;
@@ -288,6 +297,113 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
         }
     }
 
+    for (auto cameraIt = m_cameraModules.begin(); cameraIt != m_cameraModules.end(); ++cameraIt) {
+        cameraIds.insert(cameraIt.key());
+    }
+
+    QSet<QString> processingCameras;
+    QMap<QString, qint64> lastAcceptedFrames;
+    {
+        QMutexLocker locker(&m_processingMutex);
+        processingCameras = m_processingCameras;
+        lastAcceptedFrames = m_lastAcceptedFrameMs;
+    }
+
+    QStringList sortedCameraIds = cameraIds.values();
+    std::sort(sortedCameraIds.begin(), sortedCameraIds.end());
+    for (const QString &cameraId : sortedCameraIds) {
+        QVariantMap entry;
+        {
+            QMutexLocker locker(&m_telemetryMutex);
+            entry = telemetryStateToVariant(m_cameraTelemetry.value(cameraId));
+        }
+
+        QVariantList moduleAssignments;
+        int assignedModules = 0;
+        int readyModules = 0;
+        int activeModules = 0;
+        int configuredRules = 0;
+        const QMap<ModuleType, bool> assignments = m_cameraModules.value(cameraId);
+
+        for (int moduleTypeValue = static_cast<int>(FaceDetector);
+             moduleTypeValue <= static_cast<int>(LicensePlate);
+             ++moduleTypeValue) {
+            const ModuleType moduleType = static_cast<ModuleType>(moduleTypeValue);
+            if (!assignments.value(moduleType, false)) {
+                continue;
+            }
+
+            assignedModules += 1;
+            QVariantMap moduleState;
+            moduleState["moduleType"] = moduleTypeValue;
+
+            if (m_modules.contains(moduleType)) {
+                const ModuleContext &ctx = m_modules[moduleType];
+                const bool ready = ctx.status == "ready";
+                const bool active = ctx.enabled && ready;
+                int enabledRules = 0;
+                const QVariantList rules = ctx.extraConfig.value("rules").toList();
+                for (const QVariant &ruleVar : rules) {
+                    const QVariantMap rule = ruleVar.toMap();
+                    if (rule.value("enabled", true).toBool()) {
+                        enabledRules += 1;
+                    }
+                }
+
+                if (ready) {
+                    readyModules += 1;
+                }
+                if (active) {
+                    activeModules += 1;
+                }
+                configuredRules += enabledRules;
+
+                moduleState["moduleName"] = ctx.name;
+                moduleState["enabled"] = ctx.enabled;
+                moduleState["ready"] = ready;
+                moduleState["active"] = active;
+                moduleState["status"] = ctx.status;
+                moduleState["rules"] = enabledRules;
+            } else {
+                moduleState["moduleName"] = QString::number(moduleTypeValue);
+                moduleState["enabled"] = false;
+                moduleState["ready"] = false;
+                moduleState["active"] = false;
+                moduleState["status"] = QStringLiteral("not_installed");
+                moduleState["rules"] = 0;
+            }
+
+            moduleAssignments.append(moduleState);
+        }
+
+        const bool isProcessing = processingCameras.contains(cameraId);
+        const quint64 processed = entry.value("processedFrames").toULongLong();
+        const quint64 skipped = entry.value("skippedFrames").toULongLong();
+        QString pipelineState = QStringLiteral("unassigned");
+        if (assignedModules > 0 && activeModules == 0) {
+            pipelineState = QStringLiteral("module_not_ready");
+        } else if (isProcessing) {
+            pipelineState = QStringLiteral("processing");
+        } else if (processed > 0) {
+            pipelineState = QStringLiteral("receiving");
+        } else if (skipped > 0) {
+            pipelineState = QStringLiteral("throttled");
+        } else if (activeModules > 0) {
+            pipelineState = QStringLiteral("waiting");
+        }
+
+        entry["cameraId"] = cameraId;
+        entry["assignedModules"] = assignedModules;
+        entry["readyModules"] = readyModules;
+        entry["activeModules"] = activeModules;
+        entry["configuredRules"] = configuredRules;
+        entry["moduleAssignments"] = moduleAssignments;
+        entry["isProcessing"] = isProcessing;
+        entry["lastAcceptedFrameMs"] = static_cast<qlonglong>(lastAcceptedFrames.value(cameraId, 0));
+        entry["pipelineState"] = pipelineState;
+        cameraStats.append(entry);
+    }
+
     result["processedFrames"] = static_cast<qlonglong>(processedFrames);
     result["skippedFrames"] = static_cast<qlonglong>(skippedFrames);
     result["detections"] = static_cast<qlonglong>(detections);
@@ -301,6 +417,10 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
     result["eventStoreReady"] = m_eventStoreReady;
     result["eventStorePath"] = m_eventStorePath;
     result["objectCounterSummary"] = getObjectCounterSummary();
+    result["analyticsPerformancePreset"] = m_analyticsPerformancePreset;
+    result["analyticsTargetFps"] = m_analyticsTargetFps;
+    result["analyticsFrameIntervalMs"] = analyticsFrameIntervalMs();
+    result["analyticsMaxParallelJobs"] = m_analyticsMaxParallelJobs;
 
     {
         QMutexLocker locker(&m_counterMutex);
@@ -315,6 +435,8 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
         QMutexLocker locker(&m_uploadMutex);
         result["uploadQueueDepth"] = m_uploadQueue.size() + (m_uploadActive ? 1 : 0);
     }
+
+    result["analyticsActiveJobs"] = processingCameras.size();
 
     return result;
 }
@@ -549,14 +671,116 @@ QString AnalyticsEngine::getModuleError(ModuleType type) const
     return m_modules[type].error;
 }
 
+QVariantMap AnalyticsEngine::getModuleDiagnostics(int type) const
+{
+    const ModuleType moduleType = static_cast<ModuleType>(type);
+    QVariantMap result;
+    result["moduleType"] = type;
+
+    if (!m_modules.contains(moduleType)) {
+        result["status"] = QStringLiteral("error");
+        result["error"] = QStringLiteral("Unknown module");
+        result["installed"] = false;
+        result["loaded"] = false;
+        return result;
+    }
+
+    const ModuleContext &ctx = m_modules[moduleType];
+    const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+    const QFileInfo modelInfo(modelPath);
+
+    result["moduleName"] = ctx.name;
+    result["description"] = ctx.description;
+    result["version"] = ctx.version;
+    result["enabled"] = ctx.enabled;
+    result["status"] = ctx.status;
+    result["progress"] = ctx.progress;
+    result["error"] = ctx.error;
+    result["modelFileName"] = ctx.modelFileName;
+    result["modelPath"] = modelPath;
+    result["modulesDir"] = m_modulesDir;
+    result["modelUrl"] = ctx.modelUrl;
+    result["installed"] = modelInfo.exists() && modelInfo.isFile();
+    result["modelSizeBytes"] = modelInfo.exists() ? static_cast<qlonglong>(modelInfo.size()) : 0;
+    result["lastModifiedMs"] = modelInfo.exists() ? modelInfo.lastModified().toMSecsSinceEpoch() : 0;
+    result["loaded"] = ctx.backend && ctx.backend->isLoaded();
+    result["confidenceThreshold"] = ctx.options.confidenceThreshold;
+    result["nmsThreshold"] = ctx.options.nmsThreshold;
+    result["classCount"] = ctx.options.classLabels.size();
+    result["classes"] = ctx.options.classLabels;
+
+    return result;
+}
+
+void AnalyticsEngine::cancelModuleDownload(ModuleType type)
+{
+    if (m_currentDownloads.contains(type)) {
+        QNetworkReply *reply = m_currentDownloads.take(type);
+        if (reply) {
+            reply->disconnect(this);
+            if (reply->isRunning()) {
+                reply->abort();
+            }
+            reply->deleteLater();
+        }
+    }
+
+    if (m_downloadFiles.contains(type)) {
+        QFile *file = m_downloadFiles.take(type);
+        const QString partialPath = file ? file->fileName() : QString();
+        if (file) {
+            file->close();
+            delete file;
+        }
+        if (!partialPath.isEmpty()) {
+            QFile::remove(partialPath);
+        }
+    }
+}
+
+void AnalyticsEngine::reloadModule(int type)
+{
+    const ModuleType moduleType = static_cast<ModuleType>(type);
+    if (!m_modules.contains(moduleType)) {
+        return;
+    }
+
+    cancelModuleDownload(moduleType);
+
+    ModuleContext &ctx = m_modules[moduleType];
+    const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+    ctx.enabled = false;
+    ctx.backend.reset();
+    ctx.error.clear();
+    ctx.status = "downloading";
+    ctx.progress = 0.0f;
+
+    if (QFileInfo::exists(modelPath) && !QFile::remove(modelPath)) {
+        ctx.status = "error";
+        ctx.progress = 0.0f;
+        ctx.error = QStringLiteral("Failed to remove model file: %1").arg(modelPath);
+        emit moduleStatusChanged(moduleType, ctx.status, ctx.progress, ctx.error);
+        emit analyticsTelemetryChanged();
+        return;
+    }
+
+    ctx.backend = std::make_shared<YoloDetector>(ctx.options);
+    emit moduleStatusChanged(moduleType, ctx.status, ctx.progress, ctx.error);
+    emit analyticsTelemetryChanged();
+    startDownload(moduleType);
+}
+
 void AnalyticsEngine::startDownload(ModuleType type)
 {
     qInfo() << "startDownload" << type;
     fprintf(stderr, "AnalyticsEngine::startDownload type=%d\n", (int)type);
     
     if (!m_modules.contains(type)) return;
+
+    cancelModuleDownload(type);
     
     ModuleContext &ctx = m_modules[type];
+    ctx.backend = std::make_shared<YoloDetector>(ctx.options);
     ctx.status = "downloading";
     ctx.progress = 0.0f;
     ctx.error.clear();
@@ -575,14 +799,24 @@ void AnalyticsEngine::checkRuntimeAndDownload(ModuleType type)
     downloadFile(ctx.modelUrl, modelPath, type, false);
 }
 
-void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, ModuleType type, bool isRuntime)
+void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, ModuleType type,
+                                   bool isRuntime, int retryCount)
 {
     qInfo() << "downloadFile" << url << "to" << filePath;
     fprintf(stderr, "AnalyticsEngine::downloadFile url=%s path=%s\n", qPrintable(url), qPrintable(filePath));
-    
-    QNetworkRequest request(url);
+
+    constexpr int kTransferTimeoutMs = 20000;
+    constexpr int kMaxDownloadRetries = 2;
+
+    QNetworkRequest request{QUrl(url)};
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
-    
+    // Qt 6.4 can occasionally leave HTTP/2 GitHub downloads waiting forever on Windows.
+    // HTTP/1.1 is more reliable here because each module is downloaded as one large file.
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+    request.setTransferTimeout(kTransferTimeoutMs);
+    request.setRawHeader("User-Agent", "OpenIPC-Dashboard/0.2");
+    request.setRawHeader("Accept", "application/octet-stream");
+
     QNetworkReply *reply = m_networkManager->get(request);
     m_currentDownloads[type] = reply;
     
@@ -592,6 +826,9 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
         m_modules[type].status = "error";
         m_modules[type].error = "Failed to open file for writing: " + filePath;
         emit moduleStatusChanged(type, m_modules[type].status, 0.0f, m_modules[type].error);
+        if (m_currentDownloads.value(type) == reply) {
+            m_currentDownloads.remove(type);
+        }
         delete file;
         reply->abort();
         reply->deleteLater();
@@ -600,27 +837,42 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
     m_downloadFiles[type] = file;
 
     connect(reply, &QNetworkReply::readyRead, this, [this, type, reply]() {
+        if (m_currentDownloads.value(type) != reply) {
+            return;
+        }
         if (m_downloadFiles.contains(type)) {
             m_downloadFiles[type]->write(reply->readAll());
         }
     });
 
-    connect(reply, &QNetworkReply::downloadProgress, this, [this, type, isRuntime](qint64 bytesReceived, qint64 bytesTotal) {
+    connect(reply, &QNetworkReply::metaDataChanged, this, [type, reply]() {
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const qint64 contentLength = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+        qInfo() << "Model download response" << type
+                << "HTTP" << statusCode
+                << "contentLength" << contentLength
+                << "url" << reply->url();
+    });
+
+    connect(reply, &QNetworkReply::errorOccurred, this, [type, reply](QNetworkReply::NetworkError error) {
+        qWarning() << "Model download network error" << type << error << reply->errorString();
+    });
+
+    connect(reply, &QNetworkReply::downloadProgress, this, [this, type, isRuntime, reply](qint64 bytesReceived, qint64 bytesTotal) {
+        if (m_currentDownloads.value(type) != reply) {
+            return;
+        }
         // qInfo() << "Progress" << type << bytesReceived << "/" << bytesTotal;
         if (m_modules.contains(type)) {
-            float progress = 0.0f;
+            float progress = 0.35f;
             if (bytesTotal > 0) {
-                progress = (float)bytesReceived / (float)bytesTotal;
-            } else {
-                // Indeterminate progress: cycle 0.1 -> 0.9
-                // Just use a fake increment based on received bytes if total is unknown
-                // or just set to 0.5 to show "something"
-                progress = 0.5f; 
+                progress = static_cast<float>(bytesReceived) / static_cast<float>(bytesTotal);
+                progress = std::clamp(progress, 0.0f, 0.99f);
             }
-            
+
             ModuleContext &ctx = m_modules[type];
             if (isRuntime) {
-                ctx.progress = progress * 0.5f;
+                ctx.progress = std::min(progress * 0.5f, 0.49f);
             } else {
                 ctx.progress = progress;
             }
@@ -644,7 +896,13 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
         reply->abort();
     });
 
-    connect(reply, &QNetworkReply::finished, this, [this, type, isRuntime, reply]() {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, type, isRuntime, retryCount, url, reply, filePath]() {
+        if (m_currentDownloads.value(type) != reply) {
+            reply->deleteLater();
+            return;
+        }
+
         qInfo() << "Download finished" << type << "Error:" << reply->error();
         fprintf(stderr, "AnalyticsEngine::downloadFile finished type=%d error=%d\n", (int)type, reply->error());
         
@@ -658,10 +916,39 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
         
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "Network error:" << reply->errorString();
+            QFile::remove(filePath);
+
+            if (retryCount < kMaxDownloadRetries &&
+                reply->error() != QNetworkReply::OperationCanceledError) {
+                if (m_modules.contains(type)) {
+                    ModuleContext &ctx = m_modules[type];
+                    ctx.status = "downloading";
+                    ctx.progress = 0.0f;
+                    ctx.error.clear();
+                    emit moduleStatusChanged(type, ctx.status, ctx.progress, ctx.error);
+                }
+
+                const int nextRetry = retryCount + 1;
+                const int retryDelayMs = 1000 * nextRetry;
+                qInfo() << "Retrying model download" << type
+                        << "attempt" << nextRetry
+                        << "in" << retryDelayMs << "ms";
+                QTimer::singleShot(retryDelayMs, this,
+                    [this, type, isRuntime, nextRetry, url, filePath]() {
+                        if (!m_currentDownloads.contains(type) && m_modules.contains(type)) {
+                            downloadFile(url, filePath, type, isRuntime, nextRetry);
+                        }
+                    });
+                reply->deleteLater();
+                return;
+            }
+
             if (m_modules.contains(type)) {
-                m_modules[type].status = "error";
-                m_modules[type].error = reply->errorString();
-                emit moduleStatusChanged(type, m_modules[type].status, 0.0f, m_modules[type].error);
+                ModuleContext &ctx = m_modules[type];
+                ctx.status = "error";
+                ctx.progress = 0.0f;
+                ctx.error = reply->errorString();
+                emit moduleStatusChanged(type, ctx.status, ctx.progress, ctx.error);
             }
         } else {
             // Check for redirect manually if needed (though RedirectPolicy should handle it)
@@ -673,7 +960,9 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
                 // But UserVerifiedRedirectPolicy usually stops and asks. 
                 // Let's assume NoLessSafeRedirectPolicy was better, but maybe we need to handle the redirect manually if it fails.
                 // Actually, let's just recurse.
-                downloadFile(newUrl.toString(), QDir(m_modulesDir).filePath(isRuntime ? "onnxruntime.dll" : m_modules[type].modelFileName), type, isRuntime);
+                downloadFile(newUrl.toString(),
+                             QDir(m_modulesDir).filePath(isRuntime ? "onnxruntime.dll" : m_modules[type].modelFileName),
+                             type, isRuntime, retryCount);
                 reply->deleteLater();
                 return;
             }
@@ -696,6 +985,7 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
                     emit settingsChanged();
                 } else {
                     ctx.status = "error";
+                    ctx.progress = 0.0f;
                     ctx.error = "Failed to load model after download";
                     qWarning() << "Failed to load model";
                 }
@@ -760,7 +1050,9 @@ bool AnalyticsEngine::zoneMatches(const QVariantMap &detection, const QString &z
 void AnalyticsEngine::recordSkippedFrame(const QString &cameraId)
 {
     QMutexLocker locker(&m_telemetryMutex);
-    m_cameraTelemetry[cameraId].skippedFrames += 1;
+    TelemetryState &state = m_cameraTelemetry[cameraId];
+    state.skippedFrames += 1;
+    state.lastSkippedMs = QDateTime::currentMSecsSinceEpoch();
 }
 
 bool AnalyticsEngine::moduleHasClipRules(const QVariantMap &extraConfig) const
@@ -1295,13 +1587,29 @@ void AnalyticsEngine::deleteStoredAnalyticsEvents(int type, const QString &camer
 
 void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
 {
+    const qint64 acceptedAtMs = QDateTime::currentMSecsSinceEpoch();
+    bool shouldSkip = false;
+
     {
         QMutexLocker locker(&m_processingMutex);
-        if (m_processingCameras.contains(cameraId)) {
-            recordSkippedFrame(cameraId);
-            return;
+        if (m_processingCameras.contains(cameraId) ||
+            (m_analyticsMaxParallelJobs > 0 && m_processingCameras.size() >= m_analyticsMaxParallelJobs)) {
+            shouldSkip = true;
+        } else {
+            const int frameIntervalMs = analyticsFrameIntervalMs();
+            const qint64 lastAcceptedMs = m_lastAcceptedFrameMs.value(cameraId, 0);
+            if (lastAcceptedMs > 0 && acceptedAtMs - lastAcceptedMs < frameIntervalMs) {
+                shouldSkip = true;
+            } else {
+                m_processingCameras.insert(cameraId);
+                m_lastAcceptedFrameMs[cameraId] = acceptedAtMs;
+            }
         }
-        m_processingCameras.insert(cameraId);
+    }
+
+    if (shouldSkip) {
+        recordSkippedFrame(cameraId);
+        return;
     }
 
     QImage frameCopy = frame;
@@ -1559,6 +1867,8 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
         const double frameInferenceMs = static_cast<double>(frameTimer.nsecsElapsed()) / 1000000.0;
 
         QMetaObject::invokeMethod(this, [this, cameraId, allDetections, generatedEvents, moduleStats, frameInferenceMs]() {
+            const qint64 completedAtMs = QDateTime::currentMSecsSinceEpoch();
+
             {
                 QMutexLocker locker(&m_processingMutex);
                 m_processingCameras.remove(cameraId);
@@ -1572,6 +1882,13 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
                 cameraTelemetry.events += static_cast<quint64>(generatedEvents.size());
                 cameraTelemetry.lastInferenceMs = frameInferenceMs;
                 cameraTelemetry.totalInferenceMs += frameInferenceMs;
+                cameraTelemetry.lastProcessedMs = completedAtMs;
+                if (!allDetections.isEmpty()) {
+                    cameraTelemetry.lastDetectionMs = completedAtMs;
+                }
+                if (!generatedEvents.isEmpty()) {
+                    cameraTelemetry.lastEventMs = completedAtMs;
+                }
 
                 for (const QVariant &moduleStatVar : moduleStats) {
                     const QVariantMap moduleStat = moduleStatVar.toMap();
@@ -1582,6 +1899,13 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
                     moduleTelemetry.events += static_cast<quint64>(moduleStat.value("events").toInt());
                     moduleTelemetry.lastInferenceMs = moduleStat.value("inferenceMs").toDouble();
                     moduleTelemetry.totalInferenceMs += moduleTelemetry.lastInferenceMs;
+                    moduleTelemetry.lastProcessedMs = completedAtMs;
+                    if (moduleStat.value("detections").toInt() > 0) {
+                        moduleTelemetry.lastDetectionMs = completedAtMs;
+                    }
+                    if (moduleStat.value("events").toInt() > 0) {
+                        moduleTelemetry.lastEventMs = completedAtMs;
+                    }
                 }
             }
 
@@ -1611,6 +1935,25 @@ bool AnalyticsEngine::isBusy(const QString &cameraId) const
 {
     QMutexLocker locker(&m_processingMutex);
     return m_processingCameras.contains(cameraId);
+}
+
+bool AnalyticsEngine::canAcceptFrame(const QString &cameraId) const
+{
+    if (cameraId.trimmed().isEmpty() || !hasActiveModules(cameraId)) {
+        return false;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QMutexLocker locker(&m_processingMutex);
+    if (m_processingCameras.contains(cameraId)) {
+        return false;
+    }
+    if (m_analyticsMaxParallelJobs > 0 && m_processingCameras.size() >= m_analyticsMaxParallelJobs) {
+        return false;
+    }
+
+    const qint64 lastAcceptedMs = m_lastAcceptedFrameMs.value(cameraId, 0);
+    return lastAcceptedMs <= 0 || nowMs - lastAcceptedMs >= analyticsFrameIntervalMs();
 }
 
 bool AnalyticsEngine::hasActiveModules(const QString &cameraId) const
@@ -1672,6 +2015,10 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
 
     if (!enabled && !hasActiveModules(cameraId)) {
         {
+            QMutexLocker processingLocker(&m_processingMutex);
+            m_lastAcceptedFrameMs.remove(cameraId);
+        }
+        {
             QMutexLocker bufferLocker(&m_bufferMutex);
             m_frameBuffers.remove(cameraId);
         }
@@ -1726,6 +2073,48 @@ bool AnalyticsEngine::isCameraModuleEnabled(const QString &cameraId, ModuleType 
     return m_cameraModules.value(cameraId).value(type, false);
 }
 
+QVariantMap AnalyticsEngine::getPerformanceSettings() const
+{
+    QVariantMap settings;
+    settings["preset"] = m_analyticsPerformancePreset;
+    settings["targetFps"] = m_analyticsTargetFps;
+    settings["maxParallelJobs"] = m_analyticsMaxParallelJobs;
+    settings["frameIntervalMs"] = analyticsFrameIntervalMs();
+    return settings;
+}
+
+void AnalyticsEngine::setPerformanceSettings(const QVariantMap &settings)
+{
+    QString preset = settings.value("preset", m_analyticsPerformancePreset).toString().trimmed();
+    if (preset.isEmpty()) {
+        preset = QStringLiteral("custom");
+    }
+    if (preset != "eco" && preset != "balanced" && preset != "max" && preset != "custom") {
+        preset = QStringLiteral("custom");
+    }
+
+    const int targetFps = qBound(1, settings.value("targetFps", m_analyticsTargetFps).toInt(), 30);
+    const int maxParallelJobs = qBound(1, settings.value("maxParallelJobs", m_analyticsMaxParallelJobs).toInt(), 16);
+
+    if (preset == m_analyticsPerformancePreset &&
+        targetFps == m_analyticsTargetFps &&
+        maxParallelJobs == m_analyticsMaxParallelJobs) {
+        return;
+    }
+
+    m_analyticsPerformancePreset = preset;
+    m_analyticsTargetFps = targetFps;
+    m_analyticsMaxParallelJobs = maxParallelJobs;
+
+    {
+        QMutexLocker locker(&m_processingMutex);
+        m_lastAcceptedFrameMs.clear();
+    }
+
+    emit settingsChanged();
+    emit analyticsTelemetryChanged();
+}
+
 QVariantMap AnalyticsEngine::getSettings() const
 {
     QVariantMap settings;
@@ -1755,6 +2144,7 @@ QVariantMap AnalyticsEngine::getSettings() const
     settings["moduleConfigs"] = moduleConfigs;
     settings["cameraModules"] = cameraModules;
     settings["evidence"] = buildEvidenceSettings(true);
+    settings["performance"] = getPerformanceSettings();
     return settings;
 }
 
@@ -1787,6 +2177,7 @@ QVariantMap AnalyticsEngine::getPersistedSettings() const
     settings["moduleConfigs"] = moduleConfigs;
     settings["cameraModules"] = cameraModules;
     settings["evidence"] = buildEvidenceSettings(false);
+    settings["performance"] = getPerformanceSettings();
     return settings;
 }
 
@@ -1819,6 +2210,10 @@ void AnalyticsEngine::setSettings(const QVariantMap &settings)
 
     if (settings.contains("evidence")) {
         setEvidenceSettings(settings.value("evidence").toMap());
+    }
+
+    if (settings.contains("performance")) {
+        setPerformanceSettings(settings.value("performance").toMap());
     }
 
     if (settings.contains("cameraModules")) {
@@ -1887,16 +2282,12 @@ void AnalyticsEngine::setEvidenceSettings(const QVariantMap &settings)
     if (settings.contains("snapshotsEnabled")) setIfChanged(m_evidenceSnapshotsEnabled, settings.value("snapshotsEnabled").toBool());
     if (settings.contains("clipsEnabled")) setIfChanged(m_evidenceClipsEnabled, settings.value("clipsEnabled").toBool());
     if (settings.contains("snapshotsDir")) {
-        QString dir = settings.value("snapshotsDir").toString();
-        if (!dir.trimmed().isEmpty()) {
-            setIfChanged(m_evidenceSnapshotsDir, dir);
-        }
+        QString dir = PathUtils::localPathFromUserInput(settings.value("snapshotsDir").toString());
+        setIfChanged(m_evidenceSnapshotsDir, dir);
     }
     if (settings.contains("clipsDir")) {
-        QString dir = settings.value("clipsDir").toString();
-        if (!dir.trimmed().isEmpty()) {
-            setIfChanged(m_evidenceClipsDir, dir);
-        }
+        QString dir = PathUtils::localPathFromUserInput(settings.value("clipsDir").toString());
+        setIfChanged(m_evidenceClipsDir, dir);
     }
     if (settings.contains("preSeconds")) setIfChanged(m_evidencePreSeconds, settings.value("preSeconds").toInt());
     if (settings.contains("postSeconds")) setIfChanged(m_evidencePostSeconds, settings.value("postSeconds").toInt());
@@ -2211,7 +2602,7 @@ void AnalyticsEngine::setModuleConfig(int type, const QVariantMap &config)
     bool changed = false;
     
     if (config.contains("snapshotsDir")) {
-        QString newDir = config["snapshotsDir"].toString();
+        QString newDir = PathUtils::localPathFromUserInput(config["snapshotsDir"].toString());
         if (ctx.snapshotsDir != newDir) {
             ctx.snapshotsDir = newDir;
             changed = true;

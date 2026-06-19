@@ -16,6 +16,16 @@ Item {
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
     property bool isSidebarVisible: true
+    property real sidebarExpandedWidth: 300
+    property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
+    property real sidebarOpenProgress: sidebarExpandedWidth > 0 ? (sidebarWidth / sidebarExpandedWidth) : 0
+
+    Behavior on sidebarWidth {
+        NumberAnimation {
+            duration: 220
+            easing.type: Easing.InOutQuad
+        }
+    }
 
     // Permissions (live bindings)
     property int permToken: SystemController.userManager.permissionsVersion + (SystemController.userManager.isLoggedIn ? 1 : 0)
@@ -151,7 +161,7 @@ Item {
         }
         
         SystemController.applyLayoutTemplate(template)
-        selectedPresetCells = item.rows * item.cols
+        selectedPresetCells = (layoutCells[index] && layoutCells[index].length > 0) ? layoutCells[index].length : (item.rows * item.cols)
     }
 
     function closeLayout(index) {
@@ -336,8 +346,11 @@ Item {
             currentLayoutIndex = -1
         }
         
-        // Ensure capacity
+        // Ensure capacity: for complex templates use actual visible cell count
         var need = gridRows * gridCols
+        if (currentLayoutIndex >= 0 && layoutCells[currentLayoutIndex] && layoutCells[currentLayoutIndex].length > 0) {
+            need = layoutCells[currentLayoutIndex].length
+        }
         if (SystemController.updateGridSize) {
             SystemController.updateGridSize(need)
         }
@@ -377,7 +390,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
-            color: "#252526"
+            color: Theme.topBarBackground
 
             MouseArea {
                 anchors.fill: parent
@@ -399,7 +412,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 1
-                color: "#333333"
+                color: Theme.panelBorder
             }
 
             RowLayout {
@@ -545,38 +558,6 @@ Item {
                 }
 
 
-                // Toggle Sidebar
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: sideBg.hovered ? "#2d3442" : "transparent"
-                    border.color: sideBg.hovered ? "#3c4353" : "transparent"
-                    
-                    Item { id: sideBg; property bool hovered: false }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: isSidebarVisible ? "»" : "«" 
-                        color: "white"
-                        font.pixelSize: 18
-                        rotation: 0
-                        verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignHCenter
-                        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
-                    }
-                    ToolTip.visible: sideBg.hovered
-                    ToolTip.text: isSidebarVisible ? I18n.t("Скрыть панель") : I18n.t("Показать панель")
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: sideBg.hovered = true
-                        onExited: sideBg.hovered = false
-                        onClicked: isSidebarVisible = !isSidebarVisible
-                    }
-                }
-
                 Item { width: 260 } // Spacer to avoid overlap with window controls
             }
 
@@ -677,13 +658,20 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            Layout.leftMargin: 8
+            Layout.rightMargin: 8
+            Layout.topMargin: 8
+            Layout.bottomMargin: 8
+            spacing: Math.max(0, 8 * sidebarOpenProgress)
 
             // CONTENT AREA (Left)
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: "#1e1e1e"
+                color: Theme.panelBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorder
+                border.width: 1
 
                 GridLayout {
                     id: cameraGrid
@@ -802,18 +790,83 @@ Item {
                         }
                     }
                 }
+
+                // Handle to reopen sidebar when it is hidden
+                Rectangle {
+                    visible: sidebarOpenProgress < 0.01
+                    width: 18
+                    height: 84
+                    radius: 9
+                    anchors.right: parent.right
+                    anchors.rightMargin: -9
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: revealArea.containsMouse ? Theme.cardHover : Theme.cardBackground
+                    border.color: Theme.controlBorderStrong
+                    z: 5
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "«"
+                        color: Theme.textSecondary
+                        font.pixelSize: 16
+                    }
+
+                    MouseArea {
+                        id: revealArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: isSidebarVisible = true
+                    }
+                }
             }
 
             // SIDEBAR (Right)
             Rectangle {
-                Layout.preferredWidth: 300
+                Layout.preferredWidth: sidebarWidth
                 Layout.fillHeight: true
-                visible: isSidebarVisible
-                color: "#252526"
+                visible: true
+                enabled: sidebarOpenProgress > 0.01
+                opacity: sidebarOpenProgress
+                clip: true
+                color: Theme.topBarBackground
+                radius: Theme.radiusLg
+                border.color: Theme.panelBorderStrong
+                border.width: 1
+
+                // Sidebar collapse handle (middle of left edge)
+                Rectangle {
+                    visible: sidebarOpenProgress > 0.01
+                    width: 18
+                    height: 84
+                    radius: 9
+                    anchors.left: parent.left
+                    anchors.leftMargin: -9
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: hideArea.containsMouse ? Theme.cardHover : Theme.cardBackground
+                    border.color: Theme.controlBorderStrong
+                    z: 6
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "»"
+                        color: Theme.textSecondary
+                        font.pixelSize: 16
+                    }
+
+                    MouseArea {
+                        id: hideArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: isSidebarVisible = false
+                    }
+                }
                 
                 ScrollView {
                     id: sidebarScrollView
                     anchors.fill: parent
+                    visible: sidebarOpenProgress > 0.01
                     clip: true
                     ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
@@ -1095,14 +1148,18 @@ Item {
                                                     Layout.fillWidth: true
                                                     spacing: 2
                                                     Text {
-                                                        text: I18n.t("Камера") + " " + cameraIp
+                                                        text: (cameraName && cameraName.trim() !== "")
+                                                              ? cameraName
+                                                              : (I18n.t("Камера") + " " + cameraIp)
                                                         color: "#cccccc"
                                                         font.pixelSize: 12
+                                                        elide: Text.ElideRight
                                                     }
                                                     Text {
                                                         text: cameraIp
                                                         color: "#888888"
                                                         font.pixelSize: 11
+                                                        elide: Text.ElideRight
                                                     }
                                                 }
 
@@ -1165,7 +1222,15 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 25
-            color: "#1e1e1e" 
+            color: Theme.statusBarBackground
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Theme.panelBorder
+            }
 
             Timer {
                 interval: 1000
@@ -1225,9 +1290,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
-            radius: 10
-            color: "#0f1219"
-            border.color: "#1f2531"
+            radius: Theme.radiusXl
+            color: Theme.panelAltBackground
+            border.color: Theme.panelBorder
         }
         
         // Editor State
@@ -1865,15 +1930,15 @@ Item {
         x: parent ? (parent.width - width) / 2 : 0
         y: parent ? (parent.height - height) / 2 : 0
         background: Rectangle {
-            color: "#2a2f33"
-            border.color: "#3c3c3c"
-            radius: 6
+            color: Theme.panelAltBackground
+            border.color: Theme.panelBorder
+            radius: Theme.radiusMd
         }
         header: Rectangle {
             height: 36
-            color: "#252526"
-            radius: 6
-            border.color: "#3c3c3c"
+            color: Theme.topBarBackground
+            radius: Theme.radiusMd
+            border.color: Theme.panelBorder
             Text {
                 anchors.centerIn: parent
                 text: noAccessDialog.title

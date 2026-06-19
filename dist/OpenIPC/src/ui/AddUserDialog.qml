@@ -102,36 +102,15 @@ Dialog {
                 color: "white"
                 Layout.preferredWidth: 80
             }
-            ComboBox {
+            StyledComboBox {
                 id: roleBox
                 Layout.fillWidth: true
-                model: ["admin", "operator"]
-                
-                delegate: ItemDelegate {
-                    width: roleBox.width
-                    contentItem: Text {
-                        text: modelData === "admin" ? I18n.t("Администратор") : I18n.t("Оператор")
-                        color: "white"
-                        font.pixelSize: 14
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    background: Rectangle {
-                        color: parent.highlighted ? "#444444" : "#252526"
-                    }
-                }
-                
-                contentItem: Text {
-                    text: roleBox.currentText === "admin" ? I18n.t("Администратор") : I18n.t("Оператор")
-                    color: "white"
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: 10
-                }
-                
-                background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
-                }
+                textRole: "text"
+                valueRole: "value"
+                model: [
+                    { text: I18n.t("Администратор"), value: "admin" },
+                    { text: I18n.t("Оператор"), value: "operator" }
+                ]
             }
         }
 
@@ -148,7 +127,7 @@ Dialog {
             rowSpacing: 5
             columnSpacing: 10
 
-            property bool isAdmin: roleBox.currentText === "admin" || roleBox.currentIndex === 0
+            property bool isAdmin: roleBox.currentValue === "admin" || roleBox.currentIndex === 0
 
             component StyledCheckBox: CheckBox {
                 hoverEnabled: false
@@ -251,7 +230,7 @@ Dialog {
                             if (pUsers.checked) perms |= 0x20
                         }
 
-                        if (SystemController.userManager.addUser(loginField.text, passwordField.text, roleBox.model[roleBox.currentIndex], perms)) {
+                        if (SystemController.userManager.addUser(loginField.text, passwordField.text, roleBox.currentValue, perms)) {
                             loginField.text = ""
                             passwordField.text = ""
                             root.close()

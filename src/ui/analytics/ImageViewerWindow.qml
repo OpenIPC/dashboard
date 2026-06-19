@@ -896,12 +896,7 @@ Window {
                         var url = pendingSaveUrl
                         pendingSaveUrl = ""
                         exportSurface.grabToImage(function(result) {
-                            var path = url.toString()
-                            if (path.indexOf("file:///") === 0) {
-                                path = path.replace("file:///", "")
-                            } else if (path.indexOf("file://") === 0) {
-                                path = path.replace("file://", "")
-                            }
+                            var path = SystemController.normalizeLocalPath(url)
                             if (path.indexOf(".") === -1) {
                                 path = path + ".png"
                             }

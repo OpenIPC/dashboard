@@ -285,25 +285,13 @@ Dialog {
                 font.pixelSize: 12
             }
             
-            ComboBox {
+            StyledComboBox {
                 id: interfaceCombo
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 textRole: "text"
                 valueRole: "value"
                 model: ListModel { id: interfaceModel }
-                
-                background: Rectangle {
-                    color: "#333333"
-                    border.color: "#444444"
-                    radius: 4
-                }
-                contentItem: Text {
-                    leftPadding: 10
-                    text: interfaceCombo.displayText
-                    color: "white"
-                    verticalAlignment: Text.AlignVCenter
-                }
             }
         }
         

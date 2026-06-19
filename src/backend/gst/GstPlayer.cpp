@@ -334,7 +334,7 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
         // Analytics processing (queued to main thread)
         if (player->m_analyticsEngine && !player->m_cameraId.isEmpty()) {
             auto *engine = qobject_cast<AnalyticsEngine *>(player->m_analyticsEngine);
-            if (engine && engine->hasActiveModules(player->m_cameraId) && !engine->isBusy(player->m_cameraId)) {
+            if (engine && engine->canAcceptFrame(player->m_cameraId)) {
                 QImage analyticsFrame;
                 {
                     QMutexLocker locker(&player->m_frameMutex);

@@ -5,7 +5,13 @@ import OpenIPC
 ComboBox {
     id: combo
 
+    signal userSelected(int index)
+
     implicitHeight: 34
+
+    onActivated: function(index) {
+        combo.userSelected(index)
+    }
 
     contentItem: Text {
         text: combo.displayText
@@ -23,22 +29,17 @@ ComboBox {
         border.width: 1
     }
 
-    indicator: Canvas {
-        width: 12
-        height: 8
+    indicator: Text {
+        text: "\u25BE"
+        color: Theme.textMuted
+        font.pixelSize: 13
+        width: 16
+        height: combo.height
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
         x: combo.width - width - 10
-        y: (combo.height - height) / 2
-        contextType: "2d"
-        onPaint: {
-            context.reset()
-            context.fillStyle = Theme.textMuted
-            context.beginPath()
-            context.moveTo(0, 0)
-            context.lineTo(width, 0)
-            context.lineTo(width / 2, height)
-            context.closePath()
-            context.fill()
-        }
+        y: 0
+        opacity: combo.enabled ? 1.0 : 0.45
     }
 
     popup: Popup {
@@ -81,6 +82,7 @@ ComboBox {
                     hoverEnabled: true
                     onClicked: {
                         combo.currentIndex = index
+                        combo.userSelected(index)
                         combo.popup.close()
                     }
                 }

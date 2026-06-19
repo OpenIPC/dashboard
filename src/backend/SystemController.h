@@ -19,6 +19,7 @@
 #include "PtzController.h"
 #include "DiscoveryController.h"
 #include "ArchiveController.h"
+#include "CamexController.h"
 
 class StatusChecker;
 
@@ -36,6 +37,7 @@ class SystemController : public QObject
     Q_PROPERTY(UserManager* userManager READ userManager CONSTANT)
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
     Q_PROPERTY(PtzController* ptzController READ ptzController CONSTANT)
+    Q_PROPERTY(CamexController* camexController READ camexController CONSTANT)
     Q_PROPERTY(QVariantMap appSettings READ getAppSettings WRITE saveAppSettings NOTIFY appSettingsChanged)
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
@@ -47,6 +49,7 @@ public:
     Q_INVOKABLE double processCpuPercent();
     Q_INVOKABLE double processMemoryMB();
     Q_INVOKABLE void openFolder(const QString &path);
+    Q_INVOKABLE QString normalizeLocalPath(const QString &pathOrUrl) const;
     
     QString serviceStatus() const;
     CameraModel* cameraModel() const;
@@ -66,6 +69,7 @@ public:
     UserManager* userManager() const;
     LogModel* logModel() const;
     PtzController* ptzController() const;
+    CamexController* camexController() const;
 
     void addLog(QtMsgType type, const QString &msg);
 
@@ -156,6 +160,8 @@ private:
     quint64 m_prevSysUser = 0;
     quint64 m_prevProcKernel = 0;
     quint64 m_prevProcUser = 0;
+    quint64 m_prevLinuxSystemCpu = 0;
+    quint64 m_prevLinuxProcessCpu = 0;
     QElapsedTimer m_cpuTimer;
     QTimer *m_saveTimer;            // Debounce timer for saving state
     CameraModel *m_gridModel;       // Cameras in the grid
@@ -164,6 +170,7 @@ private:
     UserManager *m_userManager;
     LogModel *m_logModel;
     PtzController *m_ptzController;
+    CamexController *m_camexController;
     DiscoveryController *m_dahuaDiscovery;
     ArchiveController *m_archiveController;
     StatusChecker *m_statusChecker;

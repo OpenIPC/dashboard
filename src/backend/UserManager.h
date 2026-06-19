@@ -22,6 +22,7 @@ class UserManager : public QObject
     Q_PROPERTY(int permissionsVersion READ permissionsVersion NOTIFY permissionsVersionChanged)
     Q_PROPERTY(int currentPermissions READ currentPermissions NOTIFY currentUserChanged)
     Q_PROPERTY(QString rememberedUsername READ rememberedUsername NOTIFY rememberedUsernameChanged)
+    Q_PROPERTY(QString rememberedPassword READ rememberedPassword NOTIFY rememberedPasswordChanged)
 
 public:
     // Granular permissions (Dahua-style)
@@ -47,8 +48,10 @@ public:
     int permissionsVersion() const { return m_permissionsVersion; }
     int currentPermissions() const { return m_currentUser.permissions; }
     QString rememberedUsername() const { return m_rememberedUsername; }
+    QString rememberedPassword() const { return m_rememberedPassword; }
 
     Q_INVOKABLE bool login(const QString &username, const QString &password, bool rememberMe = false);
+    Q_INVOKABLE bool loginWithRememberedCredentials();
     Q_INVOKABLE void logout();
     Q_INVOKABLE bool setupInitialAdmin(const QString &username, const QString &password, bool rememberMe = false);
     Q_INVOKABLE bool addUser(const QString &username, const QString &password, const QString &role, int permissions = -1);
@@ -73,6 +76,7 @@ signals:
     void isLoggedInChanged();
     void permissionsVersionChanged();
     void rememberedUsernameChanged();
+    void rememberedPasswordChanged();
 
 private:
     struct User {
@@ -131,13 +135,14 @@ private:
     QByteArray derivePasswordKey(const QString &password, const QByteArray &salt, int iterations, int keyLength) const;
     void setPassword(User &user, const QString &password) const;
     bool verifyPassword(const User &user, const QString &password, bool *needsUpgrade = nullptr) const;
-    void setRememberedUsername(const QString &username);
+    void setRememberedCredentials(const QString &username, const QString &password);
 
     QList<User> m_users;
     User m_currentUser;
     bool m_isLoggedIn;
     int m_permissionsVersion = 0;
     QString m_rememberedUsername;
+    QString m_rememberedPassword;
 };
 
 #endif // USERMANAGER_H

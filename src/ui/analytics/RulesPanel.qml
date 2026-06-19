@@ -10,6 +10,7 @@ Item {
     property int moduleType: 0
     property string moduleName: ""
     property int selectedRuleIndex: -1
+    property bool savingRules: false
     readonly property bool hasSelection: selectedRuleIndex >= 0 && selectedRuleIndex < rulesModel.count
     readonly property real ruleListWidth: Math.max(240, Math.min(320, width * 0.32))
 
@@ -29,6 +30,7 @@ Item {
     }
 
     function loadRules() {
+        selectedRuleIndex = -1
         rulesModel.clear()
         if (!model || !model.getModuleConfig)
             return
@@ -54,15 +56,47 @@ Item {
         selectedRuleIndex = rulesModel.count > 0 ? 0 : -1
     }
 
+    function normalizedRule(index) {
+        if (index < 0 || index >= rulesModel.count)
+            return {}
+
+        var r = rulesModel.get(index)
+        return {
+            id: String(r.id || Date.now()),
+            name: String(r.name || I18n.t("Правило")),
+            label: String(r.label || defaultLabel()),
+            minConfidence: Number(r.minConfidence !== undefined ? r.minConfidence : 0.6),
+            cooldownMs: Math.max(1000, Number(r.cooldownMs !== undefined ? r.cooldownMs : 5000)),
+            enabled: r.enabled !== false,
+            zonePreset: String(r.zonePreset || "full"),
+            actionSnapshot: r.actionSnapshot !== false,
+            actionClip: r.actionClip !== false,
+            actionNotify: r.actionNotify === true
+        }
+    }
+
+    function selectedValue(field, fallback) {
+        if (!hasSelection)
+            return fallback
+
+        var r = rulesModel.get(selectedRuleIndex)
+        if (!r || r[field] === undefined)
+            return fallback
+
+        return r[field]
+    }
+
     function persistRules() {
         if (!model || !model.setModuleConfig)
             return
 
         var out = []
         for (var i = 0; i < rulesModel.count; ++i) {
-            out.push(rulesModel.get(i))
+            out.push(normalizedRule(i))
         }
+        savingRules = true
         model.setModuleConfig(moduleType, { "rules": out })
+        savingRules = false
     }
 
     Component.onCompleted: loadRules()
@@ -107,7 +141,7 @@ Item {
         target: root.model
         ignoreUnknownSignals: true
         function onModuleConfigChanged(type) {
-            if (type === root.moduleType) {
+            if (type === root.moduleType && !root.savingRules) {
                 root.loadRules()
             }
         }
@@ -162,6 +196,41 @@ Item {
             readOnly: !spin.editable
             validator: spin.validator
             inputMethodHints: Qt.ImhFormattedNumbersOnly
+        }
+    }
+
+    component RuleCheckBox: CheckBox {
+        id: checkRoot
+        spacing: 8
+        implicitHeight: 24
+
+        indicator: Rectangle {
+            width: 18
+            height: 18
+            x: 0
+            y: (checkRoot.height - height) / 2
+            radius: 4
+            color: checkRoot.checked ? Theme.accent : Theme.controlBackground
+            border.color: checkRoot.checked ? Theme.accentHover : Theme.controlBorder
+            border.width: 1
+
+            Text {
+                anchors.centerIn: parent
+                visible: checkRoot.checked
+                text: "✓"
+                color: Theme.textPrimary
+                font.pixelSize: 12
+                font.bold: true
+            }
+        }
+
+        contentItem: Text {
+            text: checkRoot.text
+            color: checkRoot.enabled ? Theme.textSecondary : Theme.textMuted
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: checkRoot.indicator.width + checkRoot.spacing
+            elide: Text.ElideRight
         }
     }
 
@@ -324,7 +393,7 @@ Item {
                             TextField {
                                 Layout.fillWidth: true
                                 enabled: root.hasSelection
-                                text: root.hasSelection ? rulesModel.get(root.selectedRuleIndex).name : ""
+                                text: root.selectedValue("name", "")
                                 placeholderText: I18n.t("Название правила")
                                 color: "white"
                                 background: Rectangle { color: "#0f172a"; border.color: "#334155"; radius: 4 }
@@ -346,11 +415,11 @@ Item {
                                         if (!root.hasSelection)
                                             return 0
                                         var labels = root.availableLabels()
-                                        var lbl = rulesModel.get(root.selectedRuleIndex).label
+                                        var lbl = root.selectedValue("label", root.defaultLabel())
                                         var idx = labels.indexOf(lbl)
                                         return idx >= 0 ? idx : 0
                                     }
-                                    onActivated: root.updateField("label", currentText)
+                                    onUserSelected: root.updateField("label", currentText)
                                 }
 
                                 CompactSpinBox {
@@ -358,7 +427,7 @@ Item {
                                     enabled: root.hasSelection
                                     from: 10
                                     to: 99
-                                    value: root.hasSelection ? Math.round(Number(rulesModel.get(root.selectedRuleIndex).minConfidence) * 100) : 60
+                                    value: root.hasSelection ? Math.round(Number(root.selectedValue("minConfidence", 0.6)) * 100) : 60
                                     Layout.preferredWidth: 140
                                     textFromValue: function(v) { return v + "%" }
                                     valueFromText: function(t) {
@@ -374,7 +443,7 @@ Item {
                                     enabled: root.hasSelection
                                     from: 1
                                     to: 60
-                                    value: root.hasSelection ? Math.max(1, Math.round(Number(rulesModel.get(root.selectedRuleIndex).cooldownMs || 5000) / 1000)) : 5
+                                    value: root.hasSelection ? Math.max(1, Math.round(Number(root.selectedValue("cooldownMs", 5000)) / 1000)) : 5
                                     Layout.preferredWidth: 140
                                     textFromValue: function(v) { return v + "s" }
                                     valueFromText: function(t) {
@@ -417,11 +486,11 @@ Item {
                                 currentIndex: {
                                     if (!root.hasSelection)
                                         return 0
-                                    var z = rulesModel.get(root.selectedRuleIndex).zonePreset
+                                    var z = root.selectedValue("zonePreset", "full")
                                     var i = model.indexOf(z)
                                     return i >= 0 ? i : 0
                                 }
-                                onActivated: root.updateField("zonePreset", currentText)
+                                onUserSelected: root.updateField("zonePreset", currentText)
                             }
 
                             Text {
@@ -453,23 +522,23 @@ Item {
                                 font.bold: true
                             }
 
-                            CheckBox {
+                            RuleCheckBox {
                                 enabled: root.hasSelection
-                                checked: root.hasSelection ? !!rulesModel.get(root.selectedRuleIndex).actionSnapshot : true
+                                checked: root.hasSelection ? !!root.selectedValue("actionSnapshot", true) : true
                                 text: I18n.t("Сохранить снимок")
                                 onToggled: root.updateField("actionSnapshot", checked)
                             }
 
-                            CheckBox {
+                            RuleCheckBox {
                                 enabled: root.hasSelection
-                                checked: root.hasSelection ? !!rulesModel.get(root.selectedRuleIndex).actionClip : true
+                                checked: root.hasSelection ? !!root.selectedValue("actionClip", true) : true
                                 text: I18n.t("Сохранить клип")
                                 onToggled: root.updateField("actionClip", checked)
                             }
 
-                            CheckBox {
+                            RuleCheckBox {
                                 enabled: root.hasSelection
-                                checked: root.hasSelection ? !!rulesModel.get(root.selectedRuleIndex).actionNotify : false
+                                checked: root.hasSelection ? !!root.selectedValue("actionNotify", false) : false
                                 text: I18n.t("Уведомление")
                                 onToggled: root.updateField("actionNotify", checked)
                             }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.2 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.3 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -204,6 +204,10 @@ endforeach()
 
 set(SOURCES
     src/main.cpp
+    src/backend/PathUtils.cpp
+    src/backend/PathUtils.h
+    src/backend/CamexController.cpp
+    src/backend/CamexController.h
     src/backend/SystemController.cpp
     src/backend/SystemController.h
     src/backend/DiscoveryController.cpp
@@ -249,6 +253,7 @@ set(QML_FILES
     src/ui/AddCameraDialog.qml
     src/ui/I18n.qml
     src/ui/AnalyticsView.qml
+    src/ui/CamexView.qml
     src/ui/analytics/FaceSnapshotsPanel.qml
     src/ui/analytics/ObjectCounterPanel.qml
     src/ui/analytics/LicensePlatePanel.qml
@@ -492,8 +497,27 @@ if(BUILD_TESTING)
 
     add_test(NAME user_manager_tests COMMAND user_manager_tests)
 
+    add_executable(path_utils_tests
+        tests/PathUtilsTests.cpp
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+    )
+
+    target_include_directories(path_utils_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(path_utils_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME path_utils_tests COMMAND path_utils_tests)
+
     if(WIN32)
         set_tests_properties(user_manager_tests PROPERTIES
+            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
+        )
+        set_tests_properties(path_utils_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     endif()

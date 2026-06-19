@@ -20,6 +20,7 @@
 #include "backend/analytics/AnalyticsEngine.h"
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
+#include "backend/CamexController.h"
 #include <functional>
 #include <atomic>
 #include <cstdio>
@@ -154,6 +155,9 @@ int main(int argc, char *argv[])
     // qputenv("QSG_RHI_BACKEND", "software");
     // QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
 
+    // Keep QML resources deterministic after upgrades and language/UI changes.
+    qputenv("QML_DISABLE_DISK_CACHE", "1");
+
     QGuiApplication app(argc, argv); 
     app.setOrganizationName("OpenIPC");
     app.setApplicationName("Dashboard");
@@ -258,6 +262,7 @@ int main(int argc, char *argv[])
     qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
     qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
     qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");
+    qmlRegisterUncreatableType<CamexController>("OpenIPC", 1, 0, "CamexController", "Use SystemController.camexController");
 
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 

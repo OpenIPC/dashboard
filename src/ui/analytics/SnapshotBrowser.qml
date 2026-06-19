@@ -333,7 +333,7 @@ Item {
                             model: cameraOptionsModel
                             textRole: "text"
                             implicitHeight: 30
-                            onActivated: function(index) {
+                            onUserSelected: function(index) {
                                 cameraFilter = cameraOptionsModel.get(index).value
                                 rebuildFilteredModel()
                             }
@@ -409,7 +409,7 @@ Item {
                             Layout.fillWidth: true
                             implicitHeight: 30
                             model: [I18n.t("Сначала новые"), I18n.t("Сначала старые")]
-                            onActivated: function(index) {
+                            onUserSelected: function(index) {
                                 sortNewest = (currentIndex === 0)
                                 rebuildFilteredModel()
                             }

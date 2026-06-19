@@ -6,6 +6,35 @@ import OpenIPC
 
 Item {
     id: root
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#1e1e1e"
+    }
+
+    FontLoader {
+        id: materialIcons
+        source: "qrc:/OpenIPC/src/ui/fonts/MaterialIcons-Regular.ttf"
+    }
+
+    readonly property string iconFontFamily: materialIcons.status === FontLoader.Ready ? materialIcons.name : "Material Icons"
+
+    function normalizePath(path) {
+        if (!path)
+            return ""
+        var str = (typeof path === "string") ? path : path.toString()
+        if (str.startsWith("file:///")) {
+            str = str.substring(8)
+        } else if (str.startsWith("file://")) {
+            str = str.substring(7)
+        }
+        try {
+            str = decodeURIComponent(str)
+        } catch (e) {
+            // keep original
+        }
+        return str
+    }
     
     component StyledCheckBox: CheckBox {
         hoverEnabled: false
@@ -17,14 +46,14 @@ Item {
             y: parent.height / 2 - height / 2
             radius: 3
             color: "#252526"
-            border.color: parent.checked ? "#4caf50" : "#666666"
+            border.color: parent.checked ? "#3b82f6" : "#666666"
             
             Rectangle {
                 width: 10
                 height: 10
                 anchors.centerIn: parent
                 radius: 2
-                color: "#4caf50"
+                color: "#3b82f6"
                 visible: parent.parent.checked
             }
         }
@@ -68,9 +97,9 @@ Item {
             id: moduleDelegate
             width: ListView.view.width
             height: contentLayout.implicitHeight + 32
-            color: "#2d2d2d"
+            color: "#1f2733"
             radius: 6
-            border.color: "#3c3c3c"
+            border.color: "#334155"
             
             property int moduleType: model.type
             property bool isEnabled: SystemController.analyticsEngine.isModuleEnabled(moduleType)
@@ -80,7 +109,7 @@ Item {
             
             // Configuration properties
             property var config: SystemController.analyticsEngine.getModuleConfig(moduleType)
-            property string snapshotsDir: config ? (config.snapshotsDir || "Default directory") : "Default directory"
+            property string snapshotsDir: config ? (normalizePath(config.snapshotsDir || "Default directory")) : "Default directory"
             property string faceSnapshotsMode: config ? (config.faceSnapshotsMode || "standard") : "standard"
             property bool faceSnapshotKeyConfigured: config ? config.faceSnapshotKeyConfigured : false
             
@@ -193,7 +222,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: "#3c3c3c"
+                    color: "#374151"
                 }
                 
                 // Snapshot Directory
@@ -221,18 +250,26 @@ Item {
                         }
                         
                         Button {
-                            text: I18n.t("Choose...")
+                            Layout.preferredHeight: 30
+                            Layout.preferredWidth: 34
+                            ToolTip.visible: hovered
+                            ToolTip.text: I18n.t("Choose...")
+                            background: Rectangle { color: "#4a5568"; radius: 4 }
+                            contentItem: Text {
+                                text: "folder_open"
+                                font.family: iconFontFamily
+                                font.pixelSize: 15
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             onClicked: folderDialog.open()
                             
                             FolderDialog {
                                 id: folderDialog
                                 title: I18n.t("Choose snapshots directory")
                                 onAccepted: {
-                                    var path = folderDialog.selectedFolder.toString()
-                                    // Remove file:/// prefix
-                                    if (path.startsWith("file:///")) {
-                                        path = path.substring(8)
-                                    }
+                                    var path = normalizePath(folderDialog.selectedFolder)
                                     SystemController.analyticsEngine.setModuleConfig(moduleType, { "snapshotsDir": path })
                                 }
                             }
@@ -240,6 +277,19 @@ Item {
                         
                         Button {
                             text: I18n.t("Use default")
+                            background: Rectangle {
+                                radius: 4
+                                color: parent.down ? "#334155" : "#1f2733"
+                                border.color: "#475569"
+                                border.width: 1
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: "#e2e8f0"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 12
+                            }
                             onClicked: {
                                 SystemController.analyticsEngine.setModuleConfig(moduleType, { "snapshotsDir": "" })
                             }
@@ -265,7 +315,7 @@ Item {
                             font.bold: true
                         }
                         
-                        ComboBox {
+                        StyledComboBox {
                             Layout.fillWidth: true
                             Layout.maximumWidth: 300
                             model: [I18n.t("Disabled"), I18n.t("Standard"), I18n.t("Anonymized"), I18n.t("Encrypted")]
@@ -333,15 +383,29 @@ Item {
                                 placeholderText: I18n.t("64 hex characters")
                                 maximumLength: 64
                                 color: "white"
+                                placeholderTextColor: "#94a3b8"
+                                selectionColor: "#3b82f6"
+                                selectedTextColor: "#ffffff"
                                 background: Rectangle {
-                                    color: "#1e1e1e"
-                                    border.color: "#3c3c3c"
+                                    color: "#1f2733"
+                                    border.color: "#4a5568"
+                                    border.width: 1
                                     radius: 4
                                 }
                             }
                             
                             Button {
                                 text: I18n.t("Save")
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.down ? "#2563eb" : "#3b82f6"
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: "white"
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                                 onClicked: {
                                     var key = keyInput.text.trim()
                                     if (key.length === 64 && /^[0-9a-fA-F]+$/.test(key)) {
@@ -357,6 +421,18 @@ Item {
                             Button {
                                 text: I18n.t("Reset key")
                                 enabled: moduleDelegate.faceSnapshotKeyConfigured
+                                background: Rectangle {
+                                    radius: 4
+                                    color: parent.enabled ? (parent.down ? "#334155" : "#1f2733") : "#374151"
+                                    border.color: parent.enabled ? "#475569" : "#4b5563"
+                                    border.width: 1
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: parent.enabled ? "#e2e8f0" : "#9ca3af"
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                                 onClicked: {
                                     SystemController.analyticsEngine.setModuleConfig(moduleType, { "resetFaceSnapshotKey": true })
                                 }

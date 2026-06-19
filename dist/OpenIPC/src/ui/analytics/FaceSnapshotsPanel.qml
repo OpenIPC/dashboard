@@ -21,7 +21,7 @@ Item {
         return "";
     }
 
-    SnapshotBrowser {
+    EventsPanel {
         anchors.fill: parent
         snapshotsDir: root.snapshotsDir
         clipsDir: root.clipsDirOverride

@@ -7,7 +7,7 @@ import OpenIPC
 
 Item {
     id: root
-    
+
     property string cameraName: ""
     property string cameraIp: ""
     property int cameraPort: 554
@@ -35,11 +35,11 @@ Item {
     property bool canExport: true
     property bool canSettings: true
     property bool effectiveCanLive: canLive || SystemController.userManager.isAdmin() || (SystemController.userManager.currentUser && SystemController.userManager.currentUser.username === "admin")
-    
+
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
     property real uiScale: Math.min(1.0, Math.max(0.4, root.width / 600))
-    
+
     // Grid resizing props
     property var gridParent: null
     property int totalRows: 1
@@ -49,7 +49,7 @@ Item {
     property int gridIndex: -1
     property real unitWidth: 10
     property real unitHeight: 10
-    
+
     // Explicitly ignore implicit size of children
     implicitWidth: 0
     implicitHeight: 0
@@ -183,9 +183,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "#000000"
-        border.color: root.isRecording ? "#ff0000" : (root.isSelected ? "#1976d2" : "#444444")
+        border.color: root.isRecording ? Theme.danger : (root.isSelected ? Theme.accent : Theme.textFaint)
         border.width: root.isRecording ? 2 : (root.isSelected ? 2 : 1)
-        radius: 4
+        radius: Theme.radiusSm
 
         MouseArea {
             anchors.fill: parent
@@ -237,7 +237,8 @@ Item {
             orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
             mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
             
-            url: root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            property bool fallbackToSd: false
+            url: (root.useHdPreview && !fallbackToSd) && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
             
             // Start only if visible and URL is valid
             running: visible && root.streamUrl !== "" && root.effectiveCanLive
@@ -266,6 +267,43 @@ Item {
             analyticsUrl: ""
             analyticsEngine: null
             cameraId: root.cameraIp
+
+            property string lastError: ""
+            onErrorOccurred: function(msg) {
+                lastError = msg;
+                errorTimer.restart();
+
+                // Auto-fallback to SD if HD fails
+                if (root.useHdPreview && !fallbackToSd && root.sdStreamUrl !== "") {
+                    console.warn("HD stream failed, falling back to SD stream for camera:", root.cameraIp);
+                    fallbackToSd = true;
+                }
+            }
+
+            Timer {
+                id: errorTimer
+                interval: 5000
+                onTriggered: player.lastError = ""
+            }
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: errorText.width + 20
+                height: errorText.height + 10
+                color: "#80000000"
+                radius: 4
+                visible: player.lastError !== ""
+
+                Text {
+                    id: errorText
+                    anchors.centerIn: parent
+                    text: player.lastError
+                    color: "#ff5555"
+                    font.pixelSize: 12 * root.uiScale
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
         }
 
         // Hidden analytics player (HD preferred) to ensure snapshots/clips use HD stream
@@ -470,11 +508,11 @@ Item {
 
         onEntered: (drag) => {
             // Visual feedback for drop target?
-            root.border.color = "#00ff00"
+            root.border.color = Theme.success
             drag.accept(Qt.MoveAction)
         }
         onExited: {
-            root.border.color = root.isSelected ? "#1976d2" : "#444444"
+            root.border.color = root.isSelected ? Theme.accent : Theme.textFaint
         }
         onDropped: (drop) => {
             // Handle grid cell swap
@@ -495,7 +533,7 @@ Item {
                 }
             }
 
-            root.border.color = root.isSelected ? "#1976d2" : "#444444"
+            root.border.color = root.isSelected ? Theme.accent : Theme.textFaint
             drop.accept()
         }
     }
@@ -771,12 +809,12 @@ Item {
         scale: root.uiScale
         transformOrigin: Item.BottomLeft
         color: "#e0000000" // darker for readability
-        radius: 6
+        radius: Theme.radiusMd
         visible: (SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay) && statsText() !== ""
         height: 30
         // Limit width to 45% of cell width (accounting for scale) to prevent overlap
         width: Math.min(Math.max(110, statsLabel.implicitWidth + 18), (root.width * 0.45) / root.uiScale)
-        border.color: "#44ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
         clip: true
 
@@ -910,10 +948,10 @@ Item {
         height: 40
         width: controlsRow.implicitWidth + 12
         color: "#cc000000" // Semi-transparent black
-        radius: 6
+        radius: Theme.radiusMd
         // Keep visible while hovering the panel itself to avoid flicker
         visible: root.effectiveCanLive && (hoverArea.containsMouse || controlsHover.hovered || volumeGroup.sliderShowing)
-        border.color: "#55ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
 
         HoverHandler {
@@ -1299,12 +1337,12 @@ Item {
         scale: root.uiScale
         transformOrigin: Item.BottomRight
         color: "#e0000000"
-        radius: 6
+        radius: Theme.radiusMd
         visible: root.cameraName !== "" || root.cameraIp !== ""
         height: 24
         // Limit width to 45% of cell width (accounting for scale) to prevent overlap
         width: Math.min(Math.max(100, infoRow.implicitWidth + 16), (root.width * 0.45) / root.uiScale)
-        border.color: "#44ffffff"
+        border.color: Theme.overlayBorder
         border.width: 1
         clip: true
 
@@ -1315,7 +1353,9 @@ Item {
             width: parent.width - 16
             
             Text {
-                text: root.cameraName !== "" ? root.cameraName : "Camera"
+                text: (root.cameraName && root.cameraName.trim() !== "")
+                      ? root.cameraName
+                      : (root.cameraIp && root.cameraIp !== "" ? root.cameraIp : I18n.t("Камера"))
                 color: "white"
                 font.pixelSize: 11
                 font.bold: true

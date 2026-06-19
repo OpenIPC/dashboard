@@ -1,4 +1,5 @@
 #include "SystemController.h"
+#include "PathUtils.h"
 #include "StatusChecker.h"
 #include <QUuid>
 #include <QNetworkDatagram>
@@ -26,12 +27,97 @@
 #include <QDesktopServices>
 #include <QEventLoop>
 #include <keychain.h>
+#include <QTextStream>
+#include <QRegularExpression>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <psapi.h>
 #undef min
 #undef max
 #endif
+
+namespace {
+
+QString normalizedLocalPath(const QString &pathOrUrl)
+{
+    return PathUtils::localPathFromUserInput(pathOrUrl);
+}
+
+void normalizeAppSettingPaths(QVariantMap &settings)
+{
+    const QStringList pathKeys{
+        QStringLiteral("recordingsPath"),
+        QStringLiteral("screenshotsPath")
+    };
+
+    for (const QString &key : pathKeys) {
+        const QString value = settings.value(key).toString();
+        if (!value.trimmed().isEmpty()) {
+            settings[key] = normalizedLocalPath(value);
+        }
+    }
+}
+
+#ifdef Q_OS_LINUX
+bool readLinuxSystemCpuTotal(quint64 &total)
+{
+    QFile file(QStringLiteral("/proc/stat"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    const QList<QByteArray> parts = file.readLine().simplified().split(' ');
+    if (parts.size() < 5 || parts.at(0) != QByteArrayLiteral("cpu")) {
+        return false;
+    }
+
+    quint64 parsedTotal = 0;
+    for (int i = 1; i < parts.size(); ++i) {
+        bool ok = false;
+        const quint64 value = parts.at(i).toULongLong(&ok);
+        if (!ok) {
+            return false;
+        }
+        parsedTotal += value;
+    }
+
+    total = parsedTotal;
+    return total > 0;
+}
+
+bool readLinuxProcessCpuTotal(quint64 &total)
+{
+    QFile file(QStringLiteral("/proc/self/stat"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    const QByteArray data = file.readAll();
+    const int commEnd = data.lastIndexOf(')');
+    if (commEnd < 0 || commEnd + 2 >= data.size()) {
+        return false;
+    }
+
+    // Fields after ") " start with stat field 3. utime/stime are fields 14/15.
+    const QList<QByteArray> parts = data.mid(commEnd + 2).simplified().split(' ');
+    if (parts.size() <= 12) {
+        return false;
+    }
+
+    bool okUser = false;
+    bool okSystem = false;
+    const quint64 userTime = parts.at(11).toULongLong(&okUser);
+    const quint64 systemTime = parts.at(12).toULongLong(&okSystem);
+    if (!okUser || !okSystem) {
+        return false;
+    }
+
+    total = userTime + systemTime;
+    return true;
+}
+#endif
+
+} // namespace
 
 SystemController::SystemController(QObject *parent)
     : QObject(parent)
@@ -44,6 +130,7 @@ SystemController::SystemController(QObject *parent)
     , m_userManager(new UserManager(this))
     , m_logModel(new LogModel(this))
     , m_ptzController(new PtzController(this))
+    , m_camexController(new CamexController(this))
     , m_dahuaDiscovery(new DiscoveryController(this))
     , m_archiveController(new ArchiveController(this))
     , m_udpSocket(new QUdpSocket(this))
@@ -98,6 +185,7 @@ SystemController::SystemController(QObject *parent)
     m_appSettings["playerFillMode"] = 0.0;
     m_appSettings["showStatsOverlay"] = true;
     m_appSettings["defaultAutoplay"] = true;
+    m_appSettings["sidebarVisible"] = true;
     // Disable analytics by default to avoid crashes from heavy ONNX inference on low GPUs
     m_appSettings["analyticsEnabled"] = false;
     // Sane grid defaults; avoid spawning hundreds of cells when state.json is absent
@@ -220,6 +308,11 @@ LogModel* SystemController::logModel() const
 PtzController* SystemController::ptzController() const
 {
     return m_ptzController;
+}
+
+CamexController* SystemController::camexController() const
+{
+    return m_camexController;
 }
 
 void SystemController::addLog(QtMsgType type, const QString &msg)
@@ -883,6 +976,7 @@ void SystemController::loadState()
 
     if (root.contains("appSettings")) {
         QVariantMap savedSettings = root.value("appSettings").toObject().toVariantMap();
+        normalizeAppSettingPaths(savedSettings);
         // Merge with defaults
         for (auto it = savedSettings.begin(); it != savedSettings.end(); ++it) {
             m_appSettings[it.key()] = it.value();
@@ -1081,9 +1175,7 @@ static quint64 fileTimeToUInt64(const FILETIME &ft)
 
 double SystemController::processCpuPercent()
 {
-#ifndef Q_OS_WIN
-    return 0.0;
-#else
+#ifdef Q_OS_WIN
     FILETIME idleTime, kernelTime, userTime;
     FILETIME createTime, exitTime, procKernel, procUser;
     if (!GetSystemTimes(&idleTime, &kernelTime, &userTime)) {
@@ -1129,6 +1221,37 @@ double SystemController::processCpuPercent()
     if (cpu < 0.0) cpu = 0.0;
     if (cpu > 100.0) cpu = 100.0;
     return cpu;
+#elif defined(Q_OS_LINUX)
+    quint64 systemTotal = 0;
+    quint64 processTotal = 0;
+    if (!readLinuxSystemCpuTotal(systemTotal) || !readLinuxProcessCpuTotal(processTotal)) {
+        return 0.0;
+    }
+
+    if (!m_cpuInit) {
+        m_prevLinuxSystemCpu = systemTotal;
+        m_prevLinuxProcessCpu = processTotal;
+        m_cpuInit = true;
+        m_cpuTimer.start();
+        return 0.0;
+    }
+
+    const quint64 systemDelta = systemTotal - m_prevLinuxSystemCpu;
+    const quint64 processDelta = processTotal - m_prevLinuxProcessCpu;
+
+    m_prevLinuxSystemCpu = systemTotal;
+    m_prevLinuxProcessCpu = processTotal;
+
+    if (systemDelta == 0) {
+        return 0.0;
+    }
+
+    double cpu = (static_cast<double>(processDelta) / static_cast<double>(systemDelta)) * 100.0;
+    if (cpu < 0.0) cpu = 0.0;
+    if (cpu > 100.0) cpu = 100.0;
+    return cpu;
+#else
+    return 0.0;
 #endif
 }
 
@@ -1166,8 +1289,8 @@ void SystemController::openFolder(const QString &path)
 {
     if (path.isEmpty()) return;
     
-    QString targetPath = path;
-    QFileInfo fi(path);
+    QString targetPath = normalizedLocalPath(path);
+    QFileInfo fi(targetPath);
     if (fi.exists() && fi.isFile()) {
         targetPath = fi.absolutePath();
     }
@@ -1175,10 +1298,18 @@ void SystemController::openFolder(const QString &path)
     QDesktopServices::openUrl(QUrl::fromLocalFile(targetPath));
 }
 
+QString SystemController::normalizeLocalPath(const QString &pathOrUrl) const
+{
+    return normalizedLocalPath(pathOrUrl);
+}
+
 void SystemController::saveAppSettings(const QVariantMap &settings)
 {
+    QVariantMap normalizedSettings = settings;
+    normalizeAppSettingPaths(normalizedSettings);
+
     // Merge new settings with existing ones to prevent data loss (e.g. grid state, hidden flags)
-    for (auto it = settings.begin(); it != settings.end(); ++it) {
+    for (auto it = normalizedSettings.begin(); it != normalizedSettings.end(); ++it) {
         m_appSettings[it.key()] = it.value();
     }
     emit appSettingsChanged();
@@ -1280,7 +1411,7 @@ void SystemController::renameCameraGroup(const QString &oldName, const QString &
 QVariantList SystemController::getRecordings(const QString &cameraIp, const QDate &date)
 {
     QVariantList results;
-    QString path = m_appSettings.value("recordingsPath").toString();
+    QString path = normalizedLocalPath(m_appSettings.value("recordingsPath").toString());
     if (path.isEmpty()) {
         path = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC";
     }
@@ -1343,7 +1474,7 @@ QVariantList SystemController::getRecordings(const QString &cameraIp, const QDat
 QList<int> SystemController::getRecordingDates(const QString &cameraIp, int year, int month)
 {
     QList<int> days;
-    QString path = m_appSettings.value("recordingsPath").toString();
+    QString path = normalizedLocalPath(m_appSettings.value("recordingsPath").toString());
     if (path.isEmpty()) {
         path = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC";
     }
@@ -1384,7 +1515,7 @@ QList<int> SystemController::getRecordingDates(const QString &cameraIp, int year
 
 QString SystemController::generateRecordingPath(const QString &ip)
 {
-    QString path = m_appSettings.value("recordingsPath").toString();
+    QString path = normalizedLocalPath(m_appSettings.value("recordingsPath").toString());
     if (path.isEmpty()) {
         path = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC";
     }
@@ -1609,7 +1740,7 @@ void SystemController::takeDahuaSnapshot(const QString &ip, int port, const QStr
         }
 
         // Prepare filename
-        QString savePath = m_appSettings.value("screenshotsPath").toString();
+        QString savePath = normalizedLocalPath(m_appSettings.value("screenshotsPath").toString());
         if (savePath.isEmpty()) savePath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
         QDir().mkpath(savePath);
         
@@ -1658,7 +1789,7 @@ void SystemController::notifySnapshotSaved(const QString &path)
 
 QString SystemController::getSnapshotPath(const QString &filename)
 {
-    QString savePath = m_appSettings.value("screenshotsPath").toString();
+    QString savePath = normalizedLocalPath(m_appSettings.value("screenshotsPath").toString());
     if (savePath.isEmpty()) savePath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
     QDir().mkpath(savePath);
     return QDir(savePath).filePath(filename);
@@ -1667,12 +1798,7 @@ QString SystemController::getSnapshotPath(const QString &filename)
 bool SystemController::deleteLocalFile(const QString &fileUrl)
 {
     if (fileUrl.isEmpty()) return false;
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
     QFileInfo fi(targetPath);
     if (!fi.exists() || !fi.isFile()) return false;
     return QFile::remove(targetPath);
@@ -1681,12 +1807,7 @@ bool SystemController::deleteLocalFile(const QString &fileUrl)
 bool SystemController::localFileExists(const QString &fileUrl) const
 {
     if (fileUrl.isEmpty()) return false;
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
     QFileInfo fi(targetPath);
     return fi.exists() && fi.isFile();
 }
@@ -1696,12 +1817,7 @@ QVariantMap SystemController::getFileInfo(const QString &fileUrl) const
     QVariantMap info;
     if (fileUrl.isEmpty()) return info;
 
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
 
     QFileInfo fi(targetPath);
     info["exists"] = fi.exists();
@@ -1729,12 +1845,7 @@ QVariantMap SystemController::getFileInfo(const QString &fileUrl) const
 bool SystemController::copyImageToClipboard(const QString &fileUrl)
 {
     if (fileUrl.isEmpty()) return false;
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
 
     QImage img(targetPath);
     if (img.isNull()) return false;
@@ -1754,12 +1865,7 @@ void SystemController::copyTextToClipboard(const QString &text)
 bool SystemController::openWithDialog(const QString &fileUrl)
 {
     if (fileUrl.isEmpty()) return false;
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
 
 #ifdef Q_OS_WIN
     QString nativePath = QDir::toNativeSeparators(targetPath);
@@ -1772,12 +1878,7 @@ bool SystemController::openWithDialog(const QString &fileUrl)
 bool SystemController::printImage(const QString &fileUrl)
 {
     if (fileUrl.isEmpty()) return false;
-    QString targetPath = fileUrl;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    QString targetPath = normalizedLocalPath(fileUrl);
 
 #ifdef Q_OS_WIN
     const wchar_t *operation = L"print";
@@ -1876,15 +1977,7 @@ void SystemController::onUdpReadyRead()
 bool SystemController::exportConfiguration(const QString &path)
 {
     if (path.isEmpty()) return false;
-    
-    // Fix path if it is a file URL
-    QString targetPath = path;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    } 
-    else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    const QString targetPath = normalizedLocalPath(path);
 
     QJsonObject root;
     QJsonArray cameras;
@@ -1928,14 +2021,7 @@ bool SystemController::exportConfiguration(const QString &path)
 bool SystemController::importConfiguration(const QString &path)
 {
     if (path.isEmpty()) return false;
-    
-    QString targetPath = path;
-    if (targetPath.startsWith("file:///")) {
-        targetPath = targetPath.mid(8);
-    }
-    else if (targetPath.startsWith("file://")) {
-        targetPath = targetPath.mid(7);
-    }
+    const QString targetPath = normalizedLocalPath(path);
     
     QFile f(targetPath);
     if (!f.exists() || !f.open(QIODevice::ReadOnly)) {
@@ -1957,6 +2043,7 @@ bool SystemController::importConfiguration(const QString &path)
     // 1. App Settings
     if (root.contains("appSettings")) {
         QVariantMap savedSettings = root.value("appSettings").toObject().toVariantMap();
+        normalizeAppSettingPaths(savedSettings);
         for (auto it = savedSettings.begin(); it != savedSettings.end(); ++it) {
             m_appSettings[it.key()] = it.value();
         }

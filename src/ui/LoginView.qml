@@ -10,11 +10,39 @@ Rectangle {
     property bool authenticating: false
     property string errorMessage: ""
 
+    function submitLogin() {
+        root.errorMessage = ""
+        if (usernameInput.text === "" || passwordInput.text === "") {
+            root.errorMessage = I18n.t("Введите логин и пароль")
+            return
+        }
+
+        if (!SystemController.userManager.hasUsers) {
+            if (confirmPasswordInput.text === "") {
+                root.errorMessage = I18n.t("Подтвердите пароль")
+                return
+            }
+            if (passwordInput.text !== confirmPasswordInput.text) {
+                root.errorMessage = I18n.t("Пароли не совпадают")
+                return
+            }
+            if (!SystemController.userManager.setupInitialAdmin(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
+                root.errorMessage = I18n.t("Не удалось создать администратора")
+            }
+            return
+        }
+
+        if (!SystemController.userManager.login(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
+            root.errorMessage = I18n.t("Неверный логин или пароль")
+        }
+    }
+
     function syncFormState() {
         usernameInput.text = SystemController.userManager.rememberedUsername
-        passwordInput.text = ""
+        passwordInput.text = SystemController.userManager.rememberedPassword
         confirmPasswordInput.text = ""
         rememberMeCheck.checked = SystemController.userManager.rememberedUsername !== ""
+                                  || SystemController.userManager.rememberedPassword !== ""
         root.errorMessage = ""
     }
 
@@ -30,6 +58,12 @@ Rectangle {
         }
 
         function onRememberedUsernameChanged() {
+            if (!SystemController.userManager.isLoggedIn) {
+                root.syncFormState()
+            }
+        }
+
+        function onRememberedPasswordChanged() {
             if (!SystemController.userManager.isLoggedIn) {
                 root.syncFormState()
             }
@@ -133,7 +167,7 @@ Rectangle {
                         font.pixelSize: 14
                         verticalAlignment: Text.AlignVCenter
                         activeFocusOnPress: true
-                        onAccepted: loginButton.clicked()
+                        onAccepted: root.submitLogin()
                     }
                 }
             }
@@ -167,7 +201,7 @@ Rectangle {
                         font.pixelSize: 14
                         verticalAlignment: Text.AlignVCenter
                         activeFocusOnPress: true
-                        onAccepted: loginButton.clicked()
+                        onAccepted: root.submitLogin()
                     }
                 }
             }
@@ -225,6 +259,18 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: SystemController.userManager.hasUsers
+                    ? I18n.t("Будет запомнен логин и пароль для следующего входа.")
+                    : I18n.t("Для первого запуска создайте учетную запись администратора.")
+                color: "#888888"
+                font.pixelSize: 11
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+
+            Text {
+                visible: false
+                Layout.fillWidth: true
+                text: SystemController.userManager.hasUsers
                     ? I18n.t("Будет запомнено только имя пользователя. Пароль всегда требуется вводить заново.")
                     : I18n.t("Для первого запуска создайте учетную запись администратора.")
                 color: "#888888"
@@ -255,32 +301,7 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                 }
                 
-                onClicked: {
-                    root.errorMessage = ""
-                    if (usernameInput.text === "" || passwordInput.text === "") {
-                        root.errorMessage = I18n.t("Введите логин и пароль")
-                        return
-                    }
-
-                    if (!SystemController.userManager.hasUsers) {
-                        if (confirmPasswordInput.text === "") {
-                            root.errorMessage = I18n.t("Подтвердите пароль")
-                            return
-                        }
-                        if (passwordInput.text !== confirmPasswordInput.text) {
-                            root.errorMessage = I18n.t("Пароли не совпадают")
-                            return
-                        }
-                        if (!SystemController.userManager.setupInitialAdmin(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
-                            root.errorMessage = I18n.t("Не удалось создать администратора")
-                        }
-                        return
-                    }
-
-                    if (!SystemController.userManager.login(usernameInput.text, passwordInput.text, rememberMeCheck.checked)) {
-                        root.errorMessage = I18n.t("Неверный логин или пароль")
-                    }
-                }
+                onClicked: root.submitLogin()
             }
         }
     }

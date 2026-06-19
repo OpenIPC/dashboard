@@ -828,14 +828,7 @@ Dialog {
         nameFilters: [I18n.t("Видео файлы (*.mp4)"), I18n.t("Все файлы (*)")]
         
         onAccepted: {
-            var path = selectedFile.toString()
-            if (Qt.platform.os === "windows") {
-                 path = path.replace("file:///", "")
-            } else {
-                 path = path.replace("file://", "")
-            }
-            // Decode URL encoded characters (like spaces)
-            path = decodeURIComponent(path)
+            var path = SystemController.normalizeLocalPath(selectedFile)
             
             var index = resultsList.currentIndex
             var sourcePath = SystemController.archiveController.searchResults[index].filePath

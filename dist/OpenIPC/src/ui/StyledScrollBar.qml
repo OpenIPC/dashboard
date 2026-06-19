@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import OpenIPC
 
 ScrollBar {
     policy: ScrollBar.AsNeeded
@@ -10,10 +11,10 @@ ScrollBar {
     contentItem: Rectangle {
         implicitWidth: 12
         radius: 6
-        color: parent.pressed ? "#4caf50" : (parent.hovered ? "#cccccc" : "#a0a0a0")
+        color: parent.pressed ? Theme.success : (parent.hovered ? Theme.textSecondary : Theme.textMuted)
     }
     background: Rectangle {
         width: parent.width
-        color: "#2d2d2d" // Lighter track color
+        color: Theme.panelAltBackground
     }
 }

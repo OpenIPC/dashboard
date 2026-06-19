@@ -8,7 +8,8 @@ Item {
     property var model // AnalyticsEngine
     property string snapshotsDirOverride: ""
     property string clipsDirOverride: ""
-    SnapshotBrowser {
+
+    EventsPanel {
         anchors.fill: parent
         snapshotsDir: root.snapshotsDirOverride
         clipsDir: root.clipsDirOverride

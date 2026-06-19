@@ -1,38 +1,84 @@
 ﻿import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import QtQuick.Window
 import OpenIPC
 
 ApplicationWindow {
     id: window
-    width: Math.min(1280, Screen.desktopAvailableWidth || 1280)
-    height: Math.min(720, Screen.desktopAvailableHeight || 720)
+    width: 1280
+    height: 720
+    minimumWidth: 960
+    minimumHeight: 540
     visible: true
-    visibility: Window.Maximized
     flags: Qt.Window | Qt.FramelessWindowHint
     title: I18n.t("Dashboard for OpenIPC")
     color: Theme.appBackground
 
     property string appLanguage: I18n.language
+    property bool dashboardLoaded: SystemController.userManager.isLoggedIn
 
     Component.onCompleted: {
         console.info("Main.qml Component.onCompleted start")
         I18n.language = appLanguage
+        if (!SystemController.userManager.isLoggedIn
+                && SystemController.userManager.hasUsers
+                && SystemController.userManager.rememberedUsername !== ""
+                && SystemController.userManager.rememberedPassword !== "") {
+            SystemController.userManager.loginWithRememberedCredentials()
+        }
+        dashboardLoaded = SystemController.userManager.isLoggedIn
+        Qt.callLater(function() {
+            window.showMaximized()
+        })
     }
 
-    StackLayout {
-        anchors.fill: parent
-        currentIndex: SystemController.userManager.isLoggedIn ? 1 : 0
-        
-        LoginView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+    Connections {
+        target: SystemController.userManager
+
+        function onIsLoggedInChanged() {
+            authSwitchTimer.restart()
         }
-        
+    }
+
+    Timer {
+        id: authSwitchTimer
+        interval: 0
+        repeat: false
+        onTriggered: dashboardLoaded = SystemController.userManager.isLoggedIn
+    }
+
+    Loader {
+        id: pageLoader
+        anchors.fill: parent
+        clip: true
+        sourceComponent: dashboardLoaded ? dashboardComponent : loginComponent
+    }
+
+    Binding {
+        target: pageLoader.item
+        property: "width"
+        value: pageLoader.width
+        when: pageLoader.item !== null
+    }
+
+    Binding {
+        target: pageLoader.item
+        property: "height"
+        value: pageLoader.height
+        when: pageLoader.item !== null
+    }
+
+    Component {
+        id: loginComponent
+
+        LoginView {
+        }
+    }
+
+    Component {
+        id: dashboardComponent
+
         DashboardView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
         }
     }
 }

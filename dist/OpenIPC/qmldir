@@ -1,9 +1,11 @@
 module OpenIPC
 typeinfo appOpenIPC-Dashboard.qmltypes
 prefer :/OpenIPC/
+singleton Theme 1.0 src/ui/Theme.qml
 Main 1.0 src/ui/Main.qml
 SettingsDialog 1.0 src/ui/SettingsDialog.qml
 ModulesSettingsPanel 1.0 src/ui/ModulesSettingsPanel.qml
+StyledComboBox 1.0 src/ui/StyledComboBox.qml
 GridCell 1.0 src/ui/GridCell.qml
 SidebarIcon 1.0 src/ui/SidebarIcon.qml
 CameraSearchDialog 1.0 src/ui/CameraSearchDialog.qml
@@ -13,6 +15,8 @@ AnalyticsView 1.0 src/ui/AnalyticsView.qml
 FaceSnapshotsPanel 1.0 src/ui/analytics/FaceSnapshotsPanel.qml
 ObjectCounterPanel 1.0 src/ui/analytics/ObjectCounterPanel.qml
 LicensePlatePanel 1.0 src/ui/analytics/LicensePlatePanel.qml
+EventsPanel 1.0 src/ui/analytics/EventsPanel.qml
+RulesPanel 1.0 src/ui/analytics/RulesPanel.qml
 SnapshotBrowser 1.0 src/ui/analytics/SnapshotBrowser.qml
 ImageViewerWindow 1.0 src/ui/analytics/ImageViewerWindow.qml
 UserManagementDialog 1.0 src/ui/UserManagementDialog.qml

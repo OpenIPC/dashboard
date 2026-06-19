@@ -626,10 +626,13 @@ Item {
             }
         }
         
-        drag.target: dragItem
+        drag.target: root.canSettings ? dragItem : null
         
         onPressed: {
             root.isSelected = true
+            if (!root.canSettings) {
+                return
+            }
             // Prepare drag item
             dragItem.parent = root.parent.parent // Move to higher z-index layer if possible, or just use Drag.active
             dragItem.anchors.fill = undefined
@@ -640,6 +643,9 @@ Item {
         }
         
         onReleased: {
+            if (!root.canSettings) {
+                return
+            }
             dragItem.Drag.drop()
             // Reset drag item
             dragItem.parent = root
@@ -674,8 +680,13 @@ Item {
     DropArea {
         anchors.fill: parent
         keys: ["grid-cell", "camera"]
+        enabled: root.canSettings
 
         onEntered: (drag) => {
+            if (!root.canSettings) {
+                root.permissionDenied()
+                return
+            }
             // Visual feedback for drop target?
             root.border.color = Theme.success
             drag.accept(Qt.MoveAction)
@@ -684,6 +695,10 @@ Item {
             root.border.color = root.isSelected ? Theme.accent : Theme.textFaint
         }
         onDropped: (drop) => {
+            if (!root.canSettings) {
+                root.permissionDenied()
+                return
+            }
             // Handle grid cell swap
             if (drop.keys.indexOf("grid-cell") >= 0) {
                 if (drop.source && drop.source.Drag && drop.source.Drag.mimeData) {
@@ -865,6 +880,24 @@ Item {
                         onClicked: {
                             if (!root.canPtz) { root.permissionDenied(); return }
                             hdPtzOverlay.ptzVisible = !hdPtzOverlay.ptzVisible
+                        }
+                    }
+
+                    Button {
+                        width: 42
+                        height: 28
+                        background: Rectangle { color: root.isMuted ? "transparent" : "#44ffffff"; radius: 4 }
+                        contentItem: Text {
+                            text: root.isMuted ? "volume_off" : "volume_up"
+                            font.family: root.iconFontFamily
+                            font.pixelSize: 18
+                            color: "white"
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: {
+                            root.isMuted = !root.isMuted
+                            root.audioClicked()
                         }
                     }
 

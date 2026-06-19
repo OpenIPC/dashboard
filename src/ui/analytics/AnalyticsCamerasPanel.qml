@@ -52,6 +52,63 @@ Item {
         return ({})
     }
 
+    function ageText(timestampMs) {
+        var value = Number(timestampMs || 0)
+        if (value <= 0)
+            return I18n.t("нет данных")
+
+        var deltaSec = Math.max(0, Math.floor((Date.now() - value) / 1000))
+        if (deltaSec < 2)
+            return I18n.t("сейчас")
+        if (deltaSec < 60)
+            return I18n.t("%1 сек назад", [deltaSec])
+
+        var deltaMin = Math.floor(deltaSec / 60)
+        if (deltaMin < 60)
+            return I18n.t("%1 мин назад", [deltaMin])
+
+        var deltaHour = Math.floor(deltaMin / 60)
+        return I18n.t("%1 ч назад", [deltaHour])
+    }
+
+    function pipelineState(online, hasAi, telemetry) {
+        if (!hasAi)
+            return "unassigned"
+        if (!online)
+            return "offline"
+        return telemetry.pipelineState || "waiting"
+    }
+
+    function pipelineText(state) {
+        if (state === "offline") return I18n.t("Камера offline")
+        if (state === "module_not_ready") return I18n.t("Модуль не готов")
+        if (state === "processing") return I18n.t("AI обрабатывает кадр")
+        if (state === "receiving") return I18n.t("AI получает кадры")
+        if (state === "throttled") return I18n.t("Кадры ограничены")
+        if (state === "waiting") return I18n.t("AI назначен, ожидает кадры")
+        return I18n.t("AI не назначен")
+    }
+
+    function pipelineHint(state, telemetry) {
+        if (state === "offline") return I18n.t("Проверьте подключение камеры")
+        if (state === "module_not_ready") return I18n.t("Включите модуль и дождитесь статуса «Готов»")
+        if (state === "processing") return I18n.t("Задача сейчас выполняется")
+        if (state === "receiving") return I18n.t("Последний AI-кадр: %1", [ageText(telemetry.lastProcessedMs || telemetry.lastAcceptedFrameMs)])
+        if (state === "throttled") return I18n.t("Сработал лимит FPS или параллельных задач")
+        if (state === "waiting") return I18n.t("Поток есть, но AI еще не получил первый кадр")
+        return I18n.t("Назначьте модуль этой камере")
+    }
+
+    function pipelineColor(state) {
+        if (state === "receiving" || state === "processing")
+            return Theme.success
+        if (state === "waiting" || state === "throttled" || state === "module_not_ready")
+            return Theme.warning
+        if (state === "offline")
+            return Theme.danger
+        return Theme.textMuted
+    }
+
     function cameraMatches(name, ip, status) {
         var q = filterText.trim().toLowerCase()
         if (q === "")
@@ -279,13 +336,14 @@ Item {
                 property bool hasAi: root.cameraHasAnyAi(cameraIp)
                 property bool online: String(status || "").toLowerCase() === "online"
                 property bool receivingFrames: Number(telemetry.processedFrames || 0) > 0
+                property string aiState: root.pipelineState(online, hasAi, telemetry)
 
                 width: ListView.view.width
-                height: rowVisible ? 118 : 0
+                height: rowVisible ? 138 : 0
                 visible: rowVisible
                 radius: Theme.radiusLg
                 color: Theme.cardBackground
-                border.color: hasAi ? Theme.accent : Theme.cardBorder
+                border.color: hasAi ? root.pipelineColor(aiState) : Theme.cardBorder
                 clip: true
 
                 RowLayout {
@@ -324,13 +382,18 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            text: !cameraRow.hasAi
-                                  ? I18n.t("AI не назначен")
-                                  : (cameraRow.receivingFrames
-                                     ? I18n.t("AI получает кадры")
-                                     : I18n.t("AI назначен, ожидает кадры"))
-                            color: cameraRow.receivingFrames ? Theme.success : (cameraRow.hasAi ? Theme.warning : Theme.textMuted)
+                            text: root.pipelineText(cameraRow.aiState)
+                            color: root.pipelineColor(cameraRow.aiState)
                             font.pixelSize: 11
+                            font.bold: cameraRow.hasAi
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.pipelineHint(cameraRow.aiState, cameraRow.telemetry)
+                            color: Theme.textFaint
+                            font.pixelSize: 10
                             elide: Text.ElideRight
                         }
                     }
@@ -352,14 +415,19 @@ Item {
                     }
 
                     GridLayout {
-                        Layout.preferredWidth: 390
-                        columns: 4
+                        Layout.preferredWidth: 470
+                        columns: 5
                         columnSpacing: 8
                         rowSpacing: 8
 
                         SmallStat {
                             title: I18n.t("Кадры")
                             value: String(cameraRow.telemetry.processedFrames || 0)
+                        }
+                        SmallStat {
+                            title: I18n.t("Пропущено")
+                            value: String(cameraRow.telemetry.skippedFrames || 0)
+                            accent: Number(cameraRow.telemetry.skippedFrames || 0) > 0 ? Theme.warning : Theme.textPrimary
                         }
                         SmallStat {
                             title: I18n.t("Детекции")
@@ -370,8 +438,9 @@ Item {
                             value: String(cameraRow.telemetry.events || 0)
                         }
                         SmallStat {
-                            title: I18n.t("Задержка")
-                            value: Number(cameraRow.telemetry.averageInferenceMs || 0).toFixed(1) + " ms"
+                            title: I18n.t("AI-кадр")
+                            value: root.ageText(cameraRow.telemetry.lastProcessedMs || cameraRow.telemetry.lastAcceptedFrameMs)
+                            accent: cameraRow.receivingFrames ? Theme.success : Theme.textMuted
                         }
                     }
                 }

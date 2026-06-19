@@ -36,6 +36,11 @@ Item {
         return SystemController.analyticsEngine.getModuleStatus(type)
     }
 
+    function moduleProgress(type) {
+        var token = refreshToken
+        return SystemController.analyticsEngine.getModuleProgress(type)
+    }
+
     function statusLabel(status) {
         if (status === "ready") return I18n.t("Готов")
         if (status === "downloading") return I18n.t("Загрузка")
@@ -53,6 +58,24 @@ Item {
     function moduleTelemetry(type) {
         var token = refreshToken
         return SystemController.analyticsEngine.getModuleTelemetry(type)
+    }
+
+    function moduleDiagnostics(type) {
+        var token = refreshToken
+        return SystemController.analyticsEngine.getModuleDiagnostics(type)
+    }
+
+    function sizeText(bytes) {
+        var value = Number(bytes || 0)
+        if (value <= 0) return I18n.t("нет данных")
+        if (value < 1024 * 1024) return Math.round(value / 1024) + " KB"
+        return (value / (1024 * 1024)).toFixed(1) + " MB"
+    }
+
+    function dateText(ms) {
+        var value = Number(ms || 0)
+        if (value <= 0) return I18n.t("нет данных")
+        return Qt.formatDateTime(new Date(value), "yyyy-MM-dd HH:mm")
     }
 
     function assignedCamerasCount(type) {
@@ -219,7 +242,11 @@ Item {
                 property string currentStatus: root.moduleStatus(moduleType)
                 property bool currentEnabled: root.moduleEnabled(moduleType)
                 property var telemetry: root.moduleTelemetry(moduleType)
-                property real progress: SystemController.analyticsEngine.getModuleProgress(moduleType)
+                property var diagnostics: root.moduleDiagnostics(moduleType)
+                property real progress: root.moduleProgress(moduleType)
+                property real displayProgress: currentStatus === "downloading"
+                    ? Math.max(0, Math.min(0.99, Number(progress || 0)))
+                    : Math.max(0, Math.min(1, Number(progress || 0)))
 
                 width: ListView.view.width
                 height: content.implicitHeight + 24
@@ -290,15 +317,62 @@ Item {
                             textColor: Theme.textPrimary
                             onClicked: root.toggleModule(moduleCard.moduleType)
                         }
+
+                        PanelButton {
+                            Layout.preferredWidth: Math.min(180, Math.max(128, moduleCard.width * 0.22))
+                            text: I18n.t("Перезагрузить")
+                            onClicked: {
+                                SystemController.analyticsEngine.reloadModule(moduleCard.moduleType)
+                                root.refresh()
+                            }
+                        }
+
+                        PanelButton {
+                            Layout.preferredWidth: Math.min(180, Math.max(128, moduleCard.width * 0.22))
+                            text: I18n.t("Папка моделей")
+                            onClicked: SystemController.openFolder(moduleCard.diagnostics.modulesDir || moduleCard.diagnostics.modelPath)
+                        }
                     }
 
                     ProgressBar {
+                        id: downloadProgress
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 5
+                        Layout.preferredHeight: 20
                         visible: moduleCard.currentStatus === "downloading"
                         from: 0
                         to: 1
-                        value: moduleCard.progress
+                        value: moduleCard.displayProgress
+
+                        Behavior on value {
+                            enabled: moduleCard.displayProgress >= downloadProgress.value
+                            NumberAnimation {
+                                duration: 180
+                                easing.type: Easing.OutCubic
+                            }
+                        }
+
+                        background: Rectangle {
+                            radius: Theme.radiusSm
+                            color: Theme.controlBackground
+                            border.color: Theme.controlBorder
+                        }
+
+                        contentItem: Item {
+                            Rectangle {
+                                width: downloadProgress.visualPosition * parent.width
+                                height: parent.height
+                                radius: Theme.radiusSm
+                                color: Theme.accent
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Math.round(downloadProgress.value * 100) + "%"
+                                color: Theme.textPrimary
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
+                        }
                     }
 
                     Text {
@@ -312,10 +386,24 @@ Item {
 
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: moduleCard.width >= 900 ? 5 : moduleCard.width >= 620 ? 3 : 2
+                        columns: moduleCard.width >= 1120 ? 8 : moduleCard.width >= 820 ? 4 : moduleCard.width >= 620 ? 3 : 2
                         columnSpacing: 8
                         rowSpacing: 8
 
+                        Metric {
+                            title: I18n.t("Модель")
+                            value: moduleCard.diagnostics.installed ? I18n.t("ONNX") : I18n.t("Нет файла")
+                            accent: moduleCard.diagnostics.installed ? Theme.success : Theme.warning
+                        }
+                        Metric {
+                            title: I18n.t("Размер")
+                            value: root.sizeText(moduleCard.diagnostics.modelSizeBytes)
+                        }
+                        Metric {
+                            title: I18n.t("Backend")
+                            value: moduleCard.diagnostics.loaded ? I18n.t("Загружен") : I18n.t("Не загружен")
+                            accent: moduleCard.diagnostics.loaded ? Theme.success : Theme.warning
+                        }
                         Metric {
                             title: I18n.t("Камер")
                             value: String(root.assignedCamerasCount(moduleCard.moduleType))
@@ -336,6 +424,43 @@ Item {
                         Metric {
                             title: I18n.t("Задержка")
                             value: Number(moduleCard.telemetry.averageInferenceMs || 0).toFixed(1) + " ms"
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: modelDetails.implicitHeight + 16
+                        radius: Theme.radiusMd
+                        color: Theme.panelSoftBackground
+                        border.color: Theme.panelBorder
+
+                        ColumnLayout {
+                            id: modelDetails
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 4
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Файл модели: %1", [moduleCard.diagnostics.modelPath || I18n.t("Путь не задан")])
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                wrapMode: Text.WrapAnywhere
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Классы: %1", [moduleCard.diagnostics.classCount || 0])
+                                      + " · "
+                                      + I18n.t("Confidence: %1", [Number(moduleCard.diagnostics.confidenceThreshold || 0).toFixed(2)])
+                                      + " · "
+                                      + I18n.t("NMS: %1", [Number(moduleCard.diagnostics.nmsThreshold || 0).toFixed(2)])
+                                      + " · "
+                                      + I18n.t("Изменен: %1", [root.dateText(moduleCard.diagnostics.lastModifiedMs)])
+                                color: Theme.textMuted
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
 

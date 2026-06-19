@@ -258,42 +258,12 @@ Dialog {
             Layout.fillWidth: true
             spacing: 5
             Text { text: I18n.t("Шаблон URL"); color: "#aaaaaa"; font.pixelSize: 12 }
-            ComboBox {
+            StyledComboBox {
                 id: urlTemplateCombo
                 Layout.fillWidth: true
                 model: ["OpenIPC", "Hikvision", "Dahua", "Custom"]
                 currentIndex: 0
                 onCurrentIndexChanged: updateUrl()
-                
-                delegate: ItemDelegate {
-                    width: parent.width
-                    contentItem: Text {
-                        text: modelData
-                        color: "white"
-                        font: urlTemplateCombo.font
-                        elide: Text.ElideRight
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    background: Rectangle {
-                        color: urlTemplateCombo.highlightedIndex === index ? "#333333" : "#252526"
-                    }
-                }
-                contentItem: Text {
-                    leftPadding: 10
-                    rightPadding: (urlTemplateCombo.indicator ? urlTemplateCombo.indicator.width : 10) + urlTemplateCombo.spacing
-                    text: urlTemplateCombo.displayText
-                    font: urlTemplateCombo.font
-                    color: "white"
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                }
-                background: Rectangle {
-                    implicitWidth: 120
-                    implicitHeight: 40
-                    color: "#333333"
-                    border.color: "#444444"
-                    radius: 4
-                }
             }
         }
         

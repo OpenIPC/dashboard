@@ -149,6 +149,9 @@ Window {
     property int evidencePostSeconds: 5
     property real evidenceMinConfidence: 0.6
     property int evidenceClipFps: 10
+    property string analyticsPerformancePreset: "balanced"
+    property int analyticsTargetFps: 3
+    property int analyticsMaxParallelJobs: 2
     property bool evidenceUploadEnabled: false
     property string evidenceUploadProvider: "local"
     property string evidenceUploadTarget: ""
@@ -173,7 +176,45 @@ Window {
         return evidenceUploadClientId
     }
 
-    property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
+    function analyticsPresetLabel(preset) {
+        if (preset === "eco") return I18n.t("Экономный")
+        if (preset === "balanced") return I18n.t("Сбалансированный")
+        if (preset === "max") return I18n.t("Максимум")
+        return I18n.t("Ручной")
+    }
+
+    function analyticsPresetDescription(preset) {
+        if (preset === "eco") return I18n.t("Минимальная нагрузка: подходит для слабого CPU или большого числа камер.")
+        if (preset === "balanced") return I18n.t("Оптимальный режим для постоянной работы нескольких камер.")
+        if (preset === "max") return I18n.t("Больше кадров и параллельных задач: используйте при запасе CPU/GPU.")
+        return I18n.t("Пользовательские значения FPS и параллельных задач.")
+    }
+
+    function applyAnalyticsPreset(preset) {
+        analyticsPerformancePreset = preset
+        if (preset === "eco") {
+            analyticsTargetFps = 1
+            analyticsMaxParallelJobs = 1
+        } else if (preset === "max") {
+            analyticsTargetFps = 8
+            analyticsMaxParallelJobs = 4
+        } else {
+            analyticsPerformancePreset = "balanced"
+            analyticsTargetFps = 3
+            analyticsMaxParallelJobs = 2
+        }
+        applyCurrentSettings()
+    }
+
+    property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("О программе")]
+
+    function languageIndex(value) {
+        return value === "ru" ? 1 : 0
+    }
+
+    function languageFromIndex(index) {
+        return index === 1 ? "ru" : "en"
+    }
 
     // Helper to apply current settings
     function applyCurrentSettings() {
@@ -230,6 +271,11 @@ Window {
             "uploadRefreshToken": evidenceUploadRefreshToken,
             "uploadExpiresAt": evidenceUploadExpiresAt
         }
+        analyticsSettings["performance"] = {
+            "preset": analyticsPerformancePreset,
+            "targetFps": analyticsTargetFps,
+            "maxParallelJobs": analyticsMaxParallelJobs
+        }
         SystemController.analyticsEngine.setSettings(analyticsSettings)
     }
 
@@ -282,6 +328,12 @@ Window {
             var map = parseTarget(evidenceUploadTarget)
             evidenceUploadFolder = map.folder || ""
             evidenceUploadPath = map.path || ""
+        }
+        if (analyticsSettings && analyticsSettings.performance) {
+            var performance = analyticsSettings.performance
+            if (performance.preset) analyticsPerformancePreset = performance.preset
+            if (performance.targetFps !== undefined) analyticsTargetFps = performance.targetFps
+            if (performance.maxParallelJobs !== undefined) analyticsMaxParallelJobs = performance.maxParallelJobs
         }
     }
 
@@ -342,7 +394,10 @@ Window {
 
     onLanguageChanged: {
         I18n.language = language
-        tabLabels = [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("Модули"), I18n.t("О программе")]
+        tabLabels = [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("О программе")]
+        if (typeof langCombo !== "undefined" && langCombo.currentIndex !== languageIndex(language)) {
+            langCombo.currentIndex = languageIndex(language)
+        }
     }
 
     FontLoader {
@@ -376,18 +431,7 @@ Window {
     function trimFileUrl(url) {
         if (!url)
             return "";
-        var str = (typeof url === "string") ? url : url.toString();
-        if (str.startsWith("file:///")) {
-            str = str.substring(8);
-        } else if (str.startsWith("file://")) {
-            str = str.substring(7);
-        }
-        try {
-            str = decodeURIComponent(str);
-        } catch (e) {
-            // Keep original if decode fails
-        }
-        return str;
+        return SystemController.normalizeLocalPath((typeof url === "string") ? url : url.toString());
     }
 
     function normalizePath(path) {
@@ -600,7 +644,6 @@ Window {
                 TabButton { text: I18n.t("Общие") }
                 TabButton { text: I18n.t("Трансляция") }
                 TabButton { text: I18n.t("Аналитика") }
-                TabButton { text: I18n.t("Модули") }
                 TabButton { text: I18n.t("О программе") }
         }
         
@@ -663,10 +706,21 @@ Window {
                             StyledComboBox {
                                 id: langCombo
                                 model: ["English", "Русский"]
-                                currentIndex: language === "ru" ? 1 : 0
+                                currentIndex: languageIndex(language)
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onActivated: language = index === 1 ? "ru" : "en"
+                                onUserSelected: function(index) {
+                                    language = languageFromIndex(index)
+                                }
+                                onCurrentIndexChanged: {
+                                    if (currentIndex < 0) {
+                                        return
+                                    }
+                                    var selectedLanguage = languageFromIndex(currentIndex)
+                                    if (language !== selectedLanguage) {
+                                        language = selectedLanguage
+                                    }
+                                }
                                 background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
                                 contentItem: Text {
                                     text: langCombo.displayText
@@ -1077,7 +1131,7 @@ Window {
                                         ctx.fill();
                                     }
                                 }
-                                onActivated: {
+                                onUserSelected: {
                                     playerBufferMode = index
                                 }
                             }
@@ -1118,7 +1172,7 @@ Window {
                                         ctx.fill();
                                     }
                                 }
-                                onActivated: {
+                                onUserSelected: {
                                     if (index === 0) playerRtspTransport = "tcp"
                                     else if (index === 1) playerRtspTransport = "udp"
                                     else if (index === 2) playerRtspTransport = "udp_mcast"
@@ -1167,7 +1221,7 @@ Window {
                                         ctx.fill();
                                     }
                                 }
-                                onActivated: {
+                                onUserSelected: {
                                     if (index === 1) playerHwDecoding = "d3d11"
                                     else if (index === 2) playerHwDecoding = "dxva2"
                                     else if (index === 3) playerHwDecoding = "none"
@@ -1211,7 +1265,7 @@ Window {
                                         ctx.fill();
                                     }
                                 }
-                                onActivated: {
+                                onUserSelected: {
                                     if (index === 1) preferredStream = "hd";
                                     else if (index === 2) preferredStream = "sd";
                                     else preferredStream = "auto";
@@ -1327,7 +1381,7 @@ Window {
                                         if (playerOrientation === 270) return 3
                                         return 0
                                     }
-                                    onActivated: {
+                                    onUserSelected: {
                                         if (index === 1) playerOrientation = 90
                                         else if (index === 2) playerOrientation = 180
                                         else if (index === 3) playerOrientation = 270
@@ -1482,6 +1536,148 @@ Window {
                             id: analyticsContent
                             width: parent.width - 40
                             spacing: 16
+
+                            Text {
+                                text: I18n.t("Производительность аналитики")
+                                color: "white"
+                                font.pixelSize: 18
+                                font.bold: true
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Ограничьте частоту обработки и количество параллельных задач, чтобы камеры не перегружали CPU/GPU.")
+                                color: "#94a3b8"
+                                font.pixelSize: 13
+                                wrapMode: Text.WordWrap
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    Text {
+                                        text: I18n.t("Пресет нагрузки")
+                                        color: "#cbd5e1"
+                                        Layout.preferredWidth: 220
+                                    }
+
+                                    Repeater {
+                                        model: ["eco", "balanced", "max"]
+
+                                        Button {
+                                            Layout.preferredWidth: 132
+                                            Layout.preferredHeight: 34
+                                            text: root.analyticsPresetLabel(modelData)
+                                            hoverEnabled: true
+                                            onClicked: root.applyAnalyticsPreset(modelData)
+
+                                            background: Rectangle {
+                                                color: analyticsPerformancePreset === modelData
+                                                       ? Theme.accent
+                                                       : (parent.hovered ? Theme.cardHover : Theme.controlBackground)
+                                                radius: Theme.radiusSm
+                                                border.color: analyticsPerformancePreset === modelData ? Theme.accentHover : Theme.controlBorder
+                                            }
+
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: Theme.textPrimary
+                                                font.pixelSize: 12
+                                                font.bold: analyticsPerformancePreset === modelData
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 232
+                                    text: I18n.t("Текущий режим: %1", [root.analyticsPresetLabel(analyticsPerformancePreset)])
+                                          + " · "
+                                          + root.analyticsPresetDescription(analyticsPerformancePreset)
+                                    color: "#94a3b8"
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    Text {
+                                        text: I18n.t("FPS аналитики")
+                                        color: "#cbd5e1"
+                                        Layout.preferredWidth: 220
+                                    }
+
+                                    StyledSpinBox {
+                                        from: 1
+                                        to: 15
+                                        value: analyticsTargetFps
+                                        Layout.preferredWidth: 110
+                                        onValueModified: {
+                                            analyticsPerformancePreset = "custom"
+                                            analyticsTargetFps = value
+                                            applyCurrentSettings()
+                                        }
+                                    }
+
+                                    Text {
+                                        text: I18n.t("%1 кадр/с", [analyticsTargetFps])
+                                        color: "#94a3b8"
+                                        Layout.preferredWidth: 90
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    Text {
+                                        text: I18n.t("Параллельные задачи")
+                                        color: "#cbd5e1"
+                                        Layout.preferredWidth: 220
+                                    }
+
+                                    StyledSpinBox {
+                                        from: 1
+                                        to: 8
+                                        value: analyticsMaxParallelJobs
+                                        Layout.preferredWidth: 110
+                                        onValueModified: {
+                                            analyticsPerformancePreset = "custom"
+                                            analyticsMaxParallelJobs = value
+                                            applyCurrentSettings()
+                                        }
+                                    }
+
+                                    Text {
+                                        text: I18n.t("до %1 задач", [analyticsMaxParallelJobs])
+                                        color: "#94a3b8"
+                                        Layout.preferredWidth: 120
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1
+                                color: "#3b4657"
+                            }
 
                             Text {
                                 text: I18n.t("События аналитики")
@@ -1661,14 +1857,6 @@ Window {
                 }
                 
                 // -------------------------------------------------
-                // Modules Tab
-                // -------------------------------------------------
-                ModulesSettingsPanel {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
-                
-                // -------------------------------------------------
                 // About Tab
                 // -------------------------------------------------
                 Item {
@@ -1793,7 +1981,7 @@ Window {
         anchors.right: parent.right
         height: 60
         color: "transparent"
-        visible: bar.currentIndex !== 4 // Hide on About tab
+        visible: bar.currentIndex !== 3 // Hide on About tab
         z: 10
         
         Rectangle {

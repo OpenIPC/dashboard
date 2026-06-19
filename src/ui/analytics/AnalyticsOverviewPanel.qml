@@ -33,6 +33,13 @@ Item {
         return I18n.t("Не установлен")
     }
 
+    function performancePresetLabel(preset) {
+        if (preset === "eco") return I18n.t("Экономный")
+        if (preset === "balanced") return I18n.t("Сбалансированный")
+        if (preset === "max") return I18n.t("Максимум")
+        return I18n.t("Ручной")
+    }
+
     function evidenceEnabled() {
         var token = refreshToken
         return settings && settings.evidence && settings.evidence.enabled === true
@@ -295,7 +302,7 @@ Item {
 
             GridLayout {
                 Layout.fillWidth: true
-                columns: width >= 1160 ? 5 : width >= 740 ? 3 : 1
+                columns: width >= 1320 ? 7 : width >= 920 ? 4 : width >= 620 ? 2 : 1
                 columnSpacing: 8
                 rowSpacing: 8
 
@@ -318,6 +325,20 @@ Item {
                     value: String(root.enabledModulesCount())
                     hint: I18n.t("Глобально включены")
                     accent: root.enabledModulesCount() > 0 ? Theme.success : Theme.warning
+                }
+
+                StatCard {
+                    title: I18n.t("AI FPS")
+                    value: String(diagnostics.analyticsTargetFps || 0)
+                    hint: root.performancePresetLabel(diagnostics.analyticsPerformancePreset || "balanced")
+                    accent: Theme.textPrimary
+                }
+
+                StatCard {
+                    title: I18n.t("AI-задачи")
+                    value: String(diagnostics.analyticsActiveJobs || 0) + " / " + String(diagnostics.analyticsMaxParallelJobs || 0)
+                    hint: I18n.t("Параллельно")
+                    accent: Number(diagnostics.analyticsActiveJobs || 0) > 0 ? Theme.success : Theme.textPrimary
                 }
 
                 StatCard {
