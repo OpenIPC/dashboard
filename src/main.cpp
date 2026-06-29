@@ -231,10 +231,10 @@ int main(int argc, char *argv[])
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, []() {
         // Stop forwarding logs into QObject-based models during teardown.
-        LogState &state = logState();
-        state.logTeardown.store(true, std::memory_order_relaxed);
-        QMutexLocker locker(&state.logMutex);
-        state.logCallback = nullptr;
+        LogState &shutdownState = logState();
+        shutdownState.logTeardown.store(true, std::memory_order_relaxed);
+        QMutexLocker locker(&shutdownState.logMutex);
+        shutdownState.logCallback = nullptr;
     });
 
     QQmlApplicationEngine engine;

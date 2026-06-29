@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import OpenIPC
 
 Menu {
@@ -18,8 +17,10 @@ Menu {
     signal editRequested()
     signal deleteRequested()
     signal sshRequested()
+    signal majesticRequested()
     signal fileManagerRequested()
     signal archiveRequested()
+    signal healthRequested()
     signal groupChanged()
     signal permissionDenied()
 
@@ -55,6 +56,22 @@ Menu {
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
             contextMenu.sshRequested()
+        }
+    }
+
+    MenuItem {
+        text: I18n.t("OpenIPC Control Center")
+        onTriggered: {
+            if (!canSettings) { contextMenu.permissionDenied(); return }
+            contextMenu.majesticRequested()
+        }
+    }
+
+    MenuItem {
+        text: I18n.t("Проверить здоровье")
+        onTriggered: {
+            if (!contextMenu.canSettings) { contextMenu.permissionDenied(); return }
+            contextMenu.healthRequested()
         }
     }
 

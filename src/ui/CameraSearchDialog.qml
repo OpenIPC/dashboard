@@ -14,6 +14,8 @@ Dialog {
     
     signal addCameraRequested(string name, string ip, int port, int onvifPort)
 
+    onClosed: SystemController.stopNetworkScan()
+
     Dialog {
         id: batchLoginDialog
         title: I18n.t("Пакетное добавление")
@@ -293,6 +295,67 @@ Dialog {
                 valueRole: "value"
                 model: ListModel { id: interfaceModel }
             }
+
+            RowLayout {
+                Layout.fillWidth: true
+                CheckBox {
+                    id: deepScanCheck
+                    text: I18n.t("Глубокий поиск OpenIPC")
+                    ToolTip.visible: hovered
+                    ToolTip.text: I18n.t("Быстрый режим проверяет локальный /24, глубокий расширяет поиск до /20. В обоих режимах проверяются Majestic HTTP и RTSP.")
+                }
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignRight
+                    text: SystemController.networkDiscovery.running
+                          ? I18n.t("Поиск: %1 · найдено %2", [I18n.t(SystemController.networkDiscovery.phase),
+                                                             SystemController.networkDiscovery.foundCount])
+                          : (SystemController.networkDiscovery.progress === 100
+                             ? I18n.t("Поиск завершён · найдено %1", [SystemController.networkDiscovery.foundCount]) : "")
+                    color: SystemController.networkDiscovery.running ? "#60a5fa" : "#888888"
+                    font.pixelSize: 11
+                    elide: Text.ElideLeft
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: SystemController.networkDiscovery.running
+                spacing: 10
+
+                ProgressBar {
+                    id: discoveryProgress
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 10
+                    from: 0
+                    to: 100
+                    value: SystemController.networkDiscovery.progress
+                    Behavior on value { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                    background: Rectangle {
+                        implicitHeight: 10
+                        radius: 5
+                        color: "#111827"
+                        border.color: "#334155"
+                    }
+                    contentItem: Item {
+                        Rectangle {
+                            width: discoveryProgress.visualPosition * parent.width
+                            height: parent.height
+                            radius: 5
+                            color: SystemController.networkDiscovery.running ? "#3b82f6" : "#16a34a"
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.preferredWidth: 44
+                    horizontalAlignment: Text.AlignRight
+                    text: Math.round(SystemController.networkDiscovery.progress) + "%"
+                    color: SystemController.networkDiscovery.running ? "#93c5fd" : "#86efac"
+                    font.pixelSize: 12
+                    font.bold: true
+                }
+            }
         }
         
         // Results Header
@@ -348,7 +411,7 @@ Dialog {
                 
                 Text { Layout.preferredWidth: 200; text: I18n.t("Устройство"); color: "#aaaaaa"; font.pixelSize: 12 }
                 Text { Layout.preferredWidth: 100; text: I18n.t("Сеть"); color: "#aaaaaa"; font.pixelSize: 12 }
-                Text { Layout.preferredWidth: 150; text: I18n.t("Порты"); color: "#aaaaaa"; font.pixelSize: 12 }
+                Text { Layout.preferredWidth: 195; text: I18n.t("Порты"); color: "#aaaaaa"; font.pixelSize: 12 }
                 Text { Layout.fillWidth: true; text: I18n.t("Протокол"); color: "#aaaaaa"; font.pixelSize: 12 }
             }
         }
@@ -427,10 +490,13 @@ Dialog {
                             font.pixelSize: 12
                         }
                         Text {
-                            text: (model.manufacturer ? model.manufacturer : "") + (model.serialNumber ? " (" + model.serialNumber + ")" : "")
-                            color: "#888888"
+                            text: (model.manufacturer ? model.manufacturer : "")
+                                  + (model.discoveryMethods ? " · " + model.discoveryMethods : "")
+                            color: model.isOpenIpc ? "#60a5fa" : "#888888"
                             font.pixelSize: 10
-                            visible: model.manufacturer !== undefined || model.serialNumber !== undefined
+                            visible: text.length > 0
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
                         }
                     }
                     
@@ -445,7 +511,7 @@ Dialog {
                             radius: 10
                             Text {
                                 anchors.centerIn: parent
-                                text: "TCP " + (model.cameraPort ? model.cameraPort : "80")
+                                text: model.isOpenIpc ? "OPENIPC" : (model.discoveryConfidence ? model.discoveryConfidence + "%" : "CAM")
                                 color: "#cccccc"
                                 font.pixelSize: 10
                             }
@@ -454,7 +520,7 @@ Dialog {
                     
                     // Ports Info
                     Row {
-                        Layout.preferredWidth: 150
+                        Layout.preferredWidth: 195
                         spacing: 5
                         
                         // SDK Tag
@@ -464,7 +530,8 @@ Dialog {
                             color: "transparent"
                             border.color: "#ff9800"
                             radius: 10
-                            visible: model.manufacturer !== undefined && model.manufacturer !== ""
+                            visible: model.discoveryMethods
+                                     && model.discoveryMethods.indexOf("Dahua") >= 0
                             Text {
                                 anchors.centerIn: parent
                                 text: "SDK"
@@ -484,7 +551,7 @@ Dialog {
                             visible: true
                             Text {
                                 anchors.centerIn: parent
-                                text: "RTSP 554"
+                                text: "RTSP " + (model.cameraPort ? model.cameraPort : 554)
                                 color: "#4caf50"
                                 font.pixelSize: 10
                             }
@@ -500,7 +567,7 @@ Dialog {
                             visible: true
                             Text {
                                 anchors.centerIn: parent
-                                text: "ONVIF 80"
+                                text: "HTTP " + (model.cameraOnvifPort ? model.cameraOnvifPort : 80)
                                 color: "#2196f3"
                                 font.pixelSize: 10
                             }
@@ -511,13 +578,13 @@ Dialog {
                     Row {
                         Layout.fillWidth: true
                         Rectangle {
-                            width: 50
+                            width: 72
                             height: 20
                             color: "#555555"
                             radius: 10
                             Text {
                                 anchors.centerIn: parent
-                                text: "onvif"
+                                text: model.isOpenIpc ? "mdns/api" : "onvif/rtsp"
                                 color: "white"
                                 font.pixelSize: 10
                             }
@@ -541,7 +608,8 @@ Dialog {
             Layout.fillWidth: true
             
             Button {
-                text: I18n.t("СКАНИРОВАТЬ")
+                text: SystemController.networkDiscovery.running
+                      ? I18n.t("ОСТАНОВИТЬ") : I18n.t("СКАНИРОВАТЬ")
                 Layout.preferredWidth: 150
                 Layout.preferredHeight: 40
                 
@@ -558,8 +626,12 @@ Dialog {
                 }
                 
                 onClicked: {
-                    var iface = interfaceCombo.currentValue
-                    SystemController.scanNetwork(iface)
+                    if (SystemController.networkDiscovery.running) {
+                        SystemController.stopNetworkScan()
+                    } else {
+                        var iface = interfaceCombo.currentValue
+                        SystemController.scanNetwork(iface, deepScanCheck.checked)
+                    }
                 }
             }
             

@@ -17,7 +17,7 @@ int AnalyticsModel::rowCount(const QModelIndex &parent) const
 
 QVariant AnalyticsModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() >= m_snapshots.size())
+    if (!index.isValid() || static_cast<std::size_t>(index.row()) >= m_snapshots.size())
         return QVariant();
 
     const auto &snapshot = m_snapshots[index.row()];

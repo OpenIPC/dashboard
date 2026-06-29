@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux build + tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libgl1-mesa-dev libwayland-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav \
+            libsecret-1-dev ffmpeg
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.4.2'
+          host: linux
+          target: desktop
+          modules: qtmultimedia
+          cache: true
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DOPENIPC_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build-ci --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure --timeout 60
+
+      - name: RTSP smoke test with MediaMTX
+        run: bash tests/rtsp_smoke.sh
+
+  windows:
+    name: Windows build + tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          version: 12.2.0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.4.2'
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          modules: qtmultimedia
+          cache: true
+
+      - name: Fetch GStreamer SDK
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download gstreamer-1.26.10 --repo OpenIPC/dashboard --pattern '*.msi'
+          $root = 'C:\gstreamer\1.0\mingw_x86_64'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $runtime = Get-ChildItem 'gstreamer-1.0-mingw-*.msi' |
+            Where-Object { $_.Name -notmatch 'devel' } | Select-Object -First 1
+          $devel = Get-ChildItem 'gstreamer-1.0-devel-mingw-*.msi' | Select-Object -First 1
+          if (-not $runtime -or -not $devel) { throw 'GStreamer runtime/devel MSI not found' }
+          Start-Process msiexec.exe -ArgumentList '/a', $runtime.FullName, '/qn', "TARGETDIR=$root" -Wait -NoNewWindow
+          Start-Process msiexec.exe -ArgumentList '/a', $devel.FullName, '/qn', "TARGETDIR=$root" -Wait -NoNewWindow
+          if (-not (Test-Path "$root\include\gstreamer-1.0\gst\gst.h")) {
+            throw "GStreamer SDK extraction failed: gst.h is missing under $root"
+          }
+          "GSTREAMER_1_0_ROOT_MINGW_X86_64=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "$root\bin" | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $qtRoot = Split-Path (Split-Path (Get-Command qmake.exe).Source -Parent) -Parent
+          cmake -S . -B build-ci -G 'MinGW Makefiles' `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$qtRoot" `
+            -DGStreamer_ROOT="$env:GSTREAMER_1_0_ROOT_MINGW_X86_64" `
+            -DOPENSSL_ROOT_DIR="$env:GSTREAMER_1_0_ROOT_MINGW_X86_64" `
+            -DBUILD_TESTING=ON `
+            -DOPENIPC_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build-ci --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure --timeout 60

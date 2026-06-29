@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.3 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.4 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -21,6 +21,25 @@ configure_file(src/config.h.in config.h)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(OPENIPC_WARNINGS_AS_ERRORS "Treat warnings in OpenIPC sources as errors" OFF)
+
+function(openipc_enable_project_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4)
+        if(OPENIPC_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        # Qt's generated QML cache sources trigger -Wshadow internally, so keep
+        # the portable warning set strict without applying that diagnostic to
+        # generated code owned by Qt.
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wformat=2)
+        if(OPENIPC_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
 
 include(CTest)
 
@@ -74,7 +93,7 @@ if(WIN32)
         if(NOT EXISTS "${GST_ROOT}/include/gstreamer-1.0/gst/gst.h")
             message(FATAL_ERROR "GStreamer headers not found at ${GST_ROOT}/include/gstreamer-1.0/gst/gst.h. Pass the devel package root through -DGStreamer_ROOT or GSTREAMER_1_0_ROOT_MINGW_X86_64.")
         endif()
-        
+
         set(GST_INCLUDE_DIRS
             "${GST_ROOT}/include/gstreamer-1.0"
             "${GST_ROOT}/include/glib-2.0"
@@ -134,14 +153,14 @@ endif()
 # ONNX Runtime Setup
 if(WIN32)
     set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/libs/onnxruntime")
-    include_directories(${ONNXRUNTIME_DIR}/include)
+    include_directories(SYSTEM ${ONNXRUNTIME_DIR}/include)
     link_directories(${ONNXRUNTIME_DIR}/lib)
 elseif(UNIX)
     # Assume system ONNX Runtime or located in libs/onnxruntime-linux
     # proper checking should be here, but for now we look for headers in standard paths or libs/onnxruntime/include
     set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/libs/onnxruntime")
     if(EXISTS "${ONNXRUNTIME_DIR}/include")
-        include_directories(${ONNXRUNTIME_DIR}/include)
+        include_directories(SYSTEM ${ONNXRUNTIME_DIR}/include)
     endif()
     # If user has put linux libs here:
     if(EXISTS "${ONNXRUNTIME_DIR}/lib/Linux64/libonnxruntime.so")
@@ -153,7 +172,7 @@ endif()
 
 # Dahua SDK Setup
 set(DAHUA_DIR "${CMAKE_SOURCE_DIR}/libs/dahua")
-include_directories(${DAHUA_DIR}/include/Common)
+include_directories(SYSTEM ${DAHUA_DIR}/include/Common)
 if(WIN32)
     link_directories(${DAHUA_DIR}/lib/Win64)
 elseif(UNIX)
@@ -206,6 +225,18 @@ set(SOURCES
     src/main.cpp
     src/backend/PathUtils.cpp
     src/backend/PathUtils.h
+    src/backend/StateStore.cpp
+    src/backend/StateStore.h
+    src/backend/CameraOnboardingParser.cpp
+    src/backend/CameraOnboardingParser.h
+    src/backend/MajesticClient.cpp
+    src/backend/MajesticClient.h
+    src/backend/OpenIpcFirmwareClient.cpp
+    src/backend/OpenIpcFirmwareClient.h
+    src/backend/NetworkDiscoveryService.cpp
+    src/backend/NetworkDiscoveryService.h
+    src/backend/CameraStatusPolicy.cpp
+    src/backend/CameraStatusPolicy.h
     src/backend/CamexController.cpp
     src/backend/CamexController.h
     src/backend/SystemController.cpp
@@ -220,6 +251,14 @@ set(SOURCES
     src/backend/StatusChecker.h
     src/backend/gst/GstPlayer.cpp
     src/backend/gst/GstPlayer.h
+    src/backend/gst/ReconnectPolicy.cpp
+    src/backend/gst/ReconnectPolicy.h
+    src/backend/gst/StreamHealthPolicy.cpp
+    src/backend/gst/StreamHealthPolicy.h
+    src/backend/gst/StreamQualityPolicy.cpp
+    src/backend/gst/StreamQualityPolicy.h
+    src/backend/gst/StreamSessionPolicy.cpp
+    src/backend/gst/StreamSessionPolicy.h
     src/backend/AnalyticsModel.cpp
     src/backend/AnalyticsModel.h
     src/backend/analytics/AnalyticsEngine.cpp
@@ -227,6 +266,8 @@ set(SOURCES
     src/backend/analytics/InferenceBackend.h
     src/backend/analytics/YoloDetector.cpp
     src/backend/analytics/YoloDetector.h
+    src/backend/analytics/ModelArtifactVerifier.cpp
+    src/backend/analytics/ModelArtifactVerifier.h
     src/backend/UserManager.cpp
     src/backend/UserManager.h
     src/backend/LogModel.cpp
@@ -248,7 +289,27 @@ set(QML_FILES
     src/ui/ModulesSettingsPanel.qml
     src/ui/StyledComboBox.qml
     src/ui/GridCell.qml
+    src/ui/GroupContextMenu.qml
+    src/ui/CameraStatusBadge.qml
+    src/ui/DashboardDialogButton.qml
+    src/ui/DashboardDragProxy.qml
+    src/ui/DashboardEmptyHint.qml
+    src/ui/DashboardGridPanel.qml
+    src/ui/DashboardLayoutToolbar.qml
+    src/ui/DashboardSidebar.qml
+    src/ui/DashboardStatusBar.qml
+    src/ui/DashboardToast.qml
+    src/ui/DashboardTopBar.qml
+    src/ui/DashboardWindowControls.qml
+    src/ui/EmptyStateButton.qml
+    src/ui/NoAccessDialog.qml
+    src/ui/ConfirmDeleteCameraDialog.qml
+    src/ui/RenameGroupDialog.qml
+    src/ui/LayoutEditorDialog.qml
+    src/ui/SidebarActionButton.qml
     src/ui/SidebarIcon.qml
+    src/ui/SidebarStatPill.qml
+    src/ui/CameraHealthDialog.qml
     src/ui/CameraSearchDialog.qml
     src/ui/AddCameraDialog.qml
     src/ui/I18n.qml
@@ -272,6 +333,16 @@ set(QML_FILES
     src/ui/AddGroupDialog.qml
     src/ui/LogView.qml
     src/ui/CameraContextMenu.qml
+    src/ui/MajesticControlDialog.qml
+    src/ui/MajesticButton.qml
+    src/ui/MajesticCheckBox.qml
+    src/ui/MajesticComboBox.qml
+    src/ui/MajesticEndpointProbeCard.qml
+    src/ui/MajesticSettingFieldEditor.qml
+    src/ui/MajesticSpinBox.qml
+    src/ui/MajesticStatusCard.qml
+    src/ui/MajesticTabButton.qml
+    src/ui/MajesticTextField.qml
     src/ui/SshTerminalDialog.qml
     src/ui/ArchiveView.qml
     src/ui/PtzControlPanel.qml
@@ -303,6 +374,8 @@ target_include_directories(appOpenIPC-Dashboard PRIVATE
     ${libssh_SOURCE_DIR}/include
     ${libssh_BINARY_DIR}/include
 )
+
+openipc_enable_project_warnings(appOpenIPC-Dashboard)
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
@@ -489,10 +562,13 @@ if(BUILD_TESTING)
 
     target_include_directories(user_manager_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${qtkeychain_SOURCE_DIR}
+        ${qtkeychain_BINARY_DIR}
     )
+    openipc_enable_project_warnings(user_manager_tests)
 
     target_link_libraries(user_manager_tests
-        PRIVATE Qt6::Core Qt6::Test
+        PRIVATE Qt6::Core Qt6::Test qt6keychain
     )
 
     add_test(NAME user_manager_tests COMMAND user_manager_tests)
@@ -502,6 +578,7 @@ if(BUILD_TESTING)
         src/backend/PathUtils.cpp
         src/backend/PathUtils.h
     )
+    openipc_enable_project_warnings(path_utils_tests)
 
     target_include_directories(path_utils_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
@@ -513,11 +590,204 @@ if(BUILD_TESTING)
 
     add_test(NAME path_utils_tests COMMAND path_utils_tests)
 
+    add_executable(reconnect_policy_tests
+        tests/ReconnectPolicyTests.cpp
+        src/backend/gst/ReconnectPolicy.cpp
+        src/backend/gst/ReconnectPolicy.h
+    )
+    openipc_enable_project_warnings(reconnect_policy_tests)
+
+    target_include_directories(reconnect_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
+    )
+
+    target_link_libraries(reconnect_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME reconnect_policy_tests COMMAND reconnect_policy_tests)
+
+    add_executable(stream_quality_policy_tests
+        tests/StreamQualityPolicyTests.cpp
+        src/backend/gst/StreamQualityPolicy.cpp
+        src/backend/gst/StreamQualityPolicy.h
+    )
+    openipc_enable_project_warnings(stream_quality_policy_tests)
+
+    target_include_directories(stream_quality_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
+    )
+
+    target_link_libraries(stream_quality_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME stream_quality_policy_tests COMMAND stream_quality_policy_tests)
+
+    add_executable(stream_health_policy_tests
+        tests/StreamHealthPolicyTests.cpp
+        src/backend/gst/StreamHealthPolicy.cpp
+        src/backend/gst/StreamHealthPolicy.h
+    )
+    openipc_enable_project_warnings(stream_health_policy_tests)
+
+    target_include_directories(stream_health_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
+    )
+
+    target_link_libraries(stream_health_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME stream_health_policy_tests COMMAND stream_health_policy_tests)
+
+    add_executable(camera_status_policy_tests
+        tests/CameraStatusPolicyTests.cpp
+        src/backend/CameraStatusPolicy.cpp
+        src/backend/CameraStatusPolicy.h
+    )
+    openipc_enable_project_warnings(camera_status_policy_tests)
+
+    target_include_directories(camera_status_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(camera_status_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME camera_status_policy_tests COMMAND camera_status_policy_tests)
+
+    add_executable(stream_session_policy_tests
+        tests/StreamSessionPolicyTests.cpp
+        src/backend/gst/StreamSessionPolicy.cpp
+        src/backend/gst/StreamSessionPolicy.h
+    )
+    openipc_enable_project_warnings(stream_session_policy_tests)
+
+    target_include_directories(stream_session_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
+    )
+
+    target_link_libraries(stream_session_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME stream_session_policy_tests COMMAND stream_session_policy_tests)
+
+    add_executable(state_store_tests
+        tests/StateStoreTests.cpp
+        src/backend/StateStore.cpp
+        src/backend/StateStore.h
+    )
+    openipc_enable_project_warnings(state_store_tests)
+
+    target_include_directories(state_store_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(state_store_tests
+        PRIVATE Qt6::Core Qt6::Sql Qt6::Test
+    )
+
+    add_test(NAME state_store_tests COMMAND state_store_tests)
+
+    add_executable(model_artifact_verifier_tests
+        tests/ModelArtifactVerifierTests.cpp
+        src/backend/analytics/ModelArtifactVerifier.cpp
+        src/backend/analytics/ModelArtifactVerifier.h
+    )
+    openipc_enable_project_warnings(model_artifact_verifier_tests)
+
+    target_include_directories(model_artifact_verifier_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
+    )
+
+    target_link_libraries(model_artifact_verifier_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME model_artifact_verifier_tests COMMAND model_artifact_verifier_tests)
+
+    add_executable(camera_onboarding_parser_tests
+        tests/CameraOnboardingParserTests.cpp
+        src/backend/CameraOnboardingParser.cpp
+        src/backend/CameraOnboardingParser.h
+    )
+    openipc_enable_project_warnings(camera_onboarding_parser_tests)
+
+    target_include_directories(camera_onboarding_parser_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(camera_onboarding_parser_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME camera_onboarding_parser_tests COMMAND camera_onboarding_parser_tests)
+
+    add_executable(majestic_client_tests
+        tests/MajesticClientTests.cpp
+        src/backend/MajesticClient.cpp
+        src/backend/MajesticClient.h
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+    )
+    openipc_enable_project_warnings(majestic_client_tests)
+
+    target_include_directories(majestic_client_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(majestic_client_tests
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test
+    )
+
+    add_test(NAME majestic_client_tests COMMAND majestic_client_tests)
+
+    add_executable(openipc_firmware_client_tests
+        tests/OpenIpcFirmwareClientTests.cpp
+        src/backend/OpenIpcFirmwareClient.cpp
+        src/backend/OpenIpcFirmwareClient.h
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+    )
+    openipc_enable_project_warnings(openipc_firmware_client_tests)
+
+    target_include_directories(openipc_firmware_client_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(openipc_firmware_client_tests
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test
+    )
+
+    add_test(NAME openipc_firmware_client_tests COMMAND openipc_firmware_client_tests)
+
+    add_executable(network_discovery_service_tests
+        tests/NetworkDiscoveryServiceTests.cpp
+        src/backend/NetworkDiscoveryService.cpp
+        src/backend/NetworkDiscoveryService.h
+    )
+    openipc_enable_project_warnings(network_discovery_service_tests)
+
+    target_include_directories(network_discovery_service_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(network_discovery_service_tests
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test
+    )
+
+    add_test(NAME network_discovery_service_tests COMMAND network_discovery_service_tests)
+
+    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        TIMEOUT 30
+        LABELS "unit"
+    )
+
     if(WIN32)
-        set_tests_properties(user_manager_tests PROPERTIES
-            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
-        )
-        set_tests_properties(path_utils_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     endif()

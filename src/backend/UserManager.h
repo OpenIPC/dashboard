@@ -136,6 +136,10 @@ private:
     void setPassword(User &user, const QString &password) const;
     bool verifyPassword(const User &user, const QString &password, bool *needsUpgrade = nullptr) const;
     void setRememberedCredentials(const QString &username, const QString &password);
+    QString readLoginSecret(const QString &username) const;
+    bool writeLoginSecret(const QString &username, const QString &password) const;
+    void deleteLoginSecret(const QString &username) const;
+    QString loginSecretKey(const QString &username) const;
 
     QList<User> m_users;
     User m_currentUser;

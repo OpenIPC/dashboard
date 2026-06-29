@@ -1,8 +1,13 @@
 #include "SystemController.h"
 #include "PathUtils.h"
+#include "StateStore.h"
+#include "CameraOnboardingParser.h"
+#include "CameraStatusPolicy.h"
 #include "StatusChecker.h"
+#include "gst/StreamHealthPolicy.h"
+#include "gst/StreamQualityPolicy.h"
+#include "gst/StreamSessionPolicy.h"
 #include <QUuid>
-#include <QNetworkDatagram>
 #include <QNetworkInterface>
 #include <QStandardPaths>
 #include <QFile>
@@ -13,6 +18,7 @@
 #include <QTimer>
 #include <algorithm>
 #include <QDate>
+#include <QDateTime>
 #include <QDirIterator>
 #include <QCoreApplication>
 #include <QImage>
@@ -26,6 +32,8 @@
 #include <QUrlQuery>
 #include <QDesktopServices>
 #include <QEventLoop>
+#include <QTcpSocket>
+#include <QSharedPointer>
 #include <keychain.h>
 #include <QTextStream>
 #include <QRegularExpression>
@@ -56,6 +64,27 @@ void normalizeAppSettingPaths(QVariantMap &settings)
             settings[key] = normalizedLocalPath(value);
         }
     }
+}
+
+void removeLegacyPasswords(QJsonObject &state)
+{
+    QJsonArray cameras = state.value(QStringLiteral("cameras")).toArray();
+    for (int i = 0; i < cameras.size(); ++i) {
+        QJsonObject camera = cameras.at(i).toObject();
+        camera.remove(QStringLiteral("password"));
+        cameras[i] = camera;
+    }
+    state[QStringLiteral("cameras")] = cameras;
+
+    QJsonArray grid = state.value(QStringLiteral("grid")).toArray();
+    for (int i = 0; i < grid.size(); ++i) {
+        QJsonObject slot = grid.at(i).toObject();
+        QJsonObject camera = slot.value(QStringLiteral("camera")).toObject();
+        camera.remove(QStringLiteral("password"));
+        slot[QStringLiteral("camera")] = camera;
+        grid[i] = slot;
+    }
+    state[QStringLiteral("grid")] = grid;
 }
 
 #ifdef Q_OS_LINUX
@@ -125,6 +154,7 @@ SystemController::SystemController(QObject *parent)
     , m_process(new QProcess(this))
     , m_cameraModel(new CameraModel(this))
     , m_discoveryModel(new CameraModel(this))
+    , m_saveTimer(new QTimer(this))
     , m_gridModel(new CameraModel(this))
     , m_analyticsEngine(new AnalyticsEngine(this))
     , m_userManager(new UserManager(this))
@@ -133,47 +163,98 @@ SystemController::SystemController(QObject *parent)
     , m_camexController(new CamexController(this))
     , m_dahuaDiscovery(new DiscoveryController(this))
     , m_archiveController(new ArchiveController(this))
-    , m_udpSocket(new QUdpSocket(this))
-    , m_networkManager(new QNetworkAccessManager(this))
-    , m_saveTimer(new QTimer(this))
+    , m_majesticClient(new MajesticClient(this))
+    , m_firmwareClient(new OpenIpcFirmwareClient(this))
+    , m_networkDiscovery(new NetworkDiscoveryService(this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
+    , m_networkManager(new QNetworkAccessManager(this))
 {
     m_saveTimer->setSingleShot(true);
     m_saveTimer->setInterval(1000); // 1 second debounce
     connect(m_saveTimer, &QTimer::timeout, this, &SystemController::performSave);
     
     connect(m_networkManager, &QNetworkAccessManager::authenticationRequired, this, &SystemController::onAuthenticationRequired);
-    connect(m_udpSocket, &QUdpSocket::readyRead, this, &SystemController::onUdpReadyRead);
+    connect(m_statusChecker, &StatusChecker::cameraStatusResolved,
+            this, &SystemController::updateCameraStatus);
+    connect(m_statusChecker, &StatusChecker::cameraStatusDetailResolved,
+            this, &SystemController::updateCameraStatusDetail);
     
     // Connect Dahua discovery to main discovery model
     connect(m_dahuaDiscovery, &DiscoveryController::deviceFound, this, [this](const DiscoveredDevice& dev){
-        // Check for duplicates in m_discoveryModel
-        for (int i = 0; i < m_discoveryModel->rowCount(); ++i) {
-            QModelIndex idx = m_discoveryModel->index(i, 0);
-            QString ip = m_discoveryModel->data(idx, CameraModel::IpRole).toString();
-            if (ip == dev.ip) return;
-        }
-
-        Camera cam;
+        const int existingIndex = m_discoveryModel->findIndexByIp(dev.ip);
+        Camera cam = existingIndex >= 0 ? m_discoveryModel->getCamera(existingIndex) : Camera{};
+        if (cam.id.isEmpty()) cam.id = QUuid::createUuid().toString();
         cam.ip = dev.ip;
         cam.port = 554; // RTSP port assumption
         cam.onvifPort = 80;
-        cam.name = dev.type.isEmpty() ? "Dahua Camera" : dev.type;
-        cam.login = "admin";
-        cam.password = "admin";
+        if (cam.name.isEmpty()) cam.name = dev.type.isEmpty() ? "Dahua Camera" : dev.type;
+        if (cam.login.isEmpty()) cam.login = "admin";
         cam.status = "Discovered";
-        cam.serialNumber = dev.serial;
-        cam.manufacturer = dev.manufacturer;
-        
-        m_discoveryModel->addCamera(cam);
+        if (cam.serialNumber.isEmpty()) cam.serialNumber = dev.serial;
+        if (cam.manufacturer.isEmpty()) cam.manufacturer = dev.manufacturer;
+        if (!cam.discoveryMethods.contains(QStringLiteral("Dahua SDK"))) {
+            if (!cam.discoveryMethods.isEmpty()) cam.discoveryMethods.append(QStringLiteral(", "));
+            cam.discoveryMethods.append(QStringLiteral("Dahua SDK"));
+        }
+        if (!cam.discoveryEvidence.contains(QStringLiteral("Dahua device search response"))) {
+            if (!cam.discoveryEvidence.isEmpty()) cam.discoveryEvidence.append(QStringLiteral(", "));
+            cam.discoveryEvidence.append(QStringLiteral("Dahua device search response"));
+        }
+        cam.discoveryConfidence = std::max(cam.discoveryConfidence, 90);
+
+        if (existingIndex >= 0) m_discoveryModel->setCamera(existingIndex, cam);
+        else m_discoveryModel->addCamera(cam);
+    });
+
+    connect(m_networkDiscovery, &NetworkDiscoveryService::candidateFound, this,
+            [this](const NetworkDiscoveryCandidate &candidate) {
+        const int existingIndex = m_discoveryModel->findIndexByIp(candidate.ip);
+        Camera cam = existingIndex >= 0 ? m_discoveryModel->getCamera(existingIndex) : Camera{};
+        if (cam.id.isEmpty()) cam.id = QUuid::createUuid().toString();
+        cam.ip = candidate.ip;
+        cam.port = candidate.rtspPort > 0 ? candidate.rtspPort : (cam.port > 0 ? cam.port : 554);
+        cam.onvifPort = candidate.onvifPort > 0 ? candidate.onvifPort
+                                                : (candidate.httpPort > 0 ? candidate.httpPort : 80);
+        if (cam.hdStreamUrl.isEmpty())
+            cam.hdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=0").arg(cam.ip).arg(cam.port);
+        if (cam.sdStreamUrl.isEmpty())
+            cam.sdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=1").arg(cam.ip).arg(cam.port);
+        cam.streamUrl = cam.hdStreamUrl;
+        cam.status = QStringLiteral("Discovered");
+        cam.discoveryConfidence = std::max(cam.discoveryConfidence, candidate.confidence);
+        cam.isOpenIpc = cam.isOpenIpc || candidate.openIpc;
+        if (candidate.openIpc) {
+            cam.manufacturer = QStringLiteral("OpenIPC");
+            cam.login = QStringLiteral("root");
+            if (cam.name.isEmpty() || cam.name == QStringLiteral("RTSP Camera")
+                || cam.name == QStringLiteral("ONVIF Camera")) {
+                cam.name = candidate.name.isEmpty() ? QStringLiteral("OpenIPC Camera") : candidate.name;
+            }
+        } else {
+            if (cam.manufacturer.isEmpty()) cam.manufacturer = candidate.manufacturer;
+            if (cam.name.isEmpty()) cam.name = candidate.name;
+        }
+        if (cam.name.isEmpty()) cam.name = QStringLiteral("Network Camera");
+        if (cam.serialNumber.isEmpty()) cam.serialNumber = candidate.serial;
+
+        auto appendUnique = [](QString *target, const QString &value) {
+            if (!target || value.isEmpty()) return;
+            const QStringList parts = target->split(QStringLiteral(", "), Qt::SkipEmptyParts);
+            if (!parts.contains(value)) {
+                if (!target->isEmpty()) target->append(QStringLiteral(", "));
+                target->append(value);
+            }
+        };
+        appendUnique(&cam.discoveryMethods, candidate.method);
+        appendUnique(&cam.discoveryEvidence, candidate.evidence);
+
+        if (existingIndex >= 0) m_discoveryModel->setCamera(existingIndex, cam);
+        else m_discoveryModel->addCamera(cam);
     });
 
     m_analyticsEngine->initialize();
     connect(m_analyticsEngine, &AnalyticsEngine::settingsChanged, this, &SystemController::saveState);
     
-    // Bind to the multicast port or any port to receive unicast responses
-    m_udpSocket->bind(QHostAddress::AnyIPv4, 0, QUdpSocket::ShareAddress);
-
     // Default settings
     m_appSettings["language"] = "ru";
     m_appSettings["recordingsPath"] = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
@@ -310,6 +391,178 @@ PtzController* SystemController::ptzController() const
     return m_ptzController;
 }
 
+QVariantMap SystemController::parseCameraQrPayload(const QString &payload) const
+{
+    return CameraOnboardingParser::parse(payload);
+}
+
+QString SystemController::probeCameraEndpoint(const QString &kind,
+                                              const QString &host,
+                                              int port,
+                                              const QString &path,
+                                              const QString &username,
+                                              const QString &password)
+{
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString normalizedKind = kind.trimmed().toLower();
+    QString trimmedHost = host.trimmed();
+
+    if (trimmedHost.isEmpty()) {
+        QMetaObject::invokeMethod(this, [this, requestId, normalizedKind]() {
+            emit cameraEndpointProbeFinished(requestId, normalizedKind, QString(), 0, false,
+                                             QStringLiteral("Host is empty"), 0, 0);
+        }, Qt::QueuedConnection);
+        return requestId;
+    }
+
+    if (normalizedKind == QStringLiteral("rtsp")) {
+        if (port <= 0) port = 554;
+
+        auto *socket = new QTcpSocket(this);
+        auto *timeout = new QTimer(socket);
+        timeout->setSingleShot(true);
+        timeout->setInterval(4500);
+
+        const qint64 startedAt = QDateTime::currentMSecsSinceEpoch();
+        const auto finished = QSharedPointer<bool>::create(false);
+        const QString requestPath = path.trimmed().isEmpty()
+            ? QStringLiteral("/stream=0")
+            : (path.trimmed().startsWith(QLatin1Char('/')) ? path.trimmed()
+                                                           : QLatin1Char('/') + path.trimmed());
+        const QString rtspTarget = QStringLiteral("rtsp://%1:%2%3")
+                                       .arg(trimmedHost)
+                                       .arg(port)
+                                       .arg(requestPath);
+
+        const auto finish = [this, requestId, normalizedKind, trimmedHost, port, socket,
+                             startedAt, finished](bool success, const QString &message) {
+            if (*finished) {
+                return;
+            }
+            *finished = true;
+            const int elapsedMs = static_cast<int>(QDateTime::currentMSecsSinceEpoch() - startedAt);
+            emit cameraEndpointProbeFinished(requestId, normalizedKind, trimmedHost, port, success,
+                                             message, 0, elapsedMs);
+            socket->abort();
+            socket->deleteLater();
+        };
+
+        connect(socket, &QTcpSocket::connected, socket, [socket, rtspTarget]() {
+            const QByteArray request = QByteArrayLiteral("OPTIONS ") + rtspTarget.toUtf8()
+                + QByteArrayLiteral(" RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: OpenIPC-Dashboard\r\n\r\n");
+            socket->write(request);
+            socket->flush();
+        });
+
+        connect(socket, &QTcpSocket::readyRead, this, [socket, finish]() {
+            const QByteArray response = socket->readAll();
+            if (response.isEmpty()) {
+                return;
+            }
+
+            const bool looksRtsp = response.startsWith("RTSP/")
+                || response.contains("RTSP/1.0")
+                || response.contains("RTSP/2.0");
+            if (looksRtsp) {
+                finish(true, QStringLiteral("RTSP endpoint responded"));
+            } else {
+                finish(true, QStringLiteral("RTSP TCP port is reachable, but response is not RTSP"));
+            }
+        });
+
+        connect(socket, &QTcpSocket::errorOccurred, this,
+                [socket, finish](QAbstractSocket::SocketError) {
+            finish(false, socket->errorString());
+        });
+
+        connect(timeout, &QTimer::timeout, this, [socket, finish]() {
+            if (socket->state() == QAbstractSocket::ConnectedState) {
+                finish(true, QStringLiteral("RTSP TCP port is reachable, no OPTIONS response before timeout"));
+            } else {
+                finish(false, QStringLiteral("RTSP connection timed out"));
+            }
+        });
+
+        timeout->start();
+        socket->connectToHost(trimmedHost, static_cast<quint16>(port));
+        return requestId;
+    }
+
+    if (normalizedKind == QStringLiteral("majestic") || normalizedKind == QStringLiteral("http")) {
+        QUrl url(trimmedHost.contains(QStringLiteral("://"))
+                     ? trimmedHost
+                     : QStringLiteral("http://") + trimmedHost);
+        if (url.scheme().isEmpty()) {
+            url.setScheme(QStringLiteral("http"));
+        }
+        if (port > 0) {
+            url.setPort(port);
+        } else if (url.port() < 0) {
+            port = url.scheme() == QStringLiteral("https") ? 443 : 80;
+            url.setPort(port);
+        } else {
+            port = url.port();
+        }
+
+        QString requestPath = path.trimmed();
+        if (requestPath.isEmpty()) {
+            requestPath = normalizedKind == QStringLiteral("majestic")
+                ? QStringLiteral("/api/v1/config.json")
+                : QStringLiteral("/");
+        }
+        if (!requestPath.startsWith(QLatin1Char('/'))) {
+            requestPath.prepend(QLatin1Char('/'));
+        }
+        url.setPath(requestPath);
+
+        QNetworkRequest request(url);
+        request.setTransferTimeout(6000);
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+        request.setRawHeader("User-Agent", "OpenIPC-Dashboard/0.2");
+        request.setRawHeader("Accept", "application/json, text/plain, */*");
+        if (!username.isEmpty()) {
+            request.setRawHeader("Authorization",
+                                 "Basic "
+                                     + (username + QLatin1Char(':') + password).toUtf8().toBase64());
+        }
+
+        const qint64 startedAt = QDateTime::currentMSecsSinceEpoch();
+        QNetworkReply *reply = m_networkManager->get(request);
+        connect(reply, &QNetworkReply::finished, this,
+                [this, reply, requestId, normalizedKind, url, startedAt]() {
+            const QByteArray body = reply->readAll();
+            const int elapsedMs = static_cast<int>(QDateTime::currentMSecsSinceEpoch() - startedAt);
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            QString message;
+            bool success = false;
+
+            if (reply->error() == QNetworkReply::NoError && status >= 200 && status < 300) {
+                success = true;
+                message = normalizedKind == QStringLiteral("majestic")
+                    ? QStringLiteral("Majestic API responded")
+                    : QStringLiteral("HTTP endpoint responded");
+            } else if (status == 401 || status == 403) {
+                message = QStringLiteral("HTTP authentication is required or credentials are invalid");
+            } else if (status > 0) {
+                message = QStringLiteral("HTTP endpoint returned an error");
+            } else {
+                message = reply->errorString();
+            }
+
+            emit cameraEndpointProbeFinished(requestId, normalizedKind, url.host(), url.port(), success,
+                                             message, status, elapsedMs);
+            reply->deleteLater();
+        });
+        return requestId;
+    }
+
+    QMetaObject::invokeMethod(this, [this, requestId, normalizedKind, trimmedHost, port]() {
+        emit cameraEndpointProbeFinished(requestId, normalizedKind, trimmedHost, port, false,
+                                         QStringLiteral("Unsupported endpoint probe type"), 0, 0);
+    }, Qt::QueuedConnection);
+    return requestId;
+}
+
 CamexController* SystemController::camexController() const
 {
     return m_camexController;
@@ -392,7 +645,7 @@ void SystemController::stopService()
     emit serviceStatusChanged();
 }
 
-void SystemController::scanNetwork(const QString &interfaceName)
+void SystemController::scanNetwork(const QString &interfaceName, bool deepScan)
 {
     qDebug() << "Starting network scan. Interface:" << (interfaceName.isEmpty() ? "All" : interfaceName);
     m_discoveryModel->clear();
@@ -402,50 +655,13 @@ void SystemController::scanNetwork(const QString &interfaceName)
         m_dahuaDiscovery->startSearch();
     }
 
-    if (interfaceName.isEmpty()) {
-        // Scan all capable interfaces
-        const QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
-        for (const QNetworkInterface &iface : interfaces) {
-            if (iface.flags().testFlag(QNetworkInterface::IsUp) &&
-                !iface.flags().testFlag(QNetworkInterface::IsLoopBack) &&
-                iface.flags().testFlag(QNetworkInterface::CanMulticast)) {
-                
-                // Check if it has an IPv4 address
-                bool hasIPv4 = false;
-                for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                    if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                        hasIPv4 = true;
-                        break;
-                    }
-                }
+    m_networkDiscovery->start(interfaceName, deepScan);
+}
 
-                if (hasIPv4) {
-                    qDebug() << "Sending probe on interface:" << iface.humanReadableName();
-                    m_udpSocket->setMulticastInterface(iface);
-                    sendDiscoveryProbe();
-                }
-            }
-        }
-    } else {
-        QNetworkInterface iface = QNetworkInterface::interfaceFromName(interfaceName);
-        if (!iface.isValid()) {
-             // Try finding by human readable name if internal name fails
-             const QList<QNetworkInterface> interfaces = QNetworkInterface::allInterfaces();
-             for (const QNetworkInterface &i : interfaces) {
-                 if (i.humanReadableName() == interfaceName) {
-                     iface = i;
-                     break;
-                 }
-             }
-        }
-        
-        if (iface.isValid()) {
-            m_udpSocket->setMulticastInterface(iface);
-            sendDiscoveryProbe();
-        } else {
-            qWarning() << "Interface not found:" << interfaceName;
-        }
-    }
+void SystemController::stopNetworkScan()
+{
+    if (m_networkDiscovery) m_networkDiscovery->stop();
+    if (m_dahuaDiscovery) m_dahuaDiscovery->stopSearch();
 }
 
 void SystemController::addDevice(int index)
@@ -589,9 +805,22 @@ void SystemController::updateCamera(int index, const QString &name, const QStrin
 void SystemController::updateCameraStatus(const QString &cameraIp, const QString &status)
 {
     const QString ip = cameraIp.trimmed();
-    const QString normalizedStatus = status.trimmed();
+    QString normalizedStatus = status.trimmed();
     if (ip.isEmpty() || normalizedStatus.isEmpty()) {
         return;
+    }
+
+    if (normalizedStatus.compare(QStringLiteral("Online"), Qt::CaseInsensitive) == 0) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const qint64 streamOfflineUntil = m_streamOfflineUntilMs.value(ip, 0);
+        if (streamOfflineUntil > now) {
+            normalizedStatus = QStringLiteral("Offline");
+        } else {
+            m_streamOfflineUntilMs.remove(ip);
+            normalizedStatus = QStringLiteral("Online");
+        }
+    } else if (normalizedStatus.compare(QStringLiteral("Offline"), Qt::CaseInsensitive) == 0) {
+        normalizedStatus = QStringLiteral("Offline");
     }
 
     const int listIndex = m_cameraModel->findIndexByIp(ip);
@@ -607,11 +836,178 @@ void SystemController::updateCameraStatus(const QString &cameraIp, const QString
     }
 }
 
+void SystemController::updateCameraStreamStatus(const QString &cameraIp, const QString &status)
+{
+    const QString ip = cameraIp.trimmed();
+    const QString normalizedStatus = status.trimmed();
+    if (ip.isEmpty() || normalizedStatus.isEmpty()) {
+        return;
+    }
+
+    if (normalizedStatus.compare(QStringLiteral("Offline"), Qt::CaseInsensitive) == 0) {
+        // A live cell is the strongest signal for video availability: if no frames
+        // arrive, keep the device visually Offline long enough to bridge the
+        // background TCP checker interval. A real frame clears this immediately.
+        m_streamOfflineUntilMs.insert(ip, QDateTime::currentMSecsSinceEpoch() + 15000);
+    } else if (normalizedStatus.compare(QStringLiteral("Online"), Qt::CaseInsensitive) == 0) {
+        m_streamOfflineUntilMs.remove(ip);
+    }
+
+    updateCameraStatus(ip, normalizedStatus);
+}
+
+void SystemController::updateCameraStatusDetail(const QString &cameraIp, const QString &detail)
+{
+    const QString ip = cameraIp.trimmed();
+    if (ip.isEmpty()) {
+        return;
+    }
+
+    const QString normalizedDetail = detail.simplified().left(180);
+    const QString previousDetail = m_cameraStatusDetails.value(ip);
+    const qint64 streamOfflineUntil = m_streamOfflineUntilMs.value(ip, 0);
+    const bool streamOfflineIsAuthoritative = streamOfflineUntil > QDateTime::currentMSecsSinceEpoch();
+    if (normalizedDetail.isEmpty()) {
+        if (streamOfflineIsAuthoritative && !previousDetail.isEmpty()) {
+            return;
+        }
+        if (!m_cameraStatusDetails.contains(ip)) {
+            return;
+        }
+        m_cameraStatusDetails.remove(ip);
+        emit cameraStatusDetailsChanged();
+        return;
+    }
+
+    if (previousDetail == normalizedDetail) {
+        return;
+    }
+
+    if (streamOfflineIsAuthoritative && !previousDetail.isEmpty()) {
+        return;
+    }
+
+    m_cameraStatusDetails.insert(ip, normalizedDetail);
+    emit cameraStatusDetailsChanged();
+}
+
+QString SystemController::cameraStatusDetail(const QString &cameraIp) const
+{
+    return m_cameraStatusDetails.value(cameraIp.trimmed());
+}
+
+QString SystemController::effectiveCameraStatus(const QString &cameraIp, const QString &fallbackStatus) const
+{
+    const QString ip = cameraIp.trimmed();
+    QStringList gridStatuses;
+    QString modelStatus;
+    bool streamOfflineIsAuthoritative = false;
+
+    if (!ip.isEmpty()) {
+        for (int i = 0; i < m_gridModel->rowCount(); ++i) {
+            const Camera slot = m_gridModel->getCamera(i);
+            if (slot.ip == ip) {
+                gridStatuses.append(slot.status);
+            }
+        }
+
+        const int listIndex = m_cameraModel->findIndexByIp(ip);
+        if (listIndex >= 0) {
+            modelStatus = m_cameraModel->getCamera(listIndex).status;
+        }
+
+        streamOfflineIsAuthoritative = m_streamOfflineUntilMs.value(ip, 0) > QDateTime::currentMSecsSinceEpoch();
+    }
+
+    return CameraStatusPolicy::effectiveStatus(gridStatuses,
+                                               modelStatus,
+                                               fallbackStatus,
+                                               streamOfflineIsAuthoritative);
+}
+
+bool SystemController::isCameraOnline(const QString &cameraIp, const QString &fallbackStatus) const
+{
+    return CameraStatusPolicy::isOnline(effectiveCameraStatus(cameraIp, fallbackStatus));
+}
+
+QString SystemController::cameraAttentionReason(const QString &cameraIp, const QString &fallbackStatus) const
+{
+    return CameraStatusPolicy::attentionReason(effectiveCameraStatus(cameraIp, fallbackStatus),
+                                               cameraStatusDetail(cameraIp));
+}
+
+QString SystemController::cameraStatusSearchText(const QString &cameraIp, const QString &fallbackStatus) const
+{
+    return CameraStatusPolicy::searchText(effectiveCameraStatus(cameraIp, fallbackStatus),
+                                          cameraStatusDetail(cameraIp));
+}
+
+bool SystemController::cameraNeedsAttention(const QString &cameraIp, const QString &fallbackStatus) const
+{
+    return CameraStatusPolicy::needsAttention(effectiveCameraStatus(cameraIp, fallbackStatus),
+                                              cameraStatusDetail(cameraIp));
+}
+
+bool SystemController::isCameraInGrid(const QString &cameraIp) const
+{
+    const QString ip = cameraIp.trimmed();
+    if (ip.isEmpty()) {
+        return false;
+    }
+
+    for (int i = 0; i < m_gridModel->rowCount(); ++i) {
+        const Camera slot = m_gridModel->getCamera(i);
+        if (slot.ip == ip) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int SystemController::onlineCameraCount() const
+{
+    int count = 0;
+    for (int i = 0; i < m_cameraModel->rowCount(); ++i) {
+        const Camera cam = m_cameraModel->getCamera(i);
+        if (isCameraOnline(cam.ip, cam.status)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int SystemController::camerasNeedingAttentionCount() const
+{
+    int count = 0;
+    for (int i = 0; i < m_cameraModel->rowCount(); ++i) {
+        const Camera cam = m_cameraModel->getCamera(i);
+        if (cameraNeedsAttention(cam.ip, cam.status)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+void SystemController::refreshCameraHealth(const QString &cameraIp)
+{
+    const QString ip = cameraIp.trimmed();
+    if (ip.isEmpty() || !m_statusChecker) {
+        return;
+    }
+
+    updateCameraStatusDetail(ip, QStringLiteral("Проверка RTSP…"));
+    m_statusChecker->checkOne(ip);
+}
+
 void SystemController::removeDevice(int index)
 {
     // Also remove from grid if present
     Camera cam = m_cameraModel->getCamera(index);
     if (!cam.ip.isEmpty()) {
+        updateCameraStatusDetail(cam.ip, QString());
+        m_streamOfflineUntilMs.remove(cam.ip);
+
         // Delete password from keychain
         auto job = new QKeychain::DeletePasswordJob("OpenIPC");
         job->setAutoDelete(true);
@@ -732,31 +1128,6 @@ int SystemController::gridCapacity() const
     return m_gridModel->rowCount();
 }
 
-void SystemController::sendDiscoveryProbe()
-{
-    // WS-Discovery Probe Message
-    QByteArray probeData = 
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<e:Envelope xmlns:e=\"http://www.w3.org/2003/05/soap-envelope\" "
-        "xmlns:w=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" "
-        "xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\" "
-        "xmlns:dn=\"http://www.onvif.org/ver10/network/wsdl\">"
-        "<e:Header>"
-        "<w:MessageID>uuid:" + QUuid::createUuid().toString().toUtf8() + "</w:MessageID>"
-        "<w:To e:mustUnderstand=\"true\">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To>"
-        "<w:Action a:mustUnderstand=\"true\">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action>"
-        "</e:Header>"
-        "<e:Body>"
-        "<d:Probe>"
-        "<d:Types>dn:NetworkVideoTransmitter</d:Types>"
-        "</d:Probe>"
-        "</e:Body>"
-        "</e:Envelope>";
-
-    // Send to multicast address
-    m_udpSocket->writeDatagram(probeData, QHostAddress("239.255.255.250"), 3702);
-}
-
 QString SystemController::stateFilePath() const
 {
     const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -766,13 +1137,21 @@ QString SystemController::stateFilePath() const
 
 QJsonObject SystemController::cameraToJson(const Camera &cam)
 {
+    auto sanitizedUrl = [](const QString &value) {
+        QUrl url(value);
+        if (!url.isValid()) return value;
+        url.setUserName(QString());
+        url.setPassword(QString());
+        return url.toString(QUrl::FullyEncoded);
+    };
+
     QJsonObject obj;
     obj["id"] = cam.id;
     obj["name"] = cam.name;
     obj["ip"] = cam.ip;
-    obj["streamUrl"] = cam.streamUrl;
-    obj["sdStreamUrl"] = cam.sdStreamUrl;
-    obj["hdStreamUrl"] = cam.hdStreamUrl;
+    obj["streamUrl"] = sanitizedUrl(cam.streamUrl);
+    obj["sdStreamUrl"] = sanitizedUrl(cam.sdStreamUrl);
+    obj["hdStreamUrl"] = sanitizedUrl(cam.hdStreamUrl);
     obj["status"] = cam.status;
     obj["port"] = cam.port;
     obj["onvifPort"] = cam.onvifPort;
@@ -797,6 +1176,22 @@ Camera SystemController::cameraFromJson(const QJsonObject &obj)
     cam.onvifPort = obj.value("onvifPort").toInt(80);
     cam.login = obj.value("login").toString();
     cam.group = obj.value("group").toString();
+
+    QString passwordFromLegacyUrl;
+    auto stripLegacyCredentials = [&cam, &passwordFromLegacyUrl](QString &value) {
+        QUrl url(value);
+        if (!url.isValid() || url.userName().isEmpty()) return;
+        if (cam.login.isEmpty()) cam.login = url.userName(QUrl::FullyDecoded);
+        if (passwordFromLegacyUrl.isEmpty()) {
+            passwordFromLegacyUrl = url.password(QUrl::FullyDecoded);
+        }
+        url.setUserName(QString());
+        url.setPassword(QString());
+        value = url.toString(QUrl::FullyEncoded);
+    };
+    stripLegacyCredentials(cam.streamUrl);
+    stripLegacyCredentials(cam.sdStreamUrl);
+    stripLegacyCredentials(cam.hdStreamUrl);
     
     // Migration & Loading logic for passwords
     if (obj.contains("password")) {
@@ -809,6 +1204,13 @@ Camera SystemController::cameraFromJson(const QJsonObject &obj)
             job->setTextData(cam.password);
             job->start();
         }
+    } else if (!passwordFromLegacyUrl.isEmpty()) {
+        cam.password = passwordFromLegacyUrl;
+        auto job = new QKeychain::WritePasswordJob("OpenIPC");
+        job->setAutoDelete(true);
+        job->setKey(cam.ip);
+        job->setTextData(cam.password);
+        job->start();
     } else if (!cam.ip.isEmpty()) {
         // Load from keychain asynchronously
         auto job = new QKeychain::ReadPasswordJob("OpenIPC");
@@ -858,53 +1260,12 @@ void SystemController::performSave()
     root["cameraGroups"] = groups;
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
 
-    const QString path = stateFilePath();
-    const QString tempPath = path + ".tmp";
-    const QString backupPath = path + ".bak";
-
-    QFile f(tempPath);
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-        f.flush();
-        f.close();
-
-        // 1. If we have a good new file, proceed to rotation
-        if (QFile::exists(path)) {
-            // Remove old backup
-            if (QFile::exists(backupPath)) {
-                QFile::remove(backupPath);
-            }
-            // Move current to backup
-            if (!QFile::rename(path, backupPath)) {
-                 // If rename fails (e.g. locked), try copy+delete
-                 if (QFile::copy(path, backupPath)) {
-                     QFile::remove(path);
-                 } else {
-                     qWarning() << "Failed to back up state file" << path << "to" << backupPath;
-                 }
-            }
-        }
-        
-        // 2. Move temp to primary
-        // Ensure primary is gone (should be moved to backup, but verify)
-        if (QFile::exists(path)) {
-            QFile::remove(path);
-        }
-        
-        if (!f.rename(tempPath, path)) {
-            qWarning() << "Failed to rename temp state file to" << path;
-            // Fallback: copy and remove
-            if (QFile::copy(tempPath, path)) {
-                QFile::remove(tempPath);
-                qInfo() << "State saved successfully (via copy/delete mechanism).";
-            } else {
-                qCritical() << "CRITICAL: Failed to save state file! Settings may be lost.";
-            }
-        } else {
-             qInfo() << "State saved successfully.";
-        }
+    QString errorMessage;
+    StateStore store(stateDatabasePath());
+    if (!store.save(root, &errorMessage)) {
+        qCritical() << "Failed to save application state:" << errorMessage;
     } else {
-        qWarning() << "Failed to save state to" << tempPath << f.errorString();
+        qInfo() << "Application state saved transactionally.";
     }
 }
 
@@ -912,6 +1273,15 @@ void SystemController::loadState()
 {
     const QString path = stateFilePath();
     const QString backupPath = path + ".bak";
+    StateStore store(stateDatabasePath());
+    QString databaseError;
+    const std::optional<QJsonObject> storedState = store.load(&databaseError);
+    QJsonObject root = storedState.value_or(QJsonObject{});
+    bool loadedLegacyState = false;
+
+    if (!databaseError.isEmpty()) {
+        qWarning() << "Failed to load state database:" << databaseError;
+    }
 
     // Helper to read and validate JSON
     auto readJson = [](const QString &p) -> QJsonObject {
@@ -929,21 +1299,26 @@ void SystemController::loadState()
         return doc.object();
     };
 
-    QJsonObject root = readJson(path);
-
     if (root.isEmpty()) {
-        qWarning() << "Primary corrupted or missing. Trying backup:" << backupPath;
+        root = readJson(path);
+        loadedLegacyState = !root.isEmpty();
+    }
+    if (root.isEmpty()) {
         root = readJson(backupPath);
-        if (!root.isEmpty()) {
-            qInfo() << "Restored from backup.";
-            // Restore the file on disk so we don't lose it again
+        loadedLegacyState = !root.isEmpty();
+    }
+
+    if (loadedLegacyState) {
+        QJsonObject sanitizedState = root;
+        removeLegacyPasswords(sanitizedState);
+        QString migrationError;
+        if (store.save(sanitizedState, &migrationError)) {
             QFile::remove(path);
-            QFile::copy(backupPath, path);
+            QFile::remove(backupPath);
+            qInfo() << "Migrated legacy state.json to versioned SQLite storage.";
+        } else {
+            qWarning() << "Could not migrate legacy state.json:" << migrationError;
         }
-    } else {
-        // Primary is good. Update backup.
-        QFile::remove(backupPath);
-        QFile::copy(path, backupPath);
     }
 
     // Still empty? Use defaults
@@ -1212,10 +1587,6 @@ double SystemController::processCpuPercent()
         return 0.0;
     }
 
-    SYSTEM_INFO sysInfo;
-    GetSystemInfo(&sysInfo);
-    int cpuCount = sysInfo.dwNumberOfProcessors > 0 ? sysInfo.dwNumberOfProcessors : 1;
-
     double cpu = (static_cast<double>(procDelta) / static_cast<double>(sysDelta)) * 100.0;
     // Clamp to reasonable range
     if (cpu < 0.0) cpu = 0.0;
@@ -1253,6 +1624,13 @@ double SystemController::processCpuPercent()
 #else
     return 0.0;
 #endif
+}
+
+QString SystemController::stateDatabasePath() const
+{
+    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(baseDir);
+    return baseDir + QStringLiteral("/state.sqlite3");
 }
 
 double SystemController::processMemoryMB()
@@ -1530,6 +1908,7 @@ QString SystemController::generateRecordingPath(const QString &ip)
 
 void SystemController::toggleRecording(int gridIndex)
 {
+    Q_UNUSED(gridIndex)
     // Legacy method kept for ABI compatibility if needed, but implementation removed
     // Logic moved to client-side (QML + player) to avoid ffmpeg dependency
     qWarning() << "SystemController::toggleRecording is deprecated. Use the client-side player recording API instead.";
@@ -1804,6 +2183,129 @@ bool SystemController::deleteLocalFile(const QString &fileUrl)
     return QFile::remove(targetPath);
 }
 
+QString SystemController::authenticatedStreamUrl(const QString &value, const QString &cameraIp) const
+{
+    QUrl url(value);
+    if (!url.isValid() || url.host().isEmpty()) return value;
+
+    Camera camera = m_cameraModel->findByIp(cameraIp);
+    if (camera.ip.isEmpty()) camera = m_gridModel->findByIp(cameraIp);
+    const QString password = getCameraPassword(cameraIp);
+    if (!camera.login.isEmpty()) url.setUserName(camera.login);
+    if (!password.isEmpty()) url.setPassword(password);
+    return url.toString(QUrl::FullyEncoded);
+}
+
+QString SystemController::preferredPreviewStreamUrl(const QString &streamUrl,
+                                                    const QString &sdStreamUrl,
+                                                    const QString &hdStreamUrl,
+                                                    const QString &preferredStream,
+                                                    int gridRows,
+                                                    int gridCols,
+                                                    int spanRows,
+                                                    int spanCols,
+                                                    bool forceMain) const
+{
+    return StreamQualityPolicy::selectPreviewUrl(streamUrl, sdStreamUrl, hdStreamUrl,
+                                                 preferredStream, gridRows, gridCols,
+                                                 spanRows, spanCols, forceMain);
+}
+
+QString SystemController::preferredPreviewStreamQuality(const QString &preferredStream,
+                                                        int gridRows,
+                                                        int gridCols,
+                                                        int spanRows,
+                                                        int spanCols,
+                                                        bool forceMain) const
+{
+    return StreamQualityPolicy::qualityLabel(StreamQualityPolicy::resolvePreviewQuality(
+        preferredStream, gridRows, gridCols, spanRows, spanCols, forceMain));
+}
+
+QString SystemController::manualStreamUrl(const QString &streamUrl,
+                                          const QString &sdStreamUrl,
+                                          const QString &hdStreamUrl,
+                                          bool preferMain) const
+{
+    return StreamQualityPolicy::selectManualUrl(streamUrl, sdStreamUrl, hdStreamUrl, preferMain);
+}
+
+bool SystemController::isStreamFrameStalled(bool running,
+                                            bool hasFrame,
+                                            double nowMs,
+                                            double startedMs,
+                                            double lastFrameMs,
+                                            int startupGraceMs,
+                                            int frameStallMs) const
+{
+    return StreamHealthPolicy::isFrameStalled(running,
+                                              hasFrame,
+                                              static_cast<qint64>(nowMs),
+                                              static_cast<qint64>(startedMs),
+                                              static_cast<qint64>(lastFrameMs),
+                                              startupGraceMs,
+                                              frameStallMs);
+}
+
+int SystemController::streamPreviewPriorityScore(int gridIndex,
+                                                 int spanRows,
+                                                 int spanCols,
+                                                 bool selected,
+                                                 bool recordingActive,
+                                                 bool analyticsActive,
+                                                 bool online) const
+{
+    return StreamSessionPolicy::previewPriorityScore(gridIndex,
+                                                     spanRows,
+                                                     spanCols,
+                                                     selected,
+                                                     recordingActive,
+                                                     analyticsActive,
+                                                     online);
+}
+
+bool SystemController::shouldRunPreviewStream(bool smartBudgetEnabled,
+                                              int maxPreviewStreams,
+                                              int previewBudgetRank,
+                                              bool hasCamera,
+                                              bool canLive,
+                                              bool fullscreenActive,
+                                              bool archiveOpen,
+                                              bool recordingActive,
+                                              bool analyticsActive) const
+{
+    return StreamSessionPolicy::shouldRunPreview(smartBudgetEnabled,
+                                                 maxPreviewStreams,
+                                                 previewBudgetRank,
+                                                 hasCamera,
+                                                 canLive,
+                                                 fullscreenActive,
+                                                 archiveOpen,
+                                                 recordingActive,
+                                                 analyticsActive);
+}
+
+QString SystemController::previewPauseReasonCode(bool smartBudgetEnabled,
+                                                 int maxPreviewStreams,
+                                                 int previewBudgetRank,
+                                                 bool hasCamera,
+                                                 bool canLive,
+                                                 bool fullscreenActive,
+                                                 bool archiveOpen,
+                                                 bool recordingActive,
+                                                 bool analyticsActive) const
+{
+    return StreamSessionPolicy::previewPauseReasonCode(smartBudgetEnabled,
+                                                       maxPreviewStreams,
+                                                       previewBudgetRank,
+                                                       hasCamera,
+                                                       canLive,
+                                                       fullscreenActive,
+                                                       archiveOpen,
+                                                       recordingActive,
+                                                       analyticsActive);
+}
+
 bool SystemController::localFileExists(const QString &fileUrl) const
 {
     if (fileUrl.isEmpty()) return false;
@@ -1895,82 +2397,6 @@ void SystemController::setLayoutTemplates(const QVariantList &templates)
         m_layoutTemplates = templates;
         saveState();
         emit layoutTemplatesChanged();
-    }
-}
-
-void SystemController::onUdpReadyRead()
-{
-    while (m_udpSocket->hasPendingDatagrams()) {
-        QNetworkDatagram datagram = m_udpSocket->receiveDatagram();
-        QByteArray data = datagram.data();
-        
-        // Very basic parsing to check if it's a ProbeMatch
-        if (data.contains("ProbeMatches")) {
-            QString senderIp = datagram.senderAddress().toString();
-            // Handle IPv6 mapped IPv4 addresses
-            if (senderIp.startsWith("::ffff:")) {
-                senderIp = senderIp.mid(7);
-            }
-
-            if (!m_discoveryModel->contains(senderIp)) {
-                qDebug() << "Found camera at:" << senderIp;
-                
-                QString xmlStr = QString::fromUtf8(data);
-                QString extractedName = "OpenIPC Camera";
-                
-                // Try to find name in Scopes
-                int nameIdx = xmlStr.indexOf("onvif://www.onvif.org/name/");
-                if (nameIdx != -1) {
-                    int start = nameIdx + 27; // length of "onvif://www.onvif.org/name/"
-                    int endSpace = xmlStr.indexOf(" ", start);
-                    int endTag = xmlStr.indexOf("<", start);
-                    int end = -1;
-                    
-                    if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
-                    else if (endSpace != -1) end = endSpace;
-                    else end = endTag;
-                    
-                    if (end != -1) {
-                        extractedName = xmlStr.mid(start, end - start);
-                        extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
-                    }
-                } 
-                
-                // If name is still default or empty, try hardware
-                if (extractedName == "OpenIPC Camera" || extractedName.isEmpty()) {
-                    int hwIdx = xmlStr.indexOf("onvif://www.onvif.org/hardware/");
-                    if (hwIdx != -1) {
-                        int start = hwIdx + 31; // length of "onvif://www.onvif.org/hardware/"
-                        int endSpace = xmlStr.indexOf(" ", start);
-                        int endTag = xmlStr.indexOf("<", start);
-                        int end = -1;
-                        
-                        if (endSpace != -1 && endTag != -1) end = std::min(endSpace, endTag);
-                        else if (endSpace != -1) end = endSpace;
-                        else end = endTag;
-                        
-                        if (end != -1) {
-                            extractedName = xmlStr.mid(start, end - start);
-                            extractedName = QUrl::fromPercentEncoding(extractedName.toUtf8());
-                        }
-                    }
-                }
-                
-                // Fallback if empty
-                if (extractedName.isEmpty()) extractedName = "OpenIPC Camera";
-
-                Camera cam;
-                cam.id = QUuid::createUuid().toString();
-                cam.name = extractedName;
-                cam.ip = senderIp;
-                cam.hdStreamUrl = QString("rtsp://%1/stream=0").arg(senderIp); // main stream
-                cam.sdStreamUrl = QString("rtsp://%1/stream=1").arg(senderIp); // sub stream
-                cam.streamUrl = cam.hdStreamUrl; // legacy main
-                cam.status = "Online";
-                
-                m_discoveryModel->addCamera(cam);
-            }
-        }
     }
 }
 

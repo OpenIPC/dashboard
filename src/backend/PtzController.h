@@ -15,10 +15,21 @@ public:
     // x, y, zoom are speeds between -1.0 and 1.0
     Q_INVOKABLE void move(const QString &ip, int port, const QString &username, const QString &password, float x, float y, float zoom);
     Q_INVOKABLE void stop(const QString &ip, int port, const QString &username, const QString &password);
+    Q_INVOKABLE void probe(const QString &ip, int port, const QString &username, const QString &password);
+    Q_INVOKABLE void clearCache(const QString &ip, int port);
+    Q_INVOKABLE QString cachedSummary(const QString &ip, int port) const;
     
     // speed between -1.0 and 1.0
     Q_INVOKABLE void focus(const QString &ip, int port, const QString &username, const QString &password, float speed);
     Q_INVOKABLE void stopFocus(const QString &ip, int port, const QString &username, const QString &password);
+
+signals:
+    void discoveryStarted(const QString &ip, int port);
+    void discoveryFinished(const QString &ip, int port, bool success,
+                           const QString &message, const QString &profileToken,
+                           const QString &ptzUrl, const QString &imagingUrl);
+    void commandFailed(const QString &ip, int port, const QString &operation,
+                       const QString &message);
 
 private:
     QNetworkAccessManager *m_nam;

@@ -1,4 +1,5 @@
 #include "AnalyticsEngine.h"
+#include "ModelArtifactVerifier.h"
 #include "YoloDetector.h"
 #include "../PathUtils.h"
 #include <QCoreApplication>
@@ -537,24 +538,36 @@ void AnalyticsEngine::initialize()
 
 void AnalyticsEngine::setupModules()
 {
-    auto setupModule = [&](ModuleType type, const QString &name, const QString &desc, const QString &ver, 
-                          const QString &url, const QString &filename, const YoloDetector::Options &opts) {
+    auto setupModule = [&](ModuleType type, const QString &name, const QString &desc, const QString &ver,
+                          const QString &url, const QString &filename, const QString &sha256,
+                          qint64 expectedSize, const QString &licenseId, const QString &sourceUrl,
+                          const YoloDetector::Options &opts) {
         ModuleContext ctx;
         ctx.name = name;
         ctx.description = desc;
         ctx.version = ver;
         ctx.modelUrl = url;
         ctx.modelFileName = filename;
+        ctx.modelSha256 = sha256;
+        ctx.modelSizeBytes = expectedSize;
+        ctx.licenseId = licenseId;
+        ctx.sourceUrl = sourceUrl;
         ctx.options = opts;
         ctx.backend = std::make_shared<YoloDetector>(opts);
-        
+
         // Check if already installed
-        if (ctx.backend->load(m_modulesDir)) {
+        const QString modelPath = QDir(m_modulesDir).filePath(filename);
+        QString verificationError;
+        if (ModelArtifactVerifier::verify(modelPath, sha256, expectedSize, &verificationError)
+            && ctx.backend->load(m_modulesDir)) {
             ctx.status = "ready";
             ctx.progress = 1.0f;
         } else {
             ctx.status = "not_installed";
             ctx.progress = 0.0f;
+            if (QFile::exists(modelPath)) {
+                qWarning() << "Ignoring unverified model" << modelPath << verificationError;
+            }
         }
         
         m_modules[type] = ctx;
@@ -568,8 +581,11 @@ void AnalyticsEngine::setupModules()
         opts.classLabels = {"Face"};
         opts.colorPalette = {"#ff7f50"};
         setupModule(FaceDetector, "Face Detector", "Detects faces in video stream", "1.0.0",
-                   "https://raw.githubusercontent.com/Rinibr25/Face-Detector-Module-for-Dashboard-/main/yolov11n-face.onnx",
-                   "yolov11n-face.onnx", opts);
+                   "https://raw.githubusercontent.com/Rinibr25/Face-Detector-Module-for-Dashboard-/b7fc689ffd11c56f4260e2d4828d8895a87151a4/yolov11n-face.onnx",
+                   "yolov11n-face.onnx",
+                   "61d8cf127ff377939cf009565457aaddf216f4d9fdd9ac24f5aab3cb10ee67b5",
+                   10583411, "GPL-3.0-only",
+                   "https://github.com/Rinibr25/Face-Detector-Module-for-Dashboard-", opts);
     }
 
     // 2. Object Counter
@@ -580,7 +596,10 @@ void AnalyticsEngine::setupModules()
         opts.colorPalette = {"#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"};
         setupModule(ObjectCounter, "Object Counter", "Counts people and vehicles", "1.0.0",
                    "https://github.com/Rinibr25/Object-Counter-for-Dashboard/releases/download/v0.1.0/yolo11s.onnx",
-                   "yolo11s.onnx", opts);
+                   "yolo11s.onnx",
+                   "ba4b9738ec824e871ac41909d34018092ba3ac3d7f70b43dc68a41f25318212e",
+                   38051669, "GPL-3.0-only",
+                   "https://github.com/Rinibr25/Object-Counter-for-Dashboard", opts);
     }
 
     // 3. License Plate
@@ -591,7 +610,10 @@ void AnalyticsEngine::setupModules()
         opts.colorPalette = {"#ffff00"};
         setupModule(LicensePlate, "License Plate", "Recognizes license plates", "1.0.0",
                    "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard/releases/download/v0.1.0/anpr_yolov8.onnx",
-                   "anpr_yolov8.onnx", opts);
+                   "anpr_yolov8.onnx",
+                   "d224c2c21daef096afebcda68c00f3df41b48560866d263edda0e2708fabf35a",
+                   12251045, "GPL-3.0-only",
+                   "https://github.com/Rinibr25/License-Plate-Detector-for-Dashboard", opts);
     }
 }
 
@@ -700,6 +722,10 @@ QVariantMap AnalyticsEngine::getModuleDiagnostics(int type) const
     result["modelPath"] = modelPath;
     result["modulesDir"] = m_modulesDir;
     result["modelUrl"] = ctx.modelUrl;
+    result["modelSha256"] = ctx.modelSha256;
+    result["expectedModelSizeBytes"] = ctx.modelSizeBytes;
+    result["licenseId"] = ctx.licenseId;
+    result["sourceUrl"] = ctx.sourceUrl;
     result["installed"] = modelInfo.exists() && modelInfo.isFile();
     result["modelSizeBytes"] = modelInfo.exists() ? static_cast<qlonglong>(modelInfo.size()) : 0;
     result["lastModifiedMs"] = modelInfo.exists() ? modelInfo.lastModified().toMSecsSinceEpoch() : 0;
@@ -748,21 +774,11 @@ void AnalyticsEngine::reloadModule(int type)
     cancelModuleDownload(moduleType);
 
     ModuleContext &ctx = m_modules[moduleType];
-    const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
     ctx.enabled = false;
     ctx.backend.reset();
     ctx.error.clear();
     ctx.status = "downloading";
     ctx.progress = 0.0f;
-
-    if (QFileInfo::exists(modelPath) && !QFile::remove(modelPath)) {
-        ctx.status = "error";
-        ctx.progress = 0.0f;
-        ctx.error = QStringLiteral("Failed to remove model file: %1").arg(modelPath);
-        emit moduleStatusChanged(moduleType, ctx.status, ctx.progress, ctx.error);
-        emit analyticsTelemetryChanged();
-        return;
-    }
 
     ctx.backend = std::make_shared<YoloDetector>(ctx.options);
     emit moduleStatusChanged(moduleType, ctx.status, ctx.progress, ctx.error);
@@ -820,7 +836,9 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
     QNetworkReply *reply = m_networkManager->get(request);
     m_currentDownloads[type] = reply;
     
-    QFile *file = new QFile(filePath);
+    const QString partialPath = filePath + QStringLiteral(".part");
+    QFile::remove(partialPath);
+    QFile *file = new QFile(partialPath);
     if (!file->open(QIODevice::WriteOnly)) {
         qWarning() << "Failed to open file for writing:" << filePath;
         m_modules[type].status = "error";
@@ -916,7 +934,7 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
         
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "Network error:" << reply->errorString();
-            QFile::remove(filePath);
+            QFile::remove(filePath + QStringLiteral(".part"));
 
             if (retryCount < kMaxDownloadRetries &&
                 reply->error() != QNetworkReply::OperationCanceledError) {
@@ -956,6 +974,7 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
             if (redirect.isValid()) {
                 QUrl newUrl = reply->url().resolved(redirect.toUrl());
                 qInfo() << "Redirecting to:" << newUrl;
+                QFile::remove(filePath + QStringLiteral(".part"));
                 // If auto-redirect didn't work (e.g. different scheme), we might need to handle it here
                 // But UserVerifiedRedirectPolicy usually stops and asks. 
                 // Let's assume NoLessSafeRedirectPolicy was better, but maybe we need to handle the redirect manually if it fails.
@@ -974,14 +993,30 @@ void AnalyticsEngine::downloadFile(const QString &url, const QString &filePath, 
                 QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
                 downloadFile(ctx.modelUrl, modelPath, type, false);
             } else {
-                // Model downloaded, load it
-                qInfo() << "Model downloaded, loading backend";
                 ModuleContext &ctx = m_modules[type];
-                if (ctx.backend->load(m_modulesDir)) {
+                const QString partialPath = filePath + QStringLiteral(".part");
+                QString verificationError;
+                if (!ModelArtifactVerifier::verify(partialPath, ctx.modelSha256,
+                                                   ctx.modelSizeBytes, &verificationError)) {
+                    QFile::remove(partialPath);
+                    ctx.status = "error";
+                    ctx.progress = 0.0f;
+                    ctx.error = QStringLiteral("Model integrity check failed: %1")
+                                    .arg(verificationError);
+                    qWarning() << ctx.error;
+                } else if (!ModelArtifactVerifier::promote(partialPath, filePath,
+                                                           &verificationError)) {
+                    QFile::remove(partialPath);
+                    ctx.status = "error";
+                    ctx.progress = 0.0f;
+                    ctx.error = QStringLiteral("Failed to install verified model: %1")
+                                    .arg(verificationError);
+                    qWarning() << ctx.error;
+                } else if (ctx.backend->load(m_modulesDir)) {
                     ctx.status = "ready";
                     ctx.progress = 1.0f;
                     ctx.enabled = true;
-                    qInfo() << "Module ready";
+                    qInfo() << "Verified model installed and module ready";
                     emit settingsChanged();
                 } else {
                     ctx.status = "error";
@@ -1112,6 +1147,22 @@ QString AnalyticsEngine::ensurePendingClip(const QString &cameraId, const QVaria
     }
 
     return clipPath;
+}
+
+bool AnalyticsEngine::requestBufferedClipFallback(const QString &cameraId, const QString &path)
+{
+    QMutexLocker locker(&m_eventMutex);
+    auto it = m_pendingEvents.find(cameraId);
+    if (it == m_pendingEvents.end() || !it->streamRequested) {
+        return false;
+    }
+
+    if (!path.isEmpty() && it->clipPath != path) {
+        return false;
+    }
+
+    it->streamRequested = false;
+    return true;
 }
 
 QVariantList AnalyticsEngine::updateObjectCounterTracking(const QString &cameraId, QVector<DetectionBox> &results, qint64 nowMs)
@@ -2782,11 +2833,14 @@ void AnalyticsEngine::scheduleClipIfReady(const QString &cameraId, qint64 nowMs)
         return;
     }
 
-    QString dir = ensureDir(m_evidenceClipsDir);
-    if (dir.isEmpty()) return;
+    QString path = evt.clipPath;
+    if (path.isEmpty()) {
+        const QString dir = ensureDir(m_evidenceClipsDir);
+        if (dir.isEmpty()) return;
 
-    QString name = buildEvidenceFileName(cameraId, "clip");
-    QString path = QDir(dir).filePath(name + ".mp4");
+        const QString name = buildEvidenceFileName(cameraId, "clip");
+        path = QDir(dir).filePath(name + ".mp4");
+    }
 
     QVector<BufferedFrame> frames = collectFrames(cameraId, evt.startMs, evt.endMs);
     if (frames.isEmpty()) return;

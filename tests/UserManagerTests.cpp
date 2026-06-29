@@ -35,6 +35,7 @@ private slots:
     void loginWithoutRememberMeClearsStoredUsername();
     void rememberedCredentialsCanLoginAutomatically();
     void invalidRememberedCredentialsAreCleared();
+    void legacyPlaintextRememberedPasswordIsMigrated();
     void savedNonAdminPermissionsArePreservedOnRestart();
 
 private:
@@ -61,6 +62,7 @@ void UserManagerTests::initTestCase()
 
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsRoot);
+    qputenv("OPENIPC_TEST_SECRET_STORE", "settings");
 
     resetStorage();
 }
@@ -108,7 +110,8 @@ void UserManagerTests::setupInitialAdminPersistsSecureHashWithoutAutoLogin()
         QSettings settings;
         QVERIFY(settings.value(QStringLiteral("auth/remember"), false).toBool());
         QCOMPARE(settings.value(QStringLiteral("auth/username")).toString(), QStringLiteral("admin"));
-        QCOMPARE(settings.value(QStringLiteral("auth/password")).toString(), QStringLiteral("Str0ngP@ss!"));
+        QVERIFY(!settings.contains(QStringLiteral("auth/password")));
+        QCOMPARE(settings.value(QStringLiteral("test-secrets/login/admin")).toString(), QStringLiteral("Str0ngP@ss!"));
     }
 
     UserManager restarted;
@@ -150,7 +153,7 @@ void UserManagerTests::legacyPasswordIsUpgradedAndAdminPermissionsAreRepaired()
     QSettings settings;
     QVERIFY(!settings.value(QStringLiteral("auth/remember"), false).toBool());
     QCOMPARE(settings.value(QStringLiteral("auth/username")).toString(), QString());
-    QCOMPARE(settings.value(QStringLiteral("auth/password")).toString(), QString());
+    QVERIFY(!settings.contains(QStringLiteral("auth/password")));
 }
 
 void UserManagerTests::loginWithoutRememberMeClearsStoredUsername()
@@ -168,7 +171,7 @@ void UserManagerTests::loginWithoutRememberMeClearsStoredUsername()
         QSettings settings;
         QVERIFY(!settings.value(QStringLiteral("auth/remember"), false).toBool());
         QCOMPARE(settings.value(QStringLiteral("auth/username")).toString(), QString());
-        QCOMPARE(settings.value(QStringLiteral("auth/password")).toString(), QString());
+        QVERIFY(!settings.contains(QStringLiteral("auth/password")));
     }
 
     UserManager restarted;
@@ -208,7 +211,7 @@ void UserManagerTests::invalidRememberedCredentialsAreCleared()
         QSettings settings;
         settings.setValue(QStringLiteral("auth/remember"), true);
         settings.setValue(QStringLiteral("auth/username"), QStringLiteral("admin"));
-        settings.setValue(QStringLiteral("auth/password"), QStringLiteral("WrongPassword"));
+        settings.setValue(QStringLiteral("test-secrets/login/admin"), QStringLiteral("WrongPassword"));
     }
 
     UserManager restarted;
@@ -225,7 +228,36 @@ void UserManagerTests::invalidRememberedCredentialsAreCleared()
     QSettings settings;
     QVERIFY(!settings.value(QStringLiteral("auth/remember"), false).toBool());
     QCOMPARE(settings.value(QStringLiteral("auth/username")).toString(), QString());
-    QCOMPARE(settings.value(QStringLiteral("auth/password")).toString(), QString());
+    QVERIFY(!settings.contains(QStringLiteral("auth/password")));
+    QVERIFY(!settings.contains(QStringLiteral("test-secrets/login/admin")));
+}
+
+void UserManagerTests::legacyPlaintextRememberedPasswordIsMigrated()
+{
+    const QString password = QStringLiteral("LegacyRememberedPass!");
+    writeUsers(QJsonArray{
+        QJsonObject{
+            {QStringLiteral("username"), QStringLiteral("admin")},
+            {QStringLiteral("passwordHash"), legacyHash(password)},
+            {QStringLiteral("role"), QStringLiteral("admin")},
+            {QStringLiteral("permissions"), int(UserManager::Perm_All)}
+        }
+    });
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("auth/remember"), true);
+    settings.setValue(QStringLiteral("auth/username"), QStringLiteral("admin"));
+    settings.setValue(QStringLiteral("auth/password"), password);
+    settings.sync();
+
+    UserManager manager;
+    QCOMPARE(manager.rememberedUsername(), QStringLiteral("admin"));
+    QCOMPARE(manager.rememberedPassword(), password);
+
+    QSettings migrated;
+    QVERIFY(!migrated.contains(QStringLiteral("auth/password")));
+    QCOMPARE(migrated.value(QStringLiteral("test-secrets/login/admin")).toString(), password);
+    QVERIFY(manager.loginWithRememberedCredentials());
 }
 
 void UserManagerTests::savedNonAdminPermissionsArePreservedOnRestart()

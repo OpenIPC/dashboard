@@ -60,7 +60,7 @@ void ArchiveController::search(const QDateTime &startTime, const QDateTime &endT
     emit searchResultsChanged();
 
     QPointer<ArchiveController> controller(this);
-    QtConcurrent::run([controller, requestId, startTime, endTime, cameraIp, recordingsPath]() {
+    (void)QtConcurrent::run([controller, requestId, startTime, endTime, cameraIp, recordingsPath]() {
         QList<RecordedFile> foundFiles;
         int nFileCount = 0;
         
@@ -155,7 +155,7 @@ void ArchiveController::download(int index, const QString &savePath)
     }
 
     QPointer<ArchiveController> controller(this);
-    QtConcurrent::run([controller, index, rf, savePath]() {
+    (void)QtConcurrent::run([controller, index, rf, savePath]() {
         const QString errorText = [savePath, rf]() -> QString {
             if (QFile::exists(savePath)) {
                 QFile::remove(savePath);
@@ -190,7 +190,7 @@ void ArchiveController::download(int index, const QString &savePath)
 void ArchiveController::exportVideo(const QString &inputFile, const QString &outputFile, qint64 startMs, qint64 endMs)
 {
     QPointer<ArchiveController> controller(this);
-    QtConcurrent::run([controller, inputFile, outputFile, startMs, endMs]() {
+    (void)QtConcurrent::run([controller, inputFile, outputFile, startMs, endMs]() {
         QString errorText;
         // Check for ffmpeg
         QString ffmpegPath = QCoreApplication::applicationDirPath() + "/ffmpeg.exe";

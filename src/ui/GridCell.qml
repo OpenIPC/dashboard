@@ -18,16 +18,22 @@ Item {
     property string hdStreamUrl: ""
     property string status: ""
     property bool isSelected: false
-    property bool isRecording: recorder.recordingPath !== ""
+    readonly property bool isRecording: recordingOwner === "manual"
     property bool isMuted: true
     property bool audioNormalization: false
     property real volume: 1.0
     property bool useHdPreview: false
     property bool useHdFullscreen: true
+    property string previewQualityOverride: "" // "" | "hd" | "sd"
+    property bool previewRestartHold: false
+    property int previewRestartSerial: 0
     property string manufacturer: ""
     property int recordingSegmentDuration: (SystemController.appSettings.recordingSegmentDuration !== undefined) ? SystemController.appSettings.recordingSegmentDuration : 15
     property bool analyticsActive: false
-    property bool eventRecordingActive: eventRecorder.recordingPath !== ""
+    readonly property bool eventRecordingActive: recordingOwner === "event"
+    property string recordingOwner: ""
+    property string activeEventClipPath: ""
+    property bool manualRecordingPending: false
     property bool canLive: true
     property bool canPlayback: true
     property bool canPtz: true
@@ -38,6 +44,33 @@ Item {
     readonly property bool statusOnline: String(root.status || "").toLowerCase() === "online"
     property double lastFrameSeenMs: 0
     property double lastStatusPushMs: 0
+    property double streamStartedMs: 0
+    property double lastWatchdogOfflinePushMs: 0
+    property string lastPushedStatusDetail: ""
+    readonly property string streamStallMessage: I18n.t("Нет кадров от камеры")
+    readonly property bool smartStreamBudget: (SystemController.appSettings.smartStreamBudget !== undefined) ? SystemController.appSettings.smartStreamBudget : true
+    readonly property int maxPreviewStreams: (SystemController.appSettings.maxPreviewStreams !== undefined) ? SystemController.appSettings.maxPreviewStreams : 16
+    readonly property bool previewSessionAllowed: SystemController.shouldRunPreviewStream(
+                                                      root.smartStreamBudget,
+                                                      root.maxPreviewStreams,
+                                                      root.previewBudgetRank,
+                                                      root.hasCamera,
+                                                      root.effectiveCanLive,
+                                                      hdWindow.visible,
+                                                      SystemController.isArchiveOpen,
+                                                      root.isRecording || root.eventRecordingActive,
+                                                      root.analyticsActive)
+    readonly property string previewPauseReasonCode: SystemController.previewPauseReasonCode(
+                                                        root.smartStreamBudget,
+                                                        root.maxPreviewStreams,
+                                                        root.previewBudgetRank,
+                                                        root.hasCamera,
+                                                        root.effectiveCanLive,
+                                                        hdWindow.visible,
+                                                        SystemController.isArchiveOpen,
+                                                        root.isRecording || root.eventRecordingActive,
+                                                        root.analyticsActive)
+    readonly property bool previewPaused: root.hasCamera && root.streamUrl !== "" && root.effectiveCanLive && !root.previewSessionAllowed
     
     // UI Scaling for small cells
     // Start scaling down when width is below 600px to prevent overlap of stats and name
@@ -47,9 +80,12 @@ Item {
     property var gridParent: null
     property int totalRows: 1
     property int totalCols: 1
+    property int logicalRows: 1
+    property int logicalCols: 1
     property int spanRows: 1
     property int spanCols: 1
     property int gridIndex: -1
+    property int previewBudgetRank: gridIndex
     property real unitWidth: 10
     property real unitHeight: 10
     
@@ -74,6 +110,13 @@ Item {
     Component.onCompleted: {
         console.info("GridCell completed", index, cameraIp, streamUrl)
         refreshAnalyticsActive()
+        Qt.callLater(root.syncStreamDiagnosticDetail)
+    }
+
+    Component.onDestruction: {
+        if (root.cameraIp !== "" && SystemController.updateCameraStatusDetail) {
+            SystemController.updateCameraStatusDetail(root.cameraIp, "")
+        }
     }
 
     function refreshAnalyticsActive() {
@@ -87,8 +130,67 @@ Item {
         }
     }
 
+    function authenticatedUrl(value) {
+        if (!value || value === "") return ""
+        return SystemController.authenticatedStreamUrl(value, root.cameraIp)
+    }
+
+    function streamPreference() {
+        var value = SystemController.appSettings.preferredStream
+        return value !== undefined && value !== "" ? value : "auto"
+    }
+
+    function previewStreamUrl(fallbackToSd) {
+        var raw = fallbackToSd || root.previewQualityOverride === "sd"
+                ? SystemController.manualStreamUrl(root.streamUrl, root.sdStreamUrl, root.hdStreamUrl, false)
+                : SystemController.preferredPreviewStreamUrl(
+                      root.streamUrl,
+                      root.sdStreamUrl,
+                      root.hdStreamUrl,
+                      streamPreference(),
+                      root.logicalRows,
+                      root.logicalCols,
+                      root.spanRows,
+                      root.spanCols,
+                      root.previewQualityOverride === "hd" || root.useHdPreview || root.analyticsActive)
+        return authenticatedUrl(raw)
+    }
+
+    function previewQualityLabel(fallbackToSd) {
+        if (fallbackToSd || root.previewQualityOverride === "sd") return "SD"
+        return SystemController.preferredPreviewStreamQuality(
+                    streamPreference(),
+                    root.logicalRows,
+                    root.logicalCols,
+                    root.spanRows,
+                    root.spanCols,
+                    root.previewQualityOverride === "hd" || root.useHdPreview || root.analyticsActive)
+    }
+
+    function fullscreenStreamUrl() {
+        return authenticatedUrl(SystemController.manualStreamUrl(
+                                    root.streamUrl,
+                                    root.sdStreamUrl,
+                                    root.hdStreamUrl,
+                                    root.useHdFullscreen))
+    }
+
+    function restartPreviewStream() {
+        if (!root.hasCamera || root.streamUrl === "")
+            return
+
+        root.previewRestartSerial += 1
+        var serial = root.previewRestartSerial
+        root.previewRestartHold = true
+        Qt.callLater(function() {
+            if (serial === root.previewRestartSerial) {
+                root.previewRestartHold = false
+            }
+        })
+    }
+
     function pushCameraStatus(newStatus) {
-        if (!root.hasCamera || root.cameraIp === "" || !SystemController.updateCameraStatus)
+        if (!root.hasCamera || root.cameraIp === "" || !SystemController.updateCameraStreamStatus)
             return
 
         var now = Date.now()
@@ -101,53 +203,167 @@ Item {
         }
 
         root.lastStatusPushMs = now
-        SystemController.updateCameraStatus(root.cameraIp, newStatus)
+        SystemController.updateCameraStreamStatus(root.cameraIp, newStatus)
+    }
+
+    function resetPreviewHealth() {
+        root.streamStartedMs = Date.now()
+        root.lastFrameSeenMs = 0
+        root.lastWatchdogOfflinePushMs = 0
+        if (player.lastErrorKind === "stalled") {
+            player.lastError = ""
+            player.lastErrorKind = ""
+        }
     }
 
     function startEventClip(path, durationMs) {
         if (!path || path === "") return
-        if (eventRecorder.recordingPath !== "") {
+
+        if (recordingOwner === "manual") {
+            if (!SystemController.analyticsEngine.requestBufferedClipFallback(root.cameraIp, path)) {
+                console.warn("Unable to switch event clip to buffered recording", root.cameraIp)
+            }
             return
         }
-        eventRecorder.recordingPath = path
-        eventClipTimer.stop()
+
+        if (recordingOwner === "event") {
+            if (activeEventClipPath === path) {
+                eventClipTimer.interval = durationMs > 0 ? durationMs : 60000
+                eventClipTimer.restart()
+            } else {
+                SystemController.analyticsEngine.requestBufferedClipFallback(root.cameraIp, path)
+            }
+            return
+        }
+
+        recordingOwner = "event"
+        activeEventClipPath = path
+        recorder.recordingPath = path
+        eventClipTimer.interval = durationMs > 0 ? durationMs : 60000
+        eventClipTimer.restart()
     }
 
-    function stopEventClip() {
-        if (eventRecorder.recordingPath !== "") {
-            eventRecorder.recordingPath = ""
-        }
+    function stopEventClip(path) {
+        if (recordingOwner !== "event") return
+        if (path && path !== "" && path !== activeEventClipPath) return
+
         eventClipTimer.stop()
+        recorder.recordingPath = ""
+        recordingOwner = ""
+        activeEventClipPath = ""
+
+        if (manualRecordingPending) {
+            Qt.callLater(beginManualRecording)
+        }
+    }
+
+    function beginManualRecording() {
+        if (recordingOwner === "event") {
+            manualRecordingPending = true
+            return
+        }
+        if (recordingOwner !== "") return
+
+        manualRecordingPending = false
+        recordingOwner = "manual"
+        recorder.recordingPath = SystemController.generateRecordingPath(root.cameraIp)
+        if (root.recordingSegmentDuration > 0) {
+            segmentTimer.restart()
+        }
+        console.info("Recording started", root.cameraIp)
+    }
+
+    function stopManualRecording() {
+        manualRecordingPending = false
+        if (recordingOwner !== "manual") return
+
+        segmentTimer.stop()
+        recorder.recordingPath = ""
+        recordingOwner = ""
+        console.info("Recording stopped", root.cameraIp)
     }
 
     function statusCaption() {
         if (!hasCamera) return I18n.t("Свободно")
+        if (root.previewPaused) return previewPauseTitle()
         if (root.status && root.status !== "") return I18n.t(root.status)
         return root.streamUrl === "" ? I18n.t("Нет потока") : I18n.t("Подключение")
+    }
+
+    function streamDiagnosticText() {
+        if (!root.hasCamera) return ""
+        if (!root.effectiveCanLive && root.streamUrl !== "") return I18n.t("Нет прав на просмотр live")
+        if (root.previewPaused) return root.previewPauseDetails()
+        if (root.streamUrl === "") return I18n.t("У камеры не задан RTSP-поток")
+        if (player.lastErrorKind === "stalled") return root.streamStallMessage
+        if (player.connectionState === "authentication-error") return I18n.t("Ошибка авторизации потока")
+        if (player.connectionState === "reconnecting") {
+            var delayText = player.lastReconnectDelayMs > 0 ? Math.ceil(player.lastReconnectDelayMs / 1000) + " " + I18n.t("с") : ""
+            return delayText === ""
+                    ? I18n.t("Переподключение к потоку… попытка %1", [String(player.reconnectAttempt)])
+                    : I18n.t("Переподключение через %1 · попытка %2", [delayText, String(player.reconnectAttempt)])
+        }
+        if (player.connectionState === "connecting" && player.running) return I18n.t("Подключение к потоку…")
+        if (player.lastError !== "") return player.lastError
+        return ""
+    }
+
+    function syncStreamDiagnosticDetail() {
+        if (!SystemController.updateCameraStatusDetail) return
+        if (!root.hasCamera || root.cameraIp === "") {
+            if (root.lastPushedStatusDetail !== "") {
+                root.lastPushedStatusDetail = ""
+            }
+            return
+        }
+
+        var detail = root.streamDiagnosticText()
+        if (detail === root.lastPushedStatusDetail) return
+        root.lastPushedStatusDetail = detail
+        SystemController.updateCameraStatusDetail(root.cameraIp, detail)
+    }
+
+    function previewPauseTitle() {
+        if (root.previewPauseReasonCode === "budget") return I18n.t("Пауза: лимит live-preview")
+        if (root.previewPauseReasonCode === "archive") return I18n.t("Пауза: открыт архив")
+        if (root.previewPauseReasonCode === "fullscreen") return I18n.t("Пауза: fullscreen активен")
+        return I18n.t("Поток на паузе")
+    }
+
+    function previewPauseDetails() {
+        if (root.previewPauseReasonCode === "budget") {
+            return I18n.t("Ранг preview: %1 из %2", [String(root.previewBudgetRank + 1), String(root.maxPreviewStreams)])
+        }
+        if (root.previewPauseReasonCode === "archive") return I18n.t("Preview остановлен, пока открыт архив.")
+        if (root.previewPauseReasonCode === "fullscreen") return I18n.t("Preview остановлен, пока открыт fullscreen.")
+        return ""
     }
 
     onStreamUrlChanged: {
         console.log("GridCell streamUrl changed:", streamUrl)
         if (streamUrl === "") {
-            hdPlayer.running = false
             hdWindow.visible = false
             useHdPreview = false
             useHdFullscreen = true
+            previewQualityOverride = ""
+            previewRestartHold = false
+            lastFrameSeenMs = 0
+            streamStartedMs = 0
+            lastWatchdogOfflinePushMs = 0
+            root.syncStreamDiagnosticDetail()
+        } else {
+            root.restartPreviewStream()
         }
     }
 
     onSdStreamUrlChanged: {
         console.log("GridCell sdStreamUrl changed:", sdStreamUrl)
-        // Ensure player picks up the change if we are in SD mode
-        if (!root.useHdPreview && root.sdStreamUrl !== "") {
-             // Force re-evaluation might be needed if player is running
-             var currentUrl = player.url
-             var newUrl = root.sdStreamUrl
-             if (currentUrl !== newUrl) {
-                 console.log("GridCell switching to new SD URL:", newUrl)
-                 // This binding update should be automatic, but logging helps confirm it.
-             }
-        }
+        root.restartPreviewStream()
+    }
+
+    onHdStreamUrlChanged: {
+        console.log("GridCell hdStreamUrl changed:", hdStreamUrl)
+        root.restartPreviewStream()
     }
 
     FontLoader {
@@ -161,10 +377,12 @@ Item {
     signal editRequested()
     signal deleteRequested()
     signal archiveRequested()
+    signal majesticRequested()
     signal snapshotClicked()
     signal recordClicked()
     signal audioClicked()
     signal permissionDenied()
+    signal selectedByUser()
     
     // Shared detection model for both preview and fullscreen
     ListModel { id: detectionModel }
@@ -200,7 +418,7 @@ Item {
         }
         function onClipStopRequested(cameraId, path) {
             if (cameraId === root.cameraIp) {
-                stopEventClip()
+                stopEventClip(path)
             }
         }
     }
@@ -242,6 +460,9 @@ Item {
         onArchiveRequested: {
             root.archiveRequested()
         }
+        onMajesticRequested: {
+            root.majesticRequested()
+        }
     }
 
     // Video Player fill parent, clip to cell (no fixed aspect)
@@ -254,7 +475,7 @@ Item {
         VideoPlayer {
             id: player
             anchors.fill: parent
-            visible: root.streamUrl !== "" && !hdWindow.visible
+            visible: root.streamUrl !== "" && !hdWindow.visible && root.previewSessionAllowed
 
             // Respect app setting (Crop/Fit/Stretch)
             fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
@@ -264,10 +485,10 @@ Item {
             mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
             
             property bool fallbackToSd: false
-            url: (root.useHdPreview && !fallbackToSd) && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            url: root.previewStreamUrl(fallbackToSd)
             
             // Start only if visible and URL is valid
-            running: visible && root.streamUrl !== "" && root.effectiveCanLive
+            running: root.streamUrl !== "" && root.effectiveCanLive && root.previewSessionAllowed && !root.previewRestartHold
             
             muted: {
                 if (SystemController.isArchiveOpen) return true
@@ -290,19 +511,59 @@ Item {
             bufferMode: (SystemController.appSettings.playerBufferMode !== undefined) ? SystemController.appSettings.playerBufferMode : 1
             rtspTransport: (SystemController.appSettings.playerRtspTransport !== undefined) ? SystemController.appSettings.playerRtspTransport : "tcp"
             
-            analyticsUrl: ""
-            analyticsEngine: null
+            analyticsUrl: url
+            analyticsEngine: root.analyticsActive ? SystemController.analyticsEngine : null
             cameraId: root.cameraIp
             
             property string lastError: ""
-            onFrameReady: root.pushCameraStatus("Online")
+            property string lastErrorKind: ""
+            property int lastReconnectDelayMs: 0
+            onUrlChanged: root.resetPreviewHealth()
+            onRunningChanged: {
+                if (running) {
+                    root.resetPreviewHealth()
+                } else if (lastErrorKind === "stalled") {
+                    lastError = ""
+                    lastErrorKind = ""
+                }
+            }
+            onFrameReady: {
+                if (lastErrorKind === "stalled") {
+                    lastError = ""
+                    lastErrorKind = ""
+                }
+                root.pushCameraStatus("Online")
+                root.syncStreamDiagnosticDetail()
+            }
+            onConnectionStateChanged: {
+                if (connectionState === "streaming" || connectionState === "idle") {
+                    lastReconnectDelayMs = 0
+                    if (lastErrorKind === "reconnecting") {
+                        lastError = ""
+                        lastErrorKind = ""
+                    }
+                } else if (connectionState === "authentication-error") {
+                    lastErrorKind = "auth"
+                    lastError = I18n.t("Ошибка авторизации потока")
+                    root.pushCameraStatus("Offline")
+                }
+                root.syncStreamDiagnosticDetail()
+            }
+            onReconnectScheduled: function(delayMs, attempt) {
+                lastReconnectDelayMs = delayMs
+                lastErrorKind = "reconnecting"
+                lastError = ""
+                root.syncStreamDiagnosticDetail()
+            }
             onErrorOccurred: function(msg) {
+                lastErrorKind = "pipeline";
                 lastError = msg;
                 errorTimer.restart();
                 root.pushCameraStatus("Offline")
+                root.syncStreamDiagnosticDetail()
                 
                 // Auto-fallback to SD if HD fails
-                if (root.useHdPreview && !fallbackToSd && root.sdStreamUrl !== "") {
+                if (root.previewQualityLabel(false) === "HD" && !fallbackToSd && root.sdStreamUrl !== "") {
                     console.warn("HD stream failed, falling back to SD stream for camera:", root.cameraIp);
                     fallbackToSd = true;
                 }
@@ -311,7 +572,40 @@ Item {
             Timer {
                 id: errorTimer
                 interval: 5000
-                onTriggered: player.lastError = ""
+                onTriggered: {
+                    if (player.lastErrorKind === "pipeline") {
+                        player.lastError = ""
+                        player.lastErrorKind = ""
+                    }
+                }
+            }
+
+            Timer {
+                id: frameWatchdogTimer
+                interval: 2500
+                repeat: true
+                running: player.running && root.hasCamera && root.effectiveCanLive && root.previewSessionAllowed
+                onTriggered: {
+                    var now = Date.now()
+                    if (root.streamStartedMs <= 0) {
+                        root.streamStartedMs = now
+                    }
+                    if (SystemController.isStreamFrameStalled(player.running,
+                                                              root.lastFrameSeenMs > 0,
+                                                              now,
+                                                              root.streamStartedMs,
+                                                              root.lastFrameSeenMs,
+                                                              12000,
+                                                              8000)) {
+                        if ((now - root.lastWatchdogOfflinePushMs) > 8000) {
+                            root.lastWatchdogOfflinePushMs = now
+                            root.pushCameraStatus("Offline")
+                        }
+                        player.lastErrorKind = "stalled"
+                        player.lastError = root.streamStallMessage
+                        root.syncStreamDiagnosticDetail()
+                    }
+                }
             }
             
             Rectangle {
@@ -334,20 +628,6 @@ Item {
             }
         }
 
-        // Hidden analytics player (HD preferred) to ensure snapshots/clips use HD stream
-        VideoPlayer {
-            id: analyticsPlayer
-            visible: false
-            backgroundMode: true
-            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-            running: analyticsActive && url !== ""
-            muted: true
-            rtspTransport: player.rtspTransport
-            bufferMode: player.bufferMode
-            analyticsEngine: SystemController.analyticsEngine
-            cameraId: root.cameraIp
-        }
-
         // Background Recorder (HD preferred)
         VideoPlayer {
             id: recorder
@@ -355,7 +635,7 @@ Item {
             backgroundMode: true
             
             // Always prefer HD for recording
-            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+            url: authenticatedUrl(root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl))
             
             // Run only when recording path is set
             running: recordingPath !== ""
@@ -367,33 +647,6 @@ Item {
             // Match transport settings
             rtspTransport: player.rtspTransport
             bufferMode: player.bufferMode
-        }
-
-        // Event Recorder (HD preferred, includes audio)
-        VideoPlayer {
-            id: eventRecorder
-            visible: false
-            backgroundMode: true
-            url: root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-            running: recordingPath !== ""
-            muted: false
-            volume: 1.0
-            rtspTransport: player.rtspTransport
-            bufferMode: player.bufferMode
-        }
-        
-        Timer {
-            id: reconnectTimer
-            interval: 5000
-            repeat: false
-            onTriggered: {
-                if (player.running) {
-                    console.info("Reconnecting stream...", root.cameraIp)
-                    var currentUrl = player.url
-                    player.url = ""
-                    player.url = currentUrl
-                }
-            }
         }
 
         // Detection Overlay
@@ -506,6 +759,18 @@ Item {
 
             Text {
                 Layout.fillWidth: true
+                visible: root.streamDiagnosticText() !== ""
+                text: root.streamDiagnosticText()
+                color: Theme.textFaint
+                font.pixelSize: 11
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Text {
+                Layout.fillWidth: true
                 visible: root.hasCamera && player.lastError !== ""
                 text: player.lastError
                 color: Theme.danger
@@ -568,6 +833,38 @@ Item {
         anchors.leftMargin: 8 * root.uiScale
         scale: root.uiScale
         transformOrigin: Item.TopLeft
+        visible: root.hasCamera && root.streamDiagnosticText() !== ""
+        height: 22
+        width: Math.min(streamDiagLabel.implicitWidth + 18, (root.width * 0.74) / root.uiScale)
+        radius: Theme.radiusMd
+        color: "#d0000000"
+        border.color: player.connectionState === "authentication-error" ? Theme.danger
+                     : (player.connectionState === "reconnecting" ? Theme.warning : Theme.overlayBorder)
+        border.width: 1
+        clip: true
+        z: 6
+
+        Text {
+            id: streamDiagLabel
+            anchors.centerIn: parent
+            width: parent.width - 12
+            text: root.streamDiagnosticText()
+            color: player.connectionState === "authentication-error" ? Theme.danger
+                   : (player.connectionState === "reconnecting" ? Theme.warning : Theme.textMuted)
+            font.pixelSize: 10
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    Rectangle {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: (root.streamDiagnosticText() !== "" ? 64 : 38) * root.uiScale
+        anchors.leftMargin: 8 * root.uiScale
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
         visible: root.hasCamera && (root.analyticsActive || root.isRecording || root.eventRecordingActive)
         height: 22
         width: Math.min(flagsRow.implicitWidth + 14, (root.width * 0.62) / root.uiScale)
@@ -620,8 +917,6 @@ Item {
             if (hdWindow.visible) {
                 hdWindow.close()
             } else {
-                hdPlayer.url = root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-                hdPlayer.running = true
                 hdWindow.showFullScreen()
             }
         }
@@ -629,7 +924,7 @@ Item {
         drag.target: root.canSettings ? dragItem : null
         
         onPressed: {
-            root.isSelected = true
+            root.selectedByUser()
             if (!root.canSettings) {
                 return
             }
@@ -730,11 +1025,6 @@ Item {
         color: "black"
         flags: Qt.Window | Qt.WindowFullscreenButtonHint | Qt.FramelessWindowHint
 
-        onClosing: {
-            hdPlayer.running = false
-            hdPlayer.url = ""
-        }
-
         Item {
             anchors.fill: parent
             clip: true
@@ -749,7 +1039,7 @@ Item {
                 orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
                 mirror: (SystemController.appSettings.playerMirror !== undefined) ? SystemController.appSettings.playerMirror : false
 
-                url: root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+                url: root.fullscreenStreamUrl()
                 
                 // Auto run when window actsally visible
                 running: hdWindow.visible && url !== ""
@@ -807,7 +1097,7 @@ Item {
             Item {
                 id: hdPlayer
                 anchors.fill: parent
-                property string url: root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+                property string url: root.fullscreenStreamUrl()
                 property bool running: false
                 property int fillMode: -1
                 property bool muted: root.isMuted
@@ -915,8 +1205,6 @@ Item {
                         }
                         onClicked: {
                             root.useHdFullscreen = !root.useHdFullscreen
-                            hdPlayer.url = root.useHdFullscreen && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
-                            hdPlayer.running = true
                         }
                     }
 
@@ -976,7 +1264,7 @@ Item {
                 Text {
                     id: qualityLabel
                     anchors.centerIn: parent
-                    text: "Preview: " + (root.useHdPreview && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD") + "  |  Fullscreen: " + (root.useHdFullscreen && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD")
+                    text: "Preview: " + root.previewQualityLabel(player.fallbackToSd) + "  |  Fullscreen: " + (root.useHdFullscreen && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD")
                     color: "white"
                     font.pixelSize: 12
                     font.bold: true
@@ -1036,33 +1324,59 @@ Item {
     }
 
     // Helper functions for stats
+    function normalizedStatsCodec(codecValue) {
+        var codec = String(codecValue || "").trim()
+        var lower = codec.toLowerCase()
+        if (codec === ""
+                || lower.indexOf("metadata") >= 0
+                || lower.indexOf("onvif") >= 0
+                || lower.indexOf("application/") >= 0) {
+            codec = "H264"
+            lower = codec.toLowerCase()
+        }
+
+        if (lower.indexOf("265") >= 0 || lower.indexOf("hevc") >= 0 || lower.indexOf("hvc1") >= 0)
+            return "H265"
+        if (lower.indexOf("264") >= 0 || lower.indexOf("avc") >= 0)
+            return "H264"
+        if (lower.indexOf("mjpeg") >= 0 || lower.indexOf("motion jpeg") >= 0)
+            return "MJPEG"
+        if (lower.indexOf("jpeg") >= 0)
+            return "JPEG"
+
+        return codec.toUpperCase()
+    }
+
+    function streamStatsTextFor(streamPlayer) {
+        if (!streamPlayer || !streamPlayer.running)
+            return ""
+
+        var w = streamPlayer.videoWidth || 0
+        var h = streamPlayer.videoHeight || 0
+        if (w === 0 || h === 0)
+            return ""
+
+        var parts = [
+            normalizedStatsCodec(streamPlayer.videoCodec),
+            w + "x" + h
+        ]
+        var bitrate = streamPlayer.videoBitrate || 0
+        var fps = streamPlayer.videoFps || 0
+
+        if (bitrate > 0)
+            parts.push(bitrate + " kbps")
+        if (fps > 0)
+            parts.push(fps + " FPS")
+
+        return parts.join(", ")
+    }
+
     function statsText() {
-        if (!player || !player.running) return ""
-        // Use properties from GstPlayer if available
-        var codec = player.videoCodec || "H264"
-        var w = player.videoWidth || 0
-        var h = player.videoHeight || 0
-        var fps = player.videoFps || 0
-        var bitrate = player.videoBitrate || 0
-        
-        if (w === 0 || h === 0) return ""
-        
-        var txt = codec + " " + w + "x" + h
-        if (fps > 0) txt += " " + fps + "fps"
-        if (bitrate > 0) txt += " " + bitrate + "kbps"
-        return txt
+        return streamStatsTextFor(player)
     }
     
     function hdStatsText() {
-        if (!hdPlayer || !hdPlayer.running) return ""
-        var codec = hdPlayer.videoCodec || "H264"
-        var w = hdPlayer.videoWidth || 0
-        var h = hdPlayer.videoHeight || 0
-        var fps = hdPlayer.videoFps || 0
-        var bitrate = hdPlayer.videoBitrate || 0
-        
-        if (w === 0 || h === 0) return ""
-        return codec + " " + w + "x" + h + " " + fps + "fps " + bitrate + "kbps"
+        return streamStatsTextFor(hdPlayer)
     }
 
     // Periodic stats refresh to keep bitrate/fps live
@@ -1074,6 +1388,7 @@ Item {
             if (typeof player.updateMediaInfo === 'function') {
                 player.updateMediaInfo()
             }
+            root.syncStreamDiagnosticDetail()
         }
     }
     
@@ -1084,7 +1399,7 @@ Item {
         repeat: true
         running: false
         onTriggered: {
-            if (recorder.recordingPath !== "") {
+            if (recordingOwner === "manual" && recorder.recordingPath !== "") {
                 console.info("Segment limit reached. Splitting recording...")
                 // Stop (Internal flush)
                 recorder.recordingPath = ""
@@ -1104,7 +1419,7 @@ Item {
         interval: 5000
         repeat: false
         onTriggered: {
-            eventRecorder.recordingPath = ""
+            stopEventClip(activeEventClipPath)
         }
     }
 
@@ -1193,7 +1508,7 @@ Item {
                 height: 26
                 background: Rectangle { color: "transparent"; radius: 3 }
                 contentItem: Text {
-                            text: root.useHdPreview ? "hd" : "sd"
+                            text: root.previewQualityLabel(player.fallbackToSd).toLowerCase()
                             font.family: root.iconFontFamily
                             font.pixelSize: 18
                             color: "white"
@@ -1201,8 +1516,16 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                 }
                 onClicked: {
-                    root.useHdPreview = !root.useHdPreview
-                    player.url = root.useHdPreview && root.hdStreamUrl !== "" ? root.hdStreamUrl : (root.sdStreamUrl !== "" ? root.sdStreamUrl : root.streamUrl)
+                    root.restartPreviewStream()
+                    if (root.previewQualityOverride === "hd") {
+                        root.previewQualityOverride = "sd"
+                    } else if (root.previewQualityOverride === "sd") {
+                        root.previewQualityOverride = ""
+                    } else {
+                        root.previewQualityOverride = root.previewQualityLabel(player.fallbackToSd) === "HD" ? "sd" : "hd"
+                    }
+                    root.useHdPreview = root.previewQualityOverride === "hd"
+                    player.fallbackToSd = false
                 }
             }
 
@@ -1341,34 +1664,25 @@ Item {
                     text: "fiber_manual_record"
                     font.family: root.iconFontFamily
                     font.pixelSize: 18
-                    color: recorder.recordingPath !== "" ? "#f44336" : "white"
+                    color: root.isRecording ? "#f44336" : (root.manualRecordingPending ? "#ffb300" : "white")
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     
                     SequentialAnimation {
-                        running: recorder.recordingPath !== ""
+                        running: root.isRecording
                         loops: Animation.Infinite
                         NumberAnimation { target: recordIcon; property: "opacity"; from: 1.0; to: 0.3; duration: 800; easing.type: Easing.InOutQuad }
                         NumberAnimation { target: recordIcon; property: "opacity"; from: 0.3; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
                     }
                 }
                 onClicked: {
-                    if (recorder.recordingPath !== "") {
-                        // Stop recording
-                        recorder.recordingPath = ""
-                        segmentTimer.stop()
-                        console.log("Recording stopped")
+                    if (root.isRecording) {
+                        stopManualRecording()
+                    } else if (root.manualRecordingPending) {
+                        root.manualRecordingPending = false
+                        console.info("Pending recording cancelled", root.cameraIp)
                     } else {
-                        // Start recording (HD, background, no display switch)
-                        var path = SystemController.generateRecordingPath(root.cameraIp)
-                        recorder.recordingPath = path
-                        
-                        // Restart segment timer
-                        if (root.recordingSegmentDuration > 0) {
-                            segmentTimer.restart()
-                        }
-                        
-                        console.log("Recording started to", path)
+                        beginManualRecording()
                     }
                     root.recordClicked()
                 }

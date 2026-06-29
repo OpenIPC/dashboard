@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 #include <QProcess>
-#include <QUdpSocket>
 #include <QDebug>
 #include <QJsonObject>
 #include <QElapsedTimer>
@@ -12,6 +11,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QAuthenticator>
+#include <QHash>
 #include "CameraModel.h"
 #include "analytics/AnalyticsEngine.h"
 #include "UserManager.h"
@@ -20,6 +20,9 @@
 #include "DiscoveryController.h"
 #include "ArchiveController.h"
 #include "CamexController.h"
+#include "MajesticClient.h"
+#include "NetworkDiscoveryService.h"
+#include "OpenIpcFirmwareClient.h"
 
 class StatusChecker;
 
@@ -38,6 +41,9 @@ class SystemController : public QObject
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
     Q_PROPERTY(PtzController* ptzController READ ptzController CONSTANT)
     Q_PROPERTY(CamexController* camexController READ camexController CONSTANT)
+    Q_PROPERTY(MajesticClient* majesticClient READ majesticClient CONSTANT)
+    Q_PROPERTY(OpenIpcFirmwareClient* firmwareClient READ firmwareClient CONSTANT)
+    Q_PROPERTY(NetworkDiscoveryService* networkDiscovery READ networkDiscovery CONSTANT)
     Q_PROPERTY(QVariantMap appSettings READ getAppSettings WRITE saveAppSettings NOTIFY appSettingsChanged)
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
@@ -70,17 +76,40 @@ public:
     LogModel* logModel() const;
     PtzController* ptzController() const;
     CamexController* camexController() const;
+    MajesticClient* majesticClient() const { return m_majesticClient; }
+    OpenIpcFirmwareClient* firmwareClient() const { return m_firmwareClient; }
+    NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
+    Q_INVOKABLE QVariantMap parseCameraQrPayload(const QString &payload) const;
+    Q_INVOKABLE QString probeCameraEndpoint(const QString &kind,
+                                            const QString &host,
+                                            int port,
+                                            const QString &path = QString(),
+                                            const QString &username = QString(),
+                                            const QString &password = QString());
 
     void addLog(QtMsgType type, const QString &msg);
 
 public slots:
     void startService();
     void stopService();
-    void scanNetwork(const QString &interfaceName = "");
+    void scanNetwork(const QString &interfaceName = "", bool deepScan = false);
+    Q_INVOKABLE void stopNetworkScan();
     void addDevice(int index); // Adds from discovery to device list
     Q_INVOKABLE void addManualCamera(const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
     Q_INVOKABLE void updateCamera(int index, const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
     Q_INVOKABLE void updateCameraStatus(const QString &cameraIp, const QString &status);
+    Q_INVOKABLE void updateCameraStreamStatus(const QString &cameraIp, const QString &status);
+    Q_INVOKABLE void updateCameraStatusDetail(const QString &cameraIp, const QString &detail);
+    Q_INVOKABLE QString cameraStatusDetail(const QString &cameraIp) const;
+    Q_INVOKABLE QString effectiveCameraStatus(const QString &cameraIp, const QString &fallbackStatus = QString()) const;
+    Q_INVOKABLE bool isCameraOnline(const QString &cameraIp, const QString &fallbackStatus = QString()) const;
+    Q_INVOKABLE QString cameraAttentionReason(const QString &cameraIp, const QString &fallbackStatus = QString()) const;
+    Q_INVOKABLE QString cameraStatusSearchText(const QString &cameraIp, const QString &fallbackStatus = QString()) const;
+    Q_INVOKABLE bool cameraNeedsAttention(const QString &cameraIp, const QString &fallbackStatus = QString()) const;
+    Q_INVOKABLE bool isCameraInGrid(const QString &cameraIp) const;
+    Q_INVOKABLE int onlineCameraCount() const;
+    Q_INVOKABLE int camerasNeedingAttentionCount() const;
+    Q_INVOKABLE void refreshCameraHealth(const QString &cameraIp);
     void removeDevice(int index); // Removes from device list
     void addCameraToGrid(int index, int slot = -1); // Adds from device list to grid
     void removeCameraFromGrid(int index); // Clears a grid slot but keeps grid size
@@ -115,6 +144,58 @@ public slots:
     Q_INVOKABLE void applyLayoutPreset(int rows, int cols);
     Q_INVOKABLE void applyLayoutTemplate(const QVariantMap &layout);
     Q_INVOKABLE QString getCameraPassword(const QString &cameraIp) const;
+    Q_INVOKABLE QString authenticatedStreamUrl(const QString &url, const QString &cameraIp) const;
+    Q_INVOKABLE QString preferredPreviewStreamUrl(const QString &streamUrl,
+                                                  const QString &sdStreamUrl,
+                                                  const QString &hdStreamUrl,
+                                                  const QString &preferredStream,
+                                                  int gridRows,
+                                                  int gridCols,
+                                                  int spanRows,
+                                                  int spanCols,
+                                                  bool forceMain) const;
+    Q_INVOKABLE QString preferredPreviewStreamQuality(const QString &preferredStream,
+                                                      int gridRows,
+                                                      int gridCols,
+                                                      int spanRows,
+                                                      int spanCols,
+                                                      bool forceMain) const;
+    Q_INVOKABLE QString manualStreamUrl(const QString &streamUrl,
+                                        const QString &sdStreamUrl,
+                                        const QString &hdStreamUrl,
+                                        bool preferMain) const;
+    Q_INVOKABLE bool isStreamFrameStalled(bool running,
+                                          bool hasFrame,
+                                          double nowMs,
+                                          double startedMs,
+                                          double lastFrameMs,
+                                          int startupGraceMs,
+                                          int frameStallMs) const;
+    Q_INVOKABLE int streamPreviewPriorityScore(int gridIndex,
+                                               int spanRows,
+                                               int spanCols,
+                                               bool selected,
+                                               bool recordingActive,
+                                               bool analyticsActive,
+                                               bool online) const;
+    Q_INVOKABLE bool shouldRunPreviewStream(bool smartBudgetEnabled,
+                                            int maxPreviewStreams,
+                                            int previewBudgetRank,
+                                            bool hasCamera,
+                                            bool canLive,
+                                            bool fullscreenActive,
+                                            bool archiveOpen,
+                                            bool recordingActive,
+                                            bool analyticsActive) const;
+    Q_INVOKABLE QString previewPauseReasonCode(bool smartBudgetEnabled,
+                                               int maxPreviewStreams,
+                                               int previewBudgetRank,
+                                               bool hasCamera,
+                                               bool canLive,
+                                               bool fullscreenActive,
+                                               bool archiveOpen,
+                                               bool recordingActive,
+                                               bool analyticsActive) const;
     
     // Dahua SDK
     Q_INVOKABLE void takeDahuaSnapshot(const QString &ip, int port, const QString &login, const QString &password);
@@ -143,9 +224,17 @@ signals:
     void layoutTemplatesChanged();
     void snapshotSaved(const QString &path);
     void isArchiveOpenChanged();
+    void cameraStatusDetailsChanged();
+    void cameraEndpointProbeFinished(const QString &requestId,
+                                     const QString &kind,
+                                     const QString &host,
+                                     int port,
+                                     bool success,
+                                     const QString &message,
+                                     int httpStatus,
+                                     int elapsedMs);
 
 private slots:
-    void onUdpReadyRead();
     void performSave();
 
 private:
@@ -173,8 +262,12 @@ private:
     CamexController *m_camexController;
     DiscoveryController *m_dahuaDiscovery;
     ArchiveController *m_archiveController;
+    MajesticClient *m_majesticClient;
+    OpenIpcFirmwareClient *m_firmwareClient;
+    NetworkDiscoveryService *m_networkDiscovery;
     StatusChecker *m_statusChecker;
-    QUdpSocket *m_udpSocket;
+    QHash<QString, qint64> m_streamOfflineUntilMs;
+    QHash<QString, QString> m_cameraStatusDetails;
     
     // App Settings
     QVariantMap m_appSettings;
@@ -189,10 +282,10 @@ private:
     // Map to store credentials for pending requests: url host -> pair(login, password)
     QMap<QString, QPair<QString, QString>> m_pendingCredentials;
 
-    void sendDiscoveryProbe();
     void saveState();
     void loadState();
     QString stateFilePath() const;
+    QString stateDatabasePath() const;
     static QJsonObject cameraToJson(const Camera &cam);
     static Camera cameraFromJson(const QJsonObject &obj);
 };

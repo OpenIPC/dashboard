@@ -28,30 +28,44 @@ void StatusChecker::checkAll()
         auto cam = m_model->getCamera(i);
         if (cam.ip.isEmpty()) continue;
 
-        QString host = cam.ip;
-        int port = cam.port > 0 ? cam.port : 554;
-
-        const QStringList streamUrls = {
-            cam.hdStreamUrl,
-            cam.sdStreamUrl,
-            cam.streamUrl
-        };
-        for (const QString &streamUrl : streamUrls) {
-            const QUrl url(streamUrl);
-            if (!url.isValid() || url.host().isEmpty()) {
-                continue;
-            }
-
-            host = url.host();
-            port = url.port(port > 0 ? port : 554);
-            break;
-        }
-
-        checkCamera(i, cam.ip, host, port);
+        checkOne(cam.ip);
     }
 }
 
-void StatusChecker::checkCamera(int index, const QString &cameraIp, const QString &host, int port)
+void StatusChecker::checkOne(const QString &cameraIp)
+{
+    if (!m_model) return;
+
+    const QString ip = cameraIp.trimmed();
+    const int index = m_model->findIndexByIp(ip);
+    if (index < 0) return;
+
+    const auto cam = m_model->getCamera(index);
+    if (cam.ip.isEmpty()) return;
+
+    QString host = cam.ip;
+    int port = cam.port > 0 ? cam.port : 554;
+
+    const QStringList streamUrls = {
+        cam.hdStreamUrl,
+        cam.sdStreamUrl,
+        cam.streamUrl
+    };
+    for (const QString &streamUrl : streamUrls) {
+        const QUrl url(streamUrl);
+        if (!url.isValid() || url.host().isEmpty()) {
+            continue;
+        }
+
+        host = url.host();
+        port = url.port(port > 0 ? port : 554);
+        break;
+    }
+
+    checkCamera(cam.ip, host, port);
+}
+
+void StatusChecker::checkCamera(const QString &cameraIp, const QString &host, int port)
 {
     QTcpSocket *socket = new QTcpSocket(this);
     socket->setProperty("cameraIp", cameraIp);
@@ -75,10 +89,8 @@ void StatusChecker::checkCamera(int index, const QString &cameraIp, const QStrin
             QString ip = socket->property("cameraIp").toString();
             int idx = m_model->findIndexByIp(ip);
             if (idx >= 0) {
-                 // Only update if currently Online to avoid spamming signal
-                 if (m_model->getCamera(idx).status == "Online") {
-                     m_model->setStatus(idx, "Offline");
-                 }
+                 emit cameraStatusResolved(ip, "Offline");
+                 emit cameraStatusDetailResolved(ip, QStringLiteral("RTSP-порт недоступен или не отвечает"));
             }
             socket->abort();
             socket->deleteLater();
@@ -94,7 +106,8 @@ void StatusChecker::onSocketConnected()
     QString ip = socket->property("cameraIp").toString();
     int index = m_model->findIndexByIp(ip);
     if (index >= 0) {
-        m_model->setStatus(index, "Online");
+        emit cameraStatusResolved(ip, "Online");
+        emit cameraStatusDetailResolved(ip, QString());
     }
     
     socket->disconnectFromHost();
@@ -112,7 +125,8 @@ void StatusChecker::onSocketError(QAbstractSocket::SocketError)
     // if (socket->state() == QAbstractSocket::UnconnectedState) return;
 
     if (index >= 0) {
-        m_model->setStatus(index, "Offline");
+        emit cameraStatusResolved(ip, "Offline");
+        emit cameraStatusDetailResolved(ip, QStringLiteral("RTSP-порт недоступен"));
     }
     
     socket->abort();

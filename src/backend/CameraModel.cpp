@@ -52,6 +52,14 @@ QVariant CameraModel::data(const QModelIndex &index, int role) const
         return camera.serialNumber;
     case ManufacturerRole:
         return camera.manufacturer;
+    case DiscoveryMethodsRole:
+        return camera.discoveryMethods;
+    case DiscoveryEvidenceRole:
+        return camera.discoveryEvidence;
+    case DiscoveryConfidenceRole:
+        return camera.discoveryConfidence;
+    case IsOpenIpcRole:
+        return camera.isOpenIpc;
     default:
         return QVariant();
     }
@@ -76,6 +84,10 @@ QHash<int, QByteArray> CameraModel::roleNames() const
     roles[SpanColsRole] = "spanCols";
     roles[SerialNumberRole] = "serialNumber";
     roles[ManufacturerRole] = "manufacturer";
+    roles[DiscoveryMethodsRole] = "discoveryMethods";
+    roles[DiscoveryEvidenceRole] = "discoveryEvidence";
+    roles[DiscoveryConfidenceRole] = "discoveryConfidence";
+    roles[IsOpenIpcRole] = "isOpenIpc";
     return roles;
 }
 

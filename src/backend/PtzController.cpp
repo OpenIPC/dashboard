@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QNetworkProxy>
+#include <QUrl>
 
 PtzController::PtzController(QObject *parent)
     : QObject(parent)
@@ -19,6 +20,7 @@ void PtzController::move(const QString &ip, int port, const QString &username, c
     ensureDiscovered(ip, port, username, password, [this, ip, port, username, password, x, y, zoom](bool success) {
         if (!success) {
             qWarning() << "PTZ Discovery failed, cannot move";
+            emit commandFailed(ip, port, QStringLiteral("move"), QStringLiteral("ONVIF/PTZ profile was not discovered"));
             return;
         }
 
@@ -54,6 +56,7 @@ void PtzController::stop(const QString &ip, int port, const QString &username, c
     ensureDiscovered(ip, port, username, password, [this, ip, port, username, password](bool success) {
         if (!success) {
             qWarning() << "PTZ Discovery failed, cannot stop";
+            emit commandFailed(ip, port, QStringLiteral("stop"), QStringLiteral("ONVIF/PTZ profile was not discovered"));
             return;
         }
 
@@ -84,6 +87,7 @@ void PtzController::focus(const QString &ip, int port, const QString &username, 
     ensureDiscovered(ip, port, username, password, [this, ip, port, username, password, speed](bool success) {
         if (!success) {
             qWarning() << "PTZ Discovery failed, cannot focus";
+            emit commandFailed(ip, port, QStringLiteral("focus"), QStringLiteral("ONVIF/PTZ profile was not discovered"));
             return;
         }
 
@@ -92,6 +96,7 @@ void PtzController::focus(const QString &ip, int port, const QString &username, 
 
         if (info.imagingUrl.isEmpty() || info.videoSourceToken.isEmpty()) {
             qWarning() << "Imaging URL or VideoSourceToken missing, cannot focus";
+            emit commandFailed(ip, port, QStringLiteral("focus"), QStringLiteral("ONVIF Imaging URL or VideoSourceToken is missing"));
             return;
         }
 
@@ -146,6 +151,47 @@ void PtzController::stopFocus(const QString &ip, int port, const QString &userna
             reply->deleteLater();
         });
     });
+}
+
+void PtzController::probe(const QString &ip, int port, const QString &username, const QString &password)
+{
+    const QString key = QStringLiteral("%1:%2").arg(ip).arg(port);
+    m_cache.remove(key);
+    emit discoveryStarted(ip, port);
+    ensureDiscovered(ip, port, username, password, [this, ip, port, key](bool success) {
+        if (!success) {
+            emit discoveryFinished(ip, port, false,
+                                   QStringLiteral("ONVIF/PTZ profile was not discovered"),
+                                   QString(), QString(), QString());
+            return;
+        }
+
+        const DeviceInfo info = m_cache.value(key);
+        emit discoveryFinished(ip, port, true,
+                               QStringLiteral("ONVIF/PTZ profile discovered"),
+                               info.profileToken, info.ptzUrl, info.imagingUrl);
+    });
+}
+
+void PtzController::clearCache(const QString &ip, int port)
+{
+    const QString key = QStringLiteral("%1:%2").arg(ip).arg(port);
+    m_cache.remove(key);
+}
+
+QString PtzController::cachedSummary(const QString &ip, int port) const
+{
+    const QString key = QStringLiteral("%1:%2").arg(ip).arg(port);
+    if (!m_cache.contains(key) || !m_cache.value(key).discovered) {
+        return {};
+    }
+
+    const DeviceInfo info = m_cache.value(key);
+    const QUrl ptz(info.ptzUrl);
+    const QString endpoint = ptz.isValid() && !ptz.host().isEmpty()
+        ? QStringLiteral("%1:%2").arg(ptz.host()).arg(ptz.port(80))
+        : info.ptzUrl;
+    return QStringLiteral("PTZ %1 · profile %2").arg(endpoint, info.profileToken);
 }
 
 void PtzController::ensureDiscovered(const QString &ip, int port, const QString &username, const QString &password, std::function<void(bool)> callback)
@@ -225,9 +271,9 @@ void PtzController::getCapabilities(const QString &url, const QString &username,
         "<Category>All</Category>"
         "</GetCapabilities>";
 
-    sendSoap12(url, username, password, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities", body, [this, url, username, password, body, callback](QNetworkReply *reply) {
-        if (reply->error() == QNetworkReply::NoError) {
-            QString resp = reply->readAll();
+    sendSoap12(url, username, password, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities", body, [this, url, username, password, body, callback](QNetworkReply *soap12Reply) {
+        if (soap12Reply->error() == QNetworkReply::NoError) {
+            QString resp = soap12Reply->readAll();
             // Parse PTZ URL - handle both prefixed and non-prefixed tags
             QRegularExpression rePtz("(?is)(?:<[^:>]*:PTZ[^>]*>|<PTZ[^>]*>).*?(?:<[^:>]*:XAddr>|<XAddr>)([^<]+)(?:</[^:>]*:XAddr>|</XAddr>)");
             QRegularExpressionMatch matchPtz = rePtz.match(resp);
@@ -260,9 +306,9 @@ void PtzController::getCapabilities(const QString &url, const QString &username,
             callback(ptzUrl, mediaUrl, imagingUrl);
         } else {
             // Try SOAP 1.1
-             sendSoap11(url, username, password, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities", body, [callback](QNetworkReply *reply) {
-                if (reply->error() == QNetworkReply::NoError) {
-                    QString resp = reply->readAll();
+             sendSoap11(url, username, password, "http://www.onvif.org/ver10/device/wsdl/GetCapabilities", body, [callback](QNetworkReply *soap11Reply) {
+                if (soap11Reply->error() == QNetworkReply::NoError) {
+                    QString resp = soap11Reply->readAll();
                     QRegularExpression rePtz("(?is)(?:<[^:>]*:PTZ[^>]*>|<PTZ[^>]*>).*?(?:<[^:>]*:XAddr>|<XAddr>)([^<]+)(?:</[^:>]*:XAddr>|</XAddr>)");
                     QRegularExpressionMatch matchPtz = rePtz.match(resp);
                     QString ptzUrl = matchPtz.hasMatch() ? matchPtz.captured(1) : QString();
@@ -293,10 +339,10 @@ void PtzController::getCapabilities(const QString &url, const QString &username,
                 } else {
                     callback(QString(), QString(), QString());
                 }
-                reply->deleteLater();
+                soap11Reply->deleteLater();
              });
         }
-        reply->deleteLater();
+        soap12Reply->deleteLater();
     });
 }
 
@@ -335,29 +381,29 @@ void PtzController::getProfiles(const QString &mediaUrl, const QString &username
         return {match2.hasMatch() ? match2.captured(1) : QString(), QString()};
     };
 
-    sendSoap12(mediaUrl, username, password, "http://www.onvif.org/ver10/media/wsdl/GetProfiles", body, [this, mediaUrl, username, password, body, callback, parseProfiles](QNetworkReply *reply) {
-        if (reply->error() == QNetworkReply::NoError) {
-            QString resp = reply->readAll();
+    sendSoap12(mediaUrl, username, password, "http://www.onvif.org/ver10/media/wsdl/GetProfiles", body, [this, mediaUrl, username, password, body, callback, parseProfiles](QNetworkReply *soap12Reply) {
+        if (soap12Reply->error() == QNetworkReply::NoError) {
+            QString resp = soap12Reply->readAll();
             auto result = parseProfiles(resp);
             callback(result.first, result.second);
         } else {
-             sendSoap11(mediaUrl, username, password, "http://www.onvif.org/ver10/media/wsdl/GetProfiles", body, [callback, parseProfiles](QNetworkReply *reply) {
-                if (reply->error() == QNetworkReply::NoError) {
-                    QString resp = reply->readAll();
+             sendSoap11(mediaUrl, username, password, "http://www.onvif.org/ver10/media/wsdl/GetProfiles", body, [callback, parseProfiles](QNetworkReply *soap11Reply) {
+                if (soap11Reply->error() == QNetworkReply::NoError) {
+                    QString resp = soap11Reply->readAll();
                     auto result = parseProfiles(resp);
                     callback(result.first, result.second);
                 } else {
-                    qWarning() << "GetProfiles failed (SOAP 1.1):" << reply->errorString();
+                    qWarning() << "GetProfiles failed (SOAP 1.1):" << soap11Reply->errorString();
                     callback(QString(), QString());
                 }
-                reply->deleteLater();
+                soap11Reply->deleteLater();
              });
         }
-        reply->deleteLater();
+        soap12Reply->deleteLater();
     });
 }
 
-void PtzController::sendSoap12(const QString &urlStr, const QString &username, const QString &password, const QString &action, const QString &bodyContent, std::function<void(QNetworkReply*)> onFinished)
+void PtzController::sendSoap12(const QString &urlStr, const QString &username, const QString &password, const QString &, const QString &bodyContent, std::function<void(QNetworkReply*)> onFinished)
 {
     QUrl url(urlStr);
     QNetworkRequest request(url);

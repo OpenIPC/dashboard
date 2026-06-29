@@ -10,8 +10,8 @@
 
 RemoteFsModel::RemoteFsModel(QObject *parent)
     : QAbstractListModel(parent)
-    , m_isLoading(false)
     , m_currentPath("/root") // Default start
+    , m_isLoading(false)
 {
 }
 
@@ -115,7 +115,7 @@ void RemoteFsModel::deleteItem(const QString &fileName)
     fullPath += fileName;
     
     QString cmd = QString("rm -rf \"%1\"").arg(fullPath);
-    runSshCommand(cmd, [this](const QString &out, const QString &err) {
+    runSshCommand(cmd, [this](const QString &, const QString &err) {
         if (!err.isEmpty()) {
             emit errorOccurred("Deletion error: " + err);
         } else {
@@ -157,7 +157,7 @@ void RemoteFsModel::downloadFile(const QString &fileName, const QString &localDe
     process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-            [this, process, fileName](int exitCode, QProcess::ExitStatus status) {
+            [this, process, fileName](int exitCode, QProcess::ExitStatus) {
         m_isLoading = false;
         emit isLoadingChanged();
         
@@ -199,7 +199,7 @@ void RemoteFsModel::uploadFile(const QString &localPath)
     process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-            [this, process, uploadedFileName](int exitCode, QProcess::ExitStatus status) {
+            [this, process, uploadedFileName](int exitCode, QProcess::ExitStatus) {
         m_isLoading = false;
         emit isLoadingChanged();
         
@@ -232,7 +232,7 @@ void RemoteFsModel::runSshCommand(const QString &cmd, std::function<void(const Q
     process->setProcessEnvironment(buildSshEnvironment());
     
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-            [this, process, callback](int exitCode, QProcess::ExitStatus status) {
+            [this, process, callback](int, QProcess::ExitStatus) {
         m_isLoading = false;
         emit isLoadingChanged();
         
@@ -260,7 +260,7 @@ void RemoteFsModel::renameItem(const QString &oldName, const QString &newName)
     
     // mv "old" "new"
     QString cmd = QString("mv \"%1\" \"%2\"").arg(fullOld, fullNew);
-    runSshCommand(cmd, [this](const QString &out, const QString &err) {
+    runSshCommand(cmd, [this](const QString &, const QString &err) {
         if (!err.isEmpty()) {
             emit errorOccurred("Rename error: " + err);
         } else {
@@ -278,7 +278,7 @@ void RemoteFsModel::createDirectory(const QString &dirName)
     fullPath += dirName;
     
     QString cmd = QString("mkdir -p \"%1\"").arg(fullPath);
-    runSshCommand(cmd, [this](const QString &out, const QString &err) {
+    runSshCommand(cmd, [this](const QString &, const QString &err) {
         if (!err.isEmpty()) {
             emit errorOccurred("Create dir error: " + err);
         } else {

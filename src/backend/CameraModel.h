@@ -16,6 +16,10 @@ struct Camera {
     Q_PROPERTY(QString status MEMBER status)
     Q_PROPERTY(QString cameraGroup MEMBER group)
     Q_PROPERTY(bool isRecording MEMBER isRecording)
+    Q_PROPERTY(QString discoveryMethods MEMBER discoveryMethods)
+    Q_PROPERTY(QString discoveryEvidence MEMBER discoveryEvidence)
+    Q_PROPERTY(int discoveryConfidence MEMBER discoveryConfidence)
+    Q_PROPERTY(bool isOpenIpc MEMBER isOpenIpc)
 
 public:
     QString id;
@@ -35,6 +39,10 @@ public:
     int spanCols = 1;
     QString serialNumber;
     QString manufacturer;
+    QString discoveryMethods;
+    QString discoveryEvidence;
+    int discoveryConfidence = 0;
+    bool isOpenIpc = false;
 };
 
 class CameraModel : public QAbstractListModel
@@ -57,7 +65,11 @@ public:
         SpanRowsRole,
         SpanColsRole,
         SerialNumberRole,
-        ManufacturerRole
+        ManufacturerRole,
+        DiscoveryMethodsRole,
+        DiscoveryEvidenceRole,
+        DiscoveryConfidenceRole,
+        IsOpenIpcRole
     };
 
     explicit CameraModel(QObject *parent = nullptr);

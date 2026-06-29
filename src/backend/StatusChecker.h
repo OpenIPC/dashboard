@@ -16,6 +16,11 @@ public:
     explicit StatusChecker(CameraModel *model, QObject *parent = nullptr);
     void start(int intervalMs = 5000); // 5 seconds default
     void stop();
+    void checkOne(const QString &cameraIp);
+
+signals:
+    void cameraStatusResolved(const QString &cameraIp, const QString &status);
+    void cameraStatusDetailResolved(const QString &cameraIp, const QString &detail);
 
 private slots:
     void checkAll();
@@ -26,7 +31,7 @@ private slots:
 private:
     CameraModel *m_model;
     QTimer *m_timer;
-    void checkCamera(int index, const QString &cameraIp, const QString &host, int port);
+    void checkCamera(const QString &cameraIp, const QString &host, int port);
 };
 
 #endif // STATUSCHECKER_H

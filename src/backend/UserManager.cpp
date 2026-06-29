@@ -1,15 +1,19 @@
 #include "UserManager.h"
 
 #include <QDebug>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QMessageAuthenticationCode>
 #include <QRandomGenerator>
+#include <keychain.h>
 
 namespace {
 constexpr int kPasswordIterations = 120000;
 constexpr int kPasswordKeyLength = 32;
 constexpr int kPasswordSaltLength = 16;
 constexpr char kPasswordAlgorithm[] = "pbkdf2-sha256";
+constexpr char kLoginKeychainService[] = "OpenIPC.Dashboard";
+constexpr char kTestSecretStoreEnv[] = "OPENIPC_TEST_SECRET_STORE";
 
 QByteArray randomSalt(int length)
 {
@@ -30,9 +34,18 @@ UserManager::UserManager(QObject *parent)
     QSettings settings;
     if (settings.value("auth/remember", false).toBool()) {
         const QString username = settings.value("auth/username").toString().trimmed();
-        const QString password = settings.value("auth/password").toString();
+        const QString legacyPassword = settings.value("auth/password").toString();
+        if (!legacyPassword.isEmpty()) {
+            if (!username.isEmpty() && writeLoginSecret(username, legacyPassword)) {
+                qInfo() << "Migrated remembered login secret to the platform keychain";
+            }
+            settings.remove("auth/password");
+            settings.sync();
+        }
+
+        const QString password = legacyPassword.isEmpty() ? readLoginSecret(username) : legacyPassword;
         for (const auto &user : m_users) {
-            if (user.username == username) {
+            if (user.username == username && !password.isEmpty()) {
                 m_rememberedUsername = username;
                 m_rememberedPassword = password;
                 break;
@@ -43,6 +56,8 @@ UserManager::UserManager(QObject *parent)
             settings.setValue("auth/remember", false);
             settings.remove("auth/username");
             settings.remove("auth/password");
+            deleteLoginSecret(username);
+            settings.sync();
         }
     }
 }
@@ -477,18 +492,30 @@ bool UserManager::verifyPassword(const User &user, const QString &password, bool
 void UserManager::setRememberedCredentials(const QString &username, const QString &password)
 {
     const QString normalizedUsername = username.trimmed();
-    const bool remember = !normalizedUsername.isEmpty() && !password.isEmpty();
+    bool remember = !normalizedUsername.isEmpty() && !password.isEmpty();
+
+    const QString previousUsername = m_rememberedUsername;
+    if (remember && !writeLoginSecret(normalizedUsername, password)) {
+        qWarning() << "Could not persist remembered login secret in the platform keychain";
+        remember = false;
+    }
+
+    if (!previousUsername.isEmpty() && (!remember || previousUsername != normalizedUsername)) {
+        deleteLoginSecret(previousUsername);
+    }
 
     QSettings settings;
+    // Never retain the legacy plaintext field. A failed secure save must not
+    // silently downgrade credential storage back to QSettings.
+    settings.remove("auth/password");
     if (!remember) {
         settings.setValue("auth/remember", false);
         settings.remove("auth/username");
-        settings.remove("auth/password");
     } else {
         settings.setValue("auth/remember", true);
         settings.setValue("auth/username", normalizedUsername);
-        settings.setValue("auth/password", password);
     }
+    settings.sync();
 
     const QString nextUsername = remember ? normalizedUsername : QString();
     const QString nextPassword = remember ? password : QString();
@@ -506,6 +533,92 @@ void UserManager::setRememberedCredentials(const QString &username, const QStrin
     }
     if (passwordChanged) {
         emit rememberedPasswordChanged();
+    }
+}
+
+QString UserManager::loginSecretKey(const QString &username) const
+{
+    return QStringLiteral("login/") + username.trimmed();
+}
+
+QString UserManager::readLoginSecret(const QString &username) const
+{
+    if (username.trimmed().isEmpty()) {
+        return {};
+    }
+
+    const QString key = loginSecretKey(username);
+    if (qEnvironmentVariable(kTestSecretStoreEnv) == QLatin1String("settings")) {
+        QSettings settings;
+        return settings.value(QStringLiteral("test-secrets/") + key).toString();
+    }
+
+    QKeychain::ReadPasswordJob job(QString::fromLatin1(kLoginKeychainService));
+    job.setKey(key);
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+
+    if (job.error()) {
+        if (job.error() != QKeychain::EntryNotFound) {
+            qWarning() << "Could not read remembered login secret:" << job.errorString();
+        }
+        return {};
+    }
+    return job.textData();
+}
+
+bool UserManager::writeLoginSecret(const QString &username, const QString &password) const
+{
+    if (username.trimmed().isEmpty() || password.isEmpty()) {
+        return false;
+    }
+
+    const QString key = loginSecretKey(username);
+    if (qEnvironmentVariable(kTestSecretStoreEnv) == QLatin1String("settings")) {
+        QSettings settings;
+        settings.setValue(QStringLiteral("test-secrets/") + key, password);
+        settings.sync();
+        return settings.status() == QSettings::NoError;
+    }
+
+    QKeychain::WritePasswordJob job(QString::fromLatin1(kLoginKeychainService));
+    job.setKey(key);
+    job.setTextData(password);
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+    if (job.error()) {
+        qWarning() << "Could not write remembered login secret:" << job.errorString();
+        return false;
+    }
+    return true;
+}
+
+void UserManager::deleteLoginSecret(const QString &username) const
+{
+    if (username.trimmed().isEmpty()) {
+        return;
+    }
+
+    const QString key = loginSecretKey(username);
+    if (qEnvironmentVariable(kTestSecretStoreEnv) == QLatin1String("settings")) {
+        QSettings settings;
+        settings.remove(QStringLiteral("test-secrets/") + key);
+        settings.sync();
+        return;
+    }
+
+    QKeychain::DeletePasswordJob job(QString::fromLatin1(kLoginKeychainService));
+    job.setKey(key);
+    QEventLoop loop;
+    connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+    if (job.error() && job.error() != QKeychain::EntryNotFound) {
+        qWarning() << "Could not delete remembered login secret:" << job.errorString();
     }
 }
 

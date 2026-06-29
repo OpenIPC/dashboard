@@ -1,10 +1,12 @@
 #include "GstPlayer.h"
+#include "ReconnectPolicy.h"
 #include "../analytics/AnalyticsEngine.h"
 
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QDebug>
 #include <QDateTime>
+#include <QUrl>
 #include <gst/app/gstappsink.h>
 
 // Ensure gst_init is called once
@@ -14,6 +16,52 @@ static void ensureGstInit() {
         gst_init(nullptr, nullptr);
         initialized = true;
     }
+}
+
+static QString redactedMediaUrl(const QString &value)
+{
+    QUrl url(value);
+    if (!url.isValid() || url.host().isEmpty()) return value;
+    url.setUserName(QString());
+    url.setPassword(QString());
+    return url.toString(QUrl::FullyEncoded);
+}
+
+static QString redactedMediaText(QString text, const QString &mediaUrl)
+{
+    const QUrl url(mediaUrl);
+    text.replace(mediaUrl, redactedMediaUrl(mediaUrl));
+    const QString password = url.password(QUrl::FullyDecoded);
+    if (!password.isEmpty()) text.replace(password, QStringLiteral("***"));
+    return text;
+}
+
+static bool capsLookLikeVideo(GstCaps *caps)
+{
+    if (!caps || gst_caps_is_empty(caps) || gst_caps_is_any(caps)) return false;
+
+    const guint size = gst_caps_get_size(caps);
+    for (guint i = 0; i < size; ++i) {
+        GstStructure *structure = gst_caps_get_structure(caps, i);
+        if (!structure) continue;
+
+        const gchar *name = gst_structure_get_name(structure);
+        const gchar *media = gst_structure_get_string(structure, "media");
+        if ((media && g_strcmp0(media, "video") == 0)
+                || (name && g_str_has_prefix(name, "video/"))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool codecLooksLikeMetadata(const QString &codec)
+{
+    const QString lower = codec.toLower();
+    return lower.contains(QStringLiteral("metadata"))
+        || lower.contains(QStringLiteral("onvif"))
+        || lower.contains(QStringLiteral("application/"));
 }
 
 GstPlayer::GstPlayer(QQuickItem *parent) : QQuickItem(parent)
@@ -27,10 +75,10 @@ GstPlayer::GstPlayer(QQuickItem *parent) : QQuickItem(parent)
 
     m_reconnectTimer = new QTimer(this);
     m_reconnectTimer->setSingleShot(true);
-    m_reconnectTimer->setInterval(2000);
     connect(m_reconnectTimer, &QTimer::timeout, this, [this]() {
         if (!m_running || m_url.isEmpty()) return;
-        qInfo() << "Reconnecting to stream:" << m_url;
+        qInfo() << "Reconnecting to stream:" << redactedMediaUrl(m_url);
+        setConnectionState(QStringLiteral("connecting"));
         restartPipeline();
     });
 }
@@ -44,6 +92,9 @@ void GstPlayer::setUrl(const QString &url)
 {
     if (m_url != url) {
         m_url = url;
+        m_reconnectAttempt = 0;
+        m_reconnectBlocked = false;
+        emit reconnectStateChanged();
         emit urlChanged();
         if (m_running) {
             restartPipeline();
@@ -55,11 +106,15 @@ void GstPlayer::setRunning(bool running)
 {
     if (m_running != running) {
         m_running = running;
+        m_reconnectAttempt = 0;
+        m_reconnectBlocked = false;
+        emit reconnectStateChanged();
         emit runningChanged();
         if (m_running) {
             startPipeline();
         } else {
             stopPipeline();
+            setConnectionState(QStringLiteral("idle"));
         }
         emit mediaStatusChanged(m_running ? 1 : 0);
     }
@@ -321,7 +376,19 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
         {
             // Collect stats
             player->m_frameCountInst++;
-            player->m_lastFrameMs = QDateTime::currentMSecsSinceEpoch();
+            player->m_lastFrameMs.store(QDateTime::currentMSecsSinceEpoch());
+            const int framesSinceStart = player->m_framesSinceStart.fetch_add(1) + 1;
+            if (framesSinceStart == 1 || framesSinceStart == 30) {
+                const bool stable = framesSinceStart >= 30;
+                QMetaObject::invokeMethod(player, [player, stable]() {
+                    if (!player) return;
+                    player->setConnectionState(QStringLiteral("streaming"));
+                    if (stable && player->m_reconnectAttempt != 0) {
+                        player->m_reconnectAttempt = 0;
+                        emit player->reconnectStateChanged();
+                    }
+                }, Qt::QueuedConnection);
+            }
             // Note: Byte counting moved to source pad probe for correct network bitrate
             
             QMutexLocker locker(&player->m_frameMutex);
@@ -362,30 +429,40 @@ GstFlowReturn GstPlayer::onNewSample(GstElement *sink, GstPlayer *player)
 
 void GstPlayer::onSourcePadAdded(GstElement *, GstPad *pad, gpointer user_data) {
     GstPlayer *self = static_cast<GstPlayer *>(user_data);
-    gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, &GstPlayer::onSourcePadProbe, self, NULL);
 
     // Initial Codec Detection from Caps
     GstCaps *caps = gst_pad_get_current_caps(pad);
+    if (!caps) {
+        caps = gst_pad_query_caps(pad, nullptr);
+    }
+
     if (caps) {
-        GstStructure *s = gst_caps_get_structure(caps, 0);
-        if (s) {
-            const gchar *encoding = gst_structure_get_string(s, "encoding-name");
-            if (encoding) {
-                QString codec = QString::fromUtf8(encoding);
-                QMetaObject::invokeMethod(self, [self, codec]() {
-                    if (!self) return;
-                    if (self->m_videoCodec != codec) {
-                        self->m_videoCodec = codec;
-                        emit self->videoStatsChanged();
+        const bool isVideoPad = capsLookLikeVideo(caps);
+        if (isVideoPad) {
+            gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, &GstPlayer::onSourcePadProbe, self, NULL);
+
+            GstStructure *s = gst_caps_get_structure(caps, 0);
+            if (s) {
+                const gchar *encoding = gst_structure_get_string(s, "encoding-name");
+                if (encoding) {
+                    QString codec = QString::fromUtf8(encoding).trimmed();
+                    if (!codecLooksLikeMetadata(codec)) {
+                        QMetaObject::invokeMethod(self, [self, codec]() {
+                            if (!self) return;
+                            if (self->m_videoCodec != codec) {
+                                self->m_videoCodec = codec;
+                                emit self->videoStatsChanged();
+                            }
+                        }, Qt::QueuedConnection);
                     }
-                }, Qt::QueuedConnection);
+                }
             }
         }
         gst_caps_unref(caps);
     }
 }
 
-void GstPlayer::onRecordingPadAdded(GstElement *element, GstPad *pad, gpointer user_data) {
+void GstPlayer::onRecordingPadAdded(GstElement *, GstPad *pad, gpointer user_data) {
     GstPlayer *self = static_cast<GstPlayer *>(user_data);
     
     // Ensure we are on the right thread or locked? 
@@ -603,6 +680,7 @@ void GstPlayer::onRecordingPadAdded(GstElement *element, GstPad *pad, gpointer u
                         if (muxPad) {
                             gst_element_release_request_pad(self->m_muxer, muxPad);
                             gst_object_unref(muxPad);
+                            muxPad = nullptr;
                         }
                     }
                 } else {
@@ -644,6 +722,7 @@ void GstPlayer::onRecordingPadAdded(GstElement *element, GstPad *pad, gpointer u
                          if (muxPad) {
                             gst_element_release_request_pad(self->m_muxer, muxPad);
                             gst_object_unref(muxPad);
+                            muxPad = nullptr;
                         }
                     }
                 }
@@ -658,6 +737,7 @@ void GstPlayer::onRecordingPadAdded(GstElement *element, GstPad *pad, gpointer u
     } else {
         qWarning() << "Recording Pad Added but NO CAPS";
     }
+    if (caps) gst_caps_unref(caps);
 }
 
 GstPadProbeReturn GstPlayer::onSourcePadProbe(GstPad *, GstPadProbeInfo *info, gpointer user_data) {
@@ -695,10 +775,11 @@ void GstPlayer::updateStats() {
     }
 
     // Reconnect watchdog: if no frames for a while, restart pipeline
-    if (m_running && !m_url.isEmpty()) {
+    if (m_running && !m_url.isEmpty() && m_recordingPath.isEmpty()) {
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         const qint64 sinceStart = now - m_pipelineStartMs;
-        const qint64 sinceFrame = (m_lastFrameMs > 0) ? (now - m_lastFrameMs) : sinceStart;
+        const qint64 lastFrameMs = m_lastFrameMs.load();
+        const qint64 sinceFrame = (lastFrameMs > 0) ? (now - lastFrameMs) : sinceStart;
         if (sinceStart > 8000 && sinceFrame > 8000) {
             QMetaObject::invokeMethod(this, "scheduleReconnect", Qt::QueuedConnection);
         }
@@ -758,13 +839,15 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
                     if (parenIdx > 0 && codecStr.endsWith(')')) {
                         codecStr = codecStr.left(parenIdx).trimmed();
                     }
-                    QMetaObject::invokeMethod(self, [self, codecStr]() {
-                        if (!self) return;
-                        if (self->m_videoCodec != codecStr) {
-                            self->m_videoCodec = codecStr;
-                            emit self->videoStatsChanged();
-                        }
-                    }, Qt::QueuedConnection);
+                    if (!codecLooksLikeMetadata(codecStr)) {
+                        QMetaObject::invokeMethod(self, [self, codecStr]() {
+                            if (!self) return;
+                            if (self->m_videoCodec != codecStr) {
+                                self->m_videoCodec = codecStr;
+                                emit self->videoStatsChanged();
+                            }
+                        }, Qt::QueuedConnection);
+                    }
                     g_free(codec);
                 }
                 
@@ -792,12 +875,26 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
             GError *err;
             gchar *debug;
             gst_message_parse_error(msg, &err, &debug);
-            qWarning() << "GStreamer Error:" << err->message;
-            if (debug) qWarning() << "Debug Info:" << debug;
-            emit self->errorOccurred(QString::fromUtf8(err->message));
+            const QString rawErrorMessage = QString::fromUtf8(err->message);
+            const QString rawDebugMessage = debug ? QString::fromUtf8(debug) : QString();
+            qWarning() << "GStreamer Error:" << redactedMediaText(rawErrorMessage, self->m_url);
+            if (debug) qWarning() << "Debug Info:" << redactedMediaText(rawDebugMessage, self->m_url);
+            const bool authenticationError = ReconnectPolicy::isAuthenticationError(
+                rawErrorMessage, rawDebugMessage);
+            const QString errorMessage = redactedMediaText(rawErrorMessage, self->m_url);
+            QMetaObject::invokeMethod(self, [self, errorMessage, authenticationError]() {
+                if (!self) return;
+                emit self->errorOccurred(errorMessage);
+                if (authenticationError) {
+                    self->m_reconnectBlocked = true;
+                    self->m_reconnectTimer->stop();
+                    self->setConnectionState(QStringLiteral("authentication-error"));
+                } else {
+                    self->scheduleReconnect();
+                }
+            }, Qt::QueuedConnection);
             g_error_free(err);
             g_free(debug);
-            QMetaObject::invokeMethod(self, "scheduleReconnect", Qt::QueuedConnection);
             break;
         }
         case GST_MESSAGE_EOS: {
@@ -822,6 +919,11 @@ void GstPlayer::onBusMessage(GstBus *, GstMessage *msg, gpointer data) { // Move
              if (GST_MESSAGE_SRC(msg) == GST_OBJECT(self->pipeline())) {
                 qDebug() << "Pipeline state changed from" << gst_element_state_get_name(old_state) 
                          << "to" << gst_element_state_get_name(new_state);
+                 if (new_state == GST_STATE_PLAYING) {
+                     QMetaObject::invokeMethod(self, [self]() {
+                         if (self) self->setConnectionState(QStringLiteral("streaming"));
+                     }, Qt::QueuedConnection);
+                 }
              }
              break;
         }
@@ -946,8 +1048,10 @@ void GstPlayer::startPipeline()
 
     if (m_url.isEmpty()) return;
 
+    setConnectionState(QStringLiteral("connecting"));
     m_pipelineStartMs = QDateTime::currentMSecsSinceEpoch();
-    m_lastFrameMs = 0;
+    m_lastFrameMs.store(0);
+    m_framesSinceStart.store(0);
 
 #ifdef Q_OS_WIN
     applyHwDecodingPreference();
@@ -957,7 +1061,7 @@ void GstPlayer::startPipeline()
 
     // --- Recording Mode ---
     if (!m_recordingPath.isEmpty()) {
-        qInfo() << "Recording Mode Started. URL:" << m_url << "Path:" << m_recordingPath;
+        qInfo() << "Recording mode started for" << redactedMediaUrl(m_url);
 
         // Construct a dedicated recording pipeline
         // rtspsrc -> depay -> parse -> mp4mux -> filesink
@@ -970,8 +1074,6 @@ void GstPlayer::startPipeline()
         QString pipelineDesc = QString("rtspsrc location=\"%1\" name=src protocols=tcp mp4mux name=mux reserved-max-duration=3600000000000 reserved-moov-update-period=2000000000 ! filesink location=\"%2\"")
                                .arg(m_url)
                                .arg(safePath);
-
-        qDebug() << "Recording Pipeline:" << pipelineDesc;
 
         m_pipeline = gst_parse_launch(pipelineDesc.toUtf8().constData(), &error);
         
@@ -1027,7 +1129,7 @@ void GstPlayer::startPipeline()
     }
 
         // Configure low latency via source-setup
-        g_signal_connect(m_pipeline, "source-setup", G_CALLBACK(+[](GstElement* pipeline, GstElement* source, GstPlayer* self){
+        g_signal_connect(m_pipeline, "source-setup", G_CALLBACK(+[](GstElement*, GstElement* source, GstPlayer* self){
              // Set latency
              if (g_object_class_find_property(G_OBJECT_GET_CLASS(source), "latency")) {
                  int latency = 2000;
@@ -1114,12 +1216,15 @@ void GstPlayer::startPipeline()
         // Add bus watch for errors
         GstBus *bus = gst_element_get_bus(m_pipeline);
         gst_bus_add_signal_watch(bus);
+        m_busSignalWatchAttached = true;
         g_signal_connect(bus, "message", G_CALLBACK(&GstPlayer::onBusMessage), this);
         gst_object_unref(bus);
         
         m_frameCountInst = 0;
         m_byteCountInst = 0;
-        m_statsTimer->start();
+        if (m_recordingPath.isEmpty()) {
+            m_statsTimer->start();
+        }
     }
 }
 
@@ -1191,6 +1296,17 @@ void GstPlayer::stopPipeline()
     if (m_reconnectTimer) m_reconnectTimer->stop();
 
     if (m_pipeline) {
+        if (m_busSignalWatchAttached) {
+            GstBus *bus = gst_element_get_bus(m_pipeline);
+            if (bus) {
+                g_signal_handlers_disconnect_matched(bus, G_SIGNAL_MATCH_DATA,
+                                                     0, 0, nullptr, nullptr, this);
+                gst_bus_remove_signal_watch(bus);
+                gst_object_unref(bus);
+            }
+            m_busSignalWatchAttached = false;
+        }
+
         // If recording, we must send EOS to finalize the MP4 file
         if (!m_recordingPath.isEmpty() && m_running) {
              qDebug() << "Stopping recording, sending EOS...";
@@ -1237,10 +1353,22 @@ void GstPlayer::stopPipeline()
 
 void GstPlayer::scheduleReconnect()
 {
-    if (!m_running || m_url.isEmpty()) return;
+    if (!m_running || m_url.isEmpty() || m_reconnectBlocked) return;
     if (m_reconnectTimer && !m_reconnectTimer->isActive()) {
-        m_reconnectTimer->start();
+        const int delayMs = ReconnectPolicy::delayMs(m_reconnectAttempt);
+        ++m_reconnectAttempt;
+        emit reconnectStateChanged();
+        emit reconnectScheduled(delayMs, m_reconnectAttempt);
+        setConnectionState(QStringLiteral("reconnecting"));
+        m_reconnectTimer->start(delayMs);
     }
+}
+
+void GstPlayer::setConnectionState(const QString &state)
+{
+    if (m_connectionState == state) return;
+    m_connectionState = state;
+    emit connectionStateChanged();
 }
 
 void GstPlayer::restartPipeline()

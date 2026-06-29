@@ -48,6 +48,8 @@ class GstPlayer : public QQuickItem
     Q_PROPERTY(int videoHeight READ videoHeight NOTIFY videoStatsChanged)
     Q_PROPERTY(int videoFps READ videoFps NOTIFY videoStatsChanged)
     Q_PROPERTY(int videoBitrate READ videoBitrate NOTIFY videoStatsChanged)
+    Q_PROPERTY(QString connectionState READ connectionState NOTIFY connectionStateChanged)
+    Q_PROPERTY(int reconnectAttempt READ reconnectAttempt NOTIFY reconnectStateChanged)
 
 public:
     explicit GstPlayer(QQuickItem *parent = nullptr);
@@ -64,6 +66,8 @@ public:
     int videoHeight() const { return m_videoHeight; }
     int videoFps() const { return m_videoFps; }
     int videoBitrate() const { return m_videoBitrate; }
+    QString connectionState() const { return m_connectionState; }
+    int reconnectAttempt() const { return m_reconnectAttempt; }
     
     // Video Adjustments
     float brightness() const { return m_brightness; }
@@ -197,9 +201,12 @@ signals:
     // Compatibility stubs
     void videoStatsChanged();
     void mediaStatusChanged(int status);
+    void connectionStateChanged();
+    void reconnectStateChanged();
+    void reconnectScheduled(int delayMs, int attempt);
 
 private slots:
-    void handleBusMessage(const QString& type, const QString& msg) {}
+    void handleBusMessage(const QString&, const QString&) {}
 
 private:
     void startPipeline();
@@ -209,6 +216,7 @@ private:
     GstElement* createVideoFilterBin();
     void applyHwDecodingPreference();
     void updatePlaybinAudioFlags();
+    void setConnectionState(const QString &state);
     
     static GstFlowReturn onNewSample(GstElement *sink, GstPlayer *player);
     static void onBusMessage(GstBus *bus, GstMessage *msg, gpointer data);
@@ -270,11 +278,16 @@ private:
     QTimer* m_reconnectTimer = nullptr;
     std::atomic<int> m_frameCountInst{0};
     std::atomic<long long> m_byteCountInst{0};
+    std::atomic<int> m_framesSinceStart{0};
     
     qint64 m_lastDuration = 0;
     qint64 m_lastPosition = 0;
-    qint64 m_lastFrameMs = 0;
+    std::atomic<qint64> m_lastFrameMs{0};
     qint64 m_pipelineStartMs = 0;
+    QString m_connectionState = QStringLiteral("idle");
+    int m_reconnectAttempt = 0;
+    bool m_reconnectBlocked = false;
+    bool m_busSignalWatchAttached = false;
 
     // Recording helpers
     GstElement* m_muxer = nullptr; // Used for dynamic linking during recording

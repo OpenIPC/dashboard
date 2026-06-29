@@ -95,6 +95,7 @@ Item {
             property string status: SystemController.analyticsEngine.getModuleStatus(moduleType)
             property real progress: SystemController.analyticsEngine.getModuleProgress(moduleType)
             property string errorMsg: SystemController.analyticsEngine.getModuleError(moduleType)
+            property var diagnostics: SystemController.analyticsEngine.getModuleDiagnostics(moduleType)
             
             // Configuration properties
             property var config: SystemController.analyticsEngine.getModuleConfig(moduleType)
@@ -109,6 +110,7 @@ Item {
                         moduleDelegate.progress = progress
                         moduleDelegate.errorMsg = error
                         moduleDelegate.isEnabled = SystemController.analyticsEngine.isModuleEnabled(moduleType)
+                        moduleDelegate.diagnostics = SystemController.analyticsEngine.getModuleDiagnostics(moduleType)
                     }
                 }
                 function onModuleConfigChanged(type) {
@@ -152,7 +154,7 @@ Item {
                                 font.bold: true
                             }
                             Text {
-                                text: "v" + model.version
+                                text: "v" + (moduleDelegate.diagnostics.version || model.version)
                                 color: "#666"
                                 font.pixelSize: 12
                             }
@@ -170,6 +172,27 @@ Item {
                             text: I18n.t("Author: ") + model.author
                             color: "#b5c1d6"
                             font.pixelSize: 12
+                        }
+
+                        Text {
+                            text: I18n.t("License: ") + (moduleDelegate.diagnostics.licenseId || "—")
+                            color: "#94a3b8"
+                            font.pixelSize: 11
+                        }
+
+                        Text {
+                            text: moduleDelegate.diagnostics.sourceUrl || ""
+                            color: "#60a5fa"
+                            font.pixelSize: 11
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
+                            visible: text !== ""
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Qt.openUrlExternally(parent.text)
+                            }
                         }
                         
                         // Status / Progress

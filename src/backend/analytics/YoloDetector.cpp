@@ -6,6 +6,7 @@
 #include <QThread>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #define ORT_API_MANUAL_INIT
 #include <onnxruntime_cxx_api.h>
@@ -72,10 +73,13 @@ bool YoloDetector::load(const QString &moduleDir)
             if (!ortModule) {
                 ortModule = LoadLibraryW(L"onnxruntime.dll");
             }
-            auto appendDml = ortModule
-                ? reinterpret_cast<OrtSessionOptionsAppendExecutionProvider_DML_t>(
-                      GetProcAddress(ortModule, "OrtSessionOptionsAppendExecutionProvider_DML"))
-                : nullptr;
+            OrtSessionOptionsAppendExecutionProvider_DML_t appendDml = nullptr;
+            if (ortModule) {
+                const FARPROC symbol = GetProcAddress(
+                    ortModule, "OrtSessionOptionsAppendExecutionProvider_DML");
+                static_assert(sizeof(appendDml) == sizeof(symbol));
+                std::memcpy(&appendDml, &symbol, sizeof(appendDml));
+            }
 
             if (appendDml) {
                 Ort::UnownedSessionOptions unowned = m_impl->sessionOptions->GetUnowned();

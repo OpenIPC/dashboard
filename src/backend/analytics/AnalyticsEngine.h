@@ -72,6 +72,7 @@ public:
     Q_INVOKABLE bool isBusy(const QString &cameraId) const;
     Q_INVOKABLE bool canAcceptFrame(const QString &cameraId) const;
     Q_INVOKABLE bool hasActiveModules(const QString &cameraId) const;
+    Q_INVOKABLE bool requestBufferedClipFallback(const QString &cameraId, const QString &path);
     QVariantMap getPersistedSettings() const;
 
 signals:
@@ -102,6 +103,10 @@ private:
         QString version;
         QString modelUrl;
         QString modelFileName;
+        QString modelSha256;
+        qint64 modelSizeBytes = 0;
+        QString licenseId;
+        QString sourceUrl;
         
         // Configuration
         QString snapshotsDir;

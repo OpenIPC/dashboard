@@ -5,17 +5,21 @@
 
 namespace {
 
+#ifndef Q_OS_WIN
 bool isWindowsDrivePath(const QString &path)
 {
     return path.size() >= 2 && path.at(1) == QLatin1Char(':') && path.at(0).isLetter();
 }
+#endif
 
+#ifdef Q_OS_LINUX
 bool isLikelyLinuxAbsoluteWithoutSlash(const QString &path)
 {
     return path.startsWith(QStringLiteral("mnt/"))
         || path.startsWith(QStringLiteral("media/"))
         || path.startsWith(QStringLiteral("run/media/"));
 }
+#endif
 
 QString decodePercentEncoding(const QString &path)
 {

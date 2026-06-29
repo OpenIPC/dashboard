@@ -1,97 +1,134 @@
-# OpenIPC Dashboard v0.2.3
+# OpenIPC Dashboard v0.2.4
 
-## English
+OpenIPC Dashboard 0.2.4 is a major OpenIPC-focused release. It turns the app from a viewer-oriented dashboard into a much more complete camera control center: stronger discovery, Majestic API integration, firmware operations, better stream health handling, and a more modular UI foundation.
 
-OpenIPC Dashboard 0.2.3 is a major usability and analytics update. It makes camera monitoring more reliable, turns AI analytics into a manageable workflow, adds Camex remote-access tooling, and polishes the application across Windows and Linux.
+## Highlights
 
-### AI analytics
+- Added a native OpenIPC / Majestic Control Center inspired by the camera WebUI.
+- Added real OpenIPC firmware read/write operations for status, network, time, logs, backup, reboot, update info, and firmware archive upload.
+- Reworked Majestic settings into schema-driven sections with localized labels, hints, safe diff review, and reload/restart indicators.
+- Improved OpenIPC camera discovery with mDNS, ONVIF WS-Discovery, Majestic HTTP detection, RTSP probing, progress reporting, cancellation, and cross-protocol deduplication.
+- Refactored large Dashboard QML areas into reusable components for grid, sidebar, top bar, status bar, dialogs, buttons, badges, and empty states.
+- Improved camera status consistency between the video grid, sidebar, and health UI.
+- Added stream health, reconnect, quality, and session policy layers with unit tests.
+- Fixed SD/HD stream switching for preview/fullscreen OpenIPC streams.
+- Added GitHub Actions CI coverage and expanded the test suite.
 
-- Reworked the Analytics workspace into clear Overview, Cameras, Modules, Events, Rules, Archive, and Diagnostics sections.
-- Added per-camera AI module assignment with visible readiness and activity states.
-- Added full model lifecycle controls: installation, removal, clean reload, model folder access, backend status, file size, and diagnostics.
-- Added real model download progress based on transferred bytes, plus HTTP timeouts, retries, redirect handling, and reliable GitHub downloads.
-- Improved analytics performance with frame throttling, configurable target FPS, parallel job limits, and detailed runtime telemetry.
-- Added persistent SQLite event storage, filtering, event details, evidence snapshots/clips, and clearer empty states.
-- Stabilized the analytics rule editor and fixed a crash when creating rules.
-- Improved rule configuration for triggers, confidence, duration, zones, snapshots, clips, and notifications.
+## OpenIPC / Majestic Control Center
 
-### Camera monitoring
+- Reads Majestic configuration from `/api/v1/config.json`.
+- Builds settings UI from `/api/v1/config.schema.json`.
+- Preserves unknown camera-specific fields instead of rewriting the whole config blindly.
+- Applies only a minimal validated patch through `/api/v1/config`.
+- Fixes the previous `null` patch issue when saving changed Majestic settings.
+- Adds live ISP controls for image tuning.
+- Adds raw JSON inspection.
+- Adds Prometheus metrics viewing.
+- Adds endpoint/capability overview.
+- Adds JPEG snapshot and backup helpers.
+- Adds clear confirmation flow before applying changes.
+- Redacts sensitive values in review flows where possible.
 
-- Fixed camera online/offline status so an active video stream is reflected correctly in the device list.
-- Improved camera discovery and moved network search into the main sidebar controls.
-- Added clearer onboarding for an empty layout, with close and “do not show again” controls.
-- Improved camera cells, stream overlays, device counters, and sidebar state persistence.
+## Firmware operations
 
-### Camex integration
+The app now talks to real OpenIPC WebUI/CGI endpoints for firmware-level control:
 
-- Added a dedicated Camex workspace for configuring remote access to OpenIPC cameras through UDP/TCP tunnels.
-- Added guided server and camera setup, generated commands and configuration, connection checks, and links to Camex releases and documentation.
-- Styled and localized Camex to match the rest of the application.
+- Status / pulse data.
+- Network read/write.
+- DHCP/static network configuration.
+- Wi-Fi scan.
+- Network reset.
+- Timezone and NTP server configuration.
+- NTP sync and setting camera time from the PC.
+- Syslog, Majestic log, and dmesg snapshots.
+- Firmware backup download.
+- Reboot with explicit confirmation.
+- Firmware update information.
+- Firmware archive upload to the camera.
 
-### Interface and localization
+Final GitHub firmware upgrade through `/ws/upgrade` is intentionally guarded for now because the bundled Qt tree does not include Qt WebSockets yet. The UI keeps a safe fallback to the camera WebUI for that final flashing step.
 
-- Reworked analytics, settings, layout editing, archive, dialogs, and sidebar controls for a consistent dark interface.
-- Improved responsive window resizing and restored window/sidebar state across launches.
-- Fixed live language switching and expanded Russian and English localization across newly added and existing screens.
-- Improved dropdown indicators, text contrast, scrollbars, spacing, control sizing, and empty states.
+## Camera discovery
 
-### Authentication and system fixes
+- Added OpenIPC mDNS discovery.
+- Added Majestic HTTP fingerprinting.
+- Added RTSP reachability probing.
+- Improved ONVIF WS-Discovery probing.
+- Added fast and deep scan modes.
+- Added progress percentage during network scan.
+- Automatically hides the progress bar after scan completion.
+- Merges duplicate evidence by IP address.
+- Shows detected ports, protocol hints, and confidence.
 
-- Added remembered credentials and automatic sign-in when “Remember me” is enabled.
-- Improved password storage and compatibility with existing user data.
-- Fixed Linux absolute-path handling for recordings, snapshots, and analytics evidence.
-- Improved CPU and memory reporting on Linux.
-- Added regression tests for authentication and cross-platform path handling.
+## Dashboard and UI
 
-### Build and release
+- Split large Dashboard pieces into reusable QML components.
+- Added modular sidebar, top bar, status bar, grid panel, layout toolbar, toast, and empty state components.
+- Added reusable Majestic controls.
+- Improved layout grid behavior.
+- Improved camera cell overlays and stream badges.
+- Standardized stream overlay format: codec, resolution, bitrate, FPS.
+- Improved context actions for OpenIPC/Majestic cameras.
+- Expanded Russian and English localization for new controls.
 
-- Improved Windows dependency deployment and GitHub Actions compatibility with current CMake, OpenSSL, GStreamer, and MinGW environments.
-- The release includes a Windows installer and Linux AppImage.
+## Stream health and camera status
+
+- Added `CameraStatusPolicy`.
+- Added `ReconnectPolicy`.
+- Added `StreamHealthPolicy`.
+- Added `StreamQualityPolicy`.
+- Added `StreamSessionPolicy`.
+- Offline and stream failure states now take priority over stale optimistic online states.
+- Fixed sidebar/grid status mismatch.
+- Improved reconnect behavior and stream diagnostics.
+
+## Tests and quality
+
+Added or expanded unit tests for:
+
+- camera onboarding parsing;
+- camera status policy;
+- Majestic API client;
+- OpenIPC firmware client;
+- network discovery;
+- stream health;
+- stream quality;
+- stream session logic;
+- reconnect policy;
+- state store;
+- model artifact verification.
+
+Local validation before release:
+
+- Release app build: passed.
+- `ctest`: 13/13 passed.
+- Firmware client tests: passed.
+- Diff whitespace check: passed.
+
+## Known limitations
+
+- Full firmware flashing through `/ws/upgrade` requires Qt WebSockets and is not enabled in this build.
+- Live firmware logs over WebSocket are not implemented yet; log snapshots are available.
+- Some deeper firmware administration features will continue to expand in future releases.
+
+---
 
 ## Русский
 
-OpenIPC Dashboard 0.2.3 — крупное обновление удобства и видеоаналитики. Мониторинг камер стал надёжнее, работа с ИИ-модулями превратилась в понятный управляемый процесс, появилась интеграция Camex, а интерфейс Windows- и Linux-версий получил комплексную доработку.
+OpenIPC Dashboard 0.2.4 — крупный релиз, сфокусированный на OpenIPC-камерах, Majestic API, firmware-операциях, поиске камер, стабильности видеопотоков и приведении интерфейса к более цельной архитектуре.
 
-### ИИ-аналитика
+### Главное
 
-- Страница аналитики переработана и разделена на понятные вкладки: «Обзор», «Камеры», «Модули», «События», «Правила», «Архив» и «Диагностика».
-- Добавлено назначение ИИ-модулей отдельным камерам с отображением готовности и активности.
-- Реализовано полное управление моделями: установка, удаление, чистая перезагрузка, открытие папки моделей, статус backend, размер файла и диагностика.
-- Добавлен реальный прогресс загрузки моделей по переданным байтам, тайм-ауты, повторные попытки, обработка перенаправлений и стабильное скачивание с GitHub.
-- Улучшена производительность аналитики: ограничение частоты кадров, настройка целевого FPS, лимит параллельных задач и подробная телеметрия.
-- Добавлено постоянное SQLite-хранилище событий, фильтрация, подробности события, снимки и клипы-доказательства, а также понятные пустые состояния.
-- Исправлено падение приложения при добавлении правила и стабилизирован редактор правил.
-- Улучшена настройка триггеров, порога уверенности, длительности, зон, снимков, клипов и уведомлений.
+- Добавлен OpenIPC / Majestic Control Center в стиле WebUI камеры.
+- Подключены реальные firmware-операции: status, network, time, logs, backup, reboot, update info и upload firmware archive.
+- Majestic-настройки теперь строятся из schema камеры, имеют подсказки, локализацию, safe diff review и отметки reload/restart.
+- Улучшен поиск OpenIPC-камер: mDNS, ONVIF WS-Discovery, Majestic HTTP probe, RTSP probe, прогресс, отмена и дедупликация.
+- Dashboard частично разобран на переиспользуемые QML-компоненты.
+- Исправлена рассинхронизация статусов камеры между grid и sidebar.
+- Добавлены policy-слои для stream health, reconnect, quality и session.
+- Исправлена работа SD/HD потоков для preview/fullscreen.
+- Добавлен GitHub Actions CI и расширены unit-тесты.
 
-### Мониторинг камер
+### Важно
 
-- Исправлен статус камер: активный видеопоток теперь корректно отображается как состояние «Онлайн» в списке устройств.
-- Улучшен поиск камер в сети, кнопка поиска перенесена в основную панель управления.
-- Добавлена понятная подсказка для пустой раскладки с закрытием и настройкой «Не показывать при следующем запуске».
-- Улучшены ячейки камер, информационные оверлеи, счётчики устройств и сохранение состояния сайдбара.
-
-### Интеграция Camex
-
-- Добавлен отдельный раздел Camex для настройки удалённого доступа к OpenIPC-камерам через UDP/TCP-туннели.
-- Реализованы пошаговая настройка сервера и камеры, генерация команд и конфигурации, проверка соединения и ссылки на релизы и документацию Camex.
-- Интерфейс Camex приведён к общему стилю приложения и полностью локализован.
-
-### Интерфейс и локализация
-
-- Переработаны аналитика, настройки, редактор раскладок, архив, диалоги и элементы сайдбара в едином тёмном стиле.
-- Улучшено адаптивное изменение размеров окна и восстановление состояния окна и сайдбара между запусками.
-- Исправлено переключение языка без перезапуска, расширены русская и английская локализации новых и существующих экранов.
-- Улучшены индикаторы выпадающих списков, контраст текста, полосы прокрутки, отступы, размеры элементов и пустые состояния.
-
-### Авторизация и системные исправления
-
-- Добавлено запоминание учётных данных и автоматический вход при включённой настройке «Запомнить меня».
-- Улучшено хранение паролей и совместимость с существующими пользовательскими данными.
-- Исправлена обработка абсолютных Linux-путей для записей, снимков и материалов аналитики.
-- Улучшено отображение загрузки процессора и оперативной памяти в Linux.
-- Добавлены регрессионные тесты авторизации и кроссплатформенной обработки путей.
-
-### Сборка и релиз
-
-- Улучшено развёртывание зависимостей Windows и совместимость GitHub Actions с актуальными версиями CMake, OpenSSL, GStreamer и MinGW.
-- В релиз входят установщик для Windows и Linux AppImage.
+Финальный firmware upgrade через `/ws/upgrade` пока защищён и не запускается напрямую, потому что текущий Qt bundle не содержит Qt WebSockets. Для этого шага оставлен безопасный переход в WebUI камеры.

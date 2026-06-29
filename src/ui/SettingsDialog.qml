@@ -125,6 +125,8 @@ Window {
     property real playerFillMode: -1.0 // -1 crop/fill, 1 fit, 0 stretch
     property bool showStatsOverlay: true
     property bool defaultAutoplay: true
+    property bool smartStreamBudget: true
+    property int maxPreviewStreams: 16
     property int playerBufferMode: 1
     property string playerRtspTransport: "tcp"
     property string playerHwDecoding: "auto"
@@ -228,6 +230,8 @@ Window {
             "playerFillMode": playerFillMode,
             "showStatsOverlay": showStatsOverlay,
             "defaultAutoplay": defaultAutoplay,
+            "smartStreamBudget": smartStreamBudget,
+            "maxPreviewStreams": maxPreviewStreams,
             "playerBufferMode": playerBufferMode,
             "playerRtspTransport": playerRtspTransport,
             "playerHwDecoding": playerHwDecoding,
@@ -291,6 +295,8 @@ Window {
             if (settings.playerFillMode !== undefined) playerFillMode = settings.playerFillMode
             if (settings.showStatsOverlay !== undefined) showStatsOverlay = settings.showStatsOverlay
             if (settings.defaultAutoplay !== undefined) defaultAutoplay = settings.defaultAutoplay
+            if (settings.smartStreamBudget !== undefined) smartStreamBudget = settings.smartStreamBudget
+            if (settings.maxPreviewStreams !== undefined) maxPreviewStreams = settings.maxPreviewStreams
             if (settings.playerBufferMode !== undefined) playerBufferMode = settings.playerBufferMode
             if (settings.playerRtspTransport) playerRtspTransport = settings.playerRtspTransport
             if (settings.playerHwDecoding) playerHwDecoding = settings.playerHwDecoding
@@ -1289,6 +1295,49 @@ Window {
                                     text: I18n.t("Показывать codec/res/bitrate/fps")
                                     Layout.alignment: Qt.AlignVCenter
                                 }
+                            }
+
+                            Text {
+                                text: I18n.t("Умный бюджет превью")
+                                color: "#a0aec0"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            RowLayout {
+                                spacing: 8
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 26
+                                StyledCheckBox {
+                                    checked: smartStreamBudget
+                                    onToggled: smartStreamBudget = checked
+                                    text: I18n.t("Ограничивать одновременные live-preview")
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                            }
+
+                            Text {
+                                text: I18n.t("Максимум активных превью")
+                                color: smartStreamBudget ? "#a0aec0" : "#64748b"
+                                font.pixelSize: 14
+                                Layout.preferredWidth: streamingGrid.labelWidth
+                            }
+                            StyledSpinBox {
+                                from: 1
+                                to: 64
+                                value: maxPreviewStreams
+                                enabled: smartStreamBudget
+                                Layout.preferredWidth: 120
+                                onValueModified: maxPreviewStreams = value
+                            }
+
+                            Text {
+                                text: I18n.t("Fullscreen, запись и аналитика не ограничиваются.")
+                                color: "#7f8ea3"
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                Layout.columnSpan: 2
+                                Layout.fillWidth: true
                             }
                         }
 

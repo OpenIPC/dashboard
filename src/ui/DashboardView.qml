@@ -1,7 +1,5 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import OpenIPC
 
 Item {
@@ -15,6 +13,7 @@ Item {
     property bool editingLayout: false
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
+    property int activeGridIndex: -1
     property bool isSidebarVisible: SystemController.appSettings.sidebarVisible !== false
     property real sidebarExpandedWidth: 300
     property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
@@ -93,6 +92,10 @@ Item {
         searchDialog.open()
     }
 
+    function openHealthDialog() {
+        cameraHealthDialog.open()
+    }
+
     function openAnalyticsDialog() {
         if (!canAnalytics) {
             showNoAccess()
@@ -115,6 +118,147 @@ Item {
             return
         }
         camexDialog.open()
+    }
+
+    function editCameraByIndex(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        addCameraDialog.isEditMode = true
+        addCameraDialog.editIndex = cameraIndex
+        addCameraDialog.initialName = cam.cameraName
+        addCameraDialog.initialIp = cam.cameraIp
+        addCameraDialog.initialPort = cam.cameraPort
+        addCameraDialog.initialOnvifPort = cam.cameraOnvifPort
+        addCameraDialog.initialLogin = cam.cameraLogin || "root"
+        addCameraDialog.initialPassword = SystemController.getCameraPassword(cam.cameraIp)
+        addCameraDialog.initialHdUrl = cam.hdStreamUrl || ""
+        addCameraDialog.initialSdUrl = cam.sdStreamUrl || ""
+        addCameraDialog.open()
+    }
+
+    function openMajesticByIndex(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        openMajesticForCamera(cam.cameraName || cam.cameraIp, cam.cameraIp, cam.cameraOnvifPort || 80, cam.cameraLogin || "root")
+    }
+
+    function openMajesticForCamera(cameraName, cameraIp, cameraPort, cameraLogin) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        majesticDialog.cameraName = cameraName || cameraIp
+        majesticDialog.cameraHost = cameraIp
+        majesticDialog.cameraPort = cameraPort || 80
+        majesticDialog.cameraUser = cameraLogin || "root"
+        majesticDialog.cameraPassword = SystemController.getCameraPassword(cameraIp)
+        majesticDialog.open()
+    }
+
+    function confirmDeleteCamera(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        confirmDeleteDialog.cameraIndex = cameraIndex
+        confirmDeleteDialog.open()
+    }
+
+    function openArchiveForIp(cameraIp) {
+        if (!canPlayback) {
+            showNoAccess()
+            return
+        }
+        archiveLoader.pendingCameraIp = cameraIp
+        archiveLoader.active = true
+    }
+
+    function openArchiveByIndex(cameraIndex) {
+        if (!canPlayback) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        openArchiveForIp(cam.cameraIp)
+    }
+
+    function openSshByIndex(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        sshDialog.cameraIp = cam.cameraIp
+        sshDialog.cameraUser = cam.cameraLogin || "root"
+        sshDialog.open()
+    }
+
+    function openFileManagerByIndex(cameraIndex) {
+        if (!canExport) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        fileManagerDialog.cameraIp = cam.cameraIp
+        fileManagerDialog.cameraUser = cam.cameraLogin || "root"
+        fileManagerDialog.open()
+    }
+
+    function refreshHealthByIndex(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var cam = SystemController.cameraModel.getCamera(cameraIndex)
+        SystemController.refreshCameraHealth(cam.cameraIp)
+        openHealthDialog()
+    }
+
+    function addCameraIndexToFirstFreeGrid(cameraIndex) {
+        if (!canSettings) {
+            showNoAccess()
+            return
+        }
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        var slots = SystemController.gridCapacity()
+        var target = -1
+        for (var i = 0; i < slots; ++i) {
+            var camSlot = SystemController.gridModel.getCamera(i)
+            if (!camSlot.cameraIp || camSlot.cameraIp === "") {
+                target = i
+                break
+            }
+        }
+        if (target === -1) {
+            target = 0
+        }
+        SystemController.addCameraToGrid(cameraIndex, target)
     }
 
     function setSidebarVisible(visible) {
@@ -142,17 +286,16 @@ Item {
     }
 
     function isOnlineStatus(statusText) {
+        if (typeof SystemController.isCameraOnline === "function")
+            return SystemController.isCameraOnline("", statusText || "")
         return String(statusText || "").toLowerCase() === "online"
     }
 
     function onlineCameraCount() {
         var version = cameraDataVersion
-        var count = 0
-        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
-            var cam = SystemController.cameraModel.getCamera(i)
-            if (isOnlineStatus(cam.status)) count++
-        }
-        return count
+        if (typeof SystemController.onlineCameraCount === "function")
+            return SystemController.onlineCameraCount()
+        return 0
     }
 
     function filteredCameraCount() {
@@ -160,9 +303,36 @@ Item {
         var count = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var cam = SystemController.cameraModel.getCamera(i)
-            if (cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp, cam.status, cam.cameraGroup)) count++
+            if (cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp,
+                                          cameraStatusSearchText(cam.cameraIp, cam.status),
+                                          cam.cameraGroup)) count++
         }
         return count
+    }
+
+    function effectiveCameraStatus(ip, fallbackStatus) {
+        var version = cameraDataVersion
+        if (!ip || ip === "") return fallbackStatus || ""
+        if (typeof SystemController.effectiveCameraStatus === "function")
+            return SystemController.effectiveCameraStatus(ip, fallbackStatus || "")
+        return fallbackStatus || ""
+    }
+
+    function effectiveCameraDetail(ip, fallbackStatus) {
+        var version = cameraDataVersion
+        if (!ip || ip === "") return ""
+        if (typeof SystemController.cameraAttentionReason === "function")
+            return SystemController.cameraAttentionReason(ip, fallbackStatus || "")
+        if (typeof SystemController.cameraStatusDetail !== "function") return ""
+        return SystemController.cameraStatusDetail(ip) || ""
+    }
+
+    function cameraStatusSearchText(ip, fallbackStatus) {
+        var version = cameraDataVersion
+        if (!ip || ip === "") return fallbackStatus || ""
+        if (typeof SystemController.cameraStatusSearchText === "function")
+            return SystemController.cameraStatusSearchText(ip, fallbackStatus || "")
+        return effectiveCameraStatus(ip, fallbackStatus) + " " + effectiveCameraDetail(ip, fallbackStatus)
     }
 
     function cameraMatchesDeviceFilter(name, ip, statusText, groupName) {
@@ -176,127 +346,121 @@ Item {
         ].join(" ").toLowerCase()
         return haystack.indexOf(query) !== -1
     }
-    
+
+    function gridSlotHasCamera(slot) {
+        return slot && ((slot.cameraIp && slot.cameraIp !== "")
+                        || (slot.cameraName && slot.cameraName !== "")
+                        || (slot.streamUrl && slot.streamUrl !== ""))
+    }
+
+    function gridSlotAnalyticsActive(slot) {
+        if (!slot || !slot.cameraIp || slot.cameraIp === "") return false
+        if (SystemController.analyticsEngine.isModuleEnabled(0)
+                && SystemController.analyticsEngine.isCameraModuleEnabled(slot.cameraIp, 0)) return true
+        if (SystemController.analyticsEngine.isModuleEnabled(1)
+                && SystemController.analyticsEngine.isCameraModuleEnabled(slot.cameraIp, 1)) return true
+        if (SystemController.analyticsEngine.isModuleEnabled(2)
+                && SystemController.analyticsEngine.isCameraModuleEnabled(slot.cameraIp, 2)) return true
+        return false
+    }
+
+    function gridSlotConsumesPreviewBudget(slot) {
+        if (!gridSlotHasCamera(slot)) return false
+        if (slot.isRecording === true) return false
+        if (gridSlotAnalyticsActive(slot)) return false
+        return true
+    }
+
+    function previewPriorityScoreForSlot(slot, slotIndex) {
+        return SystemController.streamPreviewPriorityScore(
+                    slotIndex,
+                    slot && slot.spanRows ? slot.spanRows : 1,
+                    slot && slot.spanCols ? slot.spanCols : 1,
+                    slotIndex === activeGridIndex,
+                    slot && slot.isRecording === true,
+                    gridSlotAnalyticsActive(slot),
+                    isOnlineStatus(slot ? slot.status : ""))
+    }
+
+    function previewBudgetRankFor(slotIndex) {
+        var version = cameraDataVersion
+        var active = activeGridIndex
+        if (version < 0 || active < -2) return 999999
+        var target = SystemController.gridModel.getCamera(slotIndex)
+        if (!gridSlotHasCamera(target)) return 999999
+        if (!gridSlotConsumesPreviewBudget(target)) return 0
+
+        var targetScore = previewPriorityScoreForSlot(target, slotIndex)
+        var rank = 0
+        var count = SystemController.gridModel.rowCount()
+        for (var i = 0; i < count; ++i) {
+            if (i === slotIndex) continue
+            var other = SystemController.gridModel.getCamera(i)
+            if (!gridSlotConsumesPreviewBudget(other)) continue
+            var otherScore = previewPriorityScoreForSlot(other, i)
+            if (otherScore > targetScore || (otherScore === targetScore && i < slotIndex)) {
+                rank++
+            }
+        }
+        return rank
+    }
+
+    function smartStreamBudgetEnabled() {
+        return SystemController.appSettings.smartStreamBudget !== undefined
+                ? SystemController.appSettings.smartStreamBudget
+                : true
+    }
+
+    function previewBudgetLimit() {
+        var value = SystemController.appSettings.maxPreviewStreams
+        return value !== undefined ? Math.max(1, value) : 16
+    }
+
+    function canRunLiveForBudget() {
+        return root.canLive || root.isAdminUser()
+    }
+
+    function previewPauseReasonForSlot(slotIndex) {
+        var slot = SystemController.gridModel.getCamera(slotIndex)
+        return SystemController.previewPauseReasonCode(
+                    smartStreamBudgetEnabled(),
+                    previewBudgetLimit(),
+                    previewBudgetRankFor(slotIndex),
+                    gridSlotHasCamera(slot),
+                    canRunLiveForBudget(),
+                    false,
+                    SystemController.isArchiveOpen,
+                    slot && slot.isRecording === true,
+                    gridSlotAnalyticsActive(slot))
+    }
+
+    function activePreviewCount() {
+        var version = cameraDataVersion
+        var active = activeGridIndex
+        if (version < 0 || active < -2) return 0
+        var count = 0
+        for (var i = 0; i < SystemController.gridModel.rowCount(); ++i) {
+            var slot = SystemController.gridModel.getCamera(i)
+            if (!gridSlotHasCamera(slot)) continue
+            var reason = previewPauseReasonForSlot(i)
+            if (reason === "") count++
+        }
+        return count
+    }
+
+    function budgetPausedPreviewCount() {
+        var version = cameraDataVersion
+        var active = activeGridIndex
+        if (version < 0 || active < -2) return 0
+        var count = 0
+        for (var i = 0; i < SystemController.gridModel.rowCount(); ++i) {
+            if (previewPauseReasonForSlot(i) === "budget") count++
+        }
+        return count
+    }
+
     // Propagate language changes if needed, though I18n is singleton
     property string appLanguage: I18n.language
-
-    component SidebarStatPill: Rectangle {
-        property string title: ""
-        property string value: "0"
-        property color accentColor: Theme.accent
-
-        Layout.fillWidth: true
-        implicitHeight: 54
-        radius: Theme.radiusMd
-        color: Theme.panelSoftBackground
-        border.color: Theme.controlBorder
-        border.width: 1
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 8
-            spacing: 2
-
-            Text {
-                text: parent.parent.value
-                color: parent.parent.accentColor
-                font.pixelSize: 16
-                font.bold: true
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-
-            Text {
-                text: parent.parent.title
-                color: Theme.textMuted
-                font.pixelSize: 10
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-        }
-    }
-
-    component EmptyStateButton: Button {
-        property color buttonColor: Theme.controlBackground
-        property color buttonHoverColor: Theme.cardHover
-        property color buttonTextColor: Theme.textPrimary
-
-        implicitHeight: 36
-        leftPadding: 14
-        rightPadding: 14
-
-        background: Rectangle {
-            color: parent.enabled ? (parent.hovered ? parent.buttonHoverColor : parent.buttonColor) : Theme.controlBackgroundAlt
-            radius: Theme.radiusMd
-            border.color: parent.enabled ? Theme.controlBorderStrong : Theme.controlBorder
-            border.width: 1
-        }
-
-        contentItem: Text {
-            text: parent.text
-            color: parent.enabled ? parent.buttonTextColor : Theme.textMuted
-            font.pixelSize: 13
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-        }
-    }
-
-    component SidebarActionButton: Button {
-        id: actionButton
-
-        property string iconPath: ""
-        property string label: ""
-        property string tooltip: ""
-
-        Layout.fillWidth: true
-        implicitHeight: 48
-        padding: 0
-        hoverEnabled: true
-
-        background: Rectangle {
-            color: actionButton.enabled
-                   ? (actionButton.hovered ? Theme.cardHover : Theme.panelSoftBackground)
-                   : Theme.controlBackgroundAlt
-            radius: Theme.radiusMd
-            border.color: actionButton.hovered ? Theme.accent : Theme.controlBorder
-            border.width: 1
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 2
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 23
-
-                SidebarIcon {
-                    anchors.centerIn: parent
-                    width: 18
-                    height: 18
-                    path: actionButton.iconPath
-                    color: actionButton.enabled
-                           ? (actionButton.hovered ? Theme.accent : Theme.textSecondary)
-                           : Theme.textMuted
-                }
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: I18n.t(actionButton.label)
-                color: actionButton.enabled ? Theme.textSecondary : Theme.textMuted
-                font.pixelSize: 10
-                font.bold: actionButton.label.indexOf("Поиск") === 0
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
-            }
-        }
-
-        ToolTip.visible: actionButton.hovered
-        ToolTip.text: I18n.t(actionButton.tooltip)
-        ToolTip.delay: 500
-    }
 
     Connections {
         target: SystemController.cameraModel
@@ -308,8 +472,24 @@ Item {
     }
 
     Connections {
+        target: SystemController.gridModel
+        ignoreUnknownSignals: true
+        function onRowsInserted(parent, first, last) { root.cameraDataVersion++ }
+        function onRowsRemoved(parent, first, last) { root.cameraDataVersion++ }
+        function onModelReset() { root.cameraDataVersion++ }
+        function onDataChanged(topLeft, bottomRight, roles) { root.cameraDataVersion++ }
+    }
+
+    Connections {
+        target: SystemController.analyticsEngine
+        ignoreUnknownSignals: true
+        function onModuleStatusChanged() { root.cameraDataVersion++ }
+    }
+
+    Connections {
         target: SystemController
         ignoreUnknownSignals: true
+        function onCameraStatusDetailsChanged() { root.cameraDataVersion++ }
         function onAppSettingsChanged() {
             var nextVisible = SystemController.appSettings.sidebarVisible !== false
             if (root.isSidebarVisible !== nextVisible) {
@@ -424,54 +604,9 @@ Item {
         syncLayoutsToBackend()
     }
 
-    function loadEditorFromCells(rows, cols, savedCells) {
-        var cells = []
-        var covered = []
-        for(var k=0; k<rows*cols; k++) covered.push(false)
-        var cellIdx = 0
-        
-        for(var r=0; r<rows; r++) {
-            for(var c=0; c<cols; c++) {
-                var flatIdx = r * cols + c
-                if (covered[flatIdx]) {
-                    cells.push({r: r, c: c, spanR: 1, spanC: 1, visible: false})
-                    continue
-                }
-                
-                var spanR = 1
-                var spanC = 1
-                
-                if (savedCells && cellIdx < savedCells.length) {
-                    var sc = savedCells[cellIdx]
-                    spanR = sc.rowSpan || 1
-                    spanC = sc.colSpan || 1
-                    cellIdx++
-                }
-                
-                cells.push({r: r, c: c, spanR: spanR, spanC: spanC, visible: true})
-                
-                for(var rr=0; rr<spanR; rr++) {
-                    for(var cc=0; cc<spanC; cc++) {
-                        var targetR = r + rr
-                        var targetC = c + cc
-                        if (targetR < rows && targetC < cols) {
-                            covered[targetR * cols + targetC] = true
-                        }
-                    }
-                }
-            }
-        }
-        
-        layoutDialog.editorBaseRows = rows
-        layoutDialog.editorBaseCols = cols
-        layoutDialog.editorCells = cells
-        layoutDialog.selectionStart = Qt.point(-1, -1)
-        layoutDialog.selectionEnd = Qt.point(-1, -1)
-    }
-
     function openLayoutEditor(editExisting) {
         editingLayout = editExisting
-        layoutDialogTitle = editExisting ? I18n.t("Редактирование") : I18n.t("Новая раскладка")
+        root.layoutDialogTitle = editExisting ? I18n.t("Редактирование") : I18n.t("Новая раскладка")
         
         var initialRows = gridRows
         var initialCols = gridCols
@@ -488,8 +623,8 @@ Item {
             var foundId = "custom"
             var targetCells = layoutCells[currentLayoutIndex] || []
             
-            for (var i = 0; i < layoutPresets.length; i++) {
-                var p = layoutPresets[i]
+            for (var i = 0; i < root.layoutPresets.length; i++) {
+                var p = root.layoutPresets[i]
                 if (p.rows === target.rows && p.cols === target.cols) {
                     // Check cells match
                     var pCells = p.cells || []
@@ -506,25 +641,20 @@ Item {
             initialPreset = foundId
         }
         
-        selectedPresetId = initialPreset
-        layoutDialog.open()
-        nameField.text = initialName
-        
-        if (initialPreset === "custom" && editExisting) {
-             loadEditorFromCells(initialRows, initialCols, layoutCells[currentLayoutIndex] || [])
-        } else {
-             layoutDialog.initEditor(initialRows, initialCols)
-        }
+        root.selectedPresetId = initialPreset
+        var savedCells = (initialPreset === "custom" && editExisting) ? (layoutCells[currentLayoutIndex] || []) : []
+        layoutDialog.openEditor(root.layoutDialogTitle, initialPreset, initialName, initialRows, initialCols, savedCells)
     }
 
-    function saveLayoutTemplate() {
+    function saveLayoutTemplate(nameOverride, presetIdOverride) {
         // Only handles presets now. Custom layouts are handled in the Dialog's OK button.
         var r = 2, c = 2, cells = []
+        var activePresetId = presetIdOverride || root.selectedPresetId
         
         var preset = null
-        for(var i=0; i<layoutPresets.length; ++i) {
-            if (layoutPresets[i].id === selectedPresetId) {
-                preset = layoutPresets[i]
+        for(var i=0; i<root.layoutPresets.length; ++i) {
+            if (root.layoutPresets[i].id === activePresetId) {
+                preset = root.layoutPresets[i]
                 break
             }
         }
@@ -534,7 +664,7 @@ Item {
             cells = preset.cells || []
         }
         
-        var name = nameField.text.trim()
+        var name = (nameOverride || "").trim()
         if (name.length === 0)
             name = I18n.t("Новая раскладка ") + (layoutModel.count + 1)
 
@@ -555,7 +685,31 @@ Item {
             applyLayout(layoutModel.count - 1)
         }
         syncLayoutsToBackend()
-        layoutDialog.close()
+    }
+
+    function applyCustomLayoutTemplate(name, rows, cols, cells) {
+        var templateName = (name || "").trim()
+        if (templateName.length === 0)
+            templateName = I18n.t("Польз. план")
+
+        if (editingLayout && currentLayoutIndex >= 0) {
+            layoutModel.setProperty(currentLayoutIndex, "name", templateName)
+            layoutModel.setProperty(currentLayoutIndex, "rows", rows)
+            layoutModel.setProperty(currentLayoutIndex, "cols", cols)
+            layoutModel.setProperty(currentLayoutIndex, "isDefault", false)
+            var updatedCells = layoutCells
+            updatedCells[currentLayoutIndex] = cells
+            layoutCells = updatedCells
+            applyLayout(currentLayoutIndex)
+        } else {
+            layoutModel.append({ "name": templateName, "rows": rows, "cols": cols, "isDefault": false })
+            var newCells = layoutCells
+            newCells.push(cells)
+            layoutCells = newCells
+            applyLayout(layoutModel.count - 1)
+        }
+
+        syncLayoutsToBackend()
     }
 
     Component.onCompleted: {
@@ -617,7 +771,7 @@ Item {
             if (layoutCells[i] && layoutCells[i].length > 0) {
                 obj["cells"] = layoutCells[i]
             }
-            list.push(obj)
+            list[i] = obj
         }
         SystemController.layoutTemplates = list
     }
@@ -626,277 +780,17 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // ---------------------------------------------------------
-        // TOP BAR
-        // ---------------------------------------------------------
-        Rectangle {
+        DashboardTopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
-            color: Theme.topBarBackground
-
-            MouseArea {
-                anchors.fill: parent
-                onPressed: {
-                    if (Window.window) Window.window.startSystemMove()
-                }
-                onDoubleClicked: {
-                    if (Window.window) {
-                        if (Window.window.visibility === Window.Maximized)
-                            Window.window.showNormal()
-                        else
-                            Window.window.showMaximized()
-                    }
-                }
-            }
-
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: Theme.panelBorder
-            }
-
-            RowLayout {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 10
-                anchors.bottomMargin: 8
-                spacing: 8
-                // Layout tabs
-                RowLayout {
-                    spacing: 6
-                    Repeater {
-                        model: layoutModel
-                        delegate: Rectangle {
-                            height: 32
-                            radius: 6
-                            color: index === currentLayoutIndex ? "#11151f" : "#2d3442"
-                            border.color: index === currentLayoutIndex ? "#3b82f6" : "#3c4353"
-                            border.width: 1
-                            width: Math.max(96, nameText.implicitWidth + 30)
-                            Text {
-                                id: nameText
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 12
-                                anchors.right: parent.right
-                                anchors.rightMargin: 28
-                                text: model.isDefault ? I18n.t(model.name) : model.name
-                                color: "white"
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
-                                horizontalAlignment: Text.AlignLeft
-                            }
-
-                            Rectangle {
-                                id: closeBtn
-                                visible: layoutModel.count > 1
-                                width: 20; height: 20; radius: 10
-                                anchors.top: parent.top
-                                anchors.right: parent.right
-                                anchors.topMargin: 3
-                                anchors.rightMargin: 4
-                                color: "#3c4353"
-                                border.color: "#4b556a"
-                                z: 2
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "×"
-                                    color: "#b0b8c8"
-                                    font.pixelSize: 11
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: (mouse) => { 
-                                        mouse.accepted = true; 
-                                        closeLayout(index);
-                                        syncLayoutsToBackend();
-                                    }
-                                    onPressed: (mouse) => mouse.accepted = true
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: applyLayout(index)
-                                onDoubleClicked: openLayoutEditor(true)
-                            }
-                        }
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                // Add layout
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: "#2d3442"
-                    border.color: "#3c4353"
-                    Text {
-                        anchors.centerIn: parent
-                        text: "+"
-                        color: "white"
-                        font.pixelSize: 16
-                    }
-                    ToolTip.visible: addHovered
-                    ToolTip.text: I18n.t("Новая раскладка")
-                    property bool addHovered: false
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.addHovered = true
-                        onExited: parent.addHovered = false
-                        onClicked: openLayoutEditor(false)
-                    }
-                }
-
-                // Edit template
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: "#2d3442"
-                    border.color: "#3c4353"
-                    Canvas {
-                        anchors.centerIn: parent
-                        width: 16; height: 16
-                        onPaint: {
-                            var ctx = getContext("2d");
-                            ctx.fillStyle = "#b0b8c8";
-                            var s = 2;
-                            var w = width, h = height;
-                            ctx.clearRect(0,0,w,h);
-                            ctx.fillRect(0,0,s,s);
-                            ctx.fillRect((w/2)-s/2,0,s,s);
-                            ctx.fillRect(w-s,0,s,s);
-                            ctx.fillRect(0,(h/2)-s/2,s,s);
-                            ctx.fillRect((w/2)-s/2,(h/2)-s/2,s,s);
-                            ctx.fillRect(w-s,(h/2)-s/2,s,s);
-                            ctx.fillRect(0,h-s,s,s);
-                            ctx.fillRect((w/2)-s/2,h-s,s,s);
-                            ctx.fillRect(w-s,h-s,s,s);
-                        }
-                    }
-                    ToolTip.visible: editHovered
-                    ToolTip.text: I18n.t("Редактор шаблонов")
-                    property bool editHovered: false
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.editHovered = true
-                        onExited: parent.editHovered = false
-                        onClicked: openLayoutEditor(true)
-                    }
-                }
-
-
-                Item { width: 260 } // Spacer to avoid overlap with window controls
-            }
-
-            // Window Controls
-            RowLayout {
-                anchors.top: parent.top
-                anchors.right: parent.right
-                anchors.topMargin: 6
-                anchors.rightMargin: 10
-                spacing: 4
-
-                // Minimize
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: minHovered ? "#3e4654" : "#2d3442"
-                    border.color: "#3c4353"
-                    property bool minHovered: false
-                    
-                    Text {
-                        anchors.centerIn: parent
-                        text: "─"
-                        color: "white"
-                        font.pixelSize: 14
-                        font.bold: true
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.minHovered = true
-                        onExited: parent.minHovered = false
-                        onClicked: Window.window.showMinimized()
-                    }
-                }
-
-                // Maximize/Restore
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: maxHovered ? "#3e4654" : "#2d3442"
-                    border.color: "#3c4353"
-                    property bool maxHovered: false
-                    
-                    Text {
-                        anchors.centerIn: parent
-                        text: Window.window.visibility === Window.Maximized ? "❐" : "☐"
-                        color: "white"
-                        font.pixelSize: 14
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.maxHovered = true
-                        onExited: parent.maxHovered = false
-                        onClicked: {
-                            if (Window.window.visibility === Window.Maximized)
-                                Window.window.showNormal()
-                            else
-                                Window.window.showMaximized()
-                        }
-                    }
-                }
-
-                // Close
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 32
-                    radius: 6
-                    color: closeHovered ? "#c42b1c" : "#2d3442"
-                    border.color: closeHovered ? "#c42b1c" : "#3c4353"
-                    property bool closeHovered: false
-                    
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✕"
-                        color: "white"
-                        font.pixelSize: 14
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onEntered: parent.closeHovered = true
-                        onExited: parent.closeHovered = false
-                        onClicked: Window.window.close()
-                    }
-                }
-            }
+            layoutsModel: layoutModel
+            currentLayoutIndex: root.currentLayoutIndex
+            onApplyLayoutRequested: (index) => root.applyLayout(index)
+            onCloseLayoutRequested: (index) => root.closeLayout(index)
+            onAddLayoutRequested: root.openLayoutEditor(false)
+            onEditLayoutRequested: root.openLayoutEditor(true)
         }
 
-        // ---------------------------------------------------------
-        // MAIN CONTENT (Grid + Sidebar)
-        // ---------------------------------------------------------
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -904,1489 +798,110 @@ Item {
             Layout.rightMargin: 8
             Layout.topMargin: 8
             Layout.bottomMargin: 8
-            spacing: Math.max(0, 8 * sidebarOpenProgress)
+            spacing: Math.max(0, 8 * root.sidebarOpenProgress)
 
-            // CONTENT AREA (Left)
-            Rectangle {
+            DashboardGridPanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: Theme.panelBackground
-                radius: Theme.radiusLg
-                border.color: Theme.panelBorder
-                border.width: 1
+                systemController: SystemController
+                gridRows: root.gridRows
+                gridCols: root.gridCols
+                activeGridIndex: root.activeGridIndex
+                canLive: root.canLive
+                canPlayback: root.canPlayback
+                canPtz: root.canPtz
+                canExport: root.canExport
+                canSettings: root.canSettings
+                canAnalytics: root.canAnalytics
+                emptyHintDismissed: root.emptyHintDismissed
+                sidebarOpenProgress: root.sidebarOpenProgress
+                previewBudgetRankProvider: root.previewBudgetRankFor
 
-                GridLayout {
-                    id: cameraGrid
-                    anchors.fill: parent
-                    property int cellSpacing: 10
-                    anchors.margins: cameraGrid.cellSpacing
-                    columns: 1200 // Ultra-high resolution grid for pixel-perfect resizing
-                    // rows: dynamic
-                    rowSpacing: cameraGrid.cellSpacing
-                    columnSpacing: cameraGrid.cellSpacing
-                    flow: GridLayout.LeftToRight
-                    
-                    // Calculate unit sizes for precise resizing
-                    // We use gridCols/gridRows for spacing calculation because GridLayout only adds spacing between actual items
-                    property real unitWidth: (width - (Math.max(1, gridCols) - 1) * columnSpacing) / 1200
-                    property real unitHeight: (height - (Math.max(1, gridRows) - 1) * rowSpacing) / 1200
-
-                    Repeater {
-                        model: SystemController.gridModel
-                        delegate: GridCell {
-                            // Strict sizing based on units
-                            Layout.preferredWidth: Math.floor(Math.max(1, model.spanCols) * cameraGrid.unitWidth)
-                            Layout.preferredHeight: Math.floor(Math.max(1, model.spanRows) * cameraGrid.unitHeight)
-                            
-                            // Normalize rowSpan to discrete grid rows to avoid creating thousands of rows
-                            // spanRows is in 1200-units. We map it back to the logical grid row count.
-                            // If gridRows is 0 or uninitialized, default to 2.
-                            Layout.rowSpan: Math.max(1, Math.round((model.spanRows || 1) / (1200 / Math.max(1, gridRows || 2))))
-                            
-                            // columnSpan stays in 1200-units because GridLayout.columns is 1200
-                            Layout.columnSpan: Math.max(1, model.spanCols || 1)
-                            
-                            // Pass grid info for resizing
-                            gridParent: cameraGrid
-                            totalRows: 1200 
-                            totalCols: 1200
-                            spanRows: model.spanRows || 1
-                            spanCols: model.spanCols || 1
-                            gridIndex: index
-                            
-                            // Pass unit sizes
-                            unitWidth: cameraGrid.unitWidth
-                            unitHeight: cameraGrid.unitHeight
-
-                            cameraName: model.cameraName
-                            cameraIp: model.cameraIp
-                            cameraPort: model.cameraPort
-                            cameraOnvifPort: model.cameraOnvifPort
-                            cameraLogin: model.cameraLogin
-                            streamUrl: model.streamUrl
-                            sdStreamUrl: model.sdStreamUrl || model.streamUrl
-                            hdStreamUrl: model.hdStreamUrl || model.streamUrl
-                            status: model.status
-                            isRecording: model.isRecording
-                            manufacturer: model.manufacturer || ""
-
-                            canLive: root.canLive
-                            canPlayback: root.canPlayback
-                            canPtz: root.canPtz
-                            canExport: root.canExport
-                            canSettings: root.canSettings
-
-                            onPermissionDenied: root.showNoAccess()
-                            
-                            onCloseClicked: {
-                                if (!root.canSettings) {
-                                    root.showNoAccess()
-                                    return
-                                }
-                                SystemController.removeCameraFromGrid(index)
-                            }
-                            
-                            onEditRequested: {
-                                if (!root.canSettings) {
-                                    root.showNoAccess()
-                                    return
-                                }
-                                var ip = model.cameraIp
-                                var idx = SystemController.cameraModel.findIndexByIp(ip)
-                                if (idx >= 0) {
-                                    var cam = SystemController.cameraModel.getCamera(idx)
-                                    addCameraDialog.isEditMode = true
-                                    addCameraDialog.editIndex = idx
-                                    addCameraDialog.initialName = cam.cameraName
-                                    addCameraDialog.initialIp = cam.cameraIp
-                                    addCameraDialog.initialPort = cam.cameraPort
-                                    addCameraDialog.initialOnvifPort = cam.cameraOnvifPort
-                                    addCameraDialog.initialLogin = cam.cameraLogin || "root"
-                                    addCameraDialog.initialPassword = SystemController.getCameraPassword(cam.cameraIp)
-                                    addCameraDialog.initialHdUrl = cam.hdStreamUrl || ""
-                                    addCameraDialog.initialSdUrl = cam.sdStreamUrl || ""
-                                    addCameraDialog.open()
-                                }
-                            }
-                            
-                            onDeleteRequested: {
-                                if (!root.canSettings) {
-                                    root.showNoAccess()
-                                    return
-                                }
-                                var ip = model.cameraIp
-                                var idx = SystemController.cameraModel.findIndexByIp(ip)
-                                if (idx >= 0) {
-                                    confirmDeleteDialog.cameraIndex = idx
-                                    confirmDeleteDialog.open()
-                                }
-                            }
-                            
-                            onArchiveRequested: {
-                                if (!root.canPlayback) {
-                                    root.showNoAccess()
-                                    return
-                                }
-                                archiveLoader.pendingCameraIp = model.cameraIp
-                                archiveLoader.active = true
-                            }
-                            
-                            // SystemController.toggleRecording is handled internally by GridCell
-                        }
-                    }
+                onSelectedByUser: (index) => {
+                    root.activeGridIndex = index
+                    root.cameraDataVersion++
                 }
-
-                Item {
-                    anchors.fill: parent
-                    anchors.margins: 24
-                    visible: root.cameraCount() === 0 && !root.emptyHintDismissed
-                    z: 4
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "#33000000"
-                        radius: Theme.radiusLg
-                    }
-
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: Math.min(560, Math.max(260, parent.width - 48))
-                        height: emptyHintLayout.implicitHeight + 28
-                        radius: Theme.radiusLg
-                        color: "#e5111620"
-                        border.color: Theme.panelBorderStrong
-                        border.width: 1
-
-                        Button {
-                            width: 30
-                            height: 30
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.topMargin: 8
-                            anchors.rightMargin: 8
-                            text: "x"
-                            background: Rectangle {
-                                radius: Theme.radiusSm
-                                color: parent.hovered ? Theme.cardHover : "transparent"
-                                border.color: "transparent"
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                color: Theme.textMuted
-                                font.pixelSize: 16
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            onClicked: root.closeEmptyHint(dontShowEmptyHint.checked)
-                        }
-
-                        ColumnLayout {
-                            id: emptyHintLayout
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.leftMargin: 18
-                            anchors.rightMargin: 18
-                            anchors.topMargin: 18
-                            spacing: 14
-
-                            Rectangle {
-                                Layout.alignment: Qt.AlignHCenter
-                                width: 52
-                                height: 52
-                                radius: 12
-                                color: Theme.panelSoftBackground
-                                border.color: Theme.controlBorderStrong
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "+"
-                                    color: Theme.accentHover
-                                    font.pixelSize: 28
-                                    font.bold: true
-                                }
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Добавьте первую камеру")
-                                color: Theme.textPrimary
-                                font.pixelSize: 22
-                                font.bold: true
-                                horizontalAlignment: Text.AlignHCenter
-                                wrapMode: Text.WordWrap
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Найдите устройства в сети или добавьте RTSP/ONVIF-камеру вручную.")
-                                color: Theme.textMuted
-                                font.pixelSize: 13
-                                horizontalAlignment: Text.AlignHCenter
-                                wrapMode: Text.WordWrap
-                            }
-
-                            RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                Layout.maximumWidth: parent.width
-                                spacing: 8
-
-                                EmptyStateButton {
-                                text: I18n.t("Поиск камер")
-                                    enabled: root.canSettings
-                                    buttonColor: Theme.accent
-                                    buttonHoverColor: Theme.accentHover
-                                    onClicked: root.openSearchDialog()
-                                }
-
-                                EmptyStateButton {
-                                    text: I18n.t("Добавить")
-                                    enabled: root.canSettings
-                                    onClicked: root.openAddCameraDialog()
-                                }
-
-                                EmptyStateButton {
-                                    text: I18n.t("Аналитика")
-                                    enabled: root.canAnalytics
-                                    onClicked: root.openAnalyticsDialog()
-                                }
-
-                                EmptyStateButton {
-                                    text: I18n.t("Настройки")
-                                    enabled: root.canSettings
-                                    onClicked: root.openSettingsDialog()
-                                }
-                            }
-
-                            CheckBox {
-                                id: dontShowEmptyHint
-                                Layout.alignment: Qt.AlignHCenter
-                                text: I18n.t("Не показывать при следующем запуске")
-                                checked: false
-                                contentItem: Text {
-                                    text: parent.text
-                                    color: Theme.textMuted
-                                    font.pixelSize: 12
-                                    leftPadding: parent.indicator.width + parent.spacing
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                            }
-                        }
-                    }
+                onPermissionDenied: root.showNoAccess()
+                onEditCameraRequested: (cameraIndex) => root.editCameraByIndex(cameraIndex)
+                onDeleteCameraRequested: (cameraIndex) => root.confirmDeleteCamera(cameraIndex)
+                onArchiveRequested: (cameraIp) => root.openArchiveForIp(cameraIp)
+                onMajesticRequested: (cameraName, cameraIp, cameraPort, cameraLogin) => {
+                    root.openMajesticForCamera(cameraName, cameraIp, cameraPort, cameraLogin)
                 }
-
-                // Handle to reopen sidebar when it is hidden
-                Rectangle {
-                    visible: sidebarOpenProgress < 0.01
-                    width: 18
-                    height: 84
-                    radius: 9
-                    anchors.right: parent.right
-                    anchors.rightMargin: -9
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: revealArea.containsMouse ? Theme.cardHover : Theme.cardBackground
-                    border.color: Theme.controlBorderStrong
-                    z: 5
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "«"
-                        color: Theme.textSecondary
-                        font.pixelSize: 16
-                    }
-
-                    MouseArea {
-                        id: revealArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.setSidebarVisible(true)
-                    }
-                }
+                onSearchRequested: root.openSearchDialog()
+                onAddCameraRequested: root.openAddCameraDialog()
+                onAnalyticsRequested: root.openAnalyticsDialog()
+                onSettingsRequested: root.openSettingsDialog()
+                onSidebarOpenRequested: root.setSidebarVisible(true)
+                onEmptyHintClosed: (dontShowAgain) => root.closeEmptyHint(dontShowAgain)
             }
 
-            // SIDEBAR (Right)
-            Rectangle {
-                Layout.preferredWidth: sidebarWidth
-                Layout.fillHeight: true
-                visible: true
-                enabled: sidebarOpenProgress > 0.01
-                opacity: sidebarOpenProgress
-                clip: true
-                color: Theme.topBarBackground
-                radius: Theme.radiusLg
-                border.color: Theme.panelBorderStrong
-                border.width: 1
+            DashboardSidebar {
+                dashboard: root
+                systemController: SystemController
+                dragProxyItem: dragProxy
+                sidebarWidth: root.sidebarWidth
+                sidebarOpenProgress: root.sidebarOpenProgress
+                cameraDataVersion: root.cameraDataVersion
+                deviceFilterText: root.deviceFilterText
+                canSettings: root.canSettings
 
-                // Sidebar collapse handle (middle of left edge)
-                Rectangle {
-                    visible: sidebarOpenProgress > 0.01
-                    width: 18
-                    height: 84
-                    radius: 9
-                    anchors.left: parent.left
-                    anchors.leftMargin: -9
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: hideArea.containsMouse ? Theme.cardHover : Theme.cardBackground
-                    border.color: Theme.controlBorderStrong
-                    z: 6
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "»"
-                        color: Theme.textSecondary
-                        font.pixelSize: 16
-                    }
-
-                    MouseArea {
-                        id: hideArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.setSidebarVisible(false)
-                    }
+                onCloseSidebarRequested: root.setSidebarVisible(false)
+                onNoAccessRequested: root.showNoAccess()
+                onSearchRequested: root.openSearchDialog()
+                onHealthRequested: root.openHealthDialog()
+                onAddGroupRequested: addGroupDialog.open()
+                onAddCameraRequested: root.openAddCameraDialog()
+                onAnalyticsRequested: root.openAnalyticsDialog()
+                onSettingsRequested: root.openSettingsDialog()
+                onUserManagementRequested: userManagementDialog.open()
+                onLogsRequested: logView.open()
+                onCamexRequested: root.openCamexDialog()
+                onDeviceContextRequested: (cameraIp, cameraName, cameraIndex) => {
+                    deviceContextMenu.cameraIp = cameraIp
+                    deviceContextMenu.cameraName = cameraName
+                    deviceContextMenu.cameraIndex = cameraIndex
+                    deviceContextMenu.popup()
                 }
-                
-                ScrollView {
-                    id: sidebarScrollView
-                    anchors.fill: parent
-                    visible: sidebarOpenProgress > 0.01
-                    clip: true
-                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
-                    ColumnLayout {
-                        id: sidebarContent
-                        width: sidebarScrollView.availableWidth
-                        spacing: 0
-
-                        // Sidebar actions
-                        GridLayout {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.topMargin: 10
-                            Layout.bottomMargin: 10
-                            columns: 4
-                            columnSpacing: 8
-                            rowSpacing: 8
-
-                            Repeater {
-                                model: [
-                                    { iconPath: "M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z", action: "search", label: "Поиск камер", tooltip: "Поиск камер в сети" },
-                                    { iconPath: "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z", action: "add_folder", label: "Группа", tooltip: "Добавить группу" },
-                                    { iconPath: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z", action: "add_camera", label: "Камера", tooltip: "Добавить камеру" },
-                                    { iconPath: "M19.87 18.73l-5.32-5.32C15.2 12.33 15.6 11.22 15.6 10c0-3.09-2.51-5.6-5.6-5.6S4.4 6.91 4.4 10s2.51 5.6 5.6 5.6c1.22 0 2.33-.4 3.41-1.05l5.32 5.32c.39.39 1.02.39 1.41 0l-.27-.27.27.27c.39-.39.39-1.02 0-1.41zM10 14.1c-2.26 0-4.1-1.84-4.1-4.1S7.74 5.9 10 5.9s4.1 1.84 4.1 4.1-1.84 4.1-4.1 4.1z", action: "analytics", label: "Аналит.", tooltip: "Аналитика" },
-                                    { iconPath: "M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.09-.16-.26-.25-.44-.25-.06 0-.12.01-.17.03l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.06-.02-.12-.03-.18-.03-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.09.16.26.25.44.25.06 0 .12-.01.17-.03l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.13-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z", action: "settings", label: "Настр.", tooltip: "Настройки" },
-                                    { iconPath: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z", action: "logs", label: "Логи", tooltip: "Логи" },
-                                    { iconPath: "M10,4 A4,4 0 1,1 10,12 A4,4 0 1,1 10,4 M10.67,13.02C10.45,13.01,10.23,13,10,13c-2.42,0-4.68,0.67-6.61,1.82C2.51,15.34,2,16.32,2,17.35V20h9.26 C10.47,18.87,10,17.49,10,16C10,14.93,10.25,13.93,10.67,13.02z M20.75,16c0-0.22-0.03-0.42-0.06-0.63l1.14-1.01l-1-1.73l-1.45,0.49c-0.32-0.27-0.68-0.48-1.08-0.63L18,11h-2l-0.3,1.49 c-0.4,0.15-0.76,0.36-1.08,0.63l-1.45-0.49l-1,1.73l1.14,1.01c-0.03,0.21-0.06,0.41-0.06,0.63s0.03,0.42,0.06,0.63l-1.14,1.01 l1,1.73l1.45-0.49c0.32,0.27,0.68,0.48,1.08,0.63L16,21h2l0.3-1.49c0.4-0.15,0.76-0.36,1.08-0.63l1.45,0.49l1-1.73l-1.14-1.01 C20.72,16.42,20.75,16.22,20.75,16z M17,18c-1.1,0-2-0.9-2-2s0.9-2,2-2s2,0.9,2,2S18.1,18,17,18z", action: "user", label: "Польз.", tooltip: "Пользователь" },
-                                    { iconPath: "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z", action: "logout", label: "Выход", tooltip: "Выход" }
-                                ]
-
-                                SidebarActionButton {
-                                    iconPath: modelData.iconPath
-                                    label: modelData.label
-                                    tooltip: modelData.tooltip
-                                    enabled: actionAllowed(modelData.action)
-                                    onClicked: {
-                                        if (!actionAllowed(modelData.action)) {
-                                            root.showNoAccess()
-                                            return
-                                        }
-                                        if (modelData.action === "search") root.openSearchDialog()
-                                        if (modelData.action === "add_folder") addGroupDialog.open()
-                                        if (modelData.action === "add_camera") root.openAddCameraDialog()
-                                        if (modelData.action === "settings") root.openSettingsDialog()
-                                        if (modelData.action === "analytics") root.openAnalyticsDialog()
-                                        if (modelData.action === "user") userManagementDialog.open()
-                                        if (modelData.action === "logs") logView.open()
-                                        if (modelData.action === "logout") SystemController.userManager.logout()
-
-                                        console.log("Clicked: " + modelData.action)
-                                    }
-                                }
-                            }
-
-                            SidebarActionButton {
-                                iconPath: "M12 2C8.13 2 5 5.13 5 9c0 1.47.45 2.83 1.22 3.95L3.6 15.57 5.03 17l2.62-2.62C8.84 15.39 10.36 16 12 16s3.16-.61 4.35-1.62L18.97 17l1.43-1.43-2.62-2.62C18.55 11.83 19 10.47 19 9c0-3.87-3.13-7-7-7zm0 2c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5zm-1 2v2H9v2h2v2h2v-2h2V8h-2V6h-2z"
-                                label: "Camex"
-                                tooltip: "Удаленный доступ Camex"
-                                enabled: actionAllowed("camex")
-                                onClicked: {
-                                    if (!actionAllowed("camex")) {
-                                        root.showNoAccess()
-                                        return
-                                    }
-                                    root.openCamexDialog()
-                                }
-                            }
-                        }
-                        // Current user label
-                        Text {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 15
-                            Layout.rightMargin: 15
-                            Layout.bottomMargin: 6
-                            text: I18n.t("Пользователь: ") + currentUsername()
-                            color: "#a0aec0"
-                            font.pixelSize: 12
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.bottomMargin: 8
-                            spacing: 6
-
-                            SidebarStatPill {
-                                title: I18n.t("Всего")
-                                value: String(root.cameraCount())
-                                accentColor: Theme.textPrimary
-                            }
-
-                            SidebarStatPill {
-                                title: I18n.t("Онлайн")
-                                value: String(root.onlineCameraCount())
-                                accentColor: Theme.success
-                            }
-
-                            SidebarStatPill {
-                                title: I18n.t("Офлайн")
-                                value: String(Math.max(0, root.cameraCount() - root.onlineCameraCount()))
-                                accentColor: Theme.danger
-                            }
-                        }
-
-                        TextField {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.bottomMargin: 8
-                            implicitHeight: 34
-                            text: root.deviceFilterText
-                            placeholderText: I18n.t("Поиск устройств")
-                            color: Theme.textPrimary
-                            placeholderTextColor: Theme.textMuted
-                            selectionColor: Theme.accent
-                            selectedTextColor: Theme.textPrimary
-                            selectByMouse: true
-                            leftPadding: 10
-                            rightPadding: 10
-                            background: Rectangle {
-                                color: Theme.controlBackground
-                                radius: Theme.radiusSm
-                                border.color: parent.activeFocus ? Theme.accent : Theme.controlBorder
-                                border.width: 1
-                            }
-                            onTextChanged: root.deviceFilterText = text
-                        }
-
-                        Item { Layout.fillWidth: true } // Spacer
-
-                        // Header "Устройства"
-                        Text {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 15
-                            Layout.rightMargin: 15
-                            Layout.topMargin: 8
-                            Layout.bottomMargin: 8
-                            padding: 0
-                            text: I18n.t("Устройства")
-                            color: "white"
-                            font.bold: true
-                            font.pixelSize: 14
-                        }
-
-                        // Grouped device list with drag-to-group and group context menu
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignTop
-                            spacing: 6
-
-                        // Helper component for group block
-                        Component {
-                            id: groupBlock
-                            Item {
-                                Layout.fillWidth: true
-                                implicitHeight: blockVisible ? layout.implicitHeight : 0
-                                visible: blockVisible
-                                
-                                property string groupName: modelData
-                                readonly property bool isDefaultGroup: groupName === ""
-                                readonly property bool blockVisible: root.deviceFilterText.trim() === "" || groupCount > 0
-
-                                property int groupCount: {
-                                    var v = root.cameraDataVersion
-                                    var count = 0
-                                    for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
-                                        var cam = SystemController.cameraModel.getCamera(i)
-                                        var g = cam.cameraGroup || ""
-                                        if (g === groupName && root.cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp, cam.status, cam.cameraGroup)) count++
-                                    }
-                                    return count
-                                }
-
-                                ColumnLayout {
-                                    id: layout
-                                    anchors.fill: parent
-                                    spacing: 0
-
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 32
-                                        color: "#333333"
-                                        radius: 4
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 10
-                                            anchors.rightMargin: 8
-                                            spacing: 8
-
-                                            Text {
-                                                text: isDefaultGroup ? I18n.t("Без группы") : groupName
-                                                color: "#cccccc"
-                                                font.pixelSize: 12
-                                                elide: Text.ElideRight
-                                                Layout.fillWidth: true
-                                            }
-
-                                            // Count indicator
-                                            Rectangle {
-                                                height: 18
-                                                width: 30
-                                                radius: 9
-                                                color: "#444"
-                                                border.color: "#555"
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: groupCount
-                                                    color: "#ddd"
-                                                    font.pixelSize: 11
-                                                }
-                                            }
-                                        }
-
-                                        // Right-click context for group management (except default)
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            acceptedButtons: Qt.RightButton
-                                            hoverEnabled: true
-                                            onClicked: (mouse) => {
-                                                if (mouse.button === Qt.RightButton && !isDefaultGroup) {
-                                                    groupContextMenu.targetGroup = groupName
-                                                    groupContextMenu.popup()
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Cameras inside this group
-                                    ListView {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: contentHeight
-                                        clip: true
-                                        interactive: false
-                                        spacing: 2
-                                        model: SystemController.cameraModel
-
-                                        delegate: Rectangle {
-                                            property bool inGroup: (cameraGroup || "") === groupName
-                                                                   && root.cameraMatchesDeviceFilter(cameraName, cameraIp, status, cameraGroup)
-                                            width: ListView.view ? ListView.view.width : parent.width
-                                            height: inGroup ? 50 : 0
-                                            visible: inGroup
-                                            color: "transparent"
-
-                                            // Drag handle
-                                            MouseArea {
-                                                id: dragArea
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-
-                                                onEntered: parent.color = "#2a2d2e"
-                                                onExited: parent.color = "transparent"
-
-                                                onClicked: (mouse) => {
-                                                    if (mouse.button === Qt.RightButton) {
-                                                        if (!root.canSettings) {
-                                                            root.showNoAccess()
-                                                            return
-                                                        }
-                                                        deviceContextMenu.cameraIp = cameraIp
-                                                        deviceContextMenu.cameraName = cameraName
-                                                        deviceContextMenu.cameraIndex = index
-                                                        deviceContextMenu.popup()
-                                                    }
-                                                }
-                                                onDoubleClicked: addToGrid()
-
-                                                drag.target: root.canSettings ? dragProxy : null
-                                                drag.axis: Drag.XAndYAxis
-                                                drag.threshold: 10
-
-                                                onPressed: (mouse) => {
-                                                    if (!root.canSettings) {
-                                                        root.showNoAccess()
-                                                        return
-                                                    }
-                                                    if (mouse.button === Qt.LeftButton) {
-                                                        var pos = mapToItem(root, mouse.x, mouse.y)
-                                                        dragProxy.x = pos.x - dragProxy.width/2
-                                                        dragProxy.y = pos.y - dragProxy.height/2
-                                                        dragProxy.proxyIp = cameraIp
-                                                        dragProxy.proxyName = cameraName || ""
-                                                        dragProxy.dragIndex = index
-                                                    }
-                                                }
-                                                
-                                                onReleased: {
-                                                    dragProxy.visible = false
-                                                    dragProxy.x = 0
-                                                    dragProxy.y = 0
-                                                }
-                                                
-                                                drag.onActiveChanged: {
-                                                    if (drag.active) {
-                                                        dragProxy.visible = true
-                                                    } else {
-                                                        dragProxy.visible = false
-                                                    }
-                                                }
-
-                                                function addToGrid() {
-                                                    if (!root.canSettings) {
-                                                        root.showNoAccess()
-                                                        return
-                                                    }
-                                                    var slots = SystemController.gridCapacity()
-                                                    var target = -1
-                                                    for (var i = 0; i < slots; ++i) {
-                                                        var camSlot = SystemController.gridModel.getCamera(i)
-                                                        if (!camSlot.cameraIp || camSlot.cameraIp === "") {
-                                                            target = i
-                                                            break
-                                                        }
-                                                    }
-                                                    if (target === -1) {
-                                                        target = 0 // fallback overwrite first if full
-                                                    }
-                                                    SystemController.addCameraToGrid(index, target)
-                                                }
-                                            }
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 15
-                                                anchors.rightMargin: 10
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    width: 8; height: 8; radius: 4
-                                                    color: status === "Online" ? "#4caf50" : "#f44336"
-                                                }
-
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 2
-                                                    Text {
-                                                        text: (cameraName && cameraName.trim() !== "")
-                                                              ? cameraName
-                                                              : (I18n.t("Камера") + " " + cameraIp)
-                                                        color: "#cccccc"
-                                                        font.pixelSize: 12
-                                                        elide: Text.ElideRight
-                                                    }
-                                                    Text {
-                                                        text: cameraIp
-                                                        color: "#888888"
-                                                        font.pixelSize: 11
-                                                        elide: Text.ElideRight
-                                                    }
-                                                }
-
-                                                Text {
-                                                    text: "x"
-                                                    color: "#888888"
-                                                    font.pixelSize: 16
-                                                    visible: root.canSettings
-                                                    MouseArea {
-                                                        anchors.fill: parent
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (!root.canSettings) {
-                                                                root.showNoAccess()
-                                                                return
-                                                            }
-                                                            SystemController.removeDevice(index)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                }
-
-                                DropArea {
-                                    anchors.fill: parent
-                                    z: 1
-                                    keys: ["camera"]
-                                    enabled: root.canSettings
-                                    onEntered: (drag) => {
-                                        drag.accept(Qt.MoveAction)
-                                    }
-                                    onDropped: (drop) => {
-                                        if (!root.canSettings) {
-                                            root.showNoAccess()
-                                            return
-                                        }
-                                        var idx = drop.mimeData.getData("application/camera-index")
-                                        if (idx !== undefined && idx !== null) {
-                                            SystemController.setCameraGroup(parseInt(idx), groupName)
-                                            root.cameraDataVersion++
-                                        }
-                                    }
-                                    
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: parent.containsDrag ? "#3d4450" : "transparent"
-                                        opacity: 0.5
-                                        radius: 4
-                                        visible: parent.containsDrag
-                                    }
-                                }
-                            }
-                        }
-
-                        // Default group + existing groups
-                        Repeater {
-                            model: [""] .concat(SystemController.cameraGroups)
-                            delegate: groupBlock
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 16
-                            Layout.rightMargin: 16
-                            Layout.topMargin: 10
-                            visible: root.cameraCount() > 0 && root.filteredCameraCount() === 0
-                            text: I18n.t("Ничего не найдено")
-                            color: Theme.textMuted
-                            font.pixelSize: 12
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                onGroupContextRequested: (groupName) => {
+                    groupContextMenu.targetGroup = groupName
+                    groupContextMenu.popup()
                 }
+                onAddCameraToGridRequested: (cameraIndex) => root.addCameraIndexToFirstFreeGrid(cameraIndex)
+                onMajesticRequested: (cameraIndex) => root.openMajesticByIndex(cameraIndex)
+                onCameraDataChangedRequested: root.cameraDataVersion++
+                onDeviceFilterChanged: (text) => root.deviceFilterText = text
             }
         }
-        }
 
-        // ---------------------------------------------------------
-        // BOTTOM STATUS BAR
-        // ---------------------------------------------------------
-        Rectangle {
+        DashboardStatusBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 25
-            color: Theme.statusBarBackground
-
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: Theme.panelBorder
-            }
-
-            Timer {
-                interval: 1000
-                running: true
-                repeat: true
-                onTriggered: {
-                    var cpuVal = SystemController.processCpuPercent()
-                    var ramVal = SystemController.processMemoryMB()
-                    if (cpuVal === undefined || cpuVal < 0) cpuVal = 0
-                    if (ramVal === undefined || ramVal < 0) ramVal = 0
-                    cpuText.text = I18n.t("ЦП") + ": " + cpuVal.toFixed(1) + "%"
-                    ramText.text = I18n.t("ОЗУ") + ": " + ramVal.toFixed(1) + " MB"
-                    timeText.text = Qt.formatTime(new Date(), "hh:mm:ss")
-                }
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                spacing: 15
-
-                Text {
-                    id: cpuText
-                    text: I18n.t("ЦП") + ": 0%"
-                    color: "white"
-                    font.pixelSize: 11
-                }
-                Text {
-                    id: ramText
-                    text: I18n.t("ОЗУ") + ": 0 MB"
-                    color: "white"
-                    font.pixelSize: 11
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    id: timeText
-                    text: Qt.formatTime(new Date(), "hh:mm:ss")
-                    color: "white"
-                    font.pixelSize: 11
-                }
-            }
+            systemController: SystemController
         }
     }
 
-    Dialog {
+    LayoutEditorDialog {
         id: layoutDialog
-        modal: true
-        focus: true
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
-        padding: 0
-        width: Math.min(parent.width - 96, 1000)
-        height: Math.min(parent.height - 96, 680)
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-        background: Rectangle {
-            radius: Theme.radiusXl
-            color: Theme.panelAltBackground
-            border.color: Theme.panelBorderStrong
-            border.width: 1
+        presets: root.layoutPresets
+        onSelectedPresetIdChanged: root.selectedPresetId = selectedPresetId
+        onCustomAccepted: (name, rows, cols, cells) => {
+            root.selectedPresetId = "custom"
+            root.applyCustomLayoutTemplate(name, rows, cols, cells)
         }
-        
-        // Editor State
-        property int editorBaseRows: 6
-        property int editorBaseCols: 6
-        property var editorCells: [] // Array of {r, c, spanR, spanC, visible}
-        property point selectionStart: Qt.point(-1, -1)
-        property point selectionEnd: Qt.point(-1, -1)
-        property bool isSelecting: false
-        
-        function initEditor(rows, cols) {
-            editorBaseRows = rows
-            editorBaseCols = cols
-            var cells = []
-            for(var r=0; r<rows; r++) {
-                for(var c=0; c<cols; c++) {
-                    cells.push({r: r, c: c, spanR: 1, spanC: 1, visible: true})
-                }
-            }
-            editorCells = cells
-            selectionStart = Qt.point(-1, -1)
-            selectionEnd = Qt.point(-1, -1)
-        }
-        
-        function getCellIndex(r, c) {
-            return r * editorBaseCols + c
-        }
-        
-        function unmergeSelection() {
-            // Only works if a single merged cell is selected
-            if (selectionStart.x < 0) return
-            
-            // Normalize selection to top-left
-            var r = Math.min(selectionStart.y, selectionEnd.y)
-            var c = Math.min(selectionStart.x, selectionEnd.x)
-            
-            var idx = getCellIndex(r, c)
-            var cell = editorCells[idx]
-            
-            if (!cell.visible) return // Can't unmerge a hidden cell
-            if (cell.spanR === 1 && cell.spanC === 1) return // Nothing to unmerge
-            
-            var newCells = editorCells.slice()
-            
-            // Restore all covered cells
-            for(var rr=0; rr<cell.spanR; rr++) {
-                for(var cc=0; cc<cell.spanC; cc++) {
-                    var targetIdx = getCellIndex(r + rr, c + cc)
-                    newCells[targetIdx].visible = true
-                    newCells[targetIdx].spanR = 1
-                    newCells[targetIdx].spanC = 1
-                }
-            }
-            
-            editorCells = newCells
-            // Keep selection on the top-left cell
-            selectionEnd = selectionStart
-        }
-
-        function mergeSelection() {
-            if (selectionStart.x < 0) return
-            
-            var r1 = Math.min(selectionStart.y, selectionEnd.y)
-            var r2 = Math.max(selectionStart.y, selectionEnd.y)
-            var c1 = Math.min(selectionStart.x, selectionEnd.x)
-            var c2 = Math.max(selectionStart.x, selectionEnd.x)
-            
-            var spanR = r2 - r1 + 1
-            var spanC = c2 - c1 + 1
-            
-            if (spanR === 1 && spanC === 1) return // Nothing to merge
-            
-            var newCells = editorCells.slice() // Copy
-            
-            // First pass: Reset any cells that overlap the new selection
-            // This handles "breaking" existing merges that are partially selected
-            for(var i=0; i<newCells.length; i++) {
-                var cell = newCells[i]
-                if (!cell.visible) continue
-                
-                // Check overlap
-                var cellR1 = cell.r
-                var cellR2 = cell.r + cell.spanR - 1
-                var cellC1 = cell.c
-                var cellC2 = cell.c + cell.spanC - 1
-                
-                // Intersection
-                var interR1 = Math.max(r1, cellR1)
-                var interR2 = Math.min(r2, cellR2)
-                var interC1 = Math.max(c1, cellC1)
-                var interC2 = Math.min(c2, cellC2)
-                
-                if (interR1 <= interR2 && interC1 <= interC2) {
-                    // Overlaps
-                    // If it's partially outside, we reset it to 1x1s to avoid conflicts
-                    if (cellR1 < r1 || cellR2 > r2 || cellC1 < c1 || cellC2 > c2) {
-                        // Reset this merge.
-                        for(var rr=cellR1; rr<=cellR2; rr++) {
-                            for(var cc=cellC1; cc<=cellC2; cc++) {
-                                var idx = getCellIndex(rr, cc)
-                                newCells[idx].visible = true
-                                newCells[idx].spanR = 1
-                                newCells[idx].spanC = 1
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Set top-left cell
-            var mainIdx = getCellIndex(r1, c1)
-            newCells[mainIdx].spanR = spanR
-            newCells[mainIdx].spanC = spanC
-            newCells[mainIdx].visible = true
-            
-            // Hide others
-            for(var r=r1; r<=r2; r++) {
-                for(var c=c1; c<=c2; c++) {
-                    if (r === r1 && c === c1) continue
-                    var idx = getCellIndex(r, c)
-                    newCells[idx].visible = false
-                    newCells[idx].spanR = 1
-                    newCells[idx].spanC = 1
-                }
-            }
-            
-            editorCells = newCells
-            selectionStart = Qt.point(-1, -1)
-            selectionEnd = Qt.point(-1, -1)
-        }
-        
-        function resetEditor() {
-            initEditor(editorBaseRows, editorBaseCols)
-        }
-        
-        onOpened: {
-            // Initialize editor with default or current settings
-            // Default to 8x5 to provide square-ish cells on 16:9 screens (Ratio 1.6)
-            if (selectedPresetId === "custom") {
-                 // Try to load from custom fields if set, else 8x5
-                 var r = 5
-                 var c = 8
-                 if (customRowsField && customRowsField.text) r = parseInt(customRowsField.text) || 5
-                 if (customColsField && customColsField.text) c = parseInt(customColsField.text) || 8
-                 initEditor(r, c)
-            } else {
-                 initEditor(5, 8)
-            }
-        }
-
-        function exportLayout() {
-            // Convert editorCells to format for SystemController
-            // We need to export visible cells in row-major order
-            var cells = []
-            for(var i=0; i<editorCells.length; i++) {
-                if (editorCells[i].visible) {
-                    cells.push({
-                        rowSpan: editorCells[i].spanR,
-                        colSpan: editorCells[i].spanC
-                    })
-                }
-            }
-            return cells
-        }
-        
-        
-        contentItem: ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 0
-            spacing: 0
-
-            // Header
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 50
-                color: Theme.panelBackground
-                
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 22
-                    anchors.rightMargin: 18
-                    spacing: 10
-                    Text {
-                        text: layoutDialogTitle.toUpperCase()
-                        color: Theme.textMuted
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-                    Item { Layout.fillWidth: true }
-                    Rectangle {
-                        width: 30; height: 30; radius: 15
-                        color: Theme.panelSoftBackground
-                        border.color: Theme.controlBorder
-                        Text { anchors.centerIn: parent; text: "×"; color: "#b0b8c8"; font.pixelSize: 14 }
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: layoutDialog.close() }
-                    }
-                }
-                
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 1
-                    color: Theme.panelBorder
-                }
-            }
-
-            // Main Content (Split View)
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 0
-                
-                // LEFT PANEL: Presets
-                Rectangle {
-                    Layout.preferredWidth: 230
-                    Layout.fillHeight: true
-                    color: Theme.panelBackground
-                    
-                    ListView {
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 6
-                        clip: true
-                        model: layoutPresets
-                        delegate: Rectangle {
-                            width: parent.width
-                            height: 42
-                            color: selectedPresetId === modelData.id ? Theme.accent : (presetHover.containsMouse ? Theme.cardHover : "transparent")
-                            radius: Theme.radiusMd
-                            border.color: selectedPresetId === modelData.id ? Theme.accentHover : "transparent"
-                            border.width: 1
-                            
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 10
-                                spacing: 12
-                                
-                                // Icon
-                                Rectangle {
-                                    width: 22; height: 22
-                                    radius: Theme.radiusXs
-                                    color: "transparent"
-                                    border.color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.controlBorderStrong
-                                    border.width: 1
-                                    
-                                    // Mini grid
-                                    Grid {
-                                        anchors.centerIn: parent
-                                        columns: Math.min(modelData.cols, 3)
-                                        rows: Math.min(modelData.rows, 3)
-                                        spacing: 1
-                                        Repeater {
-                                            model: Math.min(modelData.cols * modelData.rows, 9)
-                                            Rectangle {
-                                                width: 4; height: 4
-                                                color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.textMuted
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                Text {
-                                    text: modelData.type === "complex" ? modelData.label : I18n.t("%1 ячеек", [modelData.cells.length > 0 ? modelData.cells.length : (modelData.rows * modelData.cols)])
-                                    color: selectedPresetId === modelData.id ? Theme.textPrimary : Theme.textMuted
-                                    font.pixelSize: 13
-                                    font.bold: selectedPresetId === modelData.id
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
-                            
-                            MouseArea {
-                                id: presetHover
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    selectedPresetId = modelData.id
-                                    // If preset selected, update editor base to match preset for visualization?
-                                    // Or keep editor independent? SmartPSS seems to have presets separate.
-                                    // Let's switch to "Custom" mode if user interacts with editor.
-                                }
-                            }
-                        }
-                        
-                        footer: Rectangle {
-                            width: parent.width
-                            height: 42
-                            color: selectedPresetId === "custom" ? Theme.accent : "transparent"
-                            radius: Theme.radiusMd
-                            border.color: selectedPresetId === "custom" ? Theme.accentHover : "transparent"
-                            border.width: 1
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 10
-                                spacing: 12
-                                Text { text: "?"; color: selectedPresetId === "custom" ? Theme.textPrimary : Theme.textMuted; font.bold: true }
-                                Text {
-                                    text: I18n.t("Свой")
-                                    color: selectedPresetId === "custom" ? Theme.textPrimary : Theme.textMuted
-                                    font.pixelSize: 13
-                                    font.bold: selectedPresetId === "custom"
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: selectedPresetId = "custom"
-                            }
-                        }
-                    }
-                    
-                    Rectangle {
-                        anchors.right: parent.right
-                        width: 1
-                        height: parent.height
-                        color: Theme.panelBorder
-                    }
-                }
-                
-                // RIGHT PANEL: Editor
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    color: "transparent"
-                    
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 20
-                        spacing: 15
-                        
-                        // Controls
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 42
-                            spacing: 10
-                            
-                            Text { text: I18n.t("Ряд"); color: Theme.textMuted; font.pixelSize: 13 }
-                            TextField {
-                                id: customRowsField
-                                text: layoutDialog.editorBaseRows
-                                color: Theme.textPrimary
-                                horizontalAlignment: TextInput.AlignHCenter
-                                verticalAlignment: TextInput.AlignVCenter
-                                Layout.preferredWidth: 74
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: Theme.controlBackground; border.color: customRowsField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
-                                onEditingFinished: {
-                                    var val = parseInt(text)
-                                    if (val > 0 && val <= 12) layoutDialog.initEditor(val, layoutDialog.editorBaseCols)
-                                }
-                            }
-                            
-                            Text { text: I18n.t("Столбцов"); color: Theme.textMuted; font.pixelSize: 13 }
-                            TextField {
-                                id: customColsField
-                                text: layoutDialog.editorBaseCols
-                                color: Theme.textPrimary
-                                horizontalAlignment: TextInput.AlignHCenter
-                                verticalAlignment: TextInput.AlignVCenter
-                                Layout.preferredWidth: 74
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: Theme.controlBackground; border.color: customColsField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
-                                onEditingFinished: {
-                                    var val = parseInt(text)
-                                    if (val > 0 && val <= 12) layoutDialog.initEditor(layoutDialog.editorBaseRows, val)
-                                }
-                            }
-                            
-                            // Aspect Ratio Hint
-                            Text {
-                                property real ratio: (layoutDialog.editorBaseCols / layoutDialog.editorBaseRows) / (16/9)
-                                text: "AR: " + ratio.toFixed(2) + " (1.0 = 16:9)"
-                                color: (ratio > 0.8 && ratio < 1.2) ? Theme.success : Theme.danger
-                                font.pixelSize: 11
-                                visible: true
-                            }
-                            
-                            Item { Layout.fillWidth: true }
-                            
-                            Button {
-                                text: I18n.t("Сброс")
-                                Layout.preferredWidth: 78
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: parent.hovered ? Theme.cardHover : Theme.cardBackground; radius: Theme.radiusMd; border.color: Theme.controlBorder }
-                                contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                onClicked: layoutDialog.resetEditor()
-                            }
-                            
-                            Button {
-                                text: I18n.t("Разбить")
-                                // Enabled if single cell selected AND it is merged (span > 1)
-                                enabled: {
-                                    if (layoutDialog.selectionStart.x < 0) return false
-                                    if (layoutDialog.selectionStart.x !== layoutDialog.selectionEnd.x || layoutDialog.selectionStart.y !== layoutDialog.selectionEnd.y) return false
-                                    var idx = layoutDialog.getCellIndex(layoutDialog.selectionStart.y, layoutDialog.selectionStart.x)
-                                    var cell = layoutDialog.editorCells[idx]
-                                    return cell && (cell.spanR > 1 || cell.spanC > 1)
-                                }
-                                Layout.preferredWidth: 90
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: parent.enabled ? (parent.hovered ? Theme.cardHover : Theme.cardBackground) : Theme.controlBackgroundAlt; radius: Theme.radiusMd; border.color: parent.enabled ? Theme.controlBorderStrong : Theme.controlBorder }
-                                contentItem: Text { text: parent.text; color: parent.enabled ? Theme.textPrimary : Theme.textFaint; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                onClicked: layoutDialog.unmergeSelection()
-                            }
-
-                            Button {
-                                text: I18n.t("Объединить")
-                                enabled: layoutDialog.selectionStart.x >= 0
-                                Layout.preferredWidth: 112
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: parent.enabled ? (parent.hovered ? Theme.accentHover : Theme.accent) : Theme.controlBackgroundAlt; radius: Theme.radiusMd; border.color: parent.enabled ? Theme.accentHover : Theme.controlBorder }
-                                contentItem: Text { text: parent.text; color: parent.enabled ? Theme.textPrimary : Theme.textFaint; font.pixelSize: 13; font.bold: parent.enabled; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                onClicked: layoutDialog.mergeSelection()
-                            }
-                        }
-                        
-                        // Editor Canvas
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            color: Theme.controlBackground
-                            border.color: Theme.panelBorderStrong
-                            border.width: 1
-                            radius: Theme.radiusLg
-                            
-                            // Grid Container
-                            Item {
-                                id: gridContainer
-                                anchors.centerIn: parent
-                                width: Math.min(parent.width - 40, (parent.height - 40) * (layoutDialog.editorBaseCols / layoutDialog.editorBaseRows))
-                                height: width * (layoutDialog.editorBaseRows / layoutDialog.editorBaseCols)
-                                
-                                property real cellW: width / layoutDialog.editorBaseCols
-                                property real cellH: height / layoutDialog.editorBaseRows
-                                
-                                // Cells
-                                Repeater {
-                                    model: layoutDialog.editorCells
-                                    delegate: Rectangle {
-                                        visible: modelData.visible
-                                        x: modelData.c * gridContainer.cellW
-                                        y: modelData.r * gridContainer.cellH
-                                        width: modelData.spanC * gridContainer.cellW
-                                        height: modelData.spanR * gridContainer.cellH
-                                        color: Theme.cardBackground
-                                        border.color: Theme.panelBorderStrong
-                                        border.width: 1
-                                        
-                                        // Inner "Screen" look
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            anchors.margins: 2
-                                            color: Theme.panelAltBackground
-                                            border.color: Theme.panelBorder
-                                            
-                                            // Cell Index
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: (index + 1)
-                                                color: Theme.controlBorderStrong
-                                                font.pixelSize: Math.min(parent.width, parent.height) * 0.4
-                                                font.bold: true
-                                            }
-                                            
-                                            // Merged Indicator
-                                            Rectangle {
-                                                visible: modelData.spanR > 1 || modelData.spanC > 1
-                                                anchors.fill: parent
-                                                color: "transparent"
-                                                border.color: Theme.accent
-                                                border.width: 2
-                                                opacity: 0.5
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                // Selection Overlay
-                                Rectangle {
-                                    visible: layoutDialog.selectionStart.x >= 0
-                                    x: Math.min(layoutDialog.selectionStart.x, layoutDialog.selectionEnd.x) * gridContainer.cellW
-                                    y: Math.min(layoutDialog.selectionStart.y, layoutDialog.selectionEnd.y) * gridContainer.cellH
-                                    width: (Math.abs(layoutDialog.selectionEnd.x - layoutDialog.selectionStart.x) + 1) * gridContainer.cellW
-                                    height: (Math.abs(layoutDialog.selectionEnd.y - layoutDialog.selectionStart.y) + 1) * gridContainer.cellH
-                                    color: Theme.accent
-                                    opacity: 0.3
-                                    border.color: Theme.accentHover
-                                    border.width: 2
-                                }
-                                
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    
-                                    function getGridPos(mouse) {
-                                        var c = Math.floor(mouse.x / gridContainer.cellW)
-                                        var r = Math.floor(mouse.y / gridContainer.cellH)
-                                        c = Math.max(0, Math.min(c, layoutDialog.editorBaseCols - 1))
-                                        r = Math.max(0, Math.min(r, layoutDialog.editorBaseRows - 1))
-                                        return Qt.point(c, r)
-                                    }
-                                    
-                                    onPressed: (mouse) => {
-                                        selectedPresetId = "custom" // Switch to custom mode
-                                        var pos = getGridPos(mouse)
-                                        layoutDialog.selectionStart = pos
-                                        layoutDialog.selectionEnd = pos
-                                        layoutDialog.isSelecting = true
-                                    }
-                                    
-                                    onPositionChanged: (mouse) => {
-                                        if (layoutDialog.isSelecting) {
-                                            var pos = getGridPos(mouse)
-                                            layoutDialog.selectionEnd = pos
-                                        }
-                                    }
-                                    
-                                    onReleased: {
-                                        layoutDialog.isSelecting = false
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Name Field
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text { text: I18n.t("Имя:"); color: Theme.textMuted; font.pixelSize: 13 }
-                            TextField {
-                                id: nameField
-                                Layout.fillWidth: true
-                                placeholderText: I18n.t("Название раскладки")
-                                Layout.preferredHeight: 32
-                                color: Theme.textPrimary
-                                verticalAlignment: TextInput.AlignVCenter
-                                background: Rectangle { color: Theme.controlBackground; border.color: nameField.activeFocus ? Theme.accent : Theme.controlBorder; radius: Theme.radiusMd }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Footer
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 64
-                color: Theme.panelBackground
-                
-                Rectangle {
-                    anchors.top: parent.top
-                    width: parent.width
-                    height: 1
-                    color: Theme.panelBorder
-                }
-                
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 10
-                    Item { Layout.fillWidth: true }
-                    
-                    Button {
-                        text: I18n.t("Отмена")
-                        Layout.preferredWidth: 92
-                        Layout.preferredHeight: 34
-                        background: Rectangle { color: parent.hovered ? Theme.cardHover : Theme.cardBackground; radius: Theme.radiusMd; border.color: Theme.controlBorder }
-                        contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: layoutDialog.close()
-                    }
-                    
-                    Button {
-                        text: I18n.t("OK")
-                        Layout.preferredWidth: 74
-                        Layout.preferredHeight: 34
-                        background: Rectangle { color: parent.hovered ? Theme.accentHover : Theme.accent; radius: Theme.radiusMd; border.color: Theme.accentHover }
-                        contentItem: Text { text: parent.text; color: Theme.textPrimary; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: {
-                            // If custom, use editor cells. If preset, use preset.
-                            if (selectedPresetId === "custom") {
-                                var cells = layoutDialog.exportLayout()
-                                var r = layoutDialog.editorBaseRows
-                                var c = layoutDialog.editorBaseCols
-                                
-                                var name = nameField.text.trim()
-                                if (name.length === 0) name = I18n.t("Польз. план")
-                                
-                                if (editingLayout && currentLayoutIndex >= 0) {
-                                    layoutModel.setProperty(currentLayoutIndex, "name", name)
-                                    layoutModel.setProperty(currentLayoutIndex, "rows", r)
-                                    layoutModel.setProperty(currentLayoutIndex, "cols", c)
-                                    layoutModel.setProperty(currentLayoutIndex, "isDefault", false)
-                                    var newCells = layoutCells
-                                    newCells[currentLayoutIndex] = cells
-                                    layoutCells = newCells
-                                    applyLayout(currentLayoutIndex)
-                                } else {
-                                    layoutModel.append({ "name": name, "rows": r, "cols": c, "isDefault": false })
-                                    var newCells = layoutCells
-                                    newCells.push(cells)
-                                    layoutCells = newCells
-                                    applyLayout(layoutModel.count - 1)
-                                }
-                            } else {
-                                saveLayoutTemplate() // Use existing logic for presets
-                            }
-                            syncLayoutsToBackend()
-                            layoutDialog.close()
-                        }
-                    }
-                }
-            }
+        onPresetAccepted: (name, presetId) => {
+            root.selectedPresetId = presetId
+            root.saveLayoutTemplate(name, presetId)
         }
     }
 
     SettingsDialog {
         id: settingsDialog
-        language: appLanguage
+        language: root.appLanguage
         onLanguageChanged: {
-            appLanguage = language
+            root.appLanguage = language
             I18n.language = language
-            layoutDialogTitle = editingLayout ? I18n.t("Редактирование") : I18n.t("Редактор шаблонов")
+            root.layoutDialogTitle = root.editingLayout ? I18n.t("Редактирование") : I18n.t("Редактор шаблонов")
         }
     }
     
@@ -2404,6 +919,13 @@ Item {
             addCameraDialog.initialSdUrl = ""
             addCameraDialog.open()
         }
+    }
+
+    CameraHealthDialog {
+        id: cameraHealthDialog
+        onEditRequested: (cameraIndex) => root.editCameraByIndex(cameraIndex)
+        onMajesticRequested: (cameraIndex) => root.openMajesticByIndex(cameraIndex)
+        onAddToGridRequested: (cameraIndex) => root.addCameraIndexToFirstFreeGrid(cameraIndex)
     }
     
     AddCameraDialog {
@@ -2430,63 +952,8 @@ Item {
         id: logView
     }
 
-    Dialog {
+    NoAccessDialog {
         id: noAccessDialog
-        modal: true
-        title: I18n.t("Недостаточно прав")
-        width: 420
-        property string message: I18n.t("У вас недостаточно прав для выполнения этого действия.")
-        parent: Overlay.overlay
-        x: parent ? (parent.width - width) / 2 : 0
-        y: parent ? (parent.height - height) / 2 : 0
-        background: Rectangle {
-            color: Theme.panelAltBackground
-            border.color: Theme.panelBorder
-            radius: Theme.radiusMd
-        }
-        header: Rectangle {
-            height: 36
-            color: Theme.topBarBackground
-            radius: Theme.radiusMd
-            border.color: Theme.panelBorder
-            Text {
-                anchors.centerIn: parent
-                text: noAccessDialog.title
-                color: "white"
-                font.bold: true
-                font.pixelSize: 14
-            }
-        }
-        contentItem: Rectangle {
-            anchors.fill: parent
-            color: "transparent"
-            clip: true
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
-                Text {
-                    text: noAccessDialog.message
-                    color: "#cbd5e1"
-                    wrapMode: Text.WordWrap
-                }
-                Item { Layout.fillHeight: true }
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.rightMargin: 24
-                    Layout.bottomMargin: 12
-                    Item { Layout.fillWidth: true }
-                    Button {
-                        text: I18n.t("ОК")
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 28
-                        background: Rectangle { color: "#3b82f6"; radius: 4 }
-                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: noAccessDialog.close()
-                    }
-                }
-            }
-        }
     }
 
     Loader {
@@ -2514,207 +981,41 @@ Item {
         canPlayback: root.canPlayback
         canSettings: root.canSettings
         canExport: root.canExport
-        onDeleteRequested: {
-            if (!root.canSettings) {
-                root.showNoAccess()
-                return
-            }
-            confirmDeleteDialog.cameraIndex = cameraIndex
-            confirmDeleteDialog.open()
-        }
-        onEditRequested: {
-            if (!root.canSettings) {
-                root.showNoAccess()
-                return
-            }
-            var cam = SystemController.cameraModel.getCamera(cameraIndex)
-            addCameraDialog.isEditMode = true
-            addCameraDialog.editIndex = cameraIndex
-            addCameraDialog.initialName = cam.cameraName
-            addCameraDialog.initialIp = cam.cameraIp
-            addCameraDialog.initialPort = cam.cameraPort
-            addCameraDialog.initialOnvifPort = cam.cameraOnvifPort
-            addCameraDialog.initialLogin = cam.cameraLogin || "root"
-            addCameraDialog.initialPassword = SystemController.getCameraPassword(cam.cameraIp)
-            addCameraDialog.initialHdUrl = cam.hdStreamUrl || ""
-            addCameraDialog.initialSdUrl = cam.sdStreamUrl || ""
-            addCameraDialog.open()
-        }
+        onDeleteRequested: root.confirmDeleteCamera(cameraIndex)
+        onEditRequested: root.editCameraByIndex(cameraIndex)
         onGroupChanged: root.cameraDataVersion++
-        onSshRequested: {
-            if (!root.canSettings) {
-                root.showNoAccess()
-                return
-            }
-            // Find camera credentials
-            var cam = SystemController.cameraModel.getCamera(cameraIndex)
-            sshDialog.cameraIp = cam.cameraIp
-            sshDialog.cameraUser = cam.cameraLogin || "root"
-            sshDialog.open()
-        }
-        onArchiveRequested: {
-            if (!root.canPlayback) {
-                root.showNoAccess()
-                return
-            }
-            var cam = SystemController.cameraModel.getCamera(cameraIndex)
-            archiveLoader.pendingCameraIp = cam.cameraIp
-            archiveLoader.active = true
-        }
-        onFileManagerRequested: {
-            if (!root.canExport) {
-                root.showNoAccess()
-                return
-            }
-            var cam = SystemController.cameraModel.getCamera(cameraIndex)
-            fileManagerDialog.cameraIp = cam.cameraIp
-            fileManagerDialog.cameraUser = cam.cameraLogin || "root"
-            fileManagerDialog.open()
-        }
+        onSshRequested: root.openSshByIndex(cameraIndex)
+        onMajesticRequested: root.openMajesticByIndex(cameraIndex)
+        onHealthRequested: root.refreshHealthByIndex(cameraIndex)
+        onArchiveRequested: root.openArchiveByIndex(cameraIndex)
+        onFileManagerRequested: root.openFileManagerByIndex(cameraIndex)
         onPermissionDenied: root.showNoAccess()
     }
 
-    // Group context menu
-    Menu {
+    GroupContextMenu {
         id: groupContextMenu
-        property string targetGroup: ""
-
-        MenuItem {
-            text: I18n.t("Переименовать группу")
-            enabled: root.canSettings
-            onTriggered: {
-                renameGroupDialog.oldName = groupContextMenu.targetGroup
-                renameGroupDialog.newName = groupContextMenu.targetGroup
-                renameGroupDialog.open()
-            }
+        canSettings: root.canSettings
+        onRenameRequested: (groupName) => {
+            renameGroupDialog.oldName = groupName
+            renameGroupDialog.newName = groupName
+            renameGroupDialog.open()
         }
-        MenuItem {
-            text: I18n.t("Удалить группу")
-            enabled: root.canSettings
-            onTriggered: SystemController.removeCameraGroup(groupContextMenu.targetGroup)
-        }
+        onDeleteRequested: (groupName) => SystemController.removeCameraGroup(groupName)
     }
 
-    Dialog {
+    RenameGroupDialog {
         id: renameGroupDialog
-        modal: true
-        width: 360
-        height: 180
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
-        property string oldName: ""
-        property string newName: ""
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-        background: Rectangle { color: "#252526"; radius: 8; border.color: "#3a3a3a" }
-
-        contentItem: ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 16
-            spacing: 12
-
-            Text { text: I18n.t("Переименовать группу"); color: "white"; font.pixelSize: 16; font.bold: true }
-
-            TextField {
-                id: renameField
-                Layout.fillWidth: true
-                text: renameGroupDialog.newName
-                color: "white"
-                placeholderText: I18n.t("Новое имя группы")
-                background: Rectangle { color: "#1f1f1f"; radius: 4; border.color: "#3a3a3a" }
-                onTextChanged: renameGroupDialog.newName = text
-            }
-
-            Item { Layout.fillHeight: true }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-                Button {
-                    text: I18n.t("Отмена")
-                    onClicked: renameGroupDialog.close()
-                }
-                Button {
-                    text: I18n.t("Сохранить")
-                    Layout.fillWidth: true
-                    onClicked: {
-                        var trimmed = renameGroupDialog.newName.trim()
-                        if (trimmed)
-                            SystemController.renameCameraGroup(renameGroupDialog.oldName, trimmed)
-                        renameGroupDialog.close()
-                    }
-                }
-            }
-        }
+        onRenameAccepted: (oldName, newName) => SystemController.renameCameraGroup(oldName, newName)
     }
     
-    Dialog {
+    ConfirmDeleteCameraDialog {
         id: confirmDeleteDialog
-        modal: true
-        width: 400
-        height: 180
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
-        
-        property int cameraIndex: -1
-        
-        background: Rectangle {
-            color: "#252526"
-            border.color: "#3e3e42"
-            radius: 6
-        }
-        
-        header: Rectangle {
-            color: "transparent"
-            height: 50
-            Text {
-                anchors.centerIn: parent
-                text: I18n.t("Удаление камеры")
-                color: "white"
-                font.bold: true
-                font.pixelSize: 16
+        onDeleteAccepted: (cameraIndex) => {
+            if (!root.canSettings) {
+                root.showNoAccess()
+                return
             }
-        }
-        
-        contentItem: ColumnLayout {
-            spacing: 20
-            
-            Text {
-                text: I18n.t("Вы действительно хотите удалить эту камеру?")
-                color: "#cccccc"
-                font.pixelSize: 14
-                Layout.alignment: Qt.AlignHCenter
-            }
-            
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 20
-                
-                Button {
-                    text: I18n.t("ОТМЕНА")
-                    background: Rectangle { color: "#444444"; radius: 4 }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onClicked: confirmDeleteDialog.close()
-                }
-                
-                Button {
-                    text: I18n.t("УДАЛИТЬ")
-                    background: Rectangle { color: "#d32f2f"; radius: 4 }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onClicked: {
-                        if (confirmDeleteDialog.cameraIndex >= 0) {
-                            if (!root.canSettings) {
-                                root.showNoAccess()
-                                confirmDeleteDialog.close()
-                                return
-                            }
-                            SystemController.removeDevice(confirmDeleteDialog.cameraIndex)
-                        }
-                        confirmDeleteDialog.close()
-                    }
-                }
-            }
+            SystemController.removeDevice(cameraIndex)
         }
     }
 
@@ -2722,122 +1023,25 @@ Item {
         id: sshDialog
     }
 
+    MajesticControlDialog {
+        id: majesticDialog
+    }
+
     FileManagerDialog {
         id: fileManagerDialog
     }
 
     // Drag Proxy Item
-    Rectangle {
+    DashboardDragProxy {
         id: dragProxy
-        visible: false
-        width: 300
-        height: 50
-        color: "#2a2d2e"
-        opacity: 0.9
-        z: 1000
-        radius: 4
-        border.color: "#3b82f6"
-        border.width: 1
-        
-        property string proxyIp: ""
-        property string proxyName: ""
-        property int dragIndex: -1
-        
-        Drag.active: visible // Simple binding: if visible (dragging), then active
-        Drag.keys: ["camera"]
-        Drag.mimeData: { "application/camera-index": dragProxy.dragIndex }
-        Drag.hotSpot.x: width / 2
-        Drag.hotSpot.y: height / 2
-        Drag.source: dragProxy
-        
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 15
-            spacing: 10
-            Rectangle { width: 8; height: 8; radius: 4; color: "#f44336" }
-            ColumnLayout {
-                Text { text: I18n.t("Камера") + " " + dragProxy.proxyIp; color: "#cccccc"; font.pixelSize: 12 }
-                Text { text: dragProxy.proxyIp; color: "#888888"; font.pixelSize: 11 }
-            }
-        }
     }
 
     // Toast Notification
-    Rectangle {
+    DashboardToast {
         id: toast
-        width: Math.min(parent.width - 40, 500)
-        height: 50
-        color: "#333333"
-        radius: 8
-        border.color: "#4caf50"
-        border.width: 1
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 30
-        opacity: 0
-        visible: opacity > 0
-        z: 2000
-
-        property string message: ""
-        property string filePath: ""
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.margins: 15
-            spacing: 10
-            
-            Text {
-                text: "check_circle"
-                font.family: "Material Icons"
-                font.pixelSize: 24
-                color: "#4caf50"
-            }
-            
-            Text {
-                text: toast.message
-                color: "white"
-                font.pixelSize: 14
-                Layout.fillWidth: true
-                elide: Text.ElideMiddle
-            }
-
-            Button {
-                text: I18n.t("Открыть папку")
-                visible: toast.filePath !== ""
-                background: Rectangle {
-                    color: parent.down ? "#3e3e42" : "#2d2d30"
-                    radius: 4
-                    border.color: "#4caf50"
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
-                }
-                onClicked: {
-                    // Open folder containing the file
-                    var folder = toast.filePath.substring(0, toast.filePath.lastIndexOf("/"))
-                    if (folder.length === 0) folder = toast.filePath.substring(0, toast.filePath.lastIndexOf("\\"))
-                    Qt.openUrlExternally("file:///" + folder)
-                }
-            }
-        }
-
-        SequentialAnimation {
-            id: toastAnim
-            
-            NumberAnimation { target: toast; property: "opacity"; to: 1; duration: 200 }
-            PauseAnimation { duration: 5000 } // Increased duration to allow clicking
-            NumberAnimation { target: toast; property: "opacity"; to: 0; duration: 500 }
-        }
-
-        function show(msg, path) {
-            message = msg
-            filePath = path || ""
-            toastAnim.restart()
-        }
     }
 
     Connections {
