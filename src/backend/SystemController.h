@@ -23,6 +23,7 @@
 #include "MajesticClient.h"
 #include "NetworkDiscoveryService.h"
 #include "OpenIpcFirmwareClient.h"
+#include "AppUpdateChecker.h"
 
 class StatusChecker;
 
@@ -44,6 +45,7 @@ class SystemController : public QObject
     Q_PROPERTY(MajesticClient* majesticClient READ majesticClient CONSTANT)
     Q_PROPERTY(OpenIpcFirmwareClient* firmwareClient READ firmwareClient CONSTANT)
     Q_PROPERTY(NetworkDiscoveryService* networkDiscovery READ networkDiscovery CONSTANT)
+    Q_PROPERTY(AppUpdateChecker* appUpdateChecker READ appUpdateChecker CONSTANT)
     Q_PROPERTY(QVariantMap appSettings READ getAppSettings WRITE saveAppSettings NOTIFY appSettingsChanged)
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
@@ -79,6 +81,7 @@ public:
     MajesticClient* majesticClient() const { return m_majesticClient; }
     OpenIpcFirmwareClient* firmwareClient() const { return m_firmwareClient; }
     NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
+    AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
     Q_INVOKABLE QVariantMap parseCameraQrPayload(const QString &payload) const;
     Q_INVOKABLE QString probeCameraEndpoint(const QString &kind,
                                             const QString &host,
@@ -206,6 +209,7 @@ public slots:
     Q_INVOKABLE QVariantMap getFileInfo(const QString &fileUrl) const;
     Q_INVOKABLE bool copyImageToClipboard(const QString &fileUrl);
     Q_INVOKABLE void copyTextToClipboard(const QString &text);
+    Q_INVOKABLE bool saveTextFile(const QString &pathOrUrl, const QString &content) const;
     Q_INVOKABLE bool openWithDialog(const QString &fileUrl);
     Q_INVOKABLE bool printImage(const QString &fileUrl);
 
@@ -265,6 +269,7 @@ private:
     MajesticClient *m_majesticClient;
     OpenIpcFirmwareClient *m_firmwareClient;
     NetworkDiscoveryService *m_networkDiscovery;
+    AppUpdateChecker *m_appUpdateChecker;
     StatusChecker *m_statusChecker;
     QHash<QString, qint64> m_streamOfflineUntilMs;
     QHash<QString, QString> m_cameraStatusDetails;

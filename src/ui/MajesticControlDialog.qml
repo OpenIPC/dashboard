@@ -22,6 +22,17 @@ Dialog {
     property var pendingPatch: ({})
     property var pendingChanges: []
     property var requestIds: ({})
+    property var rollbackConfig: ({})
+    property var rollbackSchema: ({})
+    property var rollbackChanges: []
+    property bool rollbackAvailable: false
+    property bool rollbackCritical: false
+    property string rollbackReason: ""
+    property string activeRollbackId: ""
+    property var backupRestoreConfig: ({})
+    property var backupRestoreSchema: ({})
+    property var backupRestoreChanges: []
+    property string backupRestorePath: ""
     property string selectedGroupId: ""
     property bool pendingPipelineReloadNeeded: false
     property bool activeResetNeedsPipelineReload: false
@@ -62,15 +73,33 @@ Dialog {
     property var firmwareWifiNetworks: []
     property string firmwareLogsText: ""
     property string firmwareLogsSource: "syslog"
+    property bool firmwareLiveLogs: false
+    property bool firmwareLogsPaused: false
+    property string firmwareLogFilter: ""
+    property int firmwareLogLineLimit: 2000
+    property string firmwareUpgradeText: ""
+    property bool firmwareUpgradeRebooting: false
+    property bool firmwareArchiveUploaded: false
+    property bool firmwareUpdateKernel: true
+    property bool firmwareUpdateRootfs: true
+    property bool firmwareUpdateReset: false
+    property bool firmwareUpdateForce: false
+    property bool firmwareBackupSaved: false
+    property bool firmwareReturnPolling: false
+    property int firmwareReturnPollTries: 0
+    property int firmwareReturnPollMaxTries: 60
+    readonly property bool firmwareWebSocketsAvailable: SystemController.firmwareClient.webSocketsAvailable
     property string activeFirmwareStatusId: ""
     property string activeFirmwareNetworkId: ""
     property string activeFirmwareNetworkSaveId: ""
     property string activeFirmwareTimeId: ""
     property string activeFirmwareTimeSaveId: ""
     property string activeFirmwareLogsId: ""
+    property string activeFirmwareLiveLogsId: ""
     property string activeFirmwareBackupId: ""
     property string activeFirmwareRebootId: ""
     property string activeFirmwareUpdateId: ""
+    property string activeFirmwareReturnProbeId: ""
 
     readonly property var majesticGroupText: ({
         image: { ru: "Изображение", en: "Image" },
@@ -500,6 +529,15 @@ Dialog {
                                     cameraHost, cameraPort, cameraUser, cameraPassword))
     }
 
+    function refreshOverviewMetrics() {
+        activeMetricsId = track(SystemController.majesticClient.loadMetrics(
+                                    cameraHost, cameraPort, cameraUser, cameraPassword))
+    }
+
+    function parseMajesticJson(text) {
+        return SystemController.majesticClient.parseJsonObject(text)
+    }
+
     function loadFirmwareStatus() {
         if (!cameraHost.length) return
         firmwareBusy = true
@@ -520,15 +558,15 @@ Dialog {
 
     function saveFirmwareNetwork() {
         var settings = {
-            hostname: networkHostname.text,
-            interface: networkInterface.currentText,
-            dhcp: networkDhcp.checked,
-            address: networkAddress.text,
-            netmask: networkNetmask.text,
-            gateway: networkGateway.text,
-            nameserver: networkDns.text,
-            wlanSsid: networkWlanSsid.text,
-            wlanPassword: networkWlanPassword.text
+            hostname: networkPage.hostname,
+            interface: networkPage.interfaceName,
+            dhcp: networkPage.dhcpEnabled,
+            address: networkPage.address,
+            netmask: networkPage.netmask,
+            gateway: networkPage.gateway,
+            nameserver: networkPage.nameserver,
+            wlanSsid: networkPage.wlanSsid,
+            wlanPassword: networkPage.wlanPassword
         }
         firmwareBusy = true
         statusError = false
@@ -565,9 +603,9 @@ Dialog {
 
     function saveFirmwareTime() {
         var settings = {
-            zoneName: timeZoneName.text,
-            zoneData: timeZoneData.text,
-            servers: [timeServer0.text, timeServer1.text, timeServer2.text, timeServer3.text]
+            zoneName: timePage.zoneName,
+            zoneData: timePage.zoneData,
+            servers: [timePage.server0, timePage.server1, timePage.server2, timePage.server3]
         }
         firmwareBusy = true
         statusError = false
@@ -585,14 +623,71 @@ Dialog {
                                              cameraHost, cameraPort, cameraUser, cameraPassword, setFromComputer))
     }
 
-    function loadFirmwareLogs(source) {
+    function loadFirmwareLogs(source, silent) {
         firmwareLogsSource = source || "syslog"
-        firmwareBusy = true
-        statusError = false
-        statusText = I18n.t("Чтение логов OpenIPC…")
+        if (!silent) {
+            firmwareBusy = true
+            statusError = false
+            statusText = I18n.t("Чтение логов OpenIPC…")
+        }
         activeFirmwareLogsId = track(SystemController.firmwareClient.loadLogs(
                                          cameraHost, cameraPort, cameraUser, cameraPassword,
                                          firmwareLogsSource, 300))
+    }
+
+    function appendFirmwareLogText(text) {
+        if (!text || firmwareLogsPaused) return
+        var merged = firmwareLogsText
+        if (merged.length && merged.charAt(merged.length - 1) !== "\n") merged += "\n"
+        merged += String(text)
+        var lines = merged.split("\n")
+        if (lines.length > firmwareLogLineLimit) lines = lines.slice(lines.length - firmwareLogLineLimit)
+        firmwareLogsText = lines.join("\n")
+    }
+
+    function filteredFirmwareLogsText() {
+        var text = firmwareLogsText.length ? firmwareLogsText : I18n.t("Нажмите syslog, majestic или dmesg, чтобы прочитать логи камеры.")
+        var query = firmwareLogFilter.trim().toLowerCase()
+        if (!query.length || !firmwareLogsText.length) return text
+        var lines = firmwareLogsText.split("\n")
+        var result = []
+        for (var i = 0; i < lines.length; ++i) {
+            if (lines[i].toLowerCase().indexOf(query) >= 0) result.push(lines[i])
+        }
+        return result.length ? result.join("\n") : I18n.t("Нет совпадений по фильтру")
+    }
+
+    function appendFirmwareUpgradeText(text) {
+        if (!text) return
+        firmwareUpgradeText += String(text)
+        var lines = firmwareUpgradeText.split("\n")
+        if (lines.length > firmwareLogLineLimit) lines = lines.slice(lines.length - firmwareLogLineLimit)
+        firmwareUpgradeText = lines.join("\n")
+    }
+
+    function startFirmwareLiveLogs() {
+        if (!cameraHost.length || firmwareLiveLogs) return
+        firmwareLiveLogs = true
+        firmwareLogsPaused = false
+        statusError = false
+        if (SystemController.firmwareClient.webSocketsAvailable) {
+            statusText = I18n.t("Подключение live logs через /ws/logs…")
+            activeFirmwareLiveLogsId = track(SystemController.firmwareClient.startLiveLogs(
+                                                 cameraHost, cameraPort, cameraUser, cameraPassword))
+        } else {
+            statusText = I18n.t("Qt WebSockets недоступен: включён polling логов.")
+            firmwareLiveLogsTimer.restart()
+            loadFirmwareLogs(firmwareLogsSource, true)
+        }
+    }
+
+    function stopFirmwareLiveLogs() {
+        if (!firmwareLiveLogs) return
+        firmwareLiveLogs = false
+        firmwareLiveLogsTimer.stop()
+        if (SystemController.firmwareClient.webSocketsAvailable) SystemController.firmwareClient.stopLiveLogs()
+        statusError = false
+        statusText = I18n.t("Live logs остановлены")
     }
 
     function refreshFirmwareUpdateInfo() {
@@ -607,16 +702,120 @@ Dialog {
         firmwareBusy = true
         statusError = false
         statusText = I18n.t("Загрузка firmware-архива на камеру…")
+        firmwareArchiveUploaded = false
         activeFirmwareUpdateId = track(SystemController.firmwareClient.uploadFirmwareArchive(
                                            cameraHost, cameraPort, cameraUser, cameraPassword, path))
     }
 
+    function firmwareSocText() {
+        var device = firmwareStatus.device || {}
+        return String(firmwareUpdateInfo.socName || firmwareUpdateInfo.socFamily || firmwareUpdateInfo.soc || device.soc || "").trim()
+    }
+
+    function firmwareFlashText() {
+        var storage = firmwareStatus.storage || {}
+        return String(firmwareUpdateInfo.flashType || firmwareUpdateInfo.flash || storage.flash || "").trim()
+    }
+
+    function firmwareVariantText() {
+        var device = firmwareStatus.device || {}
+        return String(firmwareUpdateInfo.variant || device.firmware || "").trim()
+    }
+
+    function firmwareUpdateOptionsSummary() {
+        var text = ""
+        if (firmwareUpdateKernel) text = "kernel"
+        if (firmwareUpdateRootfs) text = text.length ? text + " + rootfs" : "rootfs"
+        if (firmwareUpdateReset) text = text.length ? text + " + reset" : "reset"
+        if (firmwareUpdateForce) text = text.length ? text + " + force" : "force"
+        return text.length ? text : I18n.t("не выбрано")
+    }
+
+    function firmwareUpdateBlockReason(source) {
+        if (firmwareReturnPolling) return I18n.t("дождитесь возврата камеры после предыдущего update")
+        if (!SystemController.firmwareClient.webSocketsAvailable) return I18n.t("Native /ws/upgrade недоступен в этой сборке")
+        if (!firmwareUpdateKernel && !firmwareUpdateRootfs) return I18n.t("выберите хотя бы kernel или rootfs")
+        if (!firmwareSocText().length || !firmwareFlashText().length) return I18n.t("сначала загрузите update-info: SoC и Flash не определены")
+        if (source === "github" && firmwareUpdateInfo.githubAvailable !== true) return I18n.t("GitHub update недоступен по данным камеры")
+        if (source === "uploaded" && !firmwareArchiveUploaded) return I18n.t("сначала загрузите firmware archive")
+        return ""
+    }
+
+    function canStartFirmwareUpdate(source) {
+        return firmwareUpdateBlockReason(source).length === 0
+    }
+
+    function startFirmwareReturnPolling() {
+        firmwareReturnPolling = true
+        firmwareReturnPollTries = 0
+        activeFirmwareReturnProbeId = ""
+        firmwareReturnPollTimer.restart()
+        statusError = false
+        statusText = I18n.t("Ожидание возврата камеры после update…")
+    }
+
+    function stopFirmwareReturnPolling(message, error) {
+        firmwareReturnPolling = false
+        firmwareReturnPollTimer.stop()
+        if (activeFirmwareReturnProbeId.length) {
+            untrack(activeFirmwareReturnProbeId)
+            activeFirmwareReturnProbeId = ""
+        }
+        firmwareBusy = false
+        firmwareUpgradeRebooting = false
+        statusError = error === true
+        if (message && message.length) statusText = message
+    }
+
+    function probeFirmwareReturn() {
+        if (!firmwareReturnPolling || activeFirmwareReturnProbeId.length) return
+        if (firmwareReturnPollTries >= firmwareReturnPollMaxTries) {
+            stopFirmwareReturnPolling(I18n.t("Камера не вернулась после update. Проверьте питание и сеть."), true)
+            return
+        }
+        firmwareReturnPollTries += 1
+        statusError = false
+        statusText = I18n.t("Ожидание возврата камеры… попытка %1/%2", [firmwareReturnPollTries, firmwareReturnPollMaxTries])
+        activeFirmwareReturnProbeId = track(SystemController.firmwareClient.loadStatus(
+                                                cameraHost, cameraPort, cameraUser, cameraPassword))
+    }
+
     function startGithubFirmwareUpdate() {
+        var blockReason = firmwareUpdateBlockReason("github")
+        if (blockReason.length) {
+            firmwareBusy = false
+            statusError = true
+            statusText = I18n.t("Firmware update заблокирован: %1", [blockReason])
+            return
+        }
         firmwareBusy = true
         statusError = false
+        firmwareUpgradeText = ""
+        firmwareUpgradeRebooting = false
+        firmwareArchiveUploaded = false
         statusText = I18n.t("Запуск updater OpenIPC…")
         activeFirmwareUpdateId = track(SystemController.firmwareClient.startGithubUpdate(
-                                           cameraHost, cameraPort, cameraUser, cameraPassword, true, true, false, false))
+                                           cameraHost, cameraPort, cameraUser, cameraPassword,
+                                           firmwareUpdateKernel, firmwareUpdateRootfs, firmwareUpdateReset, firmwareUpdateForce))
+    }
+
+    function startUploadedFirmwareUpdate() {
+        var blockReason = firmwareUpdateBlockReason("uploaded")
+        if (blockReason.length) {
+            firmwareBusy = false
+            statusError = true
+            statusText = I18n.t("Firmware update заблокирован: %1", [blockReason])
+            return
+        }
+        firmwareBusy = true
+        statusError = false
+        firmwareUpgradeText = ""
+        firmwareUpgradeRebooting = false
+        statusText = I18n.t("Запуск updater для /tmp/firmware.tgz…")
+        activeFirmwareUpdateId = track(SystemController.firmwareClient.startFirmwareUpgrade(
+                                           cameraHost, cameraPort, cameraUser, cameraPassword,
+                                           "/tmp/firmware.tgz",
+                                           firmwareUpdateKernel, firmwareUpdateRootfs, firmwareUpdateReset, firmwareUpdateForce))
     }
 
     function requestFirmwareReboot() {
@@ -632,31 +831,49 @@ Dialog {
         statusError = false
         statusText = I18n.t("Создание firmware backup…")
         activeFirmwareBackupId = track(SystemController.firmwareClient.saveFirmwareBackup(
-                                           cameraHost, cameraPort, cameraUser, cameraPassword, path))
+                                            cameraHost, cameraPort, cameraUser, cameraPassword, path))
+    }
+
+    function openSnapshotDialog() { snapshotDialog.open() }
+    function openSaveBackupDialog() { saveBackupDialog.open() }
+    function openBackupRestoreDialog() { openBackupDialog.open() }
+    function openPcmDialog() { pcmDialog.open() }
+    function openFirmwareBackupDialog() { firmwareBackupDialog.open() }
+    function openFirmwareUploadDialog() { firmwareUploadDialog.open() }
+    function openFirmwareNetworkConfirm() { firmwareNetworkConfirm.open() }
+    function openFirmwareNetworkResetConfirm() { firmwareNetworkResetConfirm.open() }
+    function openFirmwareTimeConfirm() { firmwareTimeConfirm.open() }
+    function openFirmwareRebootConfirm() { firmwareRebootConfirm.open() }
+    function openGithubFirmwareUpdateConfirm() { firmwareUpdateConfirm.open() }
+    function openUploadedFirmwareUpdateConfirm() { firmwareUploadedUpdateConfirm.open() }
+    function openRollbackConfirm() { rollbackConfirm.open() }
+
+    function setNightMode(mode) {
+        track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, mode))
     }
 
     function applyFirmwareNetworkToEditors(network) {
         var current = network.current || {}
-        networkHostname.text = network.hostname || current.hostname || ""
+        networkPage.hostname = network.hostname || current.hostname || ""
         var iface = network.interface || current.interface || "eth0"
-        networkInterface.currentIndex = iface === "wlan0" ? 1 : 0
-        networkDhcp.checked = network.dhcp === true || String((current.mode || "")).toLowerCase() === "dhcp"
-        networkAddress.text = network.address || current.address || ""
-        networkNetmask.text = network.netmask || current.netmask || ""
-        networkGateway.text = network.gateway || current.gateway || ""
-        networkDns.text = network.nameserver || current.nameserver || ""
-        networkWlanSsid.text = network.wlanSsid || ""
-        networkWlanPassword.text = network.wlanPassword || ""
+        networkPage.interfaceIndex = iface === "wlan0" ? 1 : 0
+        networkPage.dhcpEnabled = network.dhcp === true || String((current.mode || "")).toLowerCase() === "dhcp"
+        networkPage.address = network.address || current.address || ""
+        networkPage.netmask = network.netmask || current.netmask || ""
+        networkPage.gateway = network.gateway || current.gateway || ""
+        networkPage.nameserver = network.nameserver || current.nameserver || ""
+        networkPage.wlanSsid = network.wlanSsid || ""
+        networkPage.wlanPassword = network.wlanPassword || ""
     }
 
     function applyFirmwareTimeToEditors(time) {
         var servers = time.servers || []
-        timeZoneName.text = time.zoneName || time.currentZoneName || ""
-        timeZoneData.text = time.zoneData || time.currentZoneData || ""
-        timeServer0.text = servers.length > 0 ? servers[0] : ""
-        timeServer1.text = servers.length > 1 ? servers[1] : ""
-        timeServer2.text = servers.length > 2 ? servers[2] : ""
-        timeServer3.text = servers.length > 3 ? servers[3] : ""
+        timePage.zoneName = time.zoneName || time.currentZoneName || ""
+        timePage.zoneData = time.zoneData || time.currentZoneData || ""
+        timePage.server0 = servers.length > 0 ? servers[0] : ""
+        timePage.server1 = servers.length > 1 ? servers[1] : ""
+        timePage.server2 = servers.length > 2 ? servers[2] : ""
+        timePage.server3 = servers.length > 3 ? servers[3] : ""
     }
 
     function setDotted(object, path, value) {
@@ -716,7 +933,7 @@ Dialog {
         draftValues[field.path] = value
         revision++
         recomputeDirty()
-        if (field.live && livePreview.checked) liveImageTimer.restart()
+        if (field.live && settingsPage.livePreviewChecked) liveImageTimer.restart()
     }
 
     function valueText(field, value) {
@@ -750,7 +967,7 @@ Dialog {
             var controller = parent + "." + condition.field
             if (String(draftValues[controller]) !== String(condition.equals)) return false
         }
-        var needle = settingsSearch.text.trim().toLowerCase()
+        var needle = settingsPage.searchText.trim().toLowerCase()
         return groupOk && (!needle.length || localizedFieldTitle(field).toLowerCase().indexOf(needle) >= 0
                            || String(field.path).toLowerCase().indexOf(needle) >= 0
                            || localizedFieldHint(field).toLowerCase().indexOf(needle) >= 0
@@ -774,6 +991,7 @@ Dialog {
     }
 
     function applyPending() {
+        rememberRollbackSnapshot(pendingChanges, I18n.t("Rollback snapshot создан перед применением %1 критичных изменений.", [criticalChanges(pendingChanges).length]))
         loading = true
         statusError = false
         pendingAutoReloadAfterApply = pendingPipelineReloadNeeded && autoReloadAfterApply && capabilities.pipelineReload === true
@@ -818,7 +1036,9 @@ Dialog {
             { label: I18n.t("Сброс значений"), value: capabilities.resetDefaults === true },
             { label: I18n.t("Live ISP"), value: capabilities.liveImage === true },
             { label: I18n.t("Метрики"), value: capabilities.metrics === true },
-            { label: I18n.t("Двустороннее аудио"), value: capabilities.playAudio === true }
+            { label: I18n.t("Двустороннее аудио"), value: capabilities.playAudio === true },
+            { label: "Qt WebSockets", value: SystemController.firmwareClient.webSocketsAvailable },
+            { label: I18n.t("OpenIPC firmware API"), value: true }
         ]
     }
 
@@ -892,6 +1112,109 @@ Dialog {
         return true
     }
 
+    function isCriticalSettingPath(path) {
+        var p = String(path || "")
+        if (fieldRequiresPipelineReload(p)) return true
+        return p.indexOf("video") === 0
+                || p.indexOf("audio") === 0
+                || p.indexOf("rtsp") === 0
+                || p.indexOf("hls") === 0
+                || p.indexOf("mjpeg") === 0
+                || p.indexOf("webrtc") === 0
+                || p.indexOf("outgoing") === 0
+                || p.indexOf("records") === 0
+                || p.indexOf("recording") === 0
+                || p.indexOf("system") === 0
+                || p.indexOf("netip") === 0
+                || p === "image.rotate"
+                || p === "image.tuning"
+    }
+
+    function criticalChanges(changes) {
+        var out = []
+        for (var i = 0; i < changes.length; ++i) {
+            if (isCriticalSettingPath(changes[i].path)) out.push(changes[i])
+        }
+        return out
+    }
+
+    function rememberRollbackSnapshot(changes, reason) {
+        rollbackConfig = clone(originalConfig)
+        rollbackSchema = clone(currentSchema)
+        rollbackChanges = criticalChanges(changes || [])
+        rollbackCritical = rollbackChanges.length > 0
+        rollbackAvailable = rollbackCritical
+        rollbackReason = reason || (rollbackCritical
+                                    ? I18n.t("Перед критичным изменением сохранён снимок конфигурации для быстрого отката.")
+                                    : "")
+    }
+
+    function clearRollbackSnapshot() {
+        rollbackConfig = ({})
+        rollbackSchema = ({})
+        rollbackChanges = []
+        rollbackAvailable = false
+        rollbackCritical = false
+        rollbackReason = ""
+        activeRollbackId = ""
+    }
+
+    function rollbackPendingChanges() {
+        if (!rollbackAvailable) return
+        var changes = SystemController.majesticClient.describeChanges(originalConfig, rollbackConfig)
+        if (!changes.length) {
+            statusError = false
+            statusText = I18n.t("Откат не требуется: конфигурация уже совпадает со снимком.")
+            clearRollbackSnapshot()
+            return
+        }
+        pendingPatch = SystemController.majesticClient.buildPatch(originalConfig, rollbackConfig)
+        pendingChanges = changes
+        pendingPipelineReloadNeeded = false
+        for (var i = 0; i < changes.length; ++i) {
+            if (fieldRequiresPipelineReload(changes[i].path)) {
+                pendingPipelineReloadNeeded = true
+                break
+            }
+        }
+        pendingAutoReloadAfterApply = pendingPipelineReloadNeeded && autoReloadAfterApply && capabilities.pipelineReload === true
+        loading = true
+        statusError = false
+        statusText = I18n.t("Откат критичных настроек Majestic…")
+        activeRollbackId = track(SystemController.majesticClient.applyConfiguration(
+                                     cameraHost, cameraPort, cameraUser, cameraPassword, pendingPatch))
+        activeApplyId = activeRollbackId
+        applyWatchdogTimer.restart()
+    }
+
+    function clearBackupRestore() {
+        backupRestoreConfig = ({})
+        backupRestoreSchema = ({})
+        backupRestoreChanges = []
+        backupRestorePath = ""
+    }
+
+    function backupRestoreSummary() {
+        if (!backupRestorePath.length) return I18n.t("Backup не выбран.")
+        return I18n.t("Backup: %1 · отличий: %2", [backupRestorePath, backupRestoreChanges.length])
+    }
+
+    function previewBackupRestore() {
+        if (!backupRestorePath.length) return
+        rawJsonPage.text = JSON.stringify(backupRestoreConfig, null, 2)
+        tabs.currentIndex = tabIndexForKind("raw")
+    }
+
+    function applyBackupRestore() {
+        if (!backupRestorePath.length) return
+        if (!backupRestoreChanges.length) {
+            statusError = false
+            statusText = I18n.t("Backup совпадает с текущей конфигурацией.")
+            return
+        }
+        prepareApply(backupRestoreConfig)
+    }
+
     function selectGroup(groupId) {
         if (selectedGroupId === groupId) return
         selectedGroupId = groupId
@@ -907,7 +1230,7 @@ Dialog {
             var controller = parent + "." + condition.field
             if (String(draftValues[controller]) !== String(condition.equals)) return false
         }
-        var needle = settingsSearch.text.trim().toLowerCase()
+        var needle = settingsPage.searchText.trim().toLowerCase()
         return !needle.length || localizedFieldTitle(field).toLowerCase().indexOf(needle) >= 0
                 || String(field.path).toLowerCase().indexOf(needle) >= 0
                 || localizedFieldHint(field).toLowerCase().indexOf(needle) >= 0
@@ -1233,11 +1556,49 @@ Dialog {
     }
 
     function updateChecklistRows() {
+        var sourceOk = firmwareUpdateInfo.githubAvailable === true || firmwareArchiveUploaded
+        var identityOk = firmwareSocText().length > 0 && firmwareFlashText().length > 0
+        var optionsOk = firmwareUpdateKernel || firmwareUpdateRootfs
+        var dangerousOptions = firmwareUpdateReset || firmwareUpdateForce
         return [
-            { title: I18n.t("1. Backup"), text: I18n.t("Перед прошивкой нужно сохранить конфигурацию Majestic и, желательно, полный backup flash/overlay.") },
-            { title: I18n.t("2. Совместимость"), text: I18n.t("Образ должен совпадать с SoC, типом памяти и веткой firmware. Этот контроль будет обязательным в нативном updater.") },
-            { title: I18n.t("3. Питание и сеть"), text: I18n.t("Камера не должна потерять питание или сеть во время update/reboot.") },
-            { title: I18n.t("4. Подтверждение"), text: I18n.t("Опасные операции будут выполняться только после явного подтверждения пользователя.") }
+            {
+                title: I18n.t("1. WebSocket updater"),
+                text: SystemController.firmwareClient.webSocketsAvailable
+                      ? I18n.t("Native /ws/upgrade доступен: приложение может вести update и читать прогресс.")
+                      : I18n.t("Qt WebSockets не найден в этой сборке: используйте штатный Update WebUI камеры."),
+                state: SystemController.firmwareClient.webSocketsAvailable ? "ok" : "block"
+            },
+            {
+                title: I18n.t("2. Совместимость"),
+                text: identityOk
+                      ? I18n.t("Определено: SoC %1 · Flash %2 · Variant %3", [firmwareSocText(), firmwareFlashText(), firmwareVariantText() || "—"])
+                      : I18n.t("Сначала загрузите update-info, чтобы приложение видело SoC и тип flash."),
+                state: identityOk ? "ok" : "block"
+            },
+            {
+                title: I18n.t("3. Источник прошивки"),
+                text: sourceOk
+                      ? I18n.t("Доступен GitHub update или уже загружен локальный firmware archive.")
+                      : I18n.t("Нет готового источника: загрузите update-info для GitHub или upload archive."),
+                state: sourceOk ? "ok" : "warn"
+            },
+            {
+                title: I18n.t("4. Backup"),
+                text: firmwareBackupSaved
+                      ? I18n.t("Firmware backup уже сохранён в этой сессии.")
+                      : I18n.t("Перед прошивкой рекомендуется сохранить firmware backup и Majestic backup."),
+                state: firmwareBackupSaved ? "ok" : "warn"
+            },
+            {
+                title: I18n.t("5. Опции прошивки"),
+                text: I18n.t("Выбрано: %1", [firmwareUpdateOptionsSummary()]),
+                state: !optionsOk ? "block" : (dangerousOptions ? "warn" : "ok")
+            },
+            {
+                title: I18n.t("6. Питание и сеть"),
+                text: I18n.t("Не отключайте питание. После flashing/reboot приложение будет ждать возврата камеры."),
+                state: "warn"
+            }
         ]
     }
 
@@ -1420,7 +1781,7 @@ Dialog {
     }
 
     function copyRedactedRawJson() {
-        var parsed = SystemController.majesticClient.parseJsonObject(rawEditor.text)
+        var parsed = SystemController.majesticClient.parseJsonObject(rawJsonPage.text)
         if (!parsed.ok) {
             statusError = true
             statusText = I18n.t("Ошибка JSON: ") + parsed.error
@@ -1453,8 +1814,15 @@ Dialog {
         return [
             { group: I18n.t("Видео"), name: I18n.t("Основной RTSP"), value: "rtsp://" + displayAuth + rtspHost + "/stream=0", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=0", openValue: "rtsp://" + realAuth + rtspHost + "/stream=0", openable: true, hint: I18n.t("Главный поток Majestic") },
             { group: I18n.t("Видео"), name: I18n.t("Дополнительный RTSP"), value: "rtsp://" + displayAuth + rtspHost + "/stream=1", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=1", openValue: "rtsp://" + realAuth + rtspHost + "/stream=1", openable: true, hint: I18n.t("Sub-stream, если включён в конфигурации") },
+            { group: I18n.t("Видео"), name: "RTSP JPEG", value: "rtsp://" + displayAuth + rtspHost + "/stream=2", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=2", openValue: "rtsp://" + realAuth + rtspHost + "/stream=2", openable: true, hint: I18n.t("JPEG-поток Majestic, если включён в прошивке") },
             { group: I18n.t("Видео"), name: I18n.t("WebSocket preview main"), value: "ws://" + httpHost + "/ws/video?stream=0", copyValue: "ws://" + httpHost + "/ws/video?stream=0", openable: false, hint: I18n.t("Низкая задержка, как в majestic-webui") },
             { group: I18n.t("Видео"), name: I18n.t("WebSocket preview sub"), value: "ws://" + httpHost + "/ws/video?stream=1", copyValue: "ws://" + httpHost + "/ws/video?stream=1", openable: false, hint: I18n.t("Второй поток предпросмотра") },
+            { group: I18n.t("Видео"), name: "MJPEG", value: "http://" + httpHost + "/mjpeg", copyValue: "http://" + httpHost + "/mjpeg", openValue: "http://" + httpHost + "/mjpeg", openable: true, hint: I18n.t("MJPEG live stream в браузере или совместимом клиенте") },
+            { group: I18n.t("Видео"), name: "MP4", value: "http://" + httpHost + "/video.mp4", copyValue: "http://" + httpHost + "/video.mp4", openValue: "http://" + httpHost + "/video.mp4", openable: true, hint: I18n.t("MP4 video stream Majestic") },
+            { group: I18n.t("Видео"), name: "HLS", value: "http://" + httpHost + "/hls", copyValue: "http://" + httpHost + "/hls", openValue: "http://" + httpHost + "/hls", openable: true, hint: I18n.t("HLS live-streaming для браузера") },
+            { group: I18n.t("Аудио"), name: "Opus", value: "http://" + httpHost + "/audio.opus", copyValue: "http://" + httpHost + "/audio.opus", openValue: "http://" + httpHost + "/audio.opus", openable: true, hint: I18n.t("Opus audio stream") },
+            { group: I18n.t("Аудио"), name: "AAC", value: "http://" + httpHost + "/audio.m4a", copyValue: "http://" + httpHost + "/audio.m4a", openValue: "http://" + httpHost + "/audio.m4a", openable: true, hint: I18n.t("AAC audio stream") },
+            { group: I18n.t("Аудио"), name: "PCM", value: "http://" + httpHost + "/audio.pcm", copyValue: "http://" + httpHost + "/audio.pcm", openValue: "http://" + httpHost + "/audio.pcm", openable: true, hint: I18n.t("Raw PCM audio stream") },
             { group: I18n.t("Снимки"), name: "JPEG", value: "http://" + httpHost + "/image.jpg", copyValue: "http://" + httpHost + "/image.jpg", openValue: "http://" + httpHost + "/image.jpg", openable: true, hint: I18n.t("Быстрый снимок текущего кадра") },
             { group: I18n.t("Снимки"), name: "HEIF", value: "http://" + httpHost + "/image.heif", copyValue: "http://" + httpHost + "/image.heif", openValue: "http://" + httpHost + "/image.heif", openable: true, hint: I18n.t("Снимок HEIF, если поддерживается прошивкой") },
             { group: I18n.t("Снимки"), name: "YUV420", value: "http://" + httpHost + "/image.yuv420", copyValue: "http://" + httpHost + "/image.yuv420", openValue: "http://" + httpHost + "/image.yuv420", openable: true, hint: I18n.t("Сырой кадр YUV420, если поддерживается прошивкой") },
@@ -1469,8 +1837,34 @@ Dialog {
             { group: I18n.t("API"), name: "reset default", value: "http://" + httpHost + "/api/v1/reset?key=image.contrast", copyValue: "http://" + httpHost + "/api/v1/reset?key=image.contrast", openValue: "http://" + httpHost + "/api/v1/reset?key=image.contrast", openable: true, hint: I18n.t("Сброс одного или нескольких ключей к default") },
             { group: I18n.t("API"), name: "live image", value: "POST http://" + httpHost + "/api/v1/image?contrast=50", copyValue: "http://" + httpHost + "/api/v1/image?contrast=50", openable: false, hint: I18n.t("Мгновенные live ISP параметры") },
             { group: I18n.t("API"), name: "reload pipeline", value: "http://" + httpHost + "/cgi-bin/j/mj-apply.cgi", copyValue: "http://" + httpHost + "/cgi-bin/j/mj-apply.cgi", openValue: "http://" + httpHost + "/cgi-bin/j/mj-apply.cgi", openable: true, hint: I18n.t("Применить codec/resolution/fps без reboot камеры") },
+            { group: I18n.t("OpenIPC"), name: "live logs", value: "ws://" + httpHost + "/ws/logs", copyValue: "ws://" + httpHost + "/ws/logs", openable: false, hint: I18n.t("Live logread stream из firmware WebUI") },
+            { group: I18n.t("OpenIPC"), name: "firmware upgrade", value: "ws://" + httpHost + "/ws/upgrade", copyValue: "ws://" + httpHost + "/ws/upgrade", openable: false, hint: I18n.t("WebSocket updater: JSON source/kernel/rootfs/reset/force") },
+            { group: I18n.t("OpenIPC"), name: "upload firmware", value: "POST http://" + httpHost + "/upload", copyValue: "http://" + httpHost + "/upload", openable: false, hint: I18n.t("Загрузка архива в /tmp/firmware.tgz перед /ws/upgrade") },
+            { group: I18n.t("OpenIPC"), name: "status", value: "http://" + httpHost + "/cgi-bin/status.cgi", copyValue: "http://" + httpHost + "/cgi-bin/status.cgi", openValue: "http://" + httpHost + "/cgi-bin/status.cgi", openable: true, hint: I18n.t("Статус устройства OpenIPC WebUI") },
+            { group: I18n.t("OpenIPC"), name: "network", value: "http://" + httpHost + "/cgi-bin/fw-network.cgi", copyValue: "http://" + httpHost + "/cgi-bin/fw-network.cgi", openValue: "http://" + httpHost + "/cgi-bin/fw-network.cgi", openable: true, hint: I18n.t("Сетевые настройки OpenIPC WebUI") },
+            { group: I18n.t("OpenIPC"), name: "time", value: "http://" + httpHost + "/cgi-bin/fw-time.cgi", copyValue: "http://" + httpHost + "/cgi-bin/fw-time.cgi", openValue: "http://" + httpHost + "/cgi-bin/fw-time.cgi", openable: true, hint: I18n.t("Время и NTP OpenIPC WebUI") },
+            { group: I18n.t("OpenIPC"), name: "update", value: "http://" + httpHost + "/cgi-bin/fw-update.cgi", copyValue: "http://" + httpHost + "/cgi-bin/fw-update.cgi", openValue: "http://" + httpHost + "/cgi-bin/fw-update.cgi", openable: true, hint: I18n.t("Штатная страница firmware update") },
             { group: I18n.t("Аудио"), name: "play_audio", value: "POST http://" + httpHost + "/play_audio", copyValue: "http://" + httpHost + "/play_audio", openable: false, hint: I18n.t("Передать PCM S16LE на динамик камеры") },
             { group: I18n.t("Мониторинг"), name: "metrics", value: "http://" + httpHost + "/metrics", copyValue: "http://" + httpHost + "/metrics", openValue: "http://" + httpHost + "/metrics", openable: true, hint: I18n.t("Prometheus-метрики") }
+        ]
+    }
+
+    function endpointSummaryRows() {
+        var rows = endpointRows()
+        var ws = 0
+        var openable = 0
+        for (var i = 0; i < rows.length; ++i) {
+            if (String(rows[i].value || "").indexOf("ws://") >= 0 || String(rows[i].value || "").indexOf("wss://") >= 0) ws++
+            if (rows[i].openable === true) openable++
+        }
+        var caps = capabilityRows()
+        var enabledCaps = 0
+        for (var j = 0; j < caps.length; ++j) if (caps[j].value === true) enabledCaps++
+        return [
+            { title: I18n.t("Endpoints"), value: String(rows.length), subtitle: I18n.t("Majestic/OpenIPC адреса") },
+            { title: "WebSocket", value: String(ws), subtitle: SystemController.firmwareClient.webSocketsAvailable ? I18n.t("native модуль включён") : I18n.t("только справочно") },
+            { title: I18n.t("Открываемые"), value: String(openable), subtitle: I18n.t("можно открыть из приложения") },
+            { title: I18n.t("Capabilities"), value: enabledCaps + "/" + caps.length, subtitle: I18n.t("подтверждено этой камерой") }
         ]
     }
 
@@ -1485,11 +1879,32 @@ Dialog {
         firmwareTime = ({})
         firmwareUpdateInfo = ({})
         firmwareLogsText = ""
+        firmwareLiveLogs = false
+        firmwareLogsPaused = false
+        firmwareLogFilter = ""
+        firmwareUpgradeText = ""
+        firmwareUpgradeRebooting = false
+        firmwareArchiveUploaded = false
+        firmwareUpdateKernel = true
+        firmwareUpdateRootfs = true
+        firmwareUpdateReset = false
+        firmwareUpdateForce = false
+        firmwareBackupSaved = false
+        firmwareReturnPolling = false
+        firmwareReturnPollTries = 0
+        activeFirmwareReturnProbeId = ""
+        clearBackupRestore()
+        clearRollbackSnapshot()
         refresh()
         loadFirmwareStatus()
         loadFirmwareNetwork()
         loadFirmwareTime()
         refreshFirmwareUpdateInfo()
+    }
+
+    onClosed: {
+        if (firmwareLiveLogs) stopFirmwareLiveLogs()
+        stopFirmwareReturnPolling("", false)
     }
 
     background: Rectangle { color: Theme.panelBackground; border.color: Theme.panelBorderStrong; radius: Theme.radiusLg }
@@ -1563,1366 +1978,78 @@ Dialog {
             }
         }
         StackLayout {
-            Layout.fillWidth: true; Layout.fillHeight: true; currentIndex: dialog.currentContentIndex()
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: dialog.currentContentIndex()
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 16
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 10
-                        Text {
-                            Layout.fillWidth: true
-                            text: I18n.t("Device Status")
-                            color: Theme.accentHover
-                            font.pixelSize: 28
-                            font.bold: true
-                        }
-                        Rectangle {
-                            width: 128
-                            height: 26
-                            radius: 13
-                            color: statusError ? "#7f1d1d" : "#166534"
-                            Text {
-                                anchors.centerIn: parent
-                                text: statusError ? I18n.t("Требует внимания") : I18n.t("All systems OK")
-                                color: Theme.textPrimary
-                                font.bold: true
-                                font.pixelSize: 11
-                            }
-                        }
-                        MajesticButton {
-                            text: I18n.t("Обновить")
-                            enabled: !loading
-                            onClicked: {
-                                refresh()
-                                activeMetricsId = track(SystemController.majesticClient.loadMetrics(cameraHost, cameraPort, cameraUser, cameraPassword))
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        Layout.preferredHeight: 300
-                        color: Theme.cardBackground
-                        border.color: Theme.cardBorder
-                        radius: Theme.radiusLg
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 10
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text { Layout.fillWidth: true; text: I18n.t("Логи и обслуживание"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 17 }
-                                MajesticButton { text: "syslog"; enabled: !firmwareBusy; onClicked: loadFirmwareLogs("syslog") }
-                                MajesticButton { text: "majestic"; enabled: !firmwareBusy; onClicked: loadFirmwareLogs("majestic") }
-                                MajesticButton { text: "dmesg"; enabled: !firmwareBusy; onClicked: loadFirmwareLogs("kernel") }
-                                MajesticButton { text: I18n.t("Backup"); enabled: !firmwareBusy; onClicked: firmwareBackupDialog.open() }
-                                MajesticButton { text: I18n.t("Reboot"); danger: true; enabled: !firmwareBusy; onClicked: firmwareRebootConfirm.open() }
-                            }
-                            ScrollView {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
-                                TextArea {
-                                    id: firmwareLogsArea
-                                    readOnly: true
-                                    wrapMode: TextEdit.NoWrap
-                                    text: firmwareLogsText.length ? firmwareLogsText : I18n.t("Нажмите syslog, majestic или dmesg, чтобы прочитать логи камеры.")
-                                    color: Theme.textSecondary
-                                    selectedTextColor: Theme.textPrimary
-                                    selectionColor: Theme.accent
-                                    font.family: "Consolas"
-                                    font.pixelSize: 11
-                                    background: Rectangle {
-                                        radius: Theme.radiusMd
-                                        color: Theme.controlBackground
-                                        border.color: Theme.controlBorder
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 4 : 2
-                        rowSpacing: 12
-                        columnSpacing: 12
-
-                        MajesticStatusCard { title: "LOAD"; value: String(metric("node_load1", "—")); subtitle: I18n.t("CPU load average"); percent: Math.min(100, Number(metric("node_load1", 0)) * 35); accent: Theme.accent }
-                        MajesticStatusCard { title: "MEMORY"; value: ramPercent() + "%"; subtitle: ramText(); percent: ramPercent(); accent: Theme.accent }
-                        MajesticStatusCard { title: "TEMPERATURE"; value: tempText(); subtitle: "SoC"; percent: Math.min(100, Number(metric("node_hwmon_temp_celsius", 0)) / 90 * 100); accent: "#f97316" }
-                        MajesticStatusCard { title: "UPTIME"; value: uptimeText(); subtitle: "Majestic / node metrics"; percent: 100; accent: Theme.success }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 2 : 1
-                        rowSpacing: 12
-                        columnSpacing: 12
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 232
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                spacing: 10
-                                Text { text: I18n.t("Streams"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 18 }
-                                Repeater {
-                                    model: streamRows()
-                                    delegate: ColumnLayout {
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        RowLayout {
-                                            Rectangle {
-                                                width: 56; height: 24; radius: 12; color: Theme.accent
-                                                Text { anchors.centerIn: parent; text: modelData.name; color: Theme.textPrimary; font.bold: true; font.pixelSize: 11 }
-                                            }
-                                            Text { text: modelData.size; color: Theme.textPrimary; font.bold: true; font.pixelSize: 14 }
-                                            Rectangle {
-                                                visible: modelData.codec.length > 0
-                                                width: 56; height: 22; radius: 11; color: "#f8fafc"
-                                                Text { anchors.centerIn: parent; text: modelData.codec; color: "#0f172a"; font.bold: true; font.pixelSize: 10 }
-                                            }
-                                        }
-                                        Text {
-                                            text: (modelData.fps ? modelData.fps + " fps" : "") + (modelData.bitrate ? " · " + modelData.bitrate + " kbit/s" : "")
-                                            color: Theme.textMuted
-                                            font.pixelSize: 11
-                                        }
-                                    }
-                                }
-                                Text {
-                                    visible: streamRows().length === 0
-                                    text: I18n.t("Нет включённых потоков")
-                                    color: Theme.textMuted
-                                    font.pixelSize: 12
-                                }
-                                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.panelBorder }
-                                Text {
-                                    text: (metric("night_enabled", 0) ? "🌙 " + I18n.t("Ночь") : "☀ " + I18n.t("День"))
-                                          + " · IR-cut " + (metric("ircut_enabled", 0) ? "on" : "off")
-                                          + " · HLS " + metric("hls_clients_total", 0)
-                                    color: Theme.textSecondary
-                                    font.pixelSize: 12
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 232
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                spacing: 10
-                                Text { text: I18n.t("Возможности этой камеры"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 18 }
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: 2
-                                    rowSpacing: 8
-                                    columnSpacing: 18
-                                    Repeater {
-                                        model: capabilityRows()
-                                        delegate: RowLayout {
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            Rectangle { width: 9; height: 9; radius: 5; color: modelData.value ? Theme.success : Theme.textFaint }
-                                            Text { Layout.fillWidth: true; text: modelData.label; color: Theme.textSecondary; font.pixelSize: 12 }
-                                        }
-                                    }
-                                }
-                                Text { text: I18n.t("Доступно параметров: %1", [fields.length]); color: Theme.textMuted; font.pixelSize: 11 }
-                                Text { text: cameraHost + ":" + cameraPort; color: Theme.accentHover; font.family: "Consolas"; font.pixelSize: 12 }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 190
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 14
-                                Text { text: I18n.t("День / ночь и механика"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 15 }
-                                Text { text: I18n.t("Команды выполняются сразу и не меняют majestic.yaml"); color: Theme.textMuted; font.pixelSize: 11 }
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    MajesticButton { text: I18n.t("День"); onClicked: track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, "off")) }
-                                    MajesticButton { text: I18n.t("Ночь"); onClicked: track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, "on")) }
-                                    MajesticButton { text: I18n.t("Переключить"); primary: true; onClicked: track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, "toggle")) }
-                                    MajesticButton { text: I18n.t("IR-cut"); onClicked: track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, "ircut")) }
-                                    MajesticButton { text: I18n.t("ИК-подсветка"); onClicked: track(SystemController.majesticClient.setNightMode(cameraHost, cameraPort, cameraUser, cameraPassword, "light")) }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 190
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 14
-                                Text { text: I18n.t("Снимок, backup и звук"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 15 }
-                                RowLayout {
-                                    Label { text: I18n.t("Ширина"); color: Theme.textMuted }
-                                    MajesticSpinBox { id: snapshotWidth; from: 0; to: 8192; editable: true }
-                                    Label { text: I18n.t("Высота"); color: Theme.textMuted }
-                                    MajesticSpinBox { id: snapshotHeight; from: 0; to: 8192; editable: true }
-                                }
-                                RowLayout {
-                                    Label { text: I18n.t("Качество"); color: Theme.textMuted }
-                                    MajesticSpinBox { id: snapshotQuality; from: 1; to: 100; value: 85; editable: true }
-                                    MajesticCheckBox { id: snapshotGray; text: I18n.t("Ч/Б") }
-                                }
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    MajesticButton { text: I18n.t("Сохранить JPEG…"); primary: true; onClicked: snapshotDialog.open() }
-                                    MajesticButton { text: I18n.t("Создать backup…"); enabled: fields.length > 0; onClicked: saveBackupDialog.open() }
-                                    MajesticButton { text: I18n.t("Открыть backup…"); onClicked: openBackupDialog.open() }
-                                    MajesticButton { text: I18n.t("Копировать без секретов"); enabled: fields.length > 0; onClicked: copyRedactedJson(originalConfig, I18n.t("Backup Majestic")) }
-                                    MajesticButton { text: I18n.t("Передать PCM…"); onClicked: pcmDialog.open() }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ColumnLayout {
+            MajesticOverviewPage {
+                id: overviewPage
+                controller: dialog
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 10
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 76
-                    Layout.margins: 12
-                    color: Theme.panelSoftBackground
-                    border.color: Theme.panelBorder
-                    radius: Theme.radiusMd
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 10
-                        ColumnLayout {
-                            Layout.preferredWidth: 260
-                            spacing: 2
-                            Text { text: selectedGroupLabel(); color: Theme.textPrimary; font.bold: true; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
-                            Text { text: I18n.t("%1 параметров · schema этой камеры", [groupFieldCount(selectedGroupId)]); color: Theme.textMuted; font.pixelSize: 11 }
-                        }
-                        MajesticTextField {
-                            id: settingsSearch
-                            Layout.fillWidth: true
-                            placeholderText: I18n.t("Поиск по имени, пути или описанию…")
-                        }
-                        MajesticCheckBox { id: livePreview; text: I18n.t("Live ISP"); checked: true; enabled: capabilities.liveImage === true }
-                        Text { text: I18n.t("Изменено: %1", [dirtyCount]); color: dirtyCount ? Theme.warning : Theme.textMuted; font.pixelSize: 12 }
-                        MajesticButton { text: I18n.t("Отменить"); enabled: dirtyCount > 0; onClicked: resetDraft() }
-                        MajesticButton { text: I18n.t("Проверить и применить"); primary: true; enabled: dirtyCount > 0 && capabilities.configWrite === true && !loading; onClicked: prepareApply(editedConfig()) }
-                    }
-                }
-
-                Rectangle {
-                    visible: pipelineReloadNeeded
-                    Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12; Layout.preferredHeight: visible ? 54 : 0
-                    color: "#422006"; border.color: Theme.warning; radius: Theme.radiusSm
-                    RowLayout {
-                        anchors.fill: parent; anchors.margins: 10; spacing: 10
-                        Text {
-                            Layout.fillWidth: true
-                            text: I18n.t("Сохранено. Структурные изменения вступят в силу после reload pipeline; видеопотоки кратко мигнут.")
-                            color: "#fde68a"; wrapMode: Text.WordWrap; font.pixelSize: 11
-                        }
-                        MajesticButton {
-                            text: I18n.t("Применить reload")
-                            primary: true
-                            onClicked: triggerPipelineReload("")
-                        }
-                    }
-                }
-
-                Rectangle {
-                    visible: capabilities.schema !== true && fields.length > 0
-                    Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12; Layout.preferredHeight: visible ? 48 : 0
-                    color: "#422006"; border.color: Theme.warning; radius: Theme.radiusSm
-                    Text { anchors.fill: parent; anchors.margins: 9; text: I18n.t("Старая сборка Majestic: чтение доступно, schema-safe запись отключена."); color: "#fde68a"; wrapMode: Text.WordWrap }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.margins: 12
-                    Layout.topMargin: 0
-                    spacing: 12
-
-                    Rectangle {
-                        Layout.preferredWidth: 230
-                        Layout.fillHeight: true
-                        color: Theme.panelAltBackground
-                        border.color: Theme.panelBorder
-                        radius: Theme.radiusLg
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-                            Text {
-                                text: I18n.t("Разделы Majestic")
-                                color: Theme.textPrimary
-                                font.bold: true
-                                font.pixelSize: 14
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Группы берутся из schema камеры. Неподдерживаемые функции не показываются.")
-                                color: Theme.textMuted
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 10
-                            }
-                            Repeater {
-                                model: groups
-                                delegate: Button {
-                                    id: groupButton
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    implicitHeight: 42
-                                    onClicked: selectGroup(modelData.id)
-                                    contentItem: RowLayout {
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: localizedGroupLabel(modelData)
-                                            color: selectedGroupId === modelData.id ? Theme.textPrimary : Theme.textSecondary
-                                            font.bold: selectedGroupId === modelData.id
-                                            font.pixelSize: 12
-                                            elide: Text.ElideRight
-                                        }
-                                        Rectangle {
-                                            width: 42
-                                            height: 22
-                                            radius: 11
-                                            color: selectedGroupId === modelData.id ? Theme.accent : Theme.controlBackgroundAlt
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: groupFieldCount(modelData.id)
-                                                color: Theme.textPrimary
-                                                font.bold: true
-                                                font.pixelSize: 10
-                                            }
-                                        }
-                                    }
-                                    background: Rectangle {
-                                        radius: Theme.radiusMd
-                                        color: selectedGroupId === modelData.id ? "#1e3a8a" : (groupButton.hovered ? Theme.cardHover : Theme.controlBackground)
-                                        border.color: selectedGroupId === modelData.id ? Theme.accent : Theme.controlBorder
-                                    }
-                                }
-                            }
-                            Item { Layout.fillHeight: true }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Все поля сохраняются diff-ом через /api/v1/config.")
-                                color: Theme.textFaint
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 10
-                            }
-                        }
-                    }
-
-                    ScrollView {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        contentWidth: availableWidth
-
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 12
-
-                            RowLayout {
-                                visible: liveFieldsForGroup(selectedGroupId).length > 0
-                                Layout.fillWidth: true
-                                spacing: 12
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 292
-                                    color: Theme.cardBackground
-                                    border.color: Theme.cardBorder
-                                    radius: Theme.radiusLg
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 8
-                                        Text { text: I18n.t("Live preview"); color: Theme.textMuted; font.pixelSize: 12 }
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            color: "#000000"
-                                            border.color: Theme.accent
-                                            radius: Theme.radiusMd
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: I18n.t("Предпросмотр берётся из текущего видеопотока Dashboard.\nMajestic endpoint: /ws/video?stream=0")
-                                                color: Theme.textFaint
-                                                horizontalAlignment: Text.AlignHCenter
-                                                font.pixelSize: 12
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.preferredWidth: 390
-                                    Layout.preferredHeight: 292
-                                    color: Theme.cardBackground
-                                    border.color: Theme.cardBorder
-                                    radius: Theme.radiusLg
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 8
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            Text { Layout.fillWidth: true; text: I18n.t("Live adjustments"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 18 }
-                                            MajesticButton {
-                                                text: I18n.t("↺ Reset all")
-                                                subtle: true
-                                                enabled: liveFieldsForGroup(selectedGroupId).length > 0 && capabilities.resetDefaults === true
-                                                onClicked: {
-                                                    var paths = []
-                                                    var live = liveFieldsForGroup(selectedGroupId)
-                                                    for (var i = 0; i < live.length; ++i) paths.push(live[i].path)
-                                                    requestResetMany(paths)
-                                                }
-                                            }
-                                        }
-                                        Repeater {
-                                            model: liveFieldsForGroup(selectedGroupId)
-                                            delegate: MajesticSettingFieldEditor {
-                                                controller: dialog
-                                                required property var modelData
-                                                field: modelData
-                                                compact: true
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: width > 900 ? 2 : 1
-                                rowSpacing: 12
-                                columnSpacing: 12
-
-                                Repeater {
-                                    model: sectionCardsForGroup(selectedGroupId)
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: cardHeight(modelData)
-                                        color: Theme.cardBackground
-                                        border.color: Theme.cardBorder
-                                        radius: Theme.radiusLg
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 14
-                                            spacing: 8
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.label
-                                                    color: Theme.textPrimary
-                                                    font.bold: true
-                                                    font.pixelSize: 18
-                                                    elide: Text.ElideRight
-                                                }
-                                                Rectangle {
-                                                    width: 44; height: 22; radius: 11; color: Theme.controlBackgroundAlt
-                                                    Text { anchors.centerIn: parent; text: modelData.fields.length; color: Theme.textMuted; font.pixelSize: 10; font.bold: true }
-                                                }
-                                            }
-                                            Repeater {
-                                                model: modelData.fields
-                                                delegate: MajesticSettingFieldEditor {
-                                                    controller: dialog
-                                                    required property var modelData
-                                                    field: modelData
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                visible: sectionCardsForGroup(selectedGroupId).length === 0 && liveFieldsForGroup(selectedGroupId).length === 0
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: visible ? 120 : 0
-                                color: Theme.cardBackground
-                                border.color: Theme.cardBorder
-                                radius: Theme.radiusLg
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: I18n.t("В этом разделе нет доступных полей для текущей schema или фильтра поиска.")
-                                    color: Theme.textMuted
-                                    font.pixelSize: 12
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 14
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 12
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Text {
-                                text: I18n.t("OpenIPC Firmware")
-                                color: Theme.accentHover
-                                font.pixelSize: 28
-                                font.bold: true
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Единый центр управления камерой: системное состояние, WebUI, Majestic и безопасные firmware-действия.")
-                                color: Theme.textMuted
-                                font.pixelSize: 12
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                        MajesticButton {
-                            text: I18n.t("Открыть WebUI")
-                            primary: true
-                            onClicked: openWebUiPath("")
-                        }
-                        MajesticButton {
-                            text: I18n.t("Обновить")
-                            enabled: !loading
-                            onClicked: {
-                                refresh()
-                                refreshMetrics()
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 4 : 2
-                        rowSpacing: 12
-                        columnSpacing: 12
-
-                        Repeater {
-                            model: firmwareSystemRows()
-                            delegate: MajesticStatusCard {
-                                required property var modelData
-                                title: modelData.title
-                                value: modelData.value
-                                subtitle: modelData.subtitle
-                                percent: modelData.percent
-                                accent: modelData.accent
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 2 : 1
-                        rowSpacing: 12
-                        columnSpacing: 12
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 252
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                spacing: 10
-                                Text { text: I18n.t("Идентификация камеры"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 18 }
-                                Repeater {
-                                    model: firmwareIdentityRows()
-                                    delegate: RowLayout {
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        spacing: 10
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 1
-                                            Text { text: modelData.label; color: Theme.textPrimary; font.bold: true; font.pixelSize: 12 }
-                                            Text { Layout.fillWidth: true; text: modelData.hint; color: Theme.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
-                                        }
-                                        Text {
-                                            Layout.preferredWidth: 210
-                                            text: modelData.value
-                                            color: Theme.accentHover
-                                            font.family: "Consolas"
-                                            font.pixelSize: 11
-                                            horizontalAlignment: Text.AlignRight
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 252
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 16
-                                spacing: 10
-                                Text { text: I18n.t("Быстрые действия"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 18 }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: I18n.t("Здесь собраны штатные разделы OpenIPC WebUI и нативные операции firmware-client: status, network, time, logs, backup, reboot и update.")
-                                    color: Theme.textMuted
-                                    wrapMode: Text.WordWrap
-                                    font.pixelSize: 11
-                                }
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    MajesticButton { text: I18n.t("WebUI"); primary: true; onClicked: openWebUiPath("") }
-                                    MajesticButton { text: I18n.t("Network"); onClicked: openWebUiPath("/cgi-bin/fw-network.cgi") }
-                                    MajesticButton { text: I18n.t("Time"); onClicked: openWebUiPath("/cgi-bin/fw-time.cgi") }
-                                    MajesticButton { text: I18n.t("Update"); onClicked: openWebUiPath("/cgi-bin/fw-update.cgi") }
-                                    MajesticButton { text: I18n.t("Settings"); onClicked: openWebUiPath("/cgi-bin/fw-settings.cgi") }
-                                    MajesticButton { text: I18n.t("Firmware backup"); onClicked: firmwareBackupDialog.open() }
-                                    MajesticButton { text: I18n.t("Reboot"); danger: true; onClicked: firmwareRebootConfirm.open() }
-                                    MajesticButton { text: I18n.t("Скопировать адрес"); onClicked: copyControlCenterValue(I18n.t("Web UI камеры"), webUiUrl("")) }
-                                }
-                                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.panelBorder }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: I18n.t("Write-операции используют те же CGI/JSON endpoints, что и WebUI камеры. Опасные действия требуют подтверждения.")
-                                    color: Theme.warning
-                                    wrapMode: Text.WordWrap
-                                    font.pixelSize: 11
-                                }
-                            }
-                        }
-                    }
-                }
+            MajesticSettingsPage {
+                id: settingsPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 14
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 12
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Text { text: I18n.t("Network"); color: Theme.accentHover; font.pixelSize: 28; font.bold: true }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Сводка сетевых сервисов камеры. Изменение IP/DHCP будет добавлено только с dry-run и явным подтверждением, чтобы не потерять камеру.")
-                                color: Theme.textMuted
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 12
-                            }
-                        }
-                        MajesticButton { text: I18n.t("Загрузить"); enabled: !firmwareBusy; onClicked: loadFirmwareNetwork() }
-                        MajesticButton { text: I18n.t("Сохранить"); primary: true; enabled: !firmwareBusy; onClicked: firmwareNetworkConfirm.open() }
-                        MajesticButton { text: I18n.t("Открыть Network WebUI"); onClicked: openWebUiPath("/cgi-bin/fw-network.cgi") }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        Layout.preferredHeight: 250
-                        color: Theme.cardBackground
-                        border.color: Theme.cardBorder
-                        radius: Theme.radiusLg
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 10
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text { Layout.fillWidth: true; text: I18n.t("Настройки сети OpenIPC"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 17 }
-                                MajesticButton { text: I18n.t("Wi‑Fi scan"); enabled: !firmwareBusy; onClicked: scanFirmwareWifi() }
-                                MajesticButton { text: I18n.t("Reset network"); danger: true; enabled: !firmwareBusy; onClicked: firmwareNetworkResetConfirm.open() }
-                            }
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: width > 900 ? 4 : 2
-                                rowSpacing: 8
-                                columnSpacing: 10
-                                Text { text: I18n.t("Hostname"); color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: networkHostname; Layout.fillWidth: true; placeholderText: "openipc-camera" }
-                                Text { text: I18n.t("Interface"); color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticComboBox { id: networkInterface; Layout.fillWidth: true; model: ["eth0", "wlan0"] }
-                                MajesticCheckBox { id: networkDhcp; text: "DHCP"; Layout.columnSpan: 2 }
-                                Text { text: I18n.t("IP address"); color: Theme.textSecondary; font.pixelSize: 11; visible: !networkDhcp.checked }
-                                MajesticTextField { id: networkAddress; Layout.fillWidth: true; placeholderText: "192.168.0.219"; visible: !networkDhcp.checked }
-                                Text { text: I18n.t("Netmask"); color: Theme.textSecondary; font.pixelSize: 11; visible: !networkDhcp.checked }
-                                MajesticTextField { id: networkNetmask; Layout.fillWidth: true; placeholderText: "255.255.255.0"; visible: !networkDhcp.checked }
-                                Text { text: I18n.t("Gateway"); color: Theme.textSecondary; font.pixelSize: 11; visible: !networkDhcp.checked }
-                                MajesticTextField { id: networkGateway; Layout.fillWidth: true; placeholderText: "192.168.0.1"; visible: !networkDhcp.checked }
-                                Text { text: "DNS"; color: Theme.textSecondary; font.pixelSize: 11; visible: !networkDhcp.checked }
-                                MajesticTextField { id: networkDns; Layout.fillWidth: true; placeholderText: "1.1.1.1"; visible: !networkDhcp.checked }
-                                Text { text: "Wi‑Fi SSID"; color: Theme.textSecondary; font.pixelSize: 11; visible: networkInterface.currentText === "wlan0" }
-                                MajesticTextField { id: networkWlanSsid; Layout.fillWidth: true; visible: networkInterface.currentText === "wlan0" }
-                                Text { text: I18n.t("Wi‑Fi password"); color: Theme.textSecondary; font.pixelSize: 11; visible: networkInterface.currentText === "wlan0" }
-                                MajesticTextField { id: networkWlanPassword; Layout.fillWidth: true; echoMode: TextInput.Password; visible: networkInterface.currentText === "wlan0" }
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: firmwareWifiNetworks.length
-                                      ? I18n.t("Найдено Wi‑Fi сетей: %1", [firmwareWifiNetworks.length])
-                                      : I18n.t("Сохранение сети может изменить IP камеры. Подтвердите действие перед отправкой.")
-                                color: Theme.warning
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 2 : 1
-                        rowSpacing: 12
-                        columnSpacing: 12
-
-                        Repeater {
-                            model: networkServiceRows()
-                            delegate: Rectangle {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 92
-                                color: Theme.cardBackground
-                                border.color: Theme.cardBorder
-                                radius: Theme.radiusLg
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 12
-                                    Rectangle {
-                                        Layout.preferredWidth: 82
-                                        Layout.preferredHeight: 28
-                                        radius: 14
-                                        color: "#172554"
-                                        border.color: Theme.accent
-                                        Text { anchors.centerIn: parent; text: modelData.label; color: Theme.accentHover; font.bold: true; font.pixelSize: 11 }
-                                    }
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-                                        Text { Layout.fillWidth: true; text: modelData.value; color: Theme.textPrimary; font.family: "Consolas"; font.pixelSize: 13; elide: Text.ElideRight }
-                                        Text { Layout.fillWidth: true; text: modelData.hint; color: Theme.textMuted; font.pixelSize: 11; elide: Text.ElideRight }
-                                    }
-                                    MajesticButton { text: I18n.t("Копировать"); subtle: true; onClicked: copyControlCenterValue(modelData.label, modelData.value) }
-                                }
-                            }
-                        }
-                    }
-                }
+            OpenIpcStatusPage {
+                id: firmwarePage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 14
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 12
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Text { text: I18n.t("Time"); color: Theme.accentHover; font.pixelSize: 28; font.bold: true }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Сравнение времени камеры и Dashboard. Корректное время важно для OSD, архива, событий и TLS.")
-                                color: Theme.textMuted
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 12
-                            }
-                        }
-                        MajesticButton { text: I18n.t("Загрузить"); enabled: !firmwareBusy; onClicked: loadFirmwareTime() }
-                        MajesticButton { text: I18n.t("Сохранить"); primary: true; enabled: !firmwareBusy; onClicked: firmwareTimeConfirm.open() }
-                        MajesticButton { text: I18n.t("Открыть Time WebUI"); onClicked: openWebUiPath("/cgi-bin/fw-time.cgi") }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        Layout.preferredHeight: 230
-                        color: Theme.cardBackground
-                        border.color: Theme.cardBorder
-                        radius: Theme.radiusLg
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 10
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text { Layout.fillWidth: true; text: I18n.t("Время и NTP OpenIPC"); color: Theme.textPrimary; font.bold: true; font.pixelSize: 17 }
-                                MajesticButton { text: I18n.t("NTP sync"); enabled: !firmwareBusy; onClicked: syncFirmwareTime(false) }
-                                MajesticButton { text: I18n.t("Set from PC"); enabled: !firmwareBusy; onClicked: syncFirmwareTime(true) }
-                            }
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: width > 900 ? 4 : 2
-                                rowSpacing: 8
-                                columnSpacing: 10
-                                Text { text: I18n.t("Zone name"); color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeZoneName; Layout.fillWidth: true; placeholderText: "Asia/Vladivostok" }
-                                Text { text: I18n.t("POSIX string"); color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeZoneData; Layout.fillWidth: true; placeholderText: "VLAT-10" }
-                                Text { text: "NTP 1"; color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeServer0; Layout.fillWidth: true; placeholderText: "pool.ntp.org" }
-                                Text { text: "NTP 2"; color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeServer1; Layout.fillWidth: true; placeholderText: "time.cloudflare.com" }
-                                Text { text: "NTP 3"; color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeServer2; Layout.fillWidth: true }
-                                Text { text: "NTP 4"; color: Theme.textSecondary; font.pixelSize: 11 }
-                                MajesticTextField { id: timeServer3; Layout.fillWidth: true }
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Изменение timezone пишет /etc/TZ и /etc/timezone; камера может запросить reboot для полного применения.")
-                                color: Theme.warning
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        spacing: 10
-                        Repeater {
-                            model: timeRows()
-                            delegate: Rectangle {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 82
-                                color: Theme.cardBackground
-                                border.color: Theme.cardBorder
-                                radius: Theme.radiusLg
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 14
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-                                        Text { text: modelData.label; color: Theme.textPrimary; font.bold: true; font.pixelSize: 14 }
-                                        Text { Layout.fillWidth: true; text: modelData.hint; color: Theme.textMuted; font.pixelSize: 11; elide: Text.ElideRight }
-                                    }
-                                    Text {
-                                        Layout.preferredWidth: 260
-                                        text: modelData.value
-                                        color: Theme.accentHover
-                                        font.family: "Consolas"
-                                        font.pixelSize: 13
-                                        horizontalAlignment: Text.AlignRight
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            OpenIpcNetworkPage {
+                id: networkPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 14
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 12
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Text { text: I18n.t("Firmware Update"); color: Theme.accentHover; font.pixelSize: 28; font.bold: true }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Прошивка — самый опасный раздел. Сейчас доступны безопасные входы и checklist; прямое обновление будет добавлено после проверки SoC/flash/image.")
-                                color: Theme.textMuted
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 12
-                            }
-                        }
-                        MajesticButton { text: I18n.t("Загрузить"); enabled: !firmwareBusy; onClicked: refreshFirmwareUpdateInfo() }
-                        MajesticButton { text: I18n.t("Upload archive"); enabled: !firmwareBusy; onClicked: firmwareUploadDialog.open() }
-                        MajesticButton { text: I18n.t("GitHub update"); danger: true; enabled: !firmwareBusy; onClicked: firmwareUpdateConfirm.open() }
-                        MajesticButton { text: I18n.t("Открыть Update WebUI"); primary: true; onClicked: openWebUiPath("/cgi-bin/fw-update.cgi") }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        Layout.preferredHeight: 116
-                        color: "#422006"
-                        border.color: Theme.warning
-                        radius: Theme.radiusLg
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 6
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Updater OpenIPC останавливает видео и перезагружает камеру. Не выключайте питание во время прошивки.")
-                                color: "#fde68a"
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 12
-                                font.bold: true
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Прямой upload архива уже пишет файл в /tmp/firmware.tgz. Финальная прошивка штатно идёт через /ws/upgrade; если модуль WebSockets недоступен, используйте кнопку WebUI.")
-                                color: "#fde68a"
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 4 : 2
-                        rowSpacing: 12
-                        columnSpacing: 12
-                        Repeater {
-                            model: [
-                                { title: I18n.t("Installed"), value: firmwareUpdateInfo.installed || "—" },
-                                { title: I18n.t("Latest GitHub"), value: firmwareUpdateInfo.latest || "—" },
-                                { title: "SoC", value: firmwareUpdateInfo.soc || "—" },
-                                { title: I18n.t("Flash"), value: firmwareUpdateInfo.flash || "—" }
-                            ]
-                            delegate: MajesticStatusCard {
-                                required property var modelData
-                                title: modelData.title
-                                value: modelData.value
-                                subtitle: ""
-                                percent: firmwareUpdateInfo.githubAvailable === true ? 100 : 40
-                                accent: firmwareUpdateInfo.githubAvailable === true ? Theme.success : Theme.warning
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 2 : 1
-                        rowSpacing: 12
-                        columnSpacing: 12
-                        Repeater {
-                            model: updateChecklistRows()
-                            delegate: Rectangle {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 112
-                                color: Theme.cardBackground
-                                border.color: Theme.cardBorder
-                                radius: Theme.radiusLg
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 6
-                                    Text { text: modelData.title; color: Theme.textPrimary; font.bold: true; font.pixelSize: 16 }
-                                    Text { Layout.fillWidth: true; text: modelData.text; color: Theme.textMuted; wrapMode: Text.WordWrap; font.pixelSize: 12 }
-                                }
-                            }
-                        }
-                    }
-                }
+            OpenIpcTimePage {
+                id: timePage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 14
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        spacing: 12
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Text { text: I18n.t("Tools"); color: Theme.accentHover; font.pixelSize: 28; font.bold: true }
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Быстрые инструменты OpenIPC: штатные страницы камеры, диагностические входы и полезные справочники.")
-                                color: Theme.textMuted
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: 12
-                            }
-                        }
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        columns: width > 900 ? 2 : 1
-                        rowSpacing: 12
-                        columnSpacing: 12
-                        Repeater {
-                            model: toolRows()
-                            delegate: Rectangle {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 132
-                                color: Theme.cardBackground
-                                border.color: Theme.cardBorder
-                                radius: Theme.radiusLg
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 8
-                                    Text { text: modelData.title; color: Theme.textPrimary; font.bold: true; font.pixelSize: 16 }
-                                    Text { Layout.fillWidth: true; text: modelData.text; color: Theme.textMuted; wrapMode: Text.WordWrap; font.pixelSize: 12 }
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        Item { Layout.fillWidth: true }
-                                        MajesticButton {
-                                            text: I18n.t("Открыть")
-                                            primary: true
-                                            onClicked: modelData.external ? Qt.openUrlExternally(modelData.path) : openWebUiPath(modelData.path)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            OpenIpcUpdatePage {
+                id: updatePage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ScrollView {
-                clip: true; contentWidth: availableWidth
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 12
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.margins: 16
-                        Text {
-                            Layout.fillWidth: true
-                            text: I18n.t("Полезные точки доступа Majestic для этой камеры")
-                            color: Theme.textPrimary
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-                        MajesticButton { text: I18n.t("Обновить"); enabled: !dialog.loading; onClicked: dialog.refresh() }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        spacing: 10
-                        MajesticEndpointProbeCard {
-                            controller: dialog
-                            title: I18n.t("HD RTSP")
-                            state: dialog.rtspMainProbeState
-                            message: dialog.rtspMainProbeMessage
-                            elapsedMs: dialog.rtspMainProbeElapsedMs
-                            buttonText: I18n.t("Проверить HD")
-                            onRun: dialog.startEndpointProbe("main")
-                        }
-                        MajesticEndpointProbeCard {
-                            controller: dialog
-                            title: I18n.t("SD RTSP")
-                            state: dialog.rtspSubProbeState
-                            message: dialog.rtspSubProbeMessage
-                            elapsedMs: dialog.rtspSubProbeElapsedMs
-                            buttonText: I18n.t("Проверить SD")
-                            onRun: dialog.startEndpointProbe("sub")
-                        }
-                        MajesticEndpointProbeCard {
-                            controller: dialog
-                            title: I18n.t("Majestic API")
-                            state: dialog.majesticApiProbeState
-                            message: dialog.majesticApiProbeMessage
-                            elapsedMs: dialog.majesticApiProbeElapsedMs
-                            buttonText: I18n.t("Проверить API")
-                            onRun: dialog.startEndpointProbe("api")
-                        }
-                    }
-                    Repeater {
-                        model: dialog.endpointRows()
-                        delegate: Rectangle {
-                            id: endpointDelegate
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 16
-                            Layout.rightMargin: 16
-                            Layout.preferredHeight: 82
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 12
-                                Rectangle {
-                                    Layout.preferredWidth: 92
-                                    Layout.preferredHeight: 26
-                                    radius: 13
-                                    color: "#172554"
-                                    border.color: Theme.accent
-                                    Text { anchors.centerIn: parent; text: endpointDelegate.modelData.group; color: Theme.accentHover; font.pixelSize: 11; font.bold: true }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Text { text: endpointDelegate.modelData.name; color: Theme.textPrimary; font.bold: true; font.pixelSize: 12 }
-                                    Text { Layout.fillWidth: true; text: endpointDelegate.modelData.value; color: Theme.textSecondary; font.family: "Consolas"; font.pixelSize: 11; elide: Text.ElideRight }
-                                    Text { Layout.fillWidth: true; text: endpointDelegate.modelData.hint; color: Theme.textMuted; font.pixelSize: 10; elide: Text.ElideRight }
-                                }
-                                MajesticButton {
-                                    text: I18n.t("Копировать")
-                                    subtle: true
-                                    onClicked: dialog.copyEndpoint(endpointDelegate.modelData)
-                                }
-                                MajesticButton {
-                                    text: I18n.t("Открыть")
-                                    enabled: endpointDelegate.modelData.openable === true
-                                    onClicked: dialog.openEndpoint(endpointDelegate.modelData)
-                                }
-                            }
-                        }
-                    }
-                }
+            OpenIpcToolsPage {
+                id: toolsPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ColumnLayout {
-                spacing: 10
-                RowLayout {
-                    Layout.fillWidth: true; Layout.margins: 12
-                    Text { Layout.fillWidth: true; text: I18n.t("На камеру уйдёт только diff; неизвестные поля не удаляются."); color: Theme.textMuted }
-                    MajesticButton { text: I18n.t("Форматировать"); onClicked: { var p = SystemController.majesticClient.parseJsonObject(rawEditor.text); if (p.ok) rawEditor.text = JSON.stringify(p.value, null, 2); else { statusError = true; statusText = p.error } } }
-                    MajesticButton { text: I18n.t("Вернуть оригинал"); onClicked: rawEditor.text = JSON.stringify(originalConfig, null, 2) }
-                    MajesticButton { text: I18n.t("Копировать без секретов"); onClicked: copyRedactedRawJson() }
-                    MajesticButton { text: I18n.t("Проверить и применить"); primary: true; enabled: capabilities.configWrite === true && !loading; onClicked: { var p = SystemController.majesticClient.parseJsonObject(rawEditor.text); if (!p.ok) { statusError = true; statusText = I18n.t("Ошибка JSON: ") + p.error; return } prepareApply(p.value) } }
-                }
-                ScrollView {
-                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.margins: 12; Layout.topMargin: 0
-                    TextArea { id: rawEditor; text: "{}"; color: Theme.textSecondary; selectionColor: Theme.accent; selectedTextColor: Theme.textPrimary; font.family: "Consolas"; font.pixelSize: 12; wrapMode: TextEdit.NoWrap; background: Rectangle { color: Theme.controlBackground; border.color: Theme.controlBorder; radius: Theme.radiusMd } }
-                }
+            MajesticEndpointsPage {
+                id: endpointsPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
 
-            ColumnLayout {
-                spacing: 10
-                RowLayout {
-                    Layout.fillWidth: true; Layout.margins: 12
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: I18n.t("Prometheus-метрики Majestic")
-                            color: Theme.textPrimary
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: I18n.t("Ключевые показатели encoder, sensor, streaming и runtime")
-                            color: Theme.textMuted
-                            font.pixelSize: 12
-                            elide: Text.ElideRight
-                        }
-                    }
-                    MajesticButton {
-                        text: activeMetricsId.length ? I18n.t("Обновление…") : I18n.t("Обновить метрики")
-                        primary: true
-                        enabled: !activeMetricsId.length
-                        onClicked: refreshMetrics()
-                    }
-                }
+            MajesticRawJsonPage {
+                id: rawJsonPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
 
-                GridLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 12
-                    Layout.rightMargin: 12
-                    columns: width > 900 ? 4 : 2
-                    rowSpacing: 10
-                    columnSpacing: 10
-
-                    Repeater {
-                        model: metricsOverviewRows()
-                        delegate: MajesticStatusCard {
-                            required property var modelData
-                            title: modelData.title
-                            value: modelData.value
-                            subtitle: modelData.subtitle
-                            percent: modelData.percent
-                            accent: modelData.accent
-                        }
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 12
-                    Layout.rightMargin: 12
-                    spacing: 8
-
-                    Repeater {
-                        model: metricsHealthRows()
-                        delegate: Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 58
-                            color: Theme.cardBackground
-                            border.color: modelData.color
-                            radius: Theme.radiusMd
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-                                Rectangle {
-                                    Layout.preferredWidth: 10
-                                    Layout.preferredHeight: 10
-                                    radius: 5
-                                    color: modelData.color
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: modelData.title
-                                        color: Theme.textPrimary
-                                        font.bold: true
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: modelData.text
-                                        color: Theme.textMuted
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 12
-                    Layout.rightMargin: 12
-                    spacing: 10
-
-                    TextField {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        text: metricsFilterText
-                        placeholderText: I18n.t("Фильтр raw-метрик…")
-                        color: Theme.textPrimary
-                        placeholderTextColor: Theme.textMuted
-                        selectionColor: Theme.accent
-                        selectedTextColor: Theme.textPrimary
-                        leftPadding: 12
-                        rightPadding: 12
-                        background: Rectangle {
-                            color: Theme.controlBackground
-                            radius: Theme.radiusMd
-                            border.color: parent.activeFocus ? Theme.accent : Theme.controlBorder
-                        }
-                        onTextChanged: metricsFilterText = text
-                    }
-                    Text {
-                        text: I18n.t("Raw Prometheus")
-                        color: Theme.textMuted
-                        font.pixelSize: 12
-                    }
-                }
-
-                ScrollView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.margins: 12
-                    Layout.topMargin: 0
-                    TextArea {
-                        text: filteredMetricsText()
-                        readOnly: true
-                        color: Theme.textSecondary
-                        font.family: "Consolas"
-                        font.pixelSize: 11
-                        wrapMode: TextEdit.NoWrap
-                        background: Rectangle {
-                            color: Theme.controlBackground
-                            border.color: Theme.controlBorder
-                            radius: Theme.radiusMd
-                        }
-                    }
-                }
+            MajesticMetricsPage {
+                id: metricsPage
+                controller: dialog
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
         }
     }
@@ -2940,6 +2067,24 @@ Dialog {
     }
 
     Timer {
+        id: firmwareLiveLogsTimer
+        interval: 2500
+        repeat: true
+        onTriggered: {
+            if (!firmwareLiveLogs || SystemController.firmwareClient.webSocketsAvailable) return
+            if (firmwareLogsPaused) return
+            if (!activeFirmwareLogsId.length) loadFirmwareLogs(firmwareLogsSource, true)
+        }
+    }
+
+    Timer {
+        id: firmwareReturnPollTimer
+        interval: 3000
+        repeat: true
+        onTriggered: probeFirmwareReturn()
+    }
+
+    Timer {
         id: applyWatchdogTimer
         interval: 25000
         repeat: false
@@ -2949,6 +2094,7 @@ Dialog {
             statusError = true
             statusText = I18n.t("Majestic не ответил на сохранение за %1 секунд. Проверьте доступность камеры и повторите попытку.", [Math.round(interval / 1000)])
             untrack(activeApplyId)
+            if (activeApplyId === activeRollbackId) activeRollbackId = ""
             activeApplyId = ""
         }
     }
@@ -2981,7 +2127,7 @@ Dialog {
         function onConfigurationLoaded(requestId, config, schema, loadedFields, loadedCapabilities) {
             if (requestId !== activeLoadId) return
             loading = false; originalConfig = clone(config); currentSchema = clone(schema); fields = loadedFields; capabilities = loadedCapabilities
-            rawEditor.text = JSON.stringify(config, null, 2); resetDraft(); statusError = false
+            rawJsonPage.text = JSON.stringify(config, null, 2); resetDraft(); statusError = false
             statusText = pipelineReloadNeeded
                          ? I18n.t("Конфигурация сохранена; примените reload pipeline")
                          : (loadedCapabilities.schema ? I18n.t("Majestic подключён, schema загружена") : I18n.t("Majestic подключён в legacy-режиме"))
@@ -2989,15 +2135,19 @@ Dialog {
         }
         function onConfigurationApplied(requestId) {
             if (requestId !== activeApplyId) return
+            var rollbackFlow = requestId === activeRollbackId
             applyWatchdogTimer.stop()
             untrack(activeApplyId)
             activeApplyId = ""
+            if (rollbackFlow) clearRollbackSnapshot()
             pipelineReloadNeeded = pendingPipelineReloadNeeded
             if (pipelineReloadNeeded && pendingAutoReloadAfterApply && capabilities.pipelineReload === true) {
-                triggerPipelineReload("Конфигурация сохранена; отправляю reload pipeline…")
+                triggerPipelineReload(rollbackFlow ? "Откат сохранён; отправляю reload pipeline…" : "Конфигурация сохранена; отправляю reload pipeline…")
                 return
             }
-            statusText = pipelineReloadNeeded
+            statusText = rollbackFlow
+                         ? I18n.t("Откат сохранён; перечитываю конфигурацию…")
+                         : pipelineReloadNeeded
                          ? I18n.t("Конфигурация сохранена; примените reload pipeline")
                          : I18n.t("Конфигурация сохранена; live-параметры применены")
             refresh()
@@ -3018,7 +2168,14 @@ Dialog {
         }
         function onBackupLoaded(requestId, config, schema, path) {
             if (!owns(requestId)) return
-            rawEditor.text = JSON.stringify(config, null, 2); tabs.currentIndex = tabIndexForKind("raw"); statusError = false; statusText = I18n.t("Backup открыт для проверки: %1", [path])
+            untrack(requestId)
+            backupRestoreConfig = clone(config)
+            backupRestoreSchema = clone(schema)
+            backupRestorePath = path
+            backupRestoreChanges = SystemController.majesticClient.describeChanges(originalConfig, backupRestoreConfig)
+            rawJsonPage.text = JSON.stringify(config, null, 2)
+            statusError = false
+            statusText = I18n.t("Backup загружен: %1 · отличий: %2", [path, backupRestoreChanges.length])
         }
         function onOperationSucceeded(requestId, operation, result) {
             if (!owns(requestId) || operation === "load-config" || operation === "apply-config" || operation === "metrics" || operation === "backup-load") return
@@ -3038,6 +2195,7 @@ Dialog {
             if (operation === "apply-config" || requestId === activeApplyId) {
                 applyWatchdogTimer.stop()
                 untrack(activeApplyId)
+                if (requestId === activeRollbackId) activeRollbackId = ""
                 activeApplyId = ""
             }
             if (operation === "metrics" || requestId === activeMetricsId) {
@@ -3066,6 +2224,17 @@ Dialog {
 
         function onStatusLoaded(requestId, status) {
             if (!owns(requestId)) return
+            if (requestId === activeFirmwareReturnProbeId) {
+                untrack(requestId)
+                activeFirmwareReturnProbeId = ""
+                firmwareStatus = status
+                stopFirmwareReturnPolling(I18n.t("Камера вернулась после update"), false)
+                appendFirmwareUpgradeText("\n--- camera is back online ---\n")
+                loadFirmwareNetwork()
+                loadFirmwareTime()
+                refreshFirmwareUpdateInfo()
+                return
+            }
             untrack(requestId)
             firmwareBusy = false
             activeFirmwareStatusId = ""
@@ -3114,7 +2283,7 @@ Dialog {
             firmwareWifiNetworks = networks || []
             statusError = !!(error && String(error).length)
             statusText = statusError ? error : I18n.t("Wi‑Fi scan: найдено %1 сетей", [firmwareWifiNetworks.length])
-            if (firmwareWifiNetworks.length && !networkWlanSsid.text.length) networkWlanSsid.text = firmwareWifiNetworks[0].ssid || ""
+            if (firmwareWifiNetworks.length && !networkPage.wlanSsid.length) networkPage.wlanSsid = firmwareWifiNetworks[0].ssid || ""
         }
 
         function onTimeLoaded(requestId, time) {
@@ -3156,9 +2325,11 @@ Dialog {
             firmwareBusy = false
             activeFirmwareLogsId = ""
             firmwareLogsSource = source
-            firmwareLogsText = text
+            if (!firmwareLogsPaused) firmwareLogsText = text
             statusError = false
-            statusText = I18n.t("Логи загружены: %1", [source])
+            statusText = firmwareLiveLogs
+                         ? I18n.t("Live logs обновлены: %1", [source])
+                         : I18n.t("Логи загружены: %1", [source])
         }
 
         function onBackupSaved(requestId, path) {
@@ -3166,6 +2337,7 @@ Dialog {
             untrack(requestId)
             firmwareBusy = false
             activeFirmwareBackupId = ""
+            firmwareBackupSaved = true
             statusError = false
             statusText = I18n.t("Firmware backup сохранён: %1", [path])
         }
@@ -3194,12 +2366,82 @@ Dialog {
             untrack(requestId)
             firmwareBusy = false
             activeFirmwareUpdateId = ""
+            firmwareArchiveUploaded = true
             statusError = false
             statusText = I18n.t("Firmware archive загружен: %1", [remotePath])
         }
 
+        function onUpdateStarted(requestId, mode) {
+            if (!owns(requestId)) return
+            firmwareBusy = false
+            statusError = false
+            firmwareUpgradeRebooting = false
+            firmwareUpgradeText = I18n.t("Updater started: %1", [mode]) + "\n"
+            statusText = I18n.t("Firmware updater запущен через /ws/upgrade")
+        }
+
+        function onFirmwareUpgradeOutput(requestId, text) {
+            if (requestId !== activeFirmwareUpdateId) return
+            appendFirmwareUpgradeText(text)
+        }
+
+        function onFirmwareUpgradeRebooting(requestId) {
+            if (requestId !== activeFirmwareUpdateId) return
+            firmwareBusy = false
+            firmwareUpgradeRebooting = true
+            appendFirmwareUpgradeText("\n--- flashing/rebooting ---\n")
+            startFirmwareReturnPolling()
+            statusError = false
+            statusText = I18n.t("Прошивка перешла в flashing/rebooting. Не выключайте питание камеры.")
+        }
+
+        function onLiveLogsStarted(requestId) {
+            if (requestId !== activeFirmwareLiveLogsId) return
+            statusError = false
+            statusText = I18n.t("Live logs подключены через /ws/logs")
+        }
+
+        function onLiveLogChunk(requestId, text) {
+            if (requestId !== activeFirmwareLiveLogsId) return
+            appendFirmwareLogText(text)
+        }
+
+        function onLiveLogsStopped(requestId, reason) {
+            if (requestId !== activeFirmwareLiveLogsId) return
+            untrack(requestId)
+            activeFirmwareLiveLogsId = ""
+            firmwareLiveLogs = false
+            statusError = false
+            statusText = reason === "stopped" ? I18n.t("Live logs остановлены") : I18n.t("Live logs закрыты: %1", [reason])
+        }
+
+        function onOperationSucceeded(requestId, operation, result) {
+            if (!owns(requestId)) return
+            if (operation === "firmware-update-start") return
+            untrack(requestId)
+            firmwareBusy = false
+            if (requestId === activeFirmwareUpdateId) activeFirmwareUpdateId = ""
+            if (operation === "firmware-update") {
+                statusError = false
+                statusText = result || I18n.t("Firmware update запущен; ожидайте возвращения камеры")
+                if (!firmwareReturnPolling) startFirmwareReturnPolling()
+            }
+        }
+
         function onOperationFailed(requestId, operation, message, httpStatus) {
             if (!owns(requestId)) return
+            if (requestId === activeFirmwareReturnProbeId) {
+                untrack(requestId)
+                activeFirmwareReturnProbeId = ""
+                firmwareBusy = false
+                if (firmwareReturnPollTries >= firmwareReturnPollMaxTries) {
+                    stopFirmwareReturnPolling(I18n.t("Камера не вернулась после update. Проверьте питание и сеть."), true)
+                } else {
+                    statusError = false
+                    statusText = I18n.t("Ожидание возврата камеры… попытка %1/%2", [firmwareReturnPollTries, firmwareReturnPollMaxTries])
+                }
+                return
+            }
             untrack(requestId)
             firmwareBusy = false
             if (requestId === activeFirmwareStatusId) activeFirmwareStatusId = ""
@@ -3208,6 +2450,11 @@ Dialog {
             if (requestId === activeFirmwareTimeId) activeFirmwareTimeId = ""
             if (requestId === activeFirmwareTimeSaveId) activeFirmwareTimeSaveId = ""
             if (requestId === activeFirmwareLogsId) activeFirmwareLogsId = ""
+            if (requestId === activeFirmwareLiveLogsId) {
+                activeFirmwareLiveLogsId = ""
+                firmwareLiveLogs = false
+                firmwareLiveLogsTimer.stop()
+            }
             if (requestId === activeFirmwareBackupId) activeFirmwareBackupId = ""
             if (requestId === activeFirmwareRebootId) activeFirmwareRebootId = ""
             if (requestId === activeFirmwareUpdateId) activeFirmwareUpdateId = ""
@@ -3299,6 +2546,22 @@ Dialog {
     }
 
     Dialog {
+        id: rollbackConfirm
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(dialog.width - 100, 620)
+        title: I18n.t("Откатить критичные настройки Majestic")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: dialog.rollbackPendingChanges()
+        contentItem: Label {
+            text: I18n.t("Будет отправлен diff, который вернёт конфигурацию Majestic к снимку, сохранённому перед последним критичным apply. После отката может потребоваться reload pipeline.")
+            color: Theme.warning
+            wrapMode: Text.WordWrap
+            padding: 16
+        }
+    }
+
+    Dialog {
         id: firmwareNetworkConfirm
         modal: true
         anchors.centerIn: parent
@@ -3371,7 +2634,23 @@ Dialog {
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: startGithubFirmwareUpdate()
         contentItem: Label {
-            text: I18n.t("Update — опасная операция. Камера остановит видео и перезагрузится. Сейчас приложение запускает только безопасно проверенный путь; если WebSockets updater недоступен в этой сборке, откройте штатный WebUI Update.")
+            text: I18n.t("Будет запущен GitHub update через /ws/upgrade. Опции: %1. Камера остановит видео и перезагрузится. Продолжить?", [firmwareUpdateOptionsSummary()])
+            color: Theme.warning
+            wrapMode: Text.WordWrap
+            padding: 16
+        }
+    }
+
+    Dialog {
+        id: firmwareUploadedUpdateConfirm
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(dialog.width - 100, 620)
+        title: I18n.t("Прошить загруженный архив")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: startUploadedFirmwareUpdate()
+        contentItem: Label {
+            text: I18n.t("Будет запущен /ws/upgrade с source=/tmp/firmware.tgz. Опции: %1. Убедитесь, что архив подходит этой камере и питание не будет отключено.", [firmwareUpdateOptionsSummary()])
             color: Theme.warning
             wrapMode: Text.WordWrap
             padding: 16
@@ -3381,7 +2660,7 @@ Dialog {
     FileDialog {
         id: snapshotDialog; title: I18n.t("Сохранить снимок Majestic"); fileMode: FileDialog.SaveFile; defaultSuffix: "jpg"
         nameFilters: [I18n.t("JPEG (*.jpg *.jpeg)"), I18n.t("Все файлы (*)")]
-        onAccepted: track(SystemController.majesticClient.takeSnapshot(cameraHost, cameraPort, cameraUser, cameraPassword, selectedFile.toString(), snapshotWidth.value, snapshotHeight.value, snapshotQuality.value, snapshotGray.checked))
+        onAccepted: track(SystemController.majesticClient.takeSnapshot(cameraHost, cameraPort, cameraUser, cameraPassword, selectedFile.toString(), overviewPage.snapshotWidth, overviewPage.snapshotHeight, overviewPage.snapshotQuality, overviewPage.snapshotGray))
     }
     FileDialog {
         id: saveBackupDialog; title: I18n.t("Сохранить backup Majestic"); fileMode: FileDialog.SaveFile; defaultSuffix: "json"

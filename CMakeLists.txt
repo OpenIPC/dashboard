@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.4 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.5 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -44,6 +44,12 @@ endfunction()
 include(CTest)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent Multimedia Sql Test)
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS WebSockets)
+if(TARGET Qt6::WebSockets)
+    message(STATUS "Qt WebSockets found: native OpenIPC live logs and /ws/upgrade are enabled")
+else()
+    message(STATUS "Qt WebSockets not found: OpenIPC live logs use polling and /ws/upgrade is disabled")
+endif()
 
 # Force native rcc executable to avoid picking up python-based rcc from VS Code extensions
 if(WIN32 AND TARGET Qt6::rcc)
@@ -229,6 +235,8 @@ set(SOURCES
     src/backend/StateStore.h
     src/backend/CameraOnboardingParser.cpp
     src/backend/CameraOnboardingParser.h
+    src/backend/AppUpdateChecker.cpp
+    src/backend/AppUpdateChecker.h
     src/backend/MajesticClient.cpp
     src/backend/MajesticClient.h
     src/backend/OpenIpcFirmwareClient.cpp
@@ -286,8 +294,10 @@ set(QML_FILES
     src/ui/Theme.qml
     src/ui/Main.qml
     src/ui/SettingsDialog.qml
+    src/ui/AppUpdateDialog.qml
     src/ui/ModulesSettingsPanel.qml
     src/ui/StyledComboBox.qml
+    src/ui/DeviceListItem.qml
     src/ui/GridCell.qml
     src/ui/GroupContextMenu.qml
     src/ui/CameraStatusBadge.qml
@@ -307,7 +317,9 @@ set(QML_FILES
     src/ui/RenameGroupDialog.qml
     src/ui/LayoutEditorDialog.qml
     src/ui/SidebarActionButton.qml
+    src/ui/SidebarCommandButton.qml
     src/ui/SidebarIcon.qml
+    src/ui/SidebarSectionHeader.qml
     src/ui/SidebarStatPill.qml
     src/ui/CameraHealthDialog.qml
     src/ui/CameraSearchDialog.qml
@@ -335,14 +347,36 @@ set(QML_FILES
     src/ui/CameraContextMenu.qml
     src/ui/MajesticControlDialog.qml
     src/ui/MajesticButton.qml
+    src/ui/MajesticBackupRestorePanel.qml
     src/ui/MajesticCheckBox.qml
     src/ui/MajesticComboBox.qml
     src/ui/MajesticEndpointProbeCard.qml
+    src/ui/MajesticEndpointsPage.qml
+    src/ui/MajesticMetricsPage.qml
+    src/ui/MajesticOverviewPage.qml
+    src/ui/MajesticRawJsonPage.qml
+    src/ui/MajesticRollbackBanner.qml
     src/ui/MajesticSettingFieldEditor.qml
+    src/ui/MajesticSettingsPage.qml
     src/ui/MajesticSpinBox.qml
     src/ui/MajesticStatusCard.qml
     src/ui/MajesticTabButton.qml
     src/ui/MajesticTextField.qml
+    src/ui/OpenIpcLogsPanel.qml
+    src/ui/OpenIpcFirmwareQuickActionsCard.qml
+    src/ui/OpenIpcFirmwareStatusGrid.qml
+    src/ui/OpenIpcFirmwareStatusCardsGrid.qml
+    src/ui/OpenIpcInfoRowsCard.qml
+    src/ui/OpenIpcPageHeader.qml
+    src/ui/OpenIpcNetworkPage.qml
+    src/ui/OpenIpcStatusPage.qml
+    src/ui/OpenIpcTimePage.qml
+    src/ui/OpenIpcToolsPage.qml
+    src/ui/OpenIpcUpdatePage.qml
+    src/ui/OpenIpcUpdateChecklistGrid.qml
+    src/ui/OpenIpcUpdateOptionsCard.qml
+    src/ui/OpenIpcUpdateWarningCard.qml
+    src/ui/OpenIpcUpgradeProgressPanel.qml
     src/ui/SshTerminalDialog.qml
     src/ui/ArchiveView.qml
     src/ui/PtzControlPanel.qml
@@ -399,6 +433,11 @@ qt_add_qml_module(appOpenIPC-Dashboard
 target_link_libraries(appOpenIPC-Dashboard
     PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent Qt6::Sql onnxruntime dhnetsdk ${GST_LIBRARIES} ssh qt6keychain
 )
+
+if(TARGET Qt6::WebSockets)
+    target_link_libraries(appOpenIPC-Dashboard PRIVATE Qt6::WebSockets)
+    target_compile_definitions(appOpenIPC-Dashboard PRIVATE OPENIPC_HAS_QT_WEBSOCKETS=1)
+endif()
 
 if (UNIX AND NOT APPLE)
     # Explicitly link pthread if needed, though Qt usually pulls it in
@@ -726,6 +765,23 @@ if(BUILD_TESTING)
 
     add_test(NAME camera_onboarding_parser_tests COMMAND camera_onboarding_parser_tests)
 
+    add_executable(app_update_checker_tests
+        tests/AppUpdateCheckerTests.cpp
+        src/backend/AppUpdateChecker.cpp
+        src/backend/AppUpdateChecker.h
+    )
+    openipc_enable_project_warnings(app_update_checker_tests)
+
+    target_include_directories(app_update_checker_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(app_update_checker_tests
+        PRIVATE Qt6::Core Qt6::Gui Qt6::Network Qt6::Test
+    )
+
+    add_test(NAME app_update_checker_tests COMMAND app_update_checker_tests)
+
     add_executable(majestic_client_tests
         tests/MajesticClientTests.cpp
         src/backend/MajesticClient.cpp
@@ -761,6 +817,10 @@ if(BUILD_TESTING)
     target_link_libraries(openipc_firmware_client_tests
         PRIVATE Qt6::Core Qt6::Network Qt6::Test
     )
+    if(TARGET Qt6::WebSockets)
+        target_link_libraries(openipc_firmware_client_tests PRIVATE Qt6::WebSockets)
+        target_compile_definitions(openipc_firmware_client_tests PRIVATE OPENIPC_HAS_QT_WEBSOCKETS=1)
+    endif()
 
     add_test(NAME openipc_firmware_client_tests COMMAND openipc_firmware_client_tests)
 
@@ -781,13 +841,13 @@ if(BUILD_TESTING)
 
     add_test(NAME network_discovery_service_tests COMMAND network_discovery_service_tests)
 
-    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     endif()

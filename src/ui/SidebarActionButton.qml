@@ -9,18 +9,23 @@ Button {
     property string iconPath: ""
     property string label: ""
     property string tooltip: ""
+    property bool primary: false
 
     Layout.fillWidth: true
-    implicitHeight: 48
+    implicitHeight: root.primary ? 54 : 48
     padding: 0
     hoverEnabled: true
 
     background: Rectangle {
         color: root.enabled
-               ? (root.hovered ? Theme.cardHover : Theme.panelSoftBackground)
+               ? (root.primary
+                  ? (root.hovered ? Theme.accent : "#17315f")
+                  : (root.hovered ? Theme.cardHover : Theme.panelSoftBackground))
                : Theme.controlBackgroundAlt
         radius: Theme.radiusMd
-        border.color: root.hovered ? Theme.accent : Theme.controlBorder
+        border.color: root.primary
+                      ? (root.hovered ? Theme.accentHover : "#275ba8")
+                      : (root.hovered ? Theme.accent : Theme.controlBorder)
         border.width: 1
     }
 
@@ -37,7 +42,7 @@ Button {
                 height: 18
                 path: root.iconPath
                 color: root.enabled
-                       ? (root.hovered ? Theme.accent : Theme.textSecondary)
+                       ? (root.primary ? Theme.textPrimary : (root.hovered ? Theme.accent : Theme.textSecondary))
                        : Theme.textMuted
             }
         }
@@ -45,9 +50,9 @@ Button {
         Text {
             Layout.fillWidth: true
             text: I18n.t(root.label)
-            color: root.enabled ? Theme.textSecondary : Theme.textMuted
+            color: root.enabled ? (root.primary ? Theme.textPrimary : Theme.textSecondary) : Theme.textMuted
             font.pixelSize: 10
-            font.bold: root.label.indexOf("Поиск") === 0
+            font.bold: root.primary
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
         }

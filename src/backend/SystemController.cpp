@@ -11,6 +11,7 @@
 #include <QNetworkInterface>
 #include <QStandardPaths>
 #include <QFile>
+#include <QSaveFile>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -42,6 +43,9 @@
 #include <psapi.h>
 #undef min
 #undef max
+#elif defined(Q_OS_LINUX)
+#include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -166,6 +170,7 @@ SystemController::SystemController(QObject *parent)
     , m_majesticClient(new MajesticClient(this))
     , m_firmwareClient(new OpenIpcFirmwareClient(this))
     , m_networkDiscovery(new NetworkDiscoveryService(this))
+    , m_appUpdateChecker(new AppUpdateChecker(this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
     , m_networkManager(new QNetworkAccessManager(this))
 {
@@ -1642,21 +1647,49 @@ double SystemController::processMemoryMB()
     }
     return 0.0;
 #elif defined(Q_OS_LINUX)
-    // Read /proc/self/status for VmRSS
+    // Prefer the current resident set size from /proc/self/status. Some sandboxed
+    // Linux environments may expose a partial /proc, so keep fallbacks below.
     QFile file("/proc/self/status");
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
         while (!in.atEnd()) {
-            QString line = in.readLine();
-            if (line.startsWith("VmRSS:")) {
-                QStringList parts = line.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+            const QString line = in.readLine().trimmed();
+            if (line.startsWith(QStringLiteral("VmRSS:"))) {
+                const QStringList parts = line.split(QRegularExpression(QStringLiteral("\\s+")),
+                                                     Qt::SkipEmptyParts);
                 if (parts.size() >= 2) {
                     // Value is in kB
-                    return parts[1].toDouble() / 1024.0; 
+                    bool ok = false;
+                    const double valueKb = parts.at(1).toDouble(&ok);
+                    if (ok && valueKb > 0.0) {
+                        return valueKb / 1024.0;
+                    }
                 }
             }
         }
     }
+
+    QFile statmFile(QStringLiteral("/proc/self/statm"));
+    if (statmFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QStringList parts = QString::fromUtf8(statmFile.readAll())
+                                      .split(QRegularExpression(QStringLiteral("\\s+")),
+                                             Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            bool ok = false;
+            const double residentPages = parts.at(1).toDouble(&ok);
+            const long pageSize = sysconf(_SC_PAGESIZE);
+            if (ok && residentPages > 0.0 && pageSize > 0) {
+                return (residentPages * static_cast<double>(pageSize)) / (1024.0 * 1024.0);
+            }
+        }
+    }
+
+    struct rusage usage {};
+    if (getrusage(RUSAGE_SELF, &usage) == 0 && usage.ru_maxrss > 0) {
+        // Linux reports ru_maxrss in kilobytes.
+        return static_cast<double>(usage.ru_maxrss) / 1024.0;
+    }
+
     return 0.0;
 #else
     return 0.0;
@@ -2362,6 +2395,30 @@ void SystemController::copyTextToClipboard(const QString &text)
     QClipboard *clipboard = QGuiApplication::clipboard();
     if (!clipboard) return;
     clipboard->setText(text);
+}
+
+bool SystemController::saveTextFile(const QString &pathOrUrl, const QString &content) const
+{
+    const QString path = PathUtils::localPathFromUserInput(pathOrUrl);
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    QDir dir = QFileInfo(path).absoluteDir();
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        return false;
+    }
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    if (file.write(content.toUtf8()) < 0) {
+        return false;
+    }
+
+    return file.commit();
 }
 
 bool SystemController::openWithDialog(const QString &fileUrl)

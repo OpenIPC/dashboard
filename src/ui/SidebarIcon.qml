@@ -13,10 +13,12 @@ Item {
     layer.samples: 8
     
     Shape {
-        anchors.fill: parent
-        // Scale the shape to fit the item size (assuming 24x24 viewbox for paths)
-        scale: root.width / 25
+        width: 24
+        height: 24
         anchors.centerIn: parent
+        // Keep every path in the same centered 24x24 viewbox so sidebar tiles
+        // do not visually jump when icons use slightly different geometry.
+        scale: Math.min(root.width, root.height) / 24
         
         ShapePath {
             strokeWidth: 0

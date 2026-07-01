@@ -95,11 +95,73 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: I18n.t("Найдите устройства в сети или добавьте RTSP/ONVIF-камеру вручную.")
+                text: I18n.t("Начните с поиска OpenIPC/ONVIF камер — дальше приложение подскажет поток, статус и доступные действия.")
                 color: Theme.textMuted
                 font.pixelSize: 13
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
+            }
+
+            GridLayout {
+                id: quickStartGrid
+
+                Layout.fillWidth: true
+                Layout.maximumWidth: 500
+                Layout.alignment: Qt.AlignHCenter
+                columns: quickStartGrid.width > 460 ? 3 : 1
+                columnSpacing: 8
+                rowSpacing: 8
+
+                Repeater {
+                    model: [
+                        { step: "1", text: I18n.t("Найдите камеры") },
+                        { step: "2", text: I18n.t("Перетащите в сетку") },
+                        { step: "3", text: I18n.t("Откройте Control Center") }
+                    ]
+
+                    delegate: Rectangle {
+                        id: quickStartStep
+
+                        required property var modelData
+
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 42
+                        radius: Theme.radiusMd
+                        color: Theme.panelSoftBackground
+                        border.color: Theme.panelBorder
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 9
+                            anchors.rightMargin: 9
+                            spacing: 8
+
+                            Rectangle {
+                                Layout.preferredWidth: 22
+                                Layout.preferredHeight: 22
+                                radius: 11
+                                color: Theme.controlBackground
+                                border.color: Theme.accent
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: quickStartStep.modelData.step
+                                    color: Theme.accentHover
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: quickStartStep.modelData.text
+                                color: Theme.textSecondary
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
             }
 
             RowLayout {

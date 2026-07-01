@@ -117,7 +117,6 @@ Window {
     property string hwAccel: "auto"
     property bool notificationsEnabled: true
     property string updateStatus: "idle"
-    property int updateProgress: 0
     property string updateError: ""
 
     // Streaming tab state (UI-only for now)
@@ -414,13 +413,16 @@ Window {
     readonly property string iconFontFamily: materialIcons.status === FontLoader.Ready ? materialIcons.name : "Material Icons"
 
     function updateStatusText() {
+        var checker = SystemController.appUpdateChecker
+        if (checker) {
+            if (checker.checking) return I18n.t("Проверка обновлений...")
+            if (checker.errorString !== "") return I18n.t("Ошибка") + ": " + checker.errorString
+            if (checker.hasUpdate) return I18n.t("Доступно обновление: %1", [checker.latestVersion])
+        }
+
         switch (updateStatus) {
         case "checking": return I18n.t("Проверка обновлений...");
-        case "available": return I18n.t("Доступно обновление");
-        case "downloading": return I18n.t("Загрузка обновления...");
-        case "downloaded": return I18n.t("Обновление скачано — готово к установке");
-        case "installing": return I18n.t("Установка обновления...");
-        case "done": return I18n.t("Обновление установлено");
+        case "available": return checker ? I18n.t("Доступно обновление: %1", [checker.latestVersion]) : I18n.t("Доступно обновление");
         case "latest": return I18n.t("Установлена последняя версия");
         case "error": return I18n.t("Ошибка") + (updateError !== "" ? ": " + updateError : "");
         default: return I18n.t("Нажмите \"Проверить обновления\"");
@@ -430,8 +432,7 @@ Window {
     function startUpdateCheck() {
         updateStatus = "checking";
         updateError = "";
-        updateProgress = 0;
-        updateCheckTimer.restart();
+        SystemController.appUpdateChecker.checkNow();
     }
 
     function trimFileUrl(url) {
@@ -509,13 +510,22 @@ Window {
         }
     }
 
-    Timer {
-        id: updateCheckTimer
-        interval: 1200
-        repeat: false
-        onTriggered: {
-            updateStatus = "latest"
-            updateProgress = 0
+    Connections {
+        target: SystemController.appUpdateChecker
+        function onCheckingChanged() {
+            if (SystemController.appUpdateChecker.checking) {
+                updateStatus = "checking"
+                updateError = ""
+            }
+        }
+        function onCheckFinished(hasUpdate) {
+            if (SystemController.appUpdateChecker.errorString !== "") {
+                updateStatus = "error"
+                updateError = SystemController.appUpdateChecker.errorString
+            } else {
+                updateStatus = hasUpdate ? "available" : "latest"
+                updateError = ""
+            }
         }
     }
     
@@ -984,74 +994,83 @@ Window {
                                 Text { text: I18n.t("Статус"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
                                 Text { text: updateStatusText(); color: "#e2e8f0"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
 
-                                Text { text: I18n.t("Действие"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                Button {
-                                    text: I18n.t("Проверить обновления")
-                                    enabled: updateStatus !== "checking"
-                                    Layout.preferredHeight: 34
-                                    Layout.preferredWidth: 190
-                                    background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    onClicked: startUpdateCheck()
+                                Text { text: I18n.t("Текущая версия"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
+                                Text {
+                                    text: SystemController.appUpdateChecker.currentVersion
+                                    color: "#e2e8f0"
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
                                 }
 
-                                // Progress bar
                                 Text {
-                                    visible: updateStatus === "downloading" || updateStatus === "downloaded"
-                                    text: I18n.t("Прогресс")
+                                    visible: SystemController.appUpdateChecker.hasUpdate
+                                    text: I18n.t("Новая версия")
                                     color: "#a0aec0"
                                     Layout.preferredWidth: updatesGrid.labelWidth
                                     Layout.preferredHeight: visible ? implicitHeight : 0
                                 }
-                                ColumnLayout {
-                                    visible: updateStatus === "downloading" || updateStatus === "downloaded"
-                                    spacing: 6
+                                RowLayout {
+                                    visible: SystemController.appUpdateChecker.hasUpdate
+                                    spacing: 8
+                                    Layout.fillWidth: true
                                     Layout.preferredHeight: visible ? implicitHeight : 0
+
+                                    Text {
+                                        text: SystemController.appUpdateChecker.latestVersion
+                                        color: Theme.success
+                                        font.bold: true
+                                        Layout.fillWidth: true
+                                    }
+
                                     Rectangle {
-                                        color: "#2f3338"
-                                        border.color: "#333"
-                                        radius: 4
-                                        width: 240
-                                        height: 10
-                                        Rectangle {
-                                            width: (updateProgress / 100) * parent.width
-                                            height: parent.height
-                                            radius: 4
-                                            color: "#3b82f6"
-                                            anchors.left: parent.left
+                                        visible: SystemController.appUpdateChecker.latestPrerelease
+                                        Layout.preferredWidth: prereleaseSettingsLabel.implicitWidth + 16
+                                        Layout.preferredHeight: 22
+                                        radius: 11
+                                        color: Theme.warning
+
+                                        Text {
+                                            id: prereleaseSettingsLabel
+                                            anchors.centerIn: parent
+                                            text: I18n.t("Предварительный релиз")
+                                            color: "black"
+                                            font.pixelSize: 10
+                                            font.bold: true
                                         }
                                     }
-                                    Text {
-                                        text: updateStatus === "downloading" ? (updateProgress + "%") : ""
-                                        color: "#9da3ad"
-                                        font.pixelSize: 12
+                                }
+
+                                Text { text: I18n.t("Действие"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
+                                RowLayout {
+                                    spacing: 8
+                                    Layout.fillWidth: true
+
+                                    Button {
+                                        text: SystemController.appUpdateChecker.checking
+                                              ? I18n.t("Проверка...")
+                                              : I18n.t("Проверить обновления")
+                                        enabled: !SystemController.appUpdateChecker.checking
+                                        Layout.preferredHeight: 34
+                                        Layout.preferredWidth: 190
+                                        background: Rectangle { color: "#3b82f6"; radius: 6 }
+                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        onClicked: startUpdateCheck()
+                                    }
+
+                                    Button {
+                                        visible: SystemController.appUpdateChecker.hasUpdate
+                                        text: I18n.t("Открыть релиз")
+                                        Layout.preferredHeight: 34
+                                        Layout.preferredWidth: 140
+                                        background: Rectangle { color: Theme.success; radius: 6 }
+                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        onClicked: SystemController.appUpdateChecker.openReleasePage()
                                     }
                                 }
 
                                 // Error message
                                 Text { text: updateStatus === "error" ? I18n.t("Ошибка") : ""; color: updateStatus === "error" ? "#e53e3e" : "transparent"; Layout.preferredWidth: updatesGrid.labelWidth }
                                 Text { text: updateStatus === "error" ? updateError : ""; color: "#e53e3e"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-
-                                // Install actions when downloaded
-                                Text { text: updateStatus === "downloaded" ? I18n.t("Установка") : ""; color: updateStatus === "downloaded" ? "#a0aec0" : "transparent"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                RowLayout {
-                                    visible: updateStatus === "downloaded"
-                                    spacing: 8
-                                    Button {
-                                        text: I18n.t("Установить и перезапустить")
-                                        Layout.preferredHeight: 34
-                                        Layout.preferredWidth: 210
-                                        background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    }
-                                    Button {
-                                        text: I18n.t("Позже")
-                                        Layout.preferredHeight: 34
-                                        Layout.preferredWidth: 110
-                                        background: Rectangle { color: "#e53e3e"; radius: 6 }
-                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    }
-                                }
                             }
                         }
                     }

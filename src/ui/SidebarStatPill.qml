@@ -11,20 +11,23 @@ Rectangle {
 
     Layout.fillWidth: true
     implicitHeight: 54
-    radius: Theme.radiusMd
+    radius: Theme.radiusLg
     color: Theme.panelSoftBackground
-    border.color: Theme.controlBorder
+    border.color: Theme.panelBorder
     border.width: 1
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        anchors.topMargin: 7
+        anchors.bottomMargin: 7
         spacing: 2
 
         Text {
             text: root.value
             color: root.accentColor
-            font.pixelSize: 16
+            font.pixelSize: 18
             font.bold: true
             elide: Text.ElideRight
             Layout.fillWidth: true

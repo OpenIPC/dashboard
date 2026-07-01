@@ -1,134 +1,151 @@
-# OpenIPC Dashboard v0.2.4
+# OpenIPC Dashboard v0.2.5-pre.1
 
-OpenIPC Dashboard 0.2.4 is a major OpenIPC-focused release. It turns the app from a viewer-oriented dashboard into a much more complete camera control center: stronger discovery, Majestic API integration, firmware operations, better stream health handling, and a more modular UI foundation.
+This is a pre-release build focused on stabilizing the large OpenIPC / Majestic Control Center update after `0.2.4`.
+
+The main goal of this pre-release is to ship GitHub Actions artifacts built with Qt WebSockets enabled, so `/ws/logs` and the prepared `/ws/upgrade` firmware flow can be tested on real OpenIPC cameras.
 
 ## Highlights
 
-- Added a native OpenIPC / Majestic Control Center inspired by the camera WebUI.
-- Added real OpenIPC firmware read/write operations for status, network, time, logs, backup, reboot, update info, and firmware archive upload.
-- Reworked Majestic settings into schema-driven sections with localized labels, hints, safe diff review, and reload/restart indicators.
-- Improved OpenIPC camera discovery with mDNS, ONVIF WS-Discovery, Majestic HTTP detection, RTSP probing, progress reporting, cancellation, and cross-protocol deduplication.
-- Refactored large Dashboard QML areas into reusable components for grid, sidebar, top bar, status bar, dialogs, buttons, badges, and empty states.
-- Improved camera status consistency between the video grid, sidebar, and health UI.
-- Added stream health, reconnect, quality, and session policy layers with unit tests.
-- Fixed SD/HD stream switching for preview/fullscreen OpenIPC streams.
-- Added GitHub Actions CI coverage and expanded the test suite.
+- Enabled GitHub release builds with Qt WebSockets support.
+- Added GitHub release workflow handling for prerelease tags such as `v0.2.5-pre.1`.
+- Added an in-app GitHub Releases update checker.
+- Added an update notification dialog with release notes from the GitHub Release page.
+- Completed the P2 split of `MajesticControlDialog.qml` into focused page/panel QML components.
+- Kept the main Majestic dialog as a controller layer for state, API calls, timers, connections and confirmations.
+- Fixed Linux process RAM reporting fallback so the status bar no longer stays at `0 MB` when `/proc/self/status` parsing is unavailable.
+- Preserved the OpenIPC Control Center / Firmware workflow added after `0.2.4`: status, network, time, logs, backup, reboot, update information and firmware upload.
+- Preserved firmware WebSocket upgrade preparation: GitHub firmware source flow, uploaded archive flow, progress output and reboot/polling state.
 
-## OpenIPC / Majestic Control Center
+## Majestic / OpenIPC Control Center
 
-- Reads Majestic configuration from `/api/v1/config.json`.
-- Builds settings UI from `/api/v1/config.schema.json`.
-- Preserves unknown camera-specific fields instead of rewriting the whole config blindly.
-- Applies only a minimal validated patch through `/api/v1/config`.
-- Fixes the previous `null` patch issue when saving changed Majestic settings.
-- Adds live ISP controls for image tuning.
-- Adds raw JSON inspection.
-- Adds Prometheus metrics viewing.
-- Adds endpoint/capability overview.
-- Adds JPEG snapshot and backup helpers.
-- Adds clear confirmation flow before applying changes.
-- Redacts sensitive values in review flows where possible.
+- Majestic pages are now split into reusable components:
+  - overview;
+  - schema-driven settings;
+  - endpoints/capabilities;
+  - raw JSON;
+  - metrics.
+- OpenIPC firmware pages are now split into reusable components:
+  - status;
+  - network;
+  - time;
+  - update;
+  - tools;
+  - live logs panel.
+- Backup/restore and rollback panels are now separate components.
+- New extracted QML components pass `qmllint`.
 
-## Firmware operations
+## Firmware and WebSockets
 
-The app now talks to real OpenIPC WebUI/CGI endpoints for firmware-level control:
+- Qt WebSockets are installed in CI/release workflows.
+- The app can expose whether WebSockets are available in the current build.
+- `/ws/logs` can use WebSocket mode when available, with polling fallback otherwise.
+- `/ws/upgrade` support is prepared for GitHub firmware and uploaded archive flows.
+- Firmware flashing is still guarded by safety checks and confirmations.
 
-- Status / pulse data.
-- Network read/write.
-- DHCP/static network configuration.
-- Wi-Fi scan.
-- Network reset.
-- Timezone and NTP server configuration.
-- NTP sync and setting camera time from the PC.
-- Syslog, Majestic log, and dmesg snapshots.
-- Firmware backup download.
-- Reboot with explicit confirmation.
-- Firmware update information.
-- Firmware archive upload to the camera.
+## Linux fix
 
-Final GitHub firmware upgrade through `/ws/upgrade` is intentionally guarded for now because the bundled Qt tree does not include Qt WebSockets yet. The UI keeps a safe fallback to the camera WebUI for that final flashing step.
+- Fixed process RAM reporting on Linux:
+  - primary source: `/proc/self/status` / `VmRSS`;
+  - fallback: `/proc/self/statm`;
+  - fallback: `getrusage(RUSAGE_SELF)`.
+- This targets the issue where CPU usage was shown but RAM stayed at zero in the bottom status bar on some Linux systems.
 
-## Camera discovery
+## Application updates
 
-- Added OpenIPC mDNS discovery.
-- Added Majestic HTTP fingerprinting.
-- Added RTSP reachability probing.
-- Improved ONVIF WS-Discovery probing.
-- Added fast and deep scan modes.
-- Added progress percentage during network scan.
-- Automatically hides the progress bar after scan completion.
-- Merges duplicate evidence by IP address.
-- Shows detected ports, protocol hints, and confidence.
+- The app can periodically check `OpenIPC/dashboard` GitHub Releases.
+- The existing “Check for updates” button in application settings now uses the real checker.
+- When a newer version is found, the app shows a modal dialog with release notes from GitHub.
+- Users can open the release page, skip the detected version, or be reminded later.
+- Pre-release versions such as `0.2.5-pre.1` are detected and marked separately.
 
-## Dashboard and UI
+## Validation
 
-- Split large Dashboard pieces into reusable QML components.
-- Added modular sidebar, top bar, status bar, grid panel, layout toolbar, toast, and empty state components.
-- Added reusable Majestic controls.
-- Improved layout grid behavior.
-- Improved camera cell overlays and stream badges.
-- Standardized stream overlay format: codec, resolution, bitrate, FPS.
-- Improved context actions for OpenIPC/Majestic cameras.
-- Expanded Russian and English localization for new controls.
-
-## Stream health and camera status
-
-- Added `CameraStatusPolicy`.
-- Added `ReconnectPolicy`.
-- Added `StreamHealthPolicy`.
-- Added `StreamQualityPolicy`.
-- Added `StreamSessionPolicy`.
-- Offline and stream failure states now take priority over stale optimistic online states.
-- Fixed sidebar/grid status mismatch.
-- Improved reconnect behavior and stream diagnostics.
-
-## Tests and quality
-
-Added or expanded unit tests for:
-
-- camera onboarding parsing;
-- camera status policy;
-- Majestic API client;
-- OpenIPC firmware client;
-- network discovery;
-- stream health;
-- stream quality;
-- stream session logic;
-- reconnect policy;
-- state store;
-- model artifact verification.
-
-Local validation before release:
+Local validation before publishing:
 
 - Release app build: passed.
 - `ctest`: 13/13 passed.
-- Firmware client tests: passed.
+- New extracted Majestic/OpenIPC QML components: `qmllint` passed.
 - Diff whitespace check: passed.
 
 ## Known limitations
 
-- Full firmware flashing through `/ws/upgrade` requires Qt WebSockets and is not enabled in this build.
-- Live firmware logs over WebSocket are not implemented yet; log snapshots are available.
-- Some deeper firmware administration features will continue to expand in future releases.
+- This is a pre-release: firmware upgrade through `/ws/upgrade` should be tested carefully on real cameras only after backup and with stable power/network.
+- Some firmware upgrade safety hardening is still planned for the next P1 pass: stronger archive compatibility checks, size/checksum validation where available and deeper post-upgrade health probes.
+- Some old `qmllint` warnings still remain in the root controller dialog and will be cleaned gradually without moving UI blocks back into the main file.
 
 ---
 
 ## Русский
 
-OpenIPC Dashboard 0.2.4 — крупный релиз, сфокусированный на OpenIPC-камерах, Majestic API, firmware-операциях, поиске камер, стабильности видеопотоков и приведении интерфейса к более цельной архитектуре.
+OpenIPC Dashboard `v0.2.5-pre.1` — предварительный релиз для стабилизации большого обновления OpenIPC / Majestic Control Center после `0.2.4`.
 
-### Главное
+Главная цель этой pre-release сборки — получить артефакты GitHub Actions с включённым Qt WebSockets, чтобы можно было проверить `/ws/logs` и подготовленный `/ws/upgrade` firmware flow на реальных OpenIPC-камерах.
 
-- Добавлен OpenIPC / Majestic Control Center в стиле WebUI камеры.
-- Подключены реальные firmware-операции: status, network, time, logs, backup, reboot, update info и upload firmware archive.
-- Majestic-настройки теперь строятся из schema камеры, имеют подсказки, локализацию, safe diff review и отметки reload/restart.
-- Улучшен поиск OpenIPC-камер: mDNS, ONVIF WS-Discovery, Majestic HTTP probe, RTSP probe, прогресс, отмена и дедупликация.
-- Dashboard частично разобран на переиспользуемые QML-компоненты.
-- Исправлена рассинхронизация статусов камеры между grid и sidebar.
-- Добавлены policy-слои для stream health, reconnect, quality и session.
-- Исправлена работа SD/HD потоков для preview/fullscreen.
-- Добавлен GitHub Actions CI и расширены unit-тесты.
+## Главное
 
-### Важно
+- В release-сборках GitHub Actions включена поддержка Qt WebSockets.
+- Release workflow теперь помечает теги вида `v0.2.5-pre.1` как GitHub pre-release.
+- Добавлена проверка новых версий приложения через GitHub Releases.
+- Добавлено всплывающее окно обновления с release notes со страницы GitHub Release.
+- Завершено P2-дробление `MajesticControlDialog.qml` на отдельные QML-страницы и панели.
+- Основной Majestic-диалог оставлен controller-слоем: состояние, API-вызовы, таймеры, connections и подтверждающие диалоги.
+- Исправлен fallback отображения RAM на Linux: нижний status bar больше не должен показывать `0 MB`, если парсинг `/proc/self/status` недоступен.
+- Сохранён OpenIPC Control Center / Firmware workflow: status, network, time, logs, backup, reboot, update information и firmware upload.
+- Сохранена подготовка WebSocket firmware upgrade: GitHub firmware source flow, uploaded archive flow, progress output и состояние reboot/polling.
 
-Финальный firmware upgrade через `/ws/upgrade` пока защищён и не запускается напрямую, потому что текущий Qt bundle не содержит Qt WebSockets. Для этого шага оставлен безопасный переход в WebUI камеры.
+## Majestic / OpenIPC Control Center
+
+- Majestic UI вынесен в отдельные компоненты:
+  - overview;
+  - schema-driven settings;
+  - endpoints/capabilities;
+  - raw JSON;
+  - metrics.
+- OpenIPC firmware UI вынесен в отдельные компоненты:
+  - status;
+  - network;
+  - time;
+  - update;
+  - tools;
+  - live logs panel.
+- Backup/restore и rollback вынесены в отдельные панели.
+- Новые вынесенные QML-компоненты проходят `qmllint`.
+
+## Firmware и WebSockets
+
+- CI/release workflows устанавливают Qt WebSockets.
+- Приложение умеет показывать, доступна ли WebSocket-сборка.
+- `/ws/logs` использует WebSocket-режим, если он доступен, и polling fallback, если WebSockets отсутствуют.
+- `/ws/upgrade` подготовлен для GitHub firmware flow и uploaded archive flow.
+- Firmware flashing остаётся под safety checks и подтверждениями.
+
+## Исправление Linux RAM
+
+- Исправлено определение RAM процесса на Linux:
+  - основной источник: `/proc/self/status` / `VmRSS`;
+  - fallback: `/proc/self/statm`;
+  - fallback: `getrusage(RUSAGE_SELF)`.
+- Это закрывает проблему, когда CPU отображался, а RAM в нижнем status bar оставалась нулевой.
+
+## Обновления приложения
+
+- Приложение периодически проверяет релизы `OpenIPC/dashboard` на GitHub.
+- Уже существующая кнопка “Проверить обновления” в настройках теперь подключена к настоящей проверке.
+- При обнаружении новой версии показывается модальное окно с release notes из GitHub Release.
+- Пользователь может открыть страницу релиза, пропустить найденную версию или отложить напоминание.
+- Pre-release версии вроде `0.2.5-pre.1` определяются и помечаются отдельно.
+
+## Проверка
+
+Локальная проверка перед публикацией:
+
+- Release-сборка приложения: успешно.
+- `ctest`: 13/13 успешно.
+- Новые вынесенные Majestic/OpenIPC QML-компоненты: `qmllint` успешно.
+- Проверка diff на пробелы/конфликты: успешно.
+
+## Известные ограничения
+
+- Это предварительный релиз: firmware upgrade через `/ws/upgrade` нужно тестировать осторожно, только после backup и при стабильном питании/сети.
+- Часть усиления firmware upgrade safety layer остаётся на следующий P1-проход: строгая совместимость архива, размер/checksum где доступны и более глубокие health-probes после прошивки.
+- В корневом controller-диалоге ещё остаются старые предупреждения `qmllint`; они будут чиститься постепенно, без возврата UI-блоков обратно в главный файл.

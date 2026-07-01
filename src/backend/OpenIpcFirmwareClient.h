@@ -7,6 +7,9 @@
 
 class QNetworkReply;
 class QNetworkRequest;
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+class QWebSocket;
+#endif
 
 // HTTP integration for the OpenIPC firmware WebUI shipped together with Majestic.
 //
@@ -16,9 +19,13 @@ class QNetworkRequest;
 class OpenIpcFirmwareClient : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool webSocketsAvailable READ webSocketsAvailable CONSTANT)
 
 public:
     explicit OpenIpcFirmwareClient(QObject *parent = nullptr);
+    ~OpenIpcFirmwareClient() override;
+
+    bool webSocketsAvailable() const;
 
     Q_INVOKABLE QString loadStatus(const QString &host, int port,
                                    const QString &username, const QString &password);
@@ -69,6 +76,14 @@ public:
                                           const QString &username, const QString &password,
                                           bool kernel = true, bool rootfs = true,
                                           bool reset = false, bool force = false);
+    Q_INVOKABLE QString startFirmwareUpgrade(const QString &host, int port,
+                                             const QString &username, const QString &password,
+                                             const QString &source,
+                                             bool kernel = true, bool rootfs = true,
+                                             bool reset = false, bool force = false);
+    Q_INVOKABLE QString startLiveLogs(const QString &host, int port,
+                                      const QString &username, const QString &password);
+    Q_INVOKABLE void stopLiveLogs();
 
     static QVariantMap parseNetworkPageForTest(const QString &html);
     static QVariantMap parseTimePageForTest(const QString &html);
@@ -94,6 +109,11 @@ signals:
     void updateInfoLoaded(const QString &requestId, const QVariantMap &info);
     void firmwareUploaded(const QString &requestId, const QString &remotePath);
     void updateStarted(const QString &requestId, const QString &mode);
+    void firmwareUpgradeOutput(const QString &requestId, const QString &text);
+    void firmwareUpgradeRebooting(const QString &requestId);
+    void liveLogsStarted(const QString &requestId);
+    void liveLogChunk(const QString &requestId, const QString &text);
+    void liveLogsStopped(const QString &requestId, const QString &reason);
 
     void operationSucceeded(const QString &requestId, const QString &operation,
                             const QString &result);
@@ -105,6 +125,8 @@ private:
                                 const QString &username, const QString &password) const;
     QNetworkRequest makeRequest(const QString &host, int port, const QUrl &relativeUrl,
                                 const QString &username, const QString &password) const;
+    QNetworkRequest makeWebSocketRequest(const QString &host, int port, const QString &path,
+                                         const QString &username, const QString &password) const;
 
     void getText(const QString &requestId, const QString &operation,
                  const QString &host, int port, const QString &username, const QString &password,
@@ -127,4 +149,12 @@ private:
     static QVariantList parseJsonArray(const QByteArray &json, QString *error = nullptr);
 
     QNetworkAccessManager m_networkManager;
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    QWebSocket *m_upgradeSocket = nullptr;
+    QWebSocket *m_liveLogsSocket = nullptr;
+    QString m_upgradeRequestId;
+    QString m_liveLogsRequestId;
+    bool m_upgradeSocketOpened = false;
+    bool m_liveLogsSocketOpened = false;
+#endif
 };

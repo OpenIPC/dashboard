@@ -10,8 +10,6 @@ RowLayout {
 
     property var layoutsModel: null
     property int currentLayoutIndex: -1
-    property int rightReservedWidth: 260
-
     signal applyRequested(int index)
     signal closeRequested(int index)
     signal addRequested()
@@ -97,7 +95,12 @@ RowLayout {
         }
     }
 
-    Item { Layout.fillWidth: true }
+    Rectangle {
+        Layout.preferredWidth: 1
+        Layout.preferredHeight: 24
+        visible: layoutToolbar.layoutsModel && layoutToolbar.layoutsModel.count > 0
+        color: Theme.panelBorder
+    }
 
     Rectangle {
         Layout.preferredWidth: 36
@@ -167,5 +170,5 @@ RowLayout {
         }
     }
 
-    Item { Layout.preferredWidth: layoutToolbar.rightReservedWidth }
+    Item { Layout.fillWidth: true }
 }

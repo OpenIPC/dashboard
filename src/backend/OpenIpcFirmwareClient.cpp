@@ -17,6 +17,11 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QUuid>
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+#include <QAbstractSocket>
+#include <QWebSocket>
+#include <QWebSocketProtocol>
+#endif
 
 #include <algorithm>
 
@@ -193,6 +198,28 @@ QString dlValue(const QString &html, const QString &label)
     return match.hasMatch() ? stripTags(match.captured(1)) : QString();
 }
 
+QString firstWord(QString text)
+{
+    text = text.simplified();
+    const int space = text.indexOf(QLatin1Char(' '));
+    return space > 0 ? text.left(space) : text;
+}
+
+QString parenthesizedValue(const QString &text)
+{
+    const QRegularExpression rx(QStringLiteral("\\(([^)]+)\\)"));
+    const QRegularExpressionMatch match = rx.match(text);
+    return match.hasMatch() ? match.captured(1).simplified() : QString();
+}
+
+QString firmwareVariantFromInstalled(const QString &installed)
+{
+    const QString text = installed.simplified();
+    const int dash = text.lastIndexOf(QLatin1Char('-'));
+    if (dash < 0 || dash + 1 >= text.size()) return QString();
+    return text.mid(dash + 1).split(QRegularExpression(QStringLiteral("\\s+"))).value(0).trimmed();
+}
+
 QString hiddenJsonBlock(const QString &html, const QString &elementId)
 {
     const QRegularExpression rx(
@@ -269,6 +296,27 @@ OpenIpcFirmwareClient::OpenIpcFirmwareClient(QObject *parent)
 {
 }
 
+OpenIpcFirmwareClient::~OpenIpcFirmwareClient()
+{
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    stopLiveLogs();
+    if (m_upgradeSocket) {
+        m_upgradeSocket->close();
+        m_upgradeSocket->deleteLater();
+        m_upgradeSocket = nullptr;
+    }
+#endif
+}
+
+bool OpenIpcFirmwareClient::webSocketsAvailable() const
+{
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    return true;
+#else
+    return false;
+#endif
+}
+
 QString OpenIpcFirmwareClient::newRequestId()
 {
     return QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -318,6 +366,18 @@ QNetworkRequest OpenIpcFirmwareClient::makeRequest(const QString &host, int port
         request.setRawHeader("Authorization", "Basic "
             + (username + QLatin1Char(':') + password).toUtf8().toBase64());
     }
+    return request;
+}
+
+QNetworkRequest OpenIpcFirmwareClient::makeWebSocketRequest(const QString &host, int port,
+                                                            const QString &path,
+                                                            const QString &username,
+                                                            const QString &password) const
+{
+    QNetworkRequest request = makeRequest(host, port, path, username, password);
+    QUrl url = request.url();
+    url.setScheme(url.scheme() == QStringLiteral("https") ? QStringLiteral("wss") : QStringLiteral("ws"));
+    request.setUrl(url);
     return request;
 }
 
@@ -434,11 +494,19 @@ QVariantMap OpenIpcFirmwareClient::parseTimePageForTest(const QString &html)
 
 QVariantMap OpenIpcFirmwareClient::parseUpdatePageForTest(const QString &html)
 {
+    const QString installed = dlValue(html, QStringLiteral("Installed"));
+    const QString soc = dlValue(html, QStringLiteral("SoC"));
+    const QString flash = dlValue(html, QStringLiteral("Flash"));
+    const QString socFamily = parenthesizedValue(soc);
     QVariantMap info;
-    info.insert(QStringLiteral("installed"), dlValue(html, QStringLiteral("Installed")));
+    info.insert(QStringLiteral("installed"), installed);
     info.insert(QStringLiteral("latest"), dlValue(html, QStringLiteral("Latest on GitHub")));
-    info.insert(QStringLiteral("soc"), dlValue(html, QStringLiteral("SoC")));
-    info.insert(QStringLiteral("flash"), dlValue(html, QStringLiteral("Flash")));
+    info.insert(QStringLiteral("soc"), soc);
+    info.insert(QStringLiteral("socName"), firstWord(soc));
+    info.insert(QStringLiteral("socFamily"), socFamily.isEmpty() ? firstWord(soc) : socFamily);
+    info.insert(QStringLiteral("flash"), flash);
+    info.insert(QStringLiteral("flashType"), firstWord(flash).toLower());
+    info.insert(QStringLiteral("variant"), firmwareVariantFromInstalled(installed));
     info.insert(QStringLiteral("githubAvailable"),
                 !html.contains(QRegularExpression(QStringLiteral("id=[\"']fw-install-github[\"'][^>]*disabled"),
                                                   QRegularExpression::CaseInsensitiveOption)));
@@ -917,20 +985,177 @@ QString OpenIpcFirmwareClient::startGithubUpdate(const QString &host, int port,
                                                  const QString &username, const QString &password,
                                                  bool kernel, bool rootfs, bool reset, bool force)
 {
-    Q_UNUSED(host)
-    Q_UNUSED(port)
-    Q_UNUSED(username)
-    Q_UNUSED(password)
-    Q_UNUSED(reset)
-    Q_UNUSED(force)
+    return startFirmwareUpgrade(host, port, username, password,
+                                QStringLiteral("github"), kernel, rootfs, reset, force);
+}
+
+QString OpenIpcFirmwareClient::startFirmwareUpgrade(const QString &host, int port,
+                                                    const QString &username, const QString &password,
+                                                    const QString &source,
+                                                    bool kernel, bool rootfs, bool reset, bool force)
+{
     const QString requestId = newRequestId();
+    const QString trimmedSource = source.trimmed().isEmpty() ? QStringLiteral("github") : source.trimmed();
     if (!kernel && !rootfs) {
         emitFailureLater(requestId, QStringLiteral("firmware-update"),
                          QStringLiteral("Select kernel and/or rootfs"));
         return requestId;
     }
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    if (m_upgradeSocket) {
+        m_upgradeSocket->close();
+        m_upgradeSocket->deleteLater();
+        m_upgradeSocket = nullptr;
+    }
+
+    m_upgradeSocket = new QWebSocket(QStringLiteral("OpenIPC-Dashboard firmware upgrade"),
+                                     QWebSocketProtocol::VersionLatest, this);
+    m_upgradeRequestId = requestId;
+    m_upgradeSocketOpened = false;
+    QWebSocket *socket = m_upgradeSocket;
+
+    connect(socket, &QWebSocket::connected, this, [this, socket, requestId, trimmedSource,
+                                                   kernel, rootfs, reset, force]() {
+        if (socket != m_upgradeSocket || requestId != m_upgradeRequestId) return;
+        m_upgradeSocketOpened = true;
+        QJsonObject payload{
+            {QStringLiteral("source"), trimmedSource},
+            {QStringLiteral("kernel"), kernel},
+            {QStringLiteral("rootfs"), rootfs},
+            {QStringLiteral("reset"), reset},
+            {QStringLiteral("force"), force}
+        };
+        socket->sendTextMessage(QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+        emit updateStarted(requestId, trimmedSource);
+        emit operationSucceeded(requestId, QStringLiteral("firmware-update-start"),
+                                QStringLiteral("Firmware updater started"));
+    });
+    connect(socket, &QWebSocket::binaryMessageReceived, this,
+            [this, requestId](const QByteArray &message) {
+        if (requestId == m_upgradeRequestId) {
+            emit firmwareUpgradeOutput(requestId, QString::fromUtf8(message));
+        }
+    });
+    connect(socket, &QWebSocket::textMessageReceived, this,
+            [this, requestId](const QString &message) {
+        if (requestId == m_upgradeRequestId) emit firmwareUpgradeOutput(requestId, message);
+    });
+    connect(socket, &QWebSocket::disconnected, this, [this, socket, requestId]() {
+        const bool opened = m_upgradeSocketOpened;
+        if (socket == m_upgradeSocket) {
+            m_upgradeSocket->deleteLater();
+            m_upgradeSocket = nullptr;
+            m_upgradeSocketOpened = false;
+            m_upgradeRequestId.clear();
+        }
+        if (opened) {
+            emit firmwareUpgradeRebooting(requestId);
+            emit operationSucceeded(requestId, QStringLiteral("firmware-update"),
+                                    QStringLiteral("Firmware flashing started; camera is rebooting"));
+        }
+    });
+    connect(socket, &QWebSocket::errorOccurred, this,
+            [this, socket, requestId](QAbstractSocket::SocketError) {
+        if (socket != m_upgradeSocket || m_upgradeSocketOpened) return;
+        const QString message = socket->errorString().isEmpty()
+            ? QStringLiteral("Could not start the upgrade WebSocket")
+            : socket->errorString();
+        emit operationFailed(requestId, QStringLiteral("firmware-update"), message, 0);
+        m_upgradeRequestId.clear();
+    });
+
+    socket->open(makeWebSocketRequest(host, port, QStringLiteral("/ws/upgrade"), username, password));
+    return requestId;
+#else
+    Q_UNUSED(host)
+    Q_UNUSED(port)
+    Q_UNUSED(username)
+    Q_UNUSED(password)
+    Q_UNUSED(trimmedSource)
+    Q_UNUSED(reset)
+    Q_UNUSED(force)
     emitFailureLater(requestId, QStringLiteral("firmware-update"),
                      QStringLiteral("Native firmware flashing uses /ws/upgrade. Qt WebSockets is not bundled in this build yet; open the camera WebUI Update page for the final flash step."),
                      0);
     return requestId;
+#endif
+}
+
+QString OpenIpcFirmwareClient::startLiveLogs(const QString &host, int port,
+                                             const QString &username, const QString &password)
+{
+    const QString requestId = newRequestId();
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    if (m_liveLogsSocket) {
+        m_liveLogsSocket->close();
+        m_liveLogsSocket->deleteLater();
+        m_liveLogsSocket = nullptr;
+    }
+
+    m_liveLogsSocket = new QWebSocket(QStringLiteral("OpenIPC-Dashboard live logs"),
+                                      QWebSocketProtocol::VersionLatest, this);
+    m_liveLogsRequestId = requestId;
+    m_liveLogsSocketOpened = false;
+    QWebSocket *socket = m_liveLogsSocket;
+
+    connect(socket, &QWebSocket::connected, this, [this, socket, requestId]() {
+        if (socket != m_liveLogsSocket || requestId != m_liveLogsRequestId) return;
+        m_liveLogsSocketOpened = true;
+        emit liveLogsStarted(requestId);
+    });
+    connect(socket, &QWebSocket::binaryMessageReceived, this,
+            [this, requestId](const QByteArray &message) {
+        if (requestId == m_liveLogsRequestId) emit liveLogChunk(requestId, QString::fromUtf8(message));
+    });
+    connect(socket, &QWebSocket::textMessageReceived, this,
+            [this, requestId](const QString &message) {
+        if (requestId == m_liveLogsRequestId) emit liveLogChunk(requestId, message);
+    });
+    connect(socket, &QWebSocket::disconnected, this, [this, socket, requestId]() {
+        const bool opened = m_liveLogsSocketOpened;
+        if (socket == m_liveLogsSocket) {
+            m_liveLogsSocket->deleteLater();
+            m_liveLogsSocket = nullptr;
+            m_liveLogsSocketOpened = false;
+            m_liveLogsRequestId.clear();
+        }
+        emit liveLogsStopped(requestId, opened ? QStringLiteral("closed") : QStringLiteral("not-opened"));
+    });
+    connect(socket, &QWebSocket::errorOccurred, this,
+            [this, socket, requestId](QAbstractSocket::SocketError) {
+        if (socket != m_liveLogsSocket) return;
+        const QString message = socket->errorString().isEmpty()
+            ? QStringLiteral("Live logs WebSocket error")
+            : socket->errorString();
+        emit operationFailed(requestId, QStringLiteral("logs-live"), message, 0);
+        m_liveLogsRequestId.clear();
+    });
+
+    socket->open(makeWebSocketRequest(host, port, QStringLiteral("/ws/logs"), username, password));
+    return requestId;
+#else
+    Q_UNUSED(host)
+    Q_UNUSED(port)
+    Q_UNUSED(username)
+    Q_UNUSED(password)
+    emitFailureLater(requestId, QStringLiteral("logs-live"),
+                     QStringLiteral("Qt WebSockets is not bundled in this build; falling back to HTTP log polling."),
+                     0);
+    return requestId;
+#endif
+}
+
+void OpenIpcFirmwareClient::stopLiveLogs()
+{
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+    if (!m_liveLogsSocket) return;
+    const QString requestId = m_liveLogsRequestId;
+    QWebSocket *socket = m_liveLogsSocket;
+    m_liveLogsSocket = nullptr;
+    m_liveLogsSocketOpened = false;
+    m_liveLogsRequestId.clear();
+    socket->close();
+    socket->deleteLater();
+    if (!requestId.isEmpty()) emit liveLogsStopped(requestId, QStringLiteral("stopped"));
+#endif
 }

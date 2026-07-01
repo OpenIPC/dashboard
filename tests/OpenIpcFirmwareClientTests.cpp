@@ -85,7 +85,12 @@ void OpenIpcFirmwareClientTests::parsesUpdatePage()
     const QVariantMap update = OpenIpcFirmwareClient::parseUpdatePageForTest(html);
     QCOMPARE(update.value(QStringLiteral("installed")).toString(), QStringLiteral("2.6.06.23-lite"));
     QCOMPARE(update.value(QStringLiteral("latest")).toString(), QStringLiteral("26.06.29"));
+    QCOMPARE(update.value(QStringLiteral("soc")).toString(), QStringLiteral("hi3516ev200 (hi3516ev200)"));
+    QCOMPARE(update.value(QStringLiteral("socName")).toString(), QStringLiteral("hi3516ev200"));
+    QCOMPARE(update.value(QStringLiteral("socFamily")).toString(), QStringLiteral("hi3516ev200"));
     QCOMPARE(update.value(QStringLiteral("flash")).toString(), QStringLiteral("nor"));
+    QCOMPARE(update.value(QStringLiteral("flashType")).toString(), QStringLiteral("nor"));
+    QCOMPARE(update.value(QStringLiteral("variant")).toString(), QStringLiteral("lite"));
     QCOMPARE(update.value(QStringLiteral("githubAvailable")).toBool(), true);
 }
 

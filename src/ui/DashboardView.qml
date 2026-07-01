@@ -1044,10 +1044,22 @@ Item {
         anchors.bottomMargin: 30
     }
 
+    AppUpdateDialog {
+        id: appUpdateDialog
+        updateChecker: SystemController.appUpdateChecker
+    }
+
     Connections {
         target: SystemController
         function onSnapshotSaved(path) {
             toast.show(I18n.t("Скриншот сохранен: ") + path, path)
+        }
+    }
+
+    Connections {
+        target: SystemController.appUpdateChecker
+        function onUpdateAvailable() {
+            appUpdateDialog.openDialog()
         }
     }
 }

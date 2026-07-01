@@ -37,7 +37,7 @@ jobs:
           version: '6.4.2'
           host: linux
           target: desktop
-          modules: qtmultimedia
+          modules: qtmultimedia qtwebsockets
           cache: true
 
       - name: Configure
@@ -74,7 +74,7 @@ jobs:
           host: windows
           target: desktop
           arch: win64_mingw
-          modules: qtmultimedia
+          modules: qtmultimedia qtwebsockets
           cache: true
 
       - name: Fetch GStreamer SDK

@@ -30,7 +30,7 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_mingw'
-          modules: 'qtmultimedia'
+          modules: 'qtmultimedia qtwebsockets'
 
       - name: Download GStreamer (MinGW) from GitHub Release
         env:
@@ -416,7 +416,7 @@ jobs:
           version: '6.4.2'
           host: 'linux'
           target: 'desktop'
-          modules: 'qtmultimedia'
+          modules: 'qtmultimedia qtwebsockets'
 
       - name: Install libxcb dependencies
         run: sudo apt-get install -y libxcb-cursor0
@@ -723,6 +723,7 @@ jobs:
         with:
           name: OpenIPC Dashboard ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') || contains(github.ref_name, 'pre') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
           files: |
             OpenIPC-Dashboard-Installer.exe
             OpenIPC-Dashboard-Linux.AppImage
