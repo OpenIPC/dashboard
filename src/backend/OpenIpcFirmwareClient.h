@@ -120,6 +120,12 @@ signals:
     void operationFailed(const QString &requestId, const QString &operation,
                          const QString &message, int httpStatus);
 
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+private slots:
+    void onUpgradeSocketError();
+    void onLiveLogsSocketError();
+#endif
+
 private:
     QNetworkRequest makeRequest(const QString &host, int port, const QString &path,
                                 const QString &username, const QString &password) const;

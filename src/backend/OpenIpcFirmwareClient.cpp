@@ -1054,15 +1054,8 @@ QString OpenIpcFirmwareClient::startFirmwareUpgrade(const QString &host, int por
                                     QStringLiteral("Firmware flashing started; camera is rebooting"));
         }
     });
-    connect(socket, &QWebSocket::errorOccurred, this,
-            [this, socket, requestId](QAbstractSocket::SocketError) {
-        if (socket != m_upgradeSocket || m_upgradeSocketOpened) return;
-        const QString message = socket->errorString().isEmpty()
-            ? QStringLiteral("Could not start the upgrade WebSocket")
-            : socket->errorString();
-        emit operationFailed(requestId, QStringLiteral("firmware-update"), message, 0);
-        m_upgradeRequestId.clear();
-    });
+    connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),
+            this, SLOT(onUpgradeSocketError()));
 
     socket->open(makeWebSocketRequest(host, port, QStringLiteral("/ws/upgrade"), username, password));
     return requestId;
@@ -1121,15 +1114,8 @@ QString OpenIpcFirmwareClient::startLiveLogs(const QString &host, int port,
         }
         emit liveLogsStopped(requestId, opened ? QStringLiteral("closed") : QStringLiteral("not-opened"));
     });
-    connect(socket, &QWebSocket::errorOccurred, this,
-            [this, socket, requestId](QAbstractSocket::SocketError) {
-        if (socket != m_liveLogsSocket) return;
-        const QString message = socket->errorString().isEmpty()
-            ? QStringLiteral("Live logs WebSocket error")
-            : socket->errorString();
-        emit operationFailed(requestId, QStringLiteral("logs-live"), message, 0);
-        m_liveLogsRequestId.clear();
-    });
+    connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),
+            this, SLOT(onLiveLogsSocketError()));
 
     socket->open(makeWebSocketRequest(host, port, QStringLiteral("/ws/logs"), username, password));
     return requestId;
@@ -1159,3 +1145,35 @@ void OpenIpcFirmwareClient::stopLiveLogs()
     if (!requestId.isEmpty()) emit liveLogsStopped(requestId, QStringLiteral("stopped"));
 #endif
 }
+
+#if defined(OPENIPC_HAS_QT_WEBSOCKETS)
+void OpenIpcFirmwareClient::onUpgradeSocketError()
+{
+    QWebSocket *socket = m_upgradeSocket;
+    if (!socket || m_upgradeSocketOpened) {
+        return;
+    }
+
+    const QString requestId = m_upgradeRequestId;
+    const QString message = socket->errorString().isEmpty()
+        ? QStringLiteral("Could not start the upgrade WebSocket")
+        : socket->errorString();
+    emit operationFailed(requestId, QStringLiteral("firmware-update"), message, 0);
+    m_upgradeRequestId.clear();
+}
+
+void OpenIpcFirmwareClient::onLiveLogsSocketError()
+{
+    QWebSocket *socket = m_liveLogsSocket;
+    if (!socket) {
+        return;
+    }
+
+    const QString requestId = m_liveLogsRequestId;
+    const QString message = socket->errorString().isEmpty()
+        ? QStringLiteral("Live logs WebSocket error")
+        : socket->errorString();
+    emit operationFailed(requestId, QStringLiteral("logs-live"), message, 0);
+    m_liveLogsRequestId.clear();
+}
+#endif
