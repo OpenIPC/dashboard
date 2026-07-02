@@ -1,15 +1,17 @@
-# OpenIPC Dashboard v0.2.5-pre.1
+# OpenIPC Dashboard v0.2.5-pre.2
 
-This is a pre-release build focused on stabilizing the large OpenIPC / Majestic Control Center update after `0.2.4`.
+This is a pre-release build focused on stabilizing the large OpenIPC / Majestic Control Center update after `0.2.4` and completing the first practical in-app application updater flow.
 
-The main goal of this pre-release is to ship GitHub Actions artifacts built with Qt WebSockets enabled, so `/ws/logs` and the prepared `/ws/upgrade` firmware flow can be tested on real OpenIPC cameras.
+The main goal of this pre-release is to ship GitHub Actions artifacts built with Qt WebSockets enabled and to let the application download and start installing future compatible Dashboard updates directly from the app.
 
 ## Highlights
 
 - Enabled GitHub release builds with Qt WebSockets support.
-- Added GitHub release workflow handling for prerelease tags such as `v0.2.5-pre.1`.
+- Added GitHub release workflow handling for prerelease tags such as `v0.2.5-pre.2`.
 - Added an in-app GitHub Releases update checker.
 - Added an update notification dialog with release notes from the GitHub Release page.
+- Added in-app update download with progress, cancel support and install handoff.
+- The updater now selects only compatible Dashboard release assets for the current platform and skips legacy incompatible releases such as the old `2.9.0` line.
 - Completed the P2 split of `MajesticControlDialog.qml` into focused page/panel QML components.
 - Kept the main Majestic dialog as a controller layer for state, API calls, timers, connections and confirmations.
 - Fixed Linux process RAM reporting fallback so the status bar no longer stays at `0 MB` when `/proc/self/status` parsing is unavailable.
@@ -55,15 +57,18 @@ The main goal of this pre-release is to ship GitHub Actions artifacts built with
 - The app can periodically check `OpenIPC/dashboard` GitHub Releases.
 - The existing “Check for updates” button in application settings now uses the real checker.
 - When a newer version is found, the app shows a modal dialog with release notes from GitHub.
-- Users can open the release page, skip the detected version, or be reminded later.
-- Pre-release versions such as `0.2.5-pre.1` are detected and marked separately.
+- Users can open the release page, skip the detected version, be reminded later, or download and install the update directly from the app.
+- Download progress is shown in both the update dialog and the application settings page.
+- Windows builds download `OpenIPC-Dashboard-Installer.exe`, start it through a helper process, then remove the temporary installer after it exits.
+- Linux AppImage builds download `OpenIPC-Dashboard-Linux.AppImage`, replace the current AppImage after the app exits, remove the temporary file and restart the app.
+- Pre-release versions such as `0.2.5-pre.2` are detected and marked separately.
 
 ## Validation
 
 Local validation before publishing:
 
 - Release app build: passed.
-- `ctest`: 13/13 passed.
+- `ctest`: 14/14 passed.
 - New extracted Majestic/OpenIPC QML components: `qmllint` passed.
 - Diff whitespace check: passed.
 
@@ -77,16 +82,18 @@ Local validation before publishing:
 
 ## Русский
 
-OpenIPC Dashboard `v0.2.5-pre.1` — предварительный релиз для стабилизации большого обновления OpenIPC / Majestic Control Center после `0.2.4`.
+OpenIPC Dashboard `v0.2.5-pre.2` — предварительный релиз для стабилизации большого обновления OpenIPC / Majestic Control Center после `0.2.4` и завершения первого практического сценария обновления приложения прямо из интерфейса.
 
-Главная цель этой pre-release сборки — получить артефакты GitHub Actions с включённым Qt WebSockets, чтобы можно было проверить `/ws/logs` и подготовленный `/ws/upgrade` firmware flow на реальных OpenIPC-камерах.
+Главная цель этой pre-release сборки — получить артефакты GitHub Actions с включённым Qt WebSockets и дать приложению возможность скачивать и запускать установку будущих совместимых обновлений Dashboard прямо из приложения.
 
 ## Главное
 
 - В release-сборках GitHub Actions включена поддержка Qt WebSockets.
-- Release workflow теперь помечает теги вида `v0.2.5-pre.1` как GitHub pre-release.
+- Release workflow теперь помечает теги вида `v0.2.5-pre.2` как GitHub pre-release.
 - Добавлена проверка новых версий приложения через GitHub Releases.
 - Добавлено всплывающее окно обновления с release notes со страницы GitHub Release.
+- Добавлена загрузка обновления прямо из приложения: прогресс, отмена и передача в установщик.
+- Updater теперь выбирает только совместимые release assets под текущую платформу и пропускает старую несовместимую ветку релизов вроде `2.9.0`.
 - Завершено P2-дробление `MajesticControlDialog.qml` на отдельные QML-страницы и панели.
 - Основной Majestic-диалог оставлен controller-слоем: состояние, API-вызовы, таймеры, connections и подтверждающие диалоги.
 - Исправлен fallback отображения RAM на Linux: нижний status bar больше не должен показывать `0 MB`, если парсинг `/proc/self/status` недоступен.
@@ -132,15 +139,18 @@ OpenIPC Dashboard `v0.2.5-pre.1` — предварительный релиз �
 - Приложение периодически проверяет релизы `OpenIPC/dashboard` на GitHub.
 - Уже существующая кнопка “Проверить обновления” в настройках теперь подключена к настоящей проверке.
 - При обнаружении новой версии показывается модальное окно с release notes из GitHub Release.
-- Пользователь может открыть страницу релиза, пропустить найденную версию или отложить напоминание.
-- Pre-release версии вроде `0.2.5-pre.1` определяются и помечаются отдельно.
+- Пользователь может открыть страницу релиза, пропустить найденную версию, отложить напоминание или скачать и установить обновление прямо из приложения.
+- Прогресс загрузки отображается и в окне обновления, и на странице настроек приложения.
+- Windows-сборки скачивают `OpenIPC-Dashboard-Installer.exe`, запускают его через helper-процесс и удаляют временный установщик после завершения.
+- Linux AppImage-сборки скачивают `OpenIPC-Dashboard-Linux.AppImage`, заменяют текущий AppImage после выхода приложения, удаляют временный файл и перезапускают приложение.
+- Pre-release версии вроде `0.2.5-pre.2` определяются и помечаются отдельно.
 
 ## Проверка
 
 Локальная проверка перед публикацией:
 
 - Release-сборка приложения: успешно.
-- `ctest`: 13/13 успешно.
+- `ctest`: 14/14 успешно.
 - Новые вынесенные Majestic/OpenIPC QML-компоненты: `qmllint` успешно.
 - Проверка diff на пробелы/конфликты: успешно.
 

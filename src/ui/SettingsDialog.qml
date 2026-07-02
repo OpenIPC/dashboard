@@ -118,6 +118,7 @@ Window {
     property bool notificationsEnabled: true
     property string updateStatus: "idle"
     property string updateError: ""
+    property bool updateInstallAfterDownload: false
 
     // Streaming tab state (UI-only for now)
     property string preferredStream: "auto" // auto | hd | sd
@@ -416,7 +417,10 @@ Window {
         var checker = SystemController.appUpdateChecker
         if (checker) {
             if (checker.checking) return I18n.t("Проверка обновлений...")
+            if (checker.installing) return I18n.t("Запуск установки...")
+            if (checker.downloading) return I18n.t("Загружено %1 из %2", [formatBytes(checker.downloadReceivedBytes), formatBytes(checker.downloadTotalBytes)])
             if (checker.errorString !== "") return I18n.t("Ошибка") + ": " + checker.errorString
+            if (checker.downloadedFilePath !== "") return I18n.t("Файл загружен. Готово к установке.")
             if (checker.hasUpdate) return I18n.t("Доступно обновление: %1", [checker.latestVersion])
         }
 
@@ -433,6 +437,16 @@ Window {
         updateStatus = "checking";
         updateError = "";
         SystemController.appUpdateChecker.checkNow();
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return "—"
+        if (bytes < 1024) return bytes + " B"
+        var kib = bytes / 1024
+        if (kib < 1024) return kib.toFixed(1) + " KiB"
+        var mib = kib / 1024
+        if (mib < 1024) return mib.toFixed(1) + " MiB"
+        return (mib / 1024).toFixed(2) + " GiB"
     }
 
     function trimFileUrl(url) {
@@ -525,6 +539,12 @@ Window {
             } else {
                 updateStatus = hasUpdate ? "available" : "latest"
                 updateError = ""
+            }
+        }
+        function onDownloadFinished(success) {
+            if (success && root.updateInstallAfterDownload) {
+                root.updateInstallAfterDownload = false
+                SystemController.appUpdateChecker.installDownloadedUpdate()
             }
         }
     }
@@ -1040,6 +1060,40 @@ Window {
                                     }
                                 }
 
+                                Text {
+                                    visible: SystemController.appUpdateChecker.hasUpdate
+                                    text: I18n.t("Файл обновления")
+                                    color: "#a0aec0"
+                                    Layout.preferredWidth: updatesGrid.labelWidth
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                }
+                                Text {
+                                    visible: SystemController.appUpdateChecker.hasUpdate
+                                    text: SystemController.appUpdateChecker.assetName !== ""
+                                          ? SystemController.appUpdateChecker.assetName
+                                          : I18n.t("Для этой платформы нет подходящего файла обновления.")
+                                    color: SystemController.appUpdateChecker.downloadAvailable ? "#e2e8f0" : Theme.warning
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                }
+
+                                Text {
+                                    visible: SystemController.appUpdateChecker.downloading || SystemController.appUpdateChecker.downloadedFilePath !== "" || SystemController.appUpdateChecker.installing
+                                    text: I18n.t("Прогресс")
+                                    color: "#a0aec0"
+                                    Layout.preferredWidth: updatesGrid.labelWidth
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                }
+                                ProgressBar {
+                                    visible: SystemController.appUpdateChecker.downloading || SystemController.appUpdateChecker.downloadedFilePath !== "" || SystemController.appUpdateChecker.installing
+                                    from: 0
+                                    to: 100
+                                    value: SystemController.appUpdateChecker.downloadProgress
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? 20 : 0
+                                }
+
                                 Text { text: I18n.t("Действие"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
                                 RowLayout {
                                     spacing: 8
@@ -1050,6 +1104,8 @@ Window {
                                               ? I18n.t("Проверка...")
                                               : I18n.t("Проверить обновления")
                                         enabled: !SystemController.appUpdateChecker.checking
+                                                 && !SystemController.appUpdateChecker.downloading
+                                                 && !SystemController.appUpdateChecker.installing
                                         Layout.preferredHeight: 34
                                         Layout.preferredWidth: 190
                                         background: Rectangle { color: "#3b82f6"; radius: 6 }
@@ -1062,9 +1118,41 @@ Window {
                                         text: I18n.t("Открыть релиз")
                                         Layout.preferredHeight: 34
                                         Layout.preferredWidth: 140
+                                        enabled: !SystemController.appUpdateChecker.downloading
+                                                 && !SystemController.appUpdateChecker.installing
                                         background: Rectangle { color: Theme.success; radius: 6 }
                                         contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         onClicked: SystemController.appUpdateChecker.openReleasePage()
+                                    }
+
+                                    Button {
+                                        visible: SystemController.appUpdateChecker.hasUpdate
+                                        text: SystemController.appUpdateChecker.installing
+                                              ? I18n.t("Запуск установки...")
+                                              : SystemController.appUpdateChecker.downloadedFilePath !== ""
+                                                ? I18n.t("Установить и перезапустить")
+                                                : SystemController.appUpdateChecker.downloading
+                                                  ? I18n.t("Отмена")
+                                                  : I18n.t("Скачать и установить")
+                                        Layout.preferredHeight: 34
+                                        Layout.preferredWidth: 210
+                                        enabled: !SystemController.appUpdateChecker.installing
+                                                 && (SystemController.appUpdateChecker.downloadAvailable
+                                                     || SystemController.appUpdateChecker.downloadedFilePath !== ""
+                                                     || SystemController.appUpdateChecker.downloading)
+                                        background: Rectangle { color: SystemController.appUpdateChecker.downloading ? "#475569" : Theme.accent; radius: 6 }
+                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        onClicked: {
+                                            if (SystemController.appUpdateChecker.downloading) {
+                                                root.updateInstallAfterDownload = false
+                                                SystemController.appUpdateChecker.cancelDownload()
+                                            } else if (SystemController.appUpdateChecker.downloadedFilePath !== "") {
+                                                SystemController.appUpdateChecker.installDownloadedUpdate()
+                                            } else {
+                                                root.updateInstallAfterDownload = true
+                                                SystemController.appUpdateChecker.downloadUpdate()
+                                            }
+                                        }
                                     }
                                 }
 
