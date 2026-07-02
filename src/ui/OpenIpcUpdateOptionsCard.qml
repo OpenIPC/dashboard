@@ -9,17 +9,21 @@ Rectangle {
     property bool updateRootfs: true
     property bool updateReset: false
     property bool updateForce: false
+    property bool powerSafetyConfirmed: false
+    property bool dangerOptionsConfirmed: false
     property string optionsSummary: ""
 
     signal kernelToggled(bool checked)
     signal rootfsToggled(bool checked)
     signal resetToggled(bool checked)
     signal forceToggled(bool checked)
+    signal powerSafetyToggled(bool checked)
+    signal dangerOptionsToggled(bool checked)
 
     Layout.fillWidth: true
     Layout.leftMargin: 16
     Layout.rightMargin: 16
-    Layout.preferredHeight: 122
+    Layout.preferredHeight: (root.updateReset || root.updateForce) ? 168 : 144
     color: Theme.cardBackground
     border.color: (root.updateReset || root.updateForce || (!root.updateKernel && !root.updateRootfs)) ? Theme.warning : Theme.cardBorder
     radius: Theme.radiusLg
@@ -76,6 +80,27 @@ Rectangle {
                 text: I18n.t("Force reflash")
                 checked: root.updateForce
                 onToggled: root.forceToggled(checked)
+            }
+        }
+
+        GridLayout {
+            Layout.fillWidth: true
+            columns: width > 760 ? 2 : 1
+            rowSpacing: 6
+            columnSpacing: 12
+
+            MajesticCheckBox {
+                text: I18n.t("Питание и сеть стабильны")
+                checked: root.powerSafetyConfirmed
+                onToggled: root.powerSafetyToggled(checked)
+            }
+
+            MajesticCheckBox {
+                visible: root.updateReset || root.updateForce
+                Layout.fillWidth: true
+                text: I18n.t("Понимаю риск reset/force")
+                checked: root.dangerOptionsConfirmed
+                onToggled: root.dangerOptionsToggled(checked)
             }
         }
 

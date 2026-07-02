@@ -64,11 +64,23 @@ ScrollView {
             updateRootfs: root.controller ? root.controller.firmwareUpdateRootfs : true
             updateReset: root.controller ? root.controller.firmwareUpdateReset : false
             updateForce: root.controller ? root.controller.firmwareUpdateForce : false
+            powerSafetyConfirmed: root.controller ? root.controller.firmwarePowerSafetyConfirmed : false
+            dangerOptionsConfirmed: root.controller ? root.controller.firmwareDangerOptionsConfirmed : false
             optionsSummary: root.controller ? root.controller.firmwareUpdateOptionsSummary() : ""
             onKernelToggled: checked => root.controller.firmwareUpdateKernel = checked
             onRootfsToggled: checked => root.controller.firmwareUpdateRootfs = checked
-            onResetToggled: checked => root.controller.firmwareUpdateReset = checked
-            onForceToggled: checked => root.controller.firmwareUpdateForce = checked
+            onResetToggled: checked => {
+                root.controller.firmwareUpdateReset = checked
+                if (!root.controller.firmwareDangerousOptionsActive())
+                    root.controller.firmwareDangerOptionsConfirmed = false
+            }
+            onForceToggled: checked => {
+                root.controller.firmwareUpdateForce = checked
+                if (!root.controller.firmwareDangerousOptionsActive())
+                    root.controller.firmwareDangerOptionsConfirmed = false
+            }
+            onPowerSafetyToggled: checked => root.controller.firmwarePowerSafetyConfirmed = checked
+            onDangerOptionsToggled: checked => root.controller.firmwareDangerOptionsConfirmed = checked
         }
 
         OpenIpcUpgradeProgressPanel {
@@ -77,6 +89,8 @@ ScrollView {
             returnPolling: root.controller && root.controller.firmwareReturnPolling
             returnPollTries: root.controller ? root.controller.firmwareReturnPollTries : 0
             returnPollMaxTries: root.controller ? root.controller.firmwareReturnPollMaxTries : 0
+            returnPhase: root.controller ? root.controller.firmwareReturnPhase : "idle"
+            returnHealthText: root.controller ? root.controller.firmwareReturnHealthText : ""
             firmwareBusy: root.controller && root.controller.firmwareBusy
             onClearRequested: root.controller.firmwareUpgradeText = ""
         }

@@ -13,7 +13,7 @@ Rectangle {
     Layout.fillWidth: true
     Layout.leftMargin: 12
     Layout.rightMargin: 12
-    Layout.preferredHeight: visible ? 74 : 0
+    Layout.preferredHeight: visible ? 116 : 0
     color: "#1f2937"
     border.color: Theme.warning
     radius: Theme.radiusSm
@@ -48,6 +48,25 @@ Rectangle {
                 text: I18n.t("Критичных полей: %1", [root.controller ? root.controller.rollbackChanges.length : 0])
                 color: Theme.warning
                 font.pixelSize: 10
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: root.controller && root.controller.rollbackHealthText.length
+                      ? root.controller.rollbackHealthText
+                      : I18n.t("Health-watch запустится после применения критичных настроек.")
+                color: root.controller && root.controller.rollbackHealthState === "fail"
+                       ? Theme.danger
+                       : (root.controller && root.controller.rollbackHealthState === "ok" ? Theme.success : Theme.textMuted)
+                elide: Text.ElideRight
+                font.pixelSize: 10
+            }
+
+            MajesticCheckBox {
+                visible: root.controller && root.controller.rollbackHealthState !== "ok"
+                text: I18n.t("Авто-rollback, если API доступен, а RTSP не восстановился")
+                checked: root.controller ? root.controller.rollbackAutoAllowed : false
+                onToggled: if (root.controller) root.controller.rollbackAutoAllowed = checked
             }
         }
 

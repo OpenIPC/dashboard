@@ -2,7 +2,7 @@
 
 Актуальный план развития после релиза `0.2.4`, интеграции Majestic/OpenIPC WebUI идей, разборки Dashboard и доработок Health Center.
 
-Последнее обновление: 2026-07-01.
+Последнее обновление: 2026-07-02.
 
 ## Уже сделано
 
@@ -153,48 +153,71 @@
   - `/proc/self/status` / `VmRSS`;
   - fallback через `/proc/self/statm`;
   - fallback через `getrusage(RUSAGE_SELF)`.
+- Опубликован pre-release `0.2.5-pre.2`:
+  - добавлена загрузка обновления приложения прямо из Dashboard;
+  - отображается прогресс загрузки;
+  - после загрузки запускается установка;
+  - временный установщик/AppImage удаляется после handoff;
+  - updater выбирает только совместимые release assets и больше не цепляет старую несовместимую ветку `2.9.0`.
+- На реальной OpenIPC-камере подтверждён native firmware update через `/ws/upgrade` из приложения с подробным логом процесса.
+- Подготовлен stable release `0.2.5`:
+  - `RELEASE_NOTES.md` переписан под финальный релиз без pre-release ограничений;
+  - P0/P0.5/P1 закрыты в коде и вынесены в release note;
+  - следующий фокус после релиза — P2: чистка legacy `qmllint` предупреждений, QML smoke-проверки и дальнейшая полировка архитектуры.
 
 ## Что осталось сделать
 
-### P0 — стабилизация текущего большого набора изменений
+### P0 — стабилизация текущего большого набора изменений — закрыто
 
-- Прогнать GitHub Actions после добавления `qtwebsockets` и убедиться, что Windows/Linux действительно собирают WebSocket-enabled build.
-- Проверить на реальной OpenIPC-камере:
-  - `/ws/logs`;
-  - `/ws/upgrade` GitHub flow;
-  - `/ws/upgrade` uploaded archive flow;
-  - поведение при обрыве сети/закрытии WebSocket.
-- Провести визуальную QA-проверку OpenIPC Control Center на RU/EN.
-- Убедиться, что fallback без Qt WebSockets остаётся рабочим.
-- Зафиксировать текущий большой набор изменений аккуратным коммитом после проверки и опубликовать тег `v0.2.5-pre.1`.
+- GitHub Actions для `v0.2.5-pre.2` прошли успешно:
+  - Windows WebSocket-enabled build;
+  - Linux WebSocket-enabled AppImage;
+  - GitHub pre-release с двумя совместимыми asset.
+- На реальной камере подтверждён firmware update через `/ws/upgrade`.
+- OpenIPC Control Center локально запускается и получает данные с камеры.
+- Fallback без Qt WebSockets сохранён в коде firmware-client.
 
-### P1 — Majestic/OpenIPC hardening
+### P0.5 — post-release стабилизация firmware update — закрыто в коде
+
+- Сделано: улучшено удобство return-polling после `/ws/upgrade`:
+  - явная фаза восстановления;
+  - health summary после возврата камеры;
+  - лог каждой попытки проверки status endpoint;
+  - автообновление status/network/time/update-info/metrics после возврата камеры.
+- Дополнено в P1: после возврата камеры запускаются Majestic API и RTSP probes.
+- Ручная регрессия остаётся обязательной при следующем реальном update:
+  - GitHub update;
+  - uploaded archive update;
+  - закрытие окна во время update;
+  - временная недоступность WebUI после reboot.
+
+### P1 — Majestic/OpenIPC hardening — закрыто в коде
 
 - Firmware upgrade safety layer:
-  - усилить проверку SoC/flash/firmware variant до строгой совместимости archive/image;
-  - проверка размера архива;
-  - checksum/signature, если camera/update page отдаёт эти данные;
-  - предупреждение по питанию/сети;
-  - отдельное явное подтверждение dangerous options reset/force.
-- Расширить polling возврата камеры после `/ws/upgrade`:
-  - HTTP WebUI probe уже есть через status endpoint, добавить отдельный health summary;
-  - Majestic API probe;
-  - RTSP probe;
-  - понятный статус “камера прошивается / перезагружается / вернулась / не вернулась”.
+  - uploaded archive проверяется до загрузки: файл существует, расширение `.tgz/.tar.gz/.gz`, размер `0..128 MB`;
+  - checklist показывает SoC/Flash/variant и оценивает имя uploaded archive на явный NOR/NAND или lite/ultimate mismatch;
+  - если update page отдаёт checksum/signature, они попадают в safety checklist;
+  - старт update блокируется без подтверждения стабильного питания/сети;
+  - reset/force блокируются без отдельного явного подтверждения.
+- Polling возврата камеры после `/ws/upgrade`:
+  - отдельные фазы `flashing/rebooting`, `probing`, `waiting`, `validating`, `online`, `degraded`, `failed`;
+  - лог каждой попытки status endpoint;
+  - после ответа status запускается health summary: Majestic API + RTSP main/sub;
+  - после возврата обновляются status/network/time/update-info/metrics.
 - Safe rollback v2 для Majestic:
-  - post-apply health probe;
-  - таймер наблюдения после reload pipeline;
-  - предложение rollback, если поток/API не восстановились;
-  - авто-rollback только если камера всё ещё доступна по API и пользователь разрешил.
+  - перед критичным apply сохраняется rollback snapshot;
+  - после apply/reload запускается health-watch Majestic API + RTSP main;
+  - если поток/API не восстановились, banner явно предлагает rollback;
+  - auto-rollback возможен только если пользователь включил его и API камеры ещё доступен.
 - Firmware backup/restore:
-  - улучшить карточку firmware backup;
-  - добавить restore/upload backup только с жёсткими подтверждениями;
-  - разделить Majestic config backup и полный OpenIPC flash/overlay backup визуально.
+  - добавлена отдельная карточка `OpenIPC backup / restore` во вкладке Tools;
+  - Majestic JSON backup визуально отделён от полного OpenIPC firmware/overlay backup;
+  - restore полного backup не угадывается через непроверенный endpoint: Dashboard открывает штатный WebUI restore только после жёсткого подтверждения.
 - Live logs v2:
-  - экспорт live logs в файл;
-  - severity highlighting;
-  - фильтры all/majestic/kernel;
-  - ring-buffer настройки.
+  - экспорт текущих/фильтрованных логов в `.log/.txt`;
+  - severity highlighting для error/warn/majestic/kernel;
+  - фильтры источника `all/majestic/kernel`;
+  - настройка OpenIPC syslog ring-buffer через firmware-client.
 
 ### P2 — качество QML и дальнейшая полировка
 

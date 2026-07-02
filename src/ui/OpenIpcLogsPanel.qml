@@ -2,6 +2,7 @@
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import OpenIPC
 
@@ -13,7 +14,7 @@ Rectangle {
     Layout.fillWidth: true
     Layout.leftMargin: 16
     Layout.rightMargin: 16
-    Layout.preferredHeight: 300
+    Layout.preferredHeight: 360
     color: Theme.cardBackground
     border.color: Theme.cardBorder
     radius: Theme.radiusLg
@@ -42,21 +43,10 @@ Rectangle {
             }
 
             MajesticButton {
-                text: "syslog"
-                enabled: root.controller && !root.controller.firmwareBusy
-                onClicked: root.controller.loadFirmwareLogs("syslog")
-            }
-
-            MajesticButton {
-                text: "majestic"
-                enabled: root.controller && !root.controller.firmwareBusy
-                onClicked: root.controller.loadFirmwareLogs("majestic")
-            }
-
-            MajesticButton {
-                text: "dmesg"
-                enabled: root.controller && !root.controller.firmwareBusy
-                onClicked: root.controller.loadFirmwareLogs("kernel")
+                text: I18n.t("Export")
+                subtle: true
+                enabled: root.controller && root.controller.firmwareLogsText.length > 0
+                onClicked: firmwareLogsExportDialog.open()
             }
 
             MajesticButton {
@@ -106,27 +96,103 @@ Rectangle {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
+            Text {
+                text: I18n.t("Источник")
+                color: Theme.textMuted
+                font.pixelSize: 11
+            }
+
+            MajesticButton {
+                text: I18n.t("All")
+                primary: root.controller && root.controller.firmwareLogsSource === "all"
+                enabled: root.controller && !root.controller.firmwareBusy
+                onClicked: root.controller.loadFirmwareLogs("all")
+            }
+
+            MajesticButton {
+                text: "majestic"
+                primary: root.controller && root.controller.firmwareLogsSource === "majestic"
+                enabled: root.controller && !root.controller.firmwareBusy
+                onClicked: root.controller.loadFirmwareLogs("majestic")
+            }
+
+            MajesticButton {
+                text: "kernel"
+                primary: root.controller && (root.controller.firmwareLogsSource === "kernel"
+                                             || root.controller.firmwareLogsSource === "dmesg")
+                enabled: root.controller && !root.controller.firmwareBusy
+                onClicked: root.controller.loadFirmwareLogs("kernel")
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+                text: I18n.t("Ring buffer")
+                color: Theme.textMuted
+                font.pixelSize: 11
+            }
+
+            MajesticSpinBox {
+                id: logBufferSpin
+                from: 16
+                to: 4096
+                value: 256
+                stepSize: 16
+                editable: true
+                Layout.preferredWidth: 110
+            }
+
+            Text {
+                text: "KiB"
+                color: Theme.textMuted
+                font.pixelSize: 11
+            }
+
+            MajesticButton {
+                text: I18n.t("Apply")
+                subtle: true
+                enabled: root.controller && !root.controller.firmwareBusy
+                onClicked: root.controller.setFirmwareLogBufferSize(logBufferSpin.value)
+            }
+        }
+
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
 
-            TextArea {
-                readOnly: true
-                wrapMode: TextEdit.NoWrap
-                text: root.controller ? root.controller.filteredFirmwareLogsText() : ""
-                color: Theme.textSecondary
-                selectedTextColor: Theme.textPrimary
-                selectionColor: Theme.accent
-                font.family: "Consolas"
-                font.pixelSize: 11
-                background: Rectangle {
-                    radius: Theme.radiusMd
-                    color: Theme.controlBackground
-                    border.color: Theme.controlBorder
+            Rectangle {
+                implicitWidth: logText.implicitWidth + 24
+                implicitHeight: logText.implicitHeight + 24
+                color: Theme.controlBackground
+                border.color: Theme.controlBorder
+                radius: Theme.radiusMd
+
+                Text {
+                    id: logText
+                    x: 12
+                    y: 12
+                    textFormat: Text.RichText
+                    text: root.controller ? root.controller.filteredFirmwareLogsHtml() : ""
+                    color: Theme.textSecondary
+                    font.family: "Consolas"
+                    font.pixelSize: 11
                 }
             }
         }
+    }
+
+    FileDialog {
+        id: firmwareLogsExportDialog
+        title: I18n.t("Экспортировать логи OpenIPC")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "log"
+        nameFilters: [I18n.t("Log files (*.log *.txt)"), I18n.t("Все файлы (*)")]
+        onAccepted: if (root.controller) root.controller.exportFirmwareLogs(String(selectedFile))
     }
 }
 

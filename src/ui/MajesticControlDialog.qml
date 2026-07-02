@@ -28,6 +28,12 @@ Dialog {
     property bool rollbackAvailable: false
     property bool rollbackCritical: false
     property string rollbackReason: ""
+    property string rollbackHealthState: "idle"
+    property string rollbackHealthText: ""
+    property bool rollbackWatchActive: false
+    property int rollbackWatchTries: 0
+    property int rollbackWatchMaxTries: 4
+    property bool rollbackAutoAllowed: false
     property string activeRollbackId: ""
     property var backupRestoreConfig: ({})
     property var backupRestoreSchema: ({})
@@ -72,7 +78,7 @@ Dialog {
     property var firmwareUpdateInfo: ({})
     property var firmwareWifiNetworks: []
     property string firmwareLogsText: ""
-    property string firmwareLogsSource: "syslog"
+    property string firmwareLogsSource: "all"
     property bool firmwareLiveLogs: false
     property bool firmwareLogsPaused: false
     property string firmwareLogFilter: ""
@@ -80,6 +86,12 @@ Dialog {
     property string firmwareUpgradeText: ""
     property bool firmwareUpgradeRebooting: false
     property bool firmwareArchiveUploaded: false
+    property string firmwareArchivePath: ""
+    property string firmwareArchiveName: ""
+    property real firmwareArchiveSizeBytes: 0
+    property bool firmwarePowerSafetyConfirmed: false
+    property bool firmwareDangerOptionsConfirmed: false
+    property bool firmwarePostReturnProbeActive: false
     property bool firmwareUpdateKernel: true
     property bool firmwareUpdateRootfs: true
     property bool firmwareUpdateReset: false
@@ -88,6 +100,8 @@ Dialog {
     property bool firmwareReturnPolling: false
     property int firmwareReturnPollTries: 0
     property int firmwareReturnPollMaxTries: 60
+    property string firmwareReturnPhase: "idle"
+    property string firmwareReturnHealthText: ""
     readonly property bool firmwareWebSocketsAvailable: SystemController.firmwareClient.webSocketsAvailable
     property string activeFirmwareStatusId: ""
     property string activeFirmwareNetworkId: ""
@@ -624,7 +638,7 @@ Dialog {
     }
 
     function loadFirmwareLogs(source, silent) {
-        firmwareLogsSource = source || "syslog"
+        firmwareLogsSource = source || "all"
         if (!silent) {
             firmwareBusy = true
             statusError = false
@@ -645,8 +659,29 @@ Dialog {
         firmwareLogsText = lines.join("\n")
     }
 
+    function htmlEscape(text) {
+        return String(text || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;")
+    }
+
+    function firmwareLogLineColor(line) {
+        var lower = String(line || "").toLowerCase()
+        if (lower.indexOf("panic") >= 0 || lower.indexOf("fatal") >= 0
+                || lower.indexOf("error") >= 0 || lower.indexOf("failed") >= 0
+                || lower.indexOf("segfault") >= 0) return Theme.danger
+        if (lower.indexOf("warn") >= 0 || lower.indexOf("timeout") >= 0
+                || lower.indexOf("retry") >= 0) return Theme.warning
+        if (lower.indexOf("majestic") >= 0) return Theme.accentHover
+        if (lower.indexOf("kernel") >= 0 || lower.indexOf("dmesg") >= 0) return "#93c5fd"
+        return Theme.textSecondary
+    }
+
     function filteredFirmwareLogsText() {
-        var text = firmwareLogsText.length ? firmwareLogsText : I18n.t("Нажмите syslog, majestic или dmesg, чтобы прочитать логи камеры.")
+        var text = firmwareLogsText.length ? firmwareLogsText : I18n.t("Нажмите All, majestic или kernel, чтобы прочитать логи камеры.")
         var query = firmwareLogFilter.trim().toLowerCase()
         if (!query.length || !firmwareLogsText.length) return text
         var lines = firmwareLogsText.split("\n")
@@ -657,12 +692,50 @@ Dialog {
         return result.length ? result.join("\n") : I18n.t("Нет совпадений по фильтру")
     }
 
+    function filteredFirmwareLogsHtml() {
+        var lines = String(filteredFirmwareLogsText() || "").split("\n")
+        var html = ""
+        for (var i = 0; i < lines.length; ++i) {
+            if (i > 0) html += "\n"
+            html += "<span style=\"color:" + firmwareLogLineColor(lines[i]) + "\">"
+                    + htmlEscape(lines[i]) + "</span>"
+        }
+        return "<pre style=\"margin:0; white-space:pre; font-family:Consolas,monospace; font-size:11px;\">"
+                + html + "</pre>"
+    }
+
+    function exportFirmwareLogs(path) {
+        if (!path || !String(path).length) return
+        var normalized = SystemController.normalizeLocalPath(String(path))
+        var ok = SystemController.saveTextFile(normalized, filteredFirmwareLogsText())
+        statusError = !ok
+        statusText = ok ? I18n.t("Логи экспортированы: %1", [normalized])
+                        : I18n.t("Не удалось экспортировать логи.")
+    }
+
+    function setFirmwareLogBufferSize(sizeKiB) {
+        firmwareBusy = true
+        statusError = false
+        statusText = I18n.t("Настраиваю ring-buffer логов OpenIPC…")
+        activeFirmwareLogsId = track(SystemController.firmwareClient.setLogBufferSize(
+                                         cameraHost, cameraPort, cameraUser, cameraPassword,
+                                         Math.round(Number(sizeKiB))))
+    }
+
     function appendFirmwareUpgradeText(text) {
         if (!text) return
         firmwareUpgradeText += String(text)
         var lines = firmwareUpgradeText.split("\n")
         if (lines.length > firmwareLogLineLimit) lines = lines.slice(lines.length - firmwareLogLineLimit)
         firmwareUpgradeText = lines.join("\n")
+    }
+
+    function firmwareUpgradeTimestamp() {
+        return Qt.formatTime(new Date(), "HH:mm:ss")
+    }
+
+    function appendFirmwareUpgradeLogLine(text) {
+        appendFirmwareUpgradeText("[" + firmwareUpgradeTimestamp() + "] " + text + "\n")
     }
 
     function startFirmwareLiveLogs() {
@@ -698,13 +771,77 @@ Dialog {
                                            cameraHost, cameraPort, cameraUser, cameraPassword))
     }
 
+    function resetFirmwareArchiveState() {
+        firmwareArchiveUploaded = false
+        firmwareArchivePath = ""
+        firmwareArchiveName = ""
+        firmwareArchiveSizeBytes = 0
+    }
+
+    function firmwareArchiveSizeText() {
+        var size = Number(firmwareArchiveSizeBytes)
+        if (!size || size <= 0) return I18n.t("архив не выбран")
+        if (size >= 1048576) return (size / 1048576).toFixed(size >= 10485760 ? 0 : 1) + " MB"
+        return Math.max(1, Math.round(size / 1024)) + " KB"
+    }
+
+    function firmwareArchiveSafetyProblem(path) {
+        var info = SystemController.getFileInfo(String(path || ""))
+        var name = String(info.fileName || "").toLowerCase()
+        var size = Number(info.size || 0)
+        if (info.exists !== true) return I18n.t("файл архива не найден")
+        if (!(name.endsWith(".tgz") || name.endsWith(".tar.gz") || name.endsWith(".gz")))
+            return I18n.t("firmware archive должен быть .tgz/.tar.gz/.gz")
+        if (size <= 0) return I18n.t("firmware archive пустой")
+        if (size > 128 * 1024 * 1024)
+            return I18n.t("firmware archive больше safety-limit 128 MB")
+        return ""
+    }
+
+    function firmwareArchiveCompatibility() {
+        if (!firmwareArchiveName.length) {
+            return { state: "warn", text: I18n.t("Локальный archive ещё не выбран.") }
+        }
+        var name = firmwareArchiveName.toLowerCase()
+        var soc = firmwareSocText().toLowerCase()
+        var family = String(firmwareUpdateInfo.socFamily || "").toLowerCase()
+        var flash = firmwareFlashText().toLowerCase()
+        var variant = firmwareVariantText().toLowerCase()
+        var socMentioned = (soc.length > 3 && name.indexOf(soc) >= 0)
+                || (family.length > 3 && name.indexOf(family) >= 0)
+        if (name.indexOf("nand") >= 0 && flash.length && flash.indexOf("nand") < 0)
+            return { state: "block", text: I18n.t("Archive похож на NAND, а камера сообщает Flash: %1", [firmwareFlashText()]) }
+        if (name.indexOf("nor") >= 0 && flash.length && flash.indexOf("nor") < 0)
+            return { state: "block", text: I18n.t("Archive похож на NOR, а камера сообщает Flash: %1", [firmwareFlashText()]) }
+        if (name.indexOf("ultimate") >= 0 && variant.length && variant.indexOf("ultimate") < 0)
+            return { state: "block", text: I18n.t("Archive variant ultimate не совпадает с камерой: %1", [firmwareVariantText() || "—"]) }
+        if (name.indexOf("lite") >= 0 && variant.length && variant.indexOf("lite") < 0)
+            return { state: "block", text: I18n.t("Archive variant lite не совпадает с камерой: %1", [firmwareVariantText() || "—"]) }
+        if (!socMentioned && (soc.length || family.length))
+            return { state: "warn", text: I18n.t("В имени archive не найден SoC камеры (%1). Проверьте совместимость вручную.", [firmwareSocText() || family]) }
+        return { state: "ok", text: I18n.t("Archive выглядит совместимым с SoC/Flash/variant: %1 · %2 · %3", [firmwareSocText() || "—", firmwareFlashText() || "—", firmwareVariantText() || "—"]) }
+    }
+
     function uploadFirmwareArchive(path) {
+        var localPath = SystemController.normalizeLocalPath(String(path || ""))
+        var problem = firmwareArchiveSafetyProblem(localPath)
+        if (problem.length) {
+            firmwareBusy = false
+            statusError = true
+            statusText = I18n.t("Firmware archive отклонён: %1", [problem])
+            resetFirmwareArchiveState()
+            return
+        }
+        var info = SystemController.getFileInfo(localPath)
+        firmwareArchivePath = localPath
+        firmwareArchiveName = String(info.fileName || "")
+        firmwareArchiveSizeBytes = Number(info.size || 0)
         firmwareBusy = true
         statusError = false
-        statusText = I18n.t("Загрузка firmware-архива на камеру…")
+        statusText = I18n.t("Загрузка firmware-архива на камеру… %1 (%2)", [firmwareArchiveName, firmwareArchiveSizeText()])
         firmwareArchiveUploaded = false
         activeFirmwareUpdateId = track(SystemController.firmwareClient.uploadFirmwareArchive(
-                                           cameraHost, cameraPort, cameraUser, cameraPassword, path))
+                                           cameraHost, cameraPort, cameraUser, cameraPassword, localPath))
     }
 
     function firmwareSocText() {
@@ -722,6 +859,18 @@ Dialog {
         return String(firmwareUpdateInfo.variant || device.firmware || "").trim()
     }
 
+    function firmwareReturnSummary(status) {
+        var device = status.device || {}
+        var network = status.network || {}
+        var pulse = status.pulse || {}
+        var parts = []
+        if (network.address) parts.push("IP " + network.address)
+        if (device.firmware) parts.push(I18n.t("firmware %1", [device.firmware]))
+        if (device.majestic) parts.push("Majestic " + device.majestic)
+        if (pulse.uptime) parts.push("uptime " + pulse.uptime)
+        return parts.length ? parts.join(" · ") : I18n.t("status endpoint ответил")
+    }
+
     function firmwareUpdateOptionsSummary() {
         var text = ""
         if (firmwareUpdateKernel) text = "kernel"
@@ -731,6 +880,19 @@ Dialog {
         return text.length ? text : I18n.t("не выбрано")
     }
 
+    function firmwareUpdateChecksumText() {
+        var checksum = String(firmwareUpdateInfo.sha256 || firmwareUpdateInfo.checksum || firmwareUpdateInfo.digest || "")
+        var signature = String(firmwareUpdateInfo.signature || "")
+        if (checksum.length && signature.length) return I18n.t("checksum/signature: %1 / %2", [checksum, signature])
+        if (checksum.length) return I18n.t("checksum: %1", [checksum])
+        if (signature.length) return I18n.t("signature: %1", [signature])
+        return I18n.t("checksum/signature не опубликованы update page — проверяем источник, размер и совместимость")
+    }
+
+    function firmwareDangerousOptionsActive() {
+        return firmwareUpdateReset || firmwareUpdateForce
+    }
+
     function firmwareUpdateBlockReason(source) {
         if (firmwareReturnPolling) return I18n.t("дождитесь возврата камеры после предыдущего update")
         if (!SystemController.firmwareClient.webSocketsAvailable) return I18n.t("Native /ws/upgrade недоступен в этой сборке")
@@ -738,6 +900,11 @@ Dialog {
         if (!firmwareSocText().length || !firmwareFlashText().length) return I18n.t("сначала загрузите update-info: SoC и Flash не определены")
         if (source === "github" && firmwareUpdateInfo.githubAvailable !== true) return I18n.t("GitHub update недоступен по данным камеры")
         if (source === "uploaded" && !firmwareArchiveUploaded) return I18n.t("сначала загрузите firmware archive")
+        if (source === "uploaded" && firmwareArchiveSizeBytes <= 0) return I18n.t("неизвестен размер загруженного firmware archive")
+        if (source === "uploaded" && firmwareArchiveCompatibility().state === "block") return firmwareArchiveCompatibility().text
+        if (!firmwarePowerSafetyConfirmed) return I18n.t("подтвердите стабильное питание и сеть")
+        if (firmwareDangerousOptionsActive() && !firmwareDangerOptionsConfirmed)
+            return I18n.t("подтвердите опасные опции reset/force")
         return ""
     }
 
@@ -748,7 +915,11 @@ Dialog {
     function startFirmwareReturnPolling() {
         firmwareReturnPolling = true
         firmwareReturnPollTries = 0
+        firmwareReturnPhase = "rebooting"
+        firmwareReturnHealthText = I18n.t("Камера перезагружается после прошивки. Ждём ответ status endpoint.")
         activeFirmwareReturnProbeId = ""
+        firmwarePostReturnProbeActive = false
+        appendFirmwareUpgradeLogLine(I18n.t("Начинаю проверку возврата камеры после update."))
         firmwareReturnPollTimer.restart()
         statusError = false
         statusText = I18n.t("Ожидание возврата камеры после update…")
@@ -763,8 +934,40 @@ Dialog {
         }
         firmwareBusy = false
         firmwareUpgradeRebooting = false
+        if (error === true) firmwarePostReturnProbeActive = false
+        firmwareReturnPhase = error === true ? "failed" : "online"
+        firmwareReturnHealthText = message || ""
         statusError = error === true
         if (message && message.length) statusText = message
+    }
+
+    function startPostFirmwareReturnProbes() {
+        firmwarePostReturnProbeActive = true
+        firmwareReturnPhase = "validating"
+        firmwareReturnHealthText = I18n.t("Камера вернулась. Проверяю Majestic API и RTSP потоки…")
+        appendFirmwareUpgradeLogLine(I18n.t("Post-upgrade health probe: Majestic API + RTSP main/sub."))
+        startEndpointProbe("api")
+        startEndpointProbe("main")
+        startEndpointProbe("sub")
+    }
+
+    function postFirmwareReturnProbeSummary() {
+        return "API: " + probeStateText(majesticApiProbeState, majesticApiProbeMessage, majesticApiProbeElapsedMs)
+                + " · RTSP main: " + probeStateText(rtspMainProbeState, rtspMainProbeMessage, rtspMainProbeElapsedMs)
+                + " · RTSP sub: " + probeStateText(rtspSubProbeState, rtspSubProbeMessage, rtspSubProbeElapsedMs)
+    }
+
+    function maybeFinishPostFirmwareReturnProbes() {
+        if (!firmwarePostReturnProbeActive) return
+        if (majesticApiProbeState === "running" || rtspMainProbeState === "running" || rtspSubProbeState === "running") return
+        if (majesticApiProbeState === "idle" || rtspMainProbeState === "idle" || rtspSubProbeState === "idle") return
+        firmwarePostReturnProbeActive = false
+        var healthy = majesticApiProbeState === "ok" && rtspMainProbeState === "ok"
+        firmwareReturnPhase = healthy ? "online" : "degraded"
+        firmwareReturnHealthText = postFirmwareReturnProbeSummary()
+        appendFirmwareUpgradeLogLine((healthy
+                                      ? I18n.t("Post-upgrade health OK: %1", [firmwareReturnHealthText])
+                                      : I18n.t("Post-upgrade health degraded: %1", [firmwareReturnHealthText])))
     }
 
     function probeFirmwareReturn() {
@@ -774,6 +977,9 @@ Dialog {
             return
         }
         firmwareReturnPollTries += 1
+        firmwareReturnPhase = "probing"
+        firmwareReturnHealthText = I18n.t("Проверяю status endpoint камеры…")
+        appendFirmwareUpgradeLogLine(I18n.t("Проверка возврата камеры: попытка %1/%2", [firmwareReturnPollTries, firmwareReturnPollMaxTries]))
         statusError = false
         statusText = I18n.t("Ожидание возврата камеры… попытка %1/%2", [firmwareReturnPollTries, firmwareReturnPollMaxTries])
         activeFirmwareReturnProbeId = track(SystemController.firmwareClient.loadStatus(
@@ -792,8 +998,9 @@ Dialog {
         statusError = false
         firmwareUpgradeText = ""
         firmwareUpgradeRebooting = false
-        firmwareArchiveUploaded = false
+        resetFirmwareArchiveState()
         statusText = I18n.t("Запуск updater OpenIPC…")
+        appendFirmwareUpgradeLogLine(I18n.t("Старт GitHub firmware update через /ws/upgrade. Опции: %1", [firmwareUpdateOptionsSummary()]))
         activeFirmwareUpdateId = track(SystemController.firmwareClient.startGithubUpdate(
                                            cameraHost, cameraPort, cameraUser, cameraPassword,
                                            firmwareUpdateKernel, firmwareUpdateRootfs, firmwareUpdateReset, firmwareUpdateForce))
@@ -812,6 +1019,7 @@ Dialog {
         firmwareUpgradeText = ""
         firmwareUpgradeRebooting = false
         statusText = I18n.t("Запуск updater для /tmp/firmware.tgz…")
+        appendFirmwareUpgradeLogLine(I18n.t("Старт uploaded firmware update через /ws/upgrade. Опции: %1", [firmwareUpdateOptionsSummary()]))
         activeFirmwareUpdateId = track(SystemController.firmwareClient.startFirmwareUpgrade(
                                            cameraHost, cameraPort, cameraUser, cameraPassword,
                                            "/tmp/firmware.tgz",
@@ -840,6 +1048,7 @@ Dialog {
     function openPcmDialog() { pcmDialog.open() }
     function openFirmwareBackupDialog() { firmwareBackupDialog.open() }
     function openFirmwareUploadDialog() { firmwareUploadDialog.open() }
+    function openFirmwareRestoreWebUiConfirm() { firmwareRestoreWebUiConfirm.open() }
     function openFirmwareNetworkConfirm() { firmwareNetworkConfirm.open() }
     function openFirmwareNetworkResetConfirm() { firmwareNetworkResetConfirm.open() }
     function openFirmwareTimeConfirm() { firmwareTimeConfirm.open() }
@@ -1147,6 +1356,13 @@ Dialog {
         rollbackReason = reason || (rollbackCritical
                                     ? I18n.t("Перед критичным изменением сохранён снимок конфигурации для быстрого отката.")
                                     : "")
+        rollbackHealthState = rollbackCritical ? "ready" : "idle"
+        rollbackHealthText = rollbackCritical
+                             ? I18n.t("После apply будет проверен Majestic API и основной RTSP поток.")
+                             : ""
+        rollbackWatchActive = false
+        rollbackWatchTries = 0
+        rollbackAutoAllowed = false
     }
 
     function clearRollbackSnapshot() {
@@ -1156,7 +1372,54 @@ Dialog {
         rollbackAvailable = false
         rollbackCritical = false
         rollbackReason = ""
+        rollbackHealthState = "idle"
+        rollbackHealthText = ""
+        rollbackWatchActive = false
+        rollbackWatchTries = 0
+        rollbackAutoAllowed = false
+        rollbackHealthWatchTimer.stop()
         activeRollbackId = ""
+    }
+
+    function startRollbackHealthWatch(reason) {
+        if (!rollbackAvailable || !rollbackCritical) return
+        rollbackWatchActive = true
+        rollbackWatchTries = 0
+        rollbackHealthState = "watching"
+        rollbackHealthText = reason && String(reason).length
+                             ? I18n.t(reason)
+                             : I18n.t("Наблюдаю за восстановлением Majestic API и RTSP после apply…")
+        rollbackHealthWatchTimer.restart()
+    }
+
+    function rollbackHealthSummary() {
+        return "API: " + probeStateText(majesticApiProbeState, majesticApiProbeMessage, majesticApiProbeElapsedMs)
+                + " · RTSP main: " + probeStateText(rtspMainProbeState, rtspMainProbeMessage, rtspMainProbeElapsedMs)
+    }
+
+    function maybeFinishRollbackHealthProbe() {
+        if (!rollbackWatchActive) return
+        if (majesticApiProbeState === "running" || rtspMainProbeState === "running") return
+        if (majesticApiProbeState === "idle" || rtspMainProbeState === "idle") return
+        var ok = majesticApiProbeState === "ok" && rtspMainProbeState === "ok"
+        rollbackHealthText = rollbackHealthSummary()
+        if (ok) {
+            rollbackWatchActive = false
+            rollbackHealthWatchTimer.stop()
+            rollbackHealthState = "ok"
+            rollbackReason = I18n.t("Health probe успешен. Rollback snapshot сохранён на случай ручного отката.")
+            return
+        }
+        if (rollbackWatchTries >= rollbackWatchMaxTries) {
+            rollbackWatchActive = false
+            rollbackHealthWatchTimer.stop()
+            rollbackHealthState = "fail"
+            rollbackReason = I18n.t("После apply поток/API не восстановились. Можно откатить критичные изменения.")
+            if (rollbackAutoAllowed && majesticApiProbeState === "ok") {
+                rollbackReason = I18n.t("Авто-rollback разрешён: API доступен, выполняю откат критичных изменений.")
+                rollbackPendingChanges()
+            }
+        }
     }
 
     function rollbackPendingChanges() {
@@ -1560,6 +1823,11 @@ Dialog {
         var identityOk = firmwareSocText().length > 0 && firmwareFlashText().length > 0
         var optionsOk = firmwareUpdateKernel || firmwareUpdateRootfs
         var dangerousOptions = firmwareUpdateReset || firmwareUpdateForce
+        var uploadedArchiveOk = !firmwareArchiveUploaded
+                || (firmwareArchiveSizeBytes > 0 && firmwareArchiveSizeBytes <= 128 * 1024 * 1024)
+        var archiveCompatibility = firmwareArchiveCompatibility()
+        var safetyOk = firmwarePowerSafetyConfirmed
+                && (!dangerousOptions || firmwareDangerOptionsConfirmed)
         return [
             {
                 title: I18n.t("1. WebSocket updater"),
@@ -1571,33 +1839,45 @@ Dialog {
             {
                 title: I18n.t("2. Совместимость"),
                 text: identityOk
-                      ? I18n.t("Определено: SoC %1 · Flash %2 · Variant %3", [firmwareSocText(), firmwareFlashText(), firmwareVariantText() || "—"])
+                      ? (firmwareArchiveUploaded
+                         ? archiveCompatibility.text
+                         : I18n.t("Определено: SoC %1 · Flash %2 · Variant %3", [firmwareSocText(), firmwareFlashText(), firmwareVariantText() || "—"]))
                       : I18n.t("Сначала загрузите update-info, чтобы приложение видело SoC и тип flash."),
-                state: identityOk ? "ok" : "block"
+                state: identityOk ? (firmwareArchiveUploaded ? archiveCompatibility.state : "ok") : "block"
             },
             {
                 title: I18n.t("3. Источник прошивки"),
                 text: sourceOk
-                      ? I18n.t("Доступен GitHub update или уже загружен локальный firmware archive.")
+                      ? (firmwareArchiveUploaded
+                         ? I18n.t("Загружен локальный archive: %1 · %2", [firmwareArchiveName || "/tmp/firmware.tgz", firmwareArchiveSizeText()])
+                         : I18n.t("Доступен GitHub update по данным update page камеры."))
                       : I18n.t("Нет готового источника: загрузите update-info для GitHub или upload archive."),
-                state: sourceOk ? "ok" : "warn"
+                state: sourceOk && uploadedArchiveOk ? "ok" : (sourceOk ? "warn" : "block")
             },
             {
-                title: I18n.t("4. Backup"),
+                title: I18n.t("4. Checksum / подпись"),
+                text: firmwareUpdateChecksumText(),
+                state: (firmwareUpdateInfo.sha256 || firmwareUpdateInfo.checksum
+                        || firmwareUpdateInfo.digest || firmwareUpdateInfo.signature) ? "ok" : "warn"
+            },
+            {
+                title: I18n.t("5. Backup"),
                 text: firmwareBackupSaved
                       ? I18n.t("Firmware backup уже сохранён в этой сессии.")
                       : I18n.t("Перед прошивкой рекомендуется сохранить firmware backup и Majestic backup."),
                 state: firmwareBackupSaved ? "ok" : "warn"
             },
             {
-                title: I18n.t("5. Опции прошивки"),
+                title: I18n.t("6. Опции прошивки"),
                 text: I18n.t("Выбрано: %1", [firmwareUpdateOptionsSummary()]),
                 state: !optionsOk ? "block" : (dangerousOptions ? "warn" : "ok")
             },
             {
-                title: I18n.t("6. Питание и сеть"),
-                text: I18n.t("Не отключайте питание. После flashing/reboot приложение будет ждать возврата камеры."),
-                state: "warn"
+                title: I18n.t("7. Питание и сеть"),
+                text: firmwarePowerSafetyConfirmed
+                      ? I18n.t("Пользователь подтвердил стабильное питание/сеть. После flashing/reboot приложение будет ждать возврата камеры.")
+                      : I18n.t("Подтвердите стабильное питание и сеть перед стартом update."),
+                state: safetyOk ? "ok" : "block"
             }
         ]
     }
@@ -1879,12 +2159,16 @@ Dialog {
         firmwareTime = ({})
         firmwareUpdateInfo = ({})
         firmwareLogsText = ""
+        firmwareLogsSource = "all"
         firmwareLiveLogs = false
         firmwareLogsPaused = false
         firmwareLogFilter = ""
         firmwareUpgradeText = ""
         firmwareUpgradeRebooting = false
-        firmwareArchiveUploaded = false
+        resetFirmwareArchiveState()
+        firmwarePowerSafetyConfirmed = false
+        firmwareDangerOptionsConfirmed = false
+        firmwarePostReturnProbeActive = false
         firmwareUpdateKernel = true
         firmwareUpdateRootfs = true
         firmwareUpdateReset = false
@@ -1892,6 +2176,8 @@ Dialog {
         firmwareBackupSaved = false
         firmwareReturnPolling = false
         firmwareReturnPollTries = 0
+        firmwareReturnPhase = "idle"
+        firmwareReturnHealthText = ""
         activeFirmwareReturnProbeId = ""
         clearBackupRestore()
         clearRollbackSnapshot()
@@ -2085,6 +2371,35 @@ Dialog {
     }
 
     Timer {
+        id: rollbackHealthWatchTimer
+        interval: 3500
+        repeat: true
+        onTriggered: {
+            if (!rollbackWatchActive || !rollbackAvailable) {
+                rollbackWatchActive = false
+                stop()
+                return
+            }
+            if (majesticApiProbeState === "running" || rtspMainProbeState === "running") return
+            if (rollbackWatchTries >= rollbackWatchMaxTries) {
+                maybeFinishRollbackHealthProbe()
+                if (rollbackWatchActive) {
+                    rollbackWatchActive = false
+                    rollbackHealthState = "fail"
+                    rollbackReason = I18n.t("После apply поток/API не восстановились. Можно откатить критичные изменения.")
+                    stop()
+                }
+                return
+            }
+            rollbackWatchTries += 1
+            rollbackHealthState = "watching"
+            rollbackHealthText = I18n.t("Health probe Majestic после apply: попытка %1/%2", [rollbackWatchTries, rollbackWatchMaxTries])
+            startEndpointProbe("api")
+            startEndpointProbe("main")
+        }
+    }
+
+    Timer {
         id: applyWatchdogTimer
         interval: 25000
         repeat: false
@@ -2118,6 +2433,7 @@ Dialog {
             dialog.statusError = false
             dialog.pipelineReloadNeeded = false
             dialog.statusText = I18n.t("Reload pipeline отправлен; перечитываю состояние…")
+            dialog.startRollbackHealthWatch("Reload pipeline отправлен; проверяю восстановление API/RTSP…")
             reloadRefreshTimer.restart()
         }
     }
@@ -2150,6 +2466,8 @@ Dialog {
                          : pipelineReloadNeeded
                          ? I18n.t("Конфигурация сохранена; примените reload pipeline")
                          : I18n.t("Конфигурация сохранена; live-параметры применены")
+            if (!rollbackFlow && !pipelineReloadNeeded)
+                startRollbackHealthWatch("Конфигурация сохранена; проверяю Majestic API и RTSP…")
             refresh()
         }
         function onConfigurationFieldsReset(requestId, fieldPaths) {
@@ -2186,6 +2504,7 @@ Dialog {
                 if (requestId === activeReloadId) activeReloadId = ""
                 pipelineReloadNeeded = false
                 statusText = I18n.t("Reload pipeline отправлен; перечитываю состояние…")
+                startRollbackHealthWatch("Reload pipeline отправлен; проверяю восстановление API/RTSP…")
                 reloadRefreshTimer.restart()
             }
             else statusText = I18n.t("Операция выполнена: %1", [operation])
@@ -2212,6 +2531,7 @@ Dialog {
                 statusError = false
                 pipelineReloadNeeded = false
                 statusText = I18n.t("Reload pipeline отправлен; камера может кратко не отвечать…")
+                startRollbackHealthWatch("Reload pipeline отправлен; проверяю восстановление API/RTSP…")
                 reloadRefreshTimer.restart()
                 return
             }
@@ -2228,11 +2548,16 @@ Dialog {
                 untrack(requestId)
                 activeFirmwareReturnProbeId = ""
                 firmwareStatus = status
-                stopFirmwareReturnPolling(I18n.t("Камера вернулась после update"), false)
+                var summary = firmwareReturnSummary(status)
+                appendFirmwareUpgradeLogLine(I18n.t("Камера ответила после update: %1", [summary]))
                 appendFirmwareUpgradeText("\n--- camera is back online ---\n")
+                stopFirmwareReturnPolling(I18n.t("Камера вернулась после update"), false)
+                firmwareReturnHealthText = summary
                 loadFirmwareNetwork()
                 loadFirmwareTime()
                 refreshFirmwareUpdateInfo()
+                if (capabilities.metrics === true) refreshOverviewMetrics()
+                startPostFirmwareReturnProbes()
                 return
             }
             untrack(requestId)
@@ -2332,6 +2657,16 @@ Dialog {
                          : I18n.t("Логи загружены: %1", [source])
         }
 
+        function onLogBufferSizeChanged(requestId, sizeKiB) {
+            if (!owns(requestId)) return
+            untrack(requestId)
+            firmwareBusy = false
+            activeFirmwareLogsId = ""
+            statusError = false
+            statusText = I18n.t("Ring-buffer логов установлен: %1 KiB", [sizeKiB])
+            loadFirmwareLogs(firmwareLogsSource, true)
+        }
+
         function onBackupSaved(requestId, path) {
             if (!owns(requestId)) return
             untrack(requestId)
@@ -2368,7 +2703,7 @@ Dialog {
             activeFirmwareUpdateId = ""
             firmwareArchiveUploaded = true
             statusError = false
-            statusText = I18n.t("Firmware archive загружен: %1", [remotePath])
+            statusText = I18n.t("Firmware archive загружен: %1 · %2", [remotePath, firmwareArchiveSizeText()])
         }
 
         function onUpdateStarted(requestId, mode) {
@@ -2435,8 +2770,12 @@ Dialog {
                 activeFirmwareReturnProbeId = ""
                 firmwareBusy = false
                 if (firmwareReturnPollTries >= firmwareReturnPollMaxTries) {
+                    appendFirmwareUpgradeLogLine(I18n.t("Камера не ответила после %1 попыток.", [firmwareReturnPollMaxTries]))
                     stopFirmwareReturnPolling(I18n.t("Камера не вернулась после update. Проверьте питание и сеть."), true)
                 } else {
+                    firmwareReturnPhase = "waiting"
+                    firmwareReturnHealthText = I18n.t("Status endpoint ещё недоступен: %1", [message])
+                    appendFirmwareUpgradeLogLine(I18n.t("Status endpoint ещё недоступен: %1", [message]))
                     statusError = false
                     statusText = I18n.t("Ожидание возврата камеры… попытка %1/%2", [firmwareReturnPollTries, firmwareReturnPollMaxTries])
                 }
@@ -2457,7 +2796,10 @@ Dialog {
             }
             if (requestId === activeFirmwareBackupId) activeFirmwareBackupId = ""
             if (requestId === activeFirmwareRebootId) activeFirmwareRebootId = ""
-            if (requestId === activeFirmwareUpdateId) activeFirmwareUpdateId = ""
+            if (requestId === activeFirmwareUpdateId) {
+                activeFirmwareUpdateId = ""
+                if (operation === "firmware-upload") resetFirmwareArchiveState()
+            }
             statusError = true
             statusText = httpStatus === 401
                          ? I18n.t("Ошибка авторизации OpenIPC WebUI (401). Проверьте root-пароль.")
@@ -2485,6 +2827,8 @@ Dialog {
                 dialog.majesticApiProbeMessage = message
                 dialog.majesticApiProbeElapsedMs = elapsedMs
             }
+            dialog.maybeFinishPostFirmwareReturnProbes()
+            dialog.maybeFinishRollbackHealthProbe()
         }
     }
 
@@ -2619,6 +2963,22 @@ Dialog {
         onAccepted: requestFirmwareReboot()
         contentItem: Label {
             text: I18n.t("Камера будет перезагружена через штатный fw-restart.cgi. Видео и WebUI временно пропадут. Продолжить?")
+            color: Theme.warning
+            wrapMode: Text.WordWrap
+            padding: 16
+        }
+    }
+
+    Dialog {
+        id: firmwareRestoreWebUiConfirm
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(dialog.width - 100, 620)
+        title: I18n.t("Восстановить OpenIPC backup")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: openWebUiPath("/cgi-bin/ext-backuper.cgi")
+        contentItem: Label {
+            text: I18n.t("Восстановление полного OpenIPC backup может изменить overlay, сеть, пароли и сервисы камеры. Dashboard откроет штатную страницу WebUI камеры; продолжайте только если backup точно от этой камеры.")
             color: Theme.warning
             wrapMode: Text.WordWrap
             padding: 16

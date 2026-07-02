@@ -363,6 +363,7 @@ set(QML_FILES
     src/ui/MajesticTabButton.qml
     src/ui/MajesticTextField.qml
     src/ui/OpenIpcLogsPanel.qml
+    src/ui/OpenIpcFirmwareBackupPanel.qml
     src/ui/OpenIpcFirmwareQuickActionsCard.qml
     src/ui/OpenIpcFirmwareStatusGrid.qml
     src/ui/OpenIpcFirmwareStatusCardsGrid.qml

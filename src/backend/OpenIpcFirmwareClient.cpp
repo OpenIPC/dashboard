@@ -507,6 +507,12 @@ QVariantMap OpenIpcFirmwareClient::parseUpdatePageForTest(const QString &html)
     info.insert(QStringLiteral("flash"), flash);
     info.insert(QStringLiteral("flashType"), firstWord(flash).toLower());
     info.insert(QStringLiteral("variant"), firmwareVariantFromInstalled(installed));
+    QString checksum = dlValue(html, QStringLiteral("SHA-256"));
+    if (checksum.isEmpty()) checksum = dlValue(html, QStringLiteral("SHA256"));
+    if (checksum.isEmpty()) checksum = dlValue(html, QStringLiteral("Checksum"));
+    info.insert(QStringLiteral("checksum"), checksum);
+    info.insert(QStringLiteral("sha256"), checksum);
+    info.insert(QStringLiteral("signature"), dlValue(html, QStringLiteral("Signature")));
     info.insert(QStringLiteral("githubAvailable"),
                 !html.contains(QRegularExpression(QStringLiteral("id=[\"']fw-install-github[\"'][^>]*disabled"),
                                                   QRegularExpression::CaseInsensitiveOption)));

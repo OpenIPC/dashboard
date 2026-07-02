@@ -22,6 +22,10 @@ ScrollView {
             description: I18n.t("Быстрые инструменты OpenIPC: штатные страницы камеры, диагностические входы и полезные справочники.")
         }
 
+        OpenIpcFirmwareBackupPanel {
+            controller: root.controller
+        }
+
         GridLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16

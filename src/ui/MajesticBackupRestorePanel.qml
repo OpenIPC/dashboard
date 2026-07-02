@@ -15,7 +15,7 @@ Rectangle {
     property alias snapshotGray: snapshotGray.checked
 
     Layout.fillWidth: true
-    Layout.preferredHeight: 190
+    Layout.preferredHeight: 218
     color: Theme.cardBackground
     border.color: Theme.cardBorder
     radius: Theme.radiusLg
@@ -26,10 +26,18 @@ Rectangle {
         spacing: 8
 
         Text {
-            text: I18n.t("Снимок, backup и звук")
+            text: I18n.t("Majestic snapshot / config backup / audio")
             color: Theme.textPrimary
             font.bold: true
             font.pixelSize: 15
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: I18n.t("Это backup только конфигурации Majestic. Полный OpenIPC firmware/overlay backup находится во вкладке Tools.")
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+            font.pixelSize: 11
         }
 
         RowLayout {
