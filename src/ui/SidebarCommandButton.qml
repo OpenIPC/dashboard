@@ -7,6 +7,7 @@ Button {
     id: root
 
     property string iconPath: ""
+    property string iconName: ""
     property string label: ""
     property string subtitle: ""
     property string tooltip: ""
@@ -66,6 +67,7 @@ Button {
                 anchors.centerIn: parent
                 width: root.compact ? 13 : 15
                 height: root.compact ? 13 : 15
+                name: root.iconName
                 path: root.iconPath
                 color: root.enabled
                        ? (root.primary ? Theme.accentHover : (root.hovered ? Theme.accentHover : Theme.textSecondary))

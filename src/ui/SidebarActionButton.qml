@@ -7,6 +7,7 @@ Button {
     id: root
 
     property string iconPath: ""
+    property string iconName: ""
     property string label: ""
     property string tooltip: ""
     property bool primary: false
@@ -40,6 +41,7 @@ Button {
                 anchors.centerIn: parent
                 width: 18
                 height: 18
+                name: root.iconName
                 path: root.iconPath
                 color: root.enabled
                        ? (root.primary ? Theme.textPrimary : (root.hovered ? Theme.accent : Theme.textSecondary))

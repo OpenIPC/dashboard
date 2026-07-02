@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QProcess>
 #include <QDateTime>
+#include <QtQml/qqmlregistration.h>
 #include <functional>
 
 struct RemoteFileEntry {
@@ -17,6 +18,7 @@ struct RemoteFileEntry {
 class RemoteFsModel : public QAbstractListModel
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(QString currentPath READ currentPath NOTIFY currentPathChanged)
     Q_PROPERTY(bool isLoading READ isLoading NOTIFY isLoadingChanged)
     

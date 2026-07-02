@@ -1,52 +1,186 @@
 # OpenIPC Dashboard Roadmap
 
-Актуальный план развития после релиза `0.2.4`, интеграции Majestic/OpenIPC WebUI идей, разборки Dashboard и доработок Health Center.
-
 Последнее обновление: 2026-07-02.
 
-## Уже сделано
+Текущий стабильный релиз: `v0.2.5.1`.
 
-### Dashboard, сетка и общий UI
+Текущий фокус разработки: `P2 — качество QML, smoke-проверки и архитектурная полировка`.
+
+## Обозначения
+
+- ✅ Сделано и вошло в релиз.
+- 🟡 В работе / ближайший активный фокус.
+- 🔜 Следующая очередь.
+- 🧊 Backlog / будущая возможность.
+- ⛔ Не делаем без дополнительного решения или подтверждения.
+
+## Краткое состояние проекта
+
+OpenIPC Dashboard после `v0.2.5.1` уже умеет не только смотреть камеры, но и управлять OpenIPC/Majestic-устройствами как единый control center:
+
+- поиск OpenIPC/ONVIF/RTSP камер в сети;
+- live preview с HD/SD режимами;
+- единый status-layer камер;
+- Majestic schema-driven настройки;
+- OpenIPC firmware status/network/time/logs/backup/reboot/update;
+- firmware upgrade через `/ws/upgrade`;
+- live firmware logs;
+- in-app updater приложения через GitHub Releases;
+- более компактный Dashboard UI и sidebar;
+- релизные Windows/Linux сборки через GitHub Actions.
+
+## ✅ Hotfix `v0.2.5.1`
+
+- Исправлено исчезновение иконок в Metro sidebar на части пользовательских сборок.
+- Sidebar-иконки больше не зависят от `QtQuick.Shapes` / `qmlshapesplugin`.
+- Добавлен fallback через встроенный `MaterialIcons-Regular.ttf` из `qrc`.
+- Старые SVG-path параметры оставлены для совместимости, но sidebar tiles теперь используют стабильные Material Icons ligature names.
+- Проверено:
+  - `cmake --build build_release --config Release --parallel`;
+  - `ctest --test-dir build_release --output-on-failure`;
+  - `git diff --check`.
+
+## ✅ Закрыто в `v0.2.5`
+
+### Release / CI
+
+- Опубликован stable release `v0.2.5`.
+- GitHub Release создаётся по тегу `v*`.
+- `RELEASE_NOTES.md` используется как тело GitHub Release.
+- Windows installer и Linux AppImage собираются через GitHub Actions.
+- В release workflow добавлен Qt WebSockets.
+- Pre-release теги вида `v*-pre*`, `v*-rc*`, `v*-beta*`, `v*-alpha*` помечаются как GitHub pre-release.
+- Финальный `v0.2.5` опубликован как stable release.
+
+### OpenIPC Control Center / Firmware
+
+- Добавлен единый OpenIPC Control Center внутри окна Majestic/Firmware.
+- Реализованы firmware read/write операции:
+  - status;
+  - network load/save/reset/Wi-Fi scan;
+  - time load/save/NTP sync/set from PC;
+  - logs;
+  - firmware backup;
+  - reboot;
+  - update info;
+  - firmware archive upload.
+- Подготовлен и проверен firmware upgrade через `/ws/upgrade`.
+- На реальной OpenIPC-камере подтверждён native firmware update из приложения с подробным логом процесса.
+- Добавлены фазы upgrade/recovery:
+  - flashing/rebooting;
+  - probing;
+  - waiting;
+  - validating;
+  - online;
+  - degraded;
+  - failed.
+- После возврата камеры обновляются status/network/time/update-info/metrics.
+- После возврата камеры запускаются Majestic API и RTSP main/sub probes.
+
+### Firmware upgrade safety
+
+- Uploaded archive проверяется до загрузки:
+  - файл существует;
+  - расширение `.tgz/.tar.gz/.gz`;
+  - размер в допустимом диапазоне `0..128 MB`.
+- Checklist показывает SoC/Flash/firmware variant.
+- Имя uploaded archive проверяется на очевидные NOR/NAND и lite/ultimate mismatch.
+- Если update page отдаёт checksum/signature, они попадают в safety checklist.
+- Start update блокируется без подтверждения стабильного питания/сети.
+- Dangerous options `reset` и `force` требуют отдельного подтверждения.
+
+### Majestic API
+
+- Настройки Majestic строятся по schema конкретной камеры.
+- Убрана общая вкладка “Все настройки”; настройки сгруппированы по понятным разделам:
+  - изображение;
+  - видео и аудио;
+  - события;
+  - запись;
+  - сеть и интеграции;
+  - система.
+- Добавлены локализованные RU/EN названия и подсказки для известных Majestic-параметров.
+- Apply работает через schema-safe diff.
+- Исправлена ошибка отправки `null` в config patch.
+- Критичные настройки помечаются как требующие reload pipeline.
+- После apply поддержан штатный reload pipeline.
+- Safe rollback v2:
+  - rollback snapshot перед критичным apply;
+  - health-watch после apply/reload;
+  - rollback banner, если API или поток не восстановились;
+  - auto-rollback только при явном разрешении пользователя и доступном API.
+
+### Firmware backup / restore
+
+- Добавлена отдельная карточка `OpenIPC backup / restore` во вкладке Tools.
+- Majestic JSON backup визуально отделён от полного OpenIPC firmware/overlay backup.
+- Restore полного backup не угадывается через непроверенный endpoint.
+- Для full restore приложение открывает штатный WebUI restore после жёсткого подтверждения.
+
+### Live firmware logs
+
+- `/ws/logs` работает через WebSocket в release-сборках.
+- Если Qt WebSockets недоступен, используется polling fallback.
+- Добавлены:
+  - start/stop;
+  - pause/resume;
+  - clear;
+  - source filters `all/majestic/kernel`;
+  - severity highlighting для error/warn/majestic/kernel;
+  - экспорт логов в `.log/.txt`;
+  - настройка OpenIPC syslog ring-buffer.
+
+### Application updater
+
+- Добавлен GitHub Releases update-checker.
+- Существующая кнопка “Проверить обновления” в настройках подключена к реальному checker.
+- При обнаружении новой версии показывается модальное окно с release notes.
+- Добавлены действия:
+  - открыть релиз;
+  - пропустить версию;
+  - напомнить позже;
+  - скачать и установить.
+- Добавлена загрузка обновления прямо из приложения:
+  - progress bar;
+  - отмена;
+  - выбор совместимого asset под текущую платформу.
+- Updater больше не цепляет старую несовместимую ветку релизов `2.9.0`.
+- Windows:
+  - скачивается `OpenIPC-Dashboard-Installer.exe`;
+  - запускается installer handoff;
+  - временный установщик удаляется после завершения.
+- Linux AppImage:
+  - скачивается `OpenIPC-Dashboard-Linux.AppImage`;
+  - после выхода приложения выполняется замена текущего AppImage;
+  - временный файл удаляется;
+  - приложение перезапускается.
+
+### Dashboard, Grid и sidebar UI
 
 - Крупные части `DashboardView.qml` вынесены в отдельные QML-компоненты.
 - Редактор раскладок вынесен в `LayoutEditorDialog.qml`.
-- Сайдбар, top bar, status bar, toast, empty hints, drag proxy, layout toolbar и повторяющиеся кнопки/бейджи приведены к общему UI-набору.
-- Исправлены проблемы раскладки Grid после дробления Dashboard.
+- Исправлены проблемы Grid после дробления Dashboard.
 - Исправлено мигание камеры в списке устройств при hover по action-кнопкам.
 - Подпись видеопотока приведена к единому виду: codec, resolution, bitrate, FPS.
-- Начата UI friendliness wave 1:
-  - в сайдбар добавлена дружелюбная summary-карточка “Панель управления”;
-  - основные действия визуально сгруппированы, “Поиск камер” стал главным CTA;
-  - перегруженная сетка быстрых действий заменена на более читаемые command-кнопки `SidebarCommandButton.qml`;
-  - редкие действия были сгруппированы отдельно, затем переведены в компактную Metro-сетку без скрытия;
-  - UI wave 1.1: сайдбар переведён в более строгий Viewer-like стиль — компактная шапка, плотный блок действий, приглушённые кнопки, статистика и live-preview свернуты в короткие строки;
-  - UI wave 1.2: верхняя summary-панель убрана с первого экрана сайдбара, действия подняты наверх и оформлены как Metro-like плитки с центрированными иконками/подписями;
-  - UI wave 1.3: действия сайдбара ужаты в 3-колоночную Metro-сетку без блока “Ещё”, а кнопки создания/редактирования раскладок встроены в toolbar раскладок;
-  - строка устройства вынесена в `DeviceListItem.qml` и стала стабильной карточкой с зарезервированной зоной quick actions;
-  - заголовки групп вынесены в `SidebarSectionHeader.qml`;
-  - empty state Dashboard получил короткий сценарий быстрого старта;
-  - новые строки локализованы RU/EN.
-
-### Единый статус камер
-
-- Effective status вынесен в общий C++-слой.
-- Dashboard, ячейки, Sidebar и Health Center используют единые правила online/offline/attention.
-- Offline/ошибки потока приоритетнее старого optimistic online из списка камер.
-- Добавлены unit-тесты для сценариев online/offline/attention/stream/auth.
-
-### Health Center
-
-- Фильтры: все, с проблемами, offline, online, в сетке, не в сетке, auth, stream.
-- Массовая перепроверка камер.
-- История последних проверок в текущей сессии.
-- Экспорт диагностического отчёта в файл.
-- Health Center использует тот же слой статусов, что Dashboard и Sidebar.
+- Sidebar переработан в более строгий Viewer-like / Metro-like стиль:
+  - компактная сетка действий;
+  - ровные иконки и подписи;
+  - меньше визуального шума;
+  - layout actions встроены в toolbar раскладок.
+- Строка устройства вынесена в `DeviceListItem.qml`.
+- Заголовки групп вынесены в `SidebarSectionHeader.qml`.
+- Empty state Dashboard получил короткий сценарий быстрого старта.
+- Новые UI-строки локализованы RU/EN.
 
 ### Поиск камер
 
 - Реализован поиск OpenIPC-камер в сети.
-- Используются OpenIPC/mDNS, WS-Discovery/ONVIF, RTSP probe, HTTP/Majestic probe.
-- Добавлены быстрый/глубокий сценарии поиска.
+- Используются:
+  - OpenIPC/mDNS;
+  - WS-Discovery/ONVIF;
+  - RTSP probe;
+  - HTTP/Majestic probe.
+- Добавлены быстрый и глубокий сценарии поиска.
 - Progress bar показывает процент и этап поиска.
 - После завершения поиска progress bar корректно скрывается.
 
@@ -55,184 +189,145 @@
 - Исправлена работа SD/substream для OpenIPC/Majestic.
 - HD/fullscreen и SD/preview разведены корректнее.
 - Добавлена индикация live-preview budget: active, pause, limit.
-- Статусы preview и статус камеры синхронизированы с общим status-layer.
+- Статусы preview и статус камеры синхронизированы через общий status-layer.
 
-### Majestic API
+### Единый статус камер
 
-- Настройки Majestic строятся по schema камеры.
-- Настройки сгруппированы по понятным разделам вместо общей вкладки “Все настройки”.
-- Добавлены локализованные названия и подсказки RU/EN для известных Majestic-полей.
-- Apply работает через schema-safe diff без отправки `null`.
-- Критичные настройки явно помечаются как требующие reload pipeline.
-- После apply поддержан reload pipeline по штатному endpoint.
-- Добавлен safe rollback v1:
-  - перед критичным apply сохраняется rollback snapshot;
-  - после применения показывается карточка rollback;
-  - откат выполняется обратным diff-запросом.
-- Backup/restore UI v1:
-  - backup загружается как restore-кандидат;
-  - показывается число отличий;
-  - есть preview restore, apply backup diff, clear restore.
-- Endpoints/capabilities v1:
-  - summary по endpoints/capabilities;
-  - RTSP main/sub/JPEG;
-  - WS preview;
-  - MJPEG, MP4, HLS;
-  - audio endpoints;
-  - Majestic API endpoints;
-  - OpenIPC firmware endpoints `/ws/logs`, `/ws/upgrade`, `/upload`, status/network/time/update pages.
+- Effective status вынесен в общий C++ слой.
+- Dashboard, ячейки, Sidebar и Health Center используют единые правила online/offline/attention.
+- Offline/ошибки потока имеют приоритет над старым optimistic online из списка камер.
+- Добавлены unit-тесты для online/offline/attention/stream/auth сценариев.
 
-### OpenIPC Control Center / Firmware
+### Health Center v1
 
-- Добавлен единый OpenIPC Control Center в окне Majestic/Firmware.
-- Реализованы read/write операции firmware-клиента:
-  - status;
-  - network load/save/reset/Wi‑Fi scan;
-  - time load/save/NTP sync/set from PC;
-  - logs;
-  - firmware backup;
-  - reboot;
-  - update info;
-  - firmware archive upload.
-- Добавлены live firmware logs v1:
-  - `/ws/logs`, если сборка имеет Qt WebSockets;
-  - polling fallback, если Qt WebSockets отсутствует;
-  - start/stop, pause/resume, clear, filter.
-- Подготовлен firmware upgrade через `/ws/upgrade`:
-  - optional Qt WebSockets в CMake;
-  - `webSocketsAvailable`;
-  - GitHub source flow;
-  - uploaded `/tmp/firmware.tgz` flow;
-  - progress output;
-  - состояние flashing/rebooting;
-  - CI/release устанавливают `qtwebsockets`.
-- Добавлен firmware update safety-gate v1:
-  - нормализация SoC/flash/firmware variant из update page;
-  - блокировка update без `/ws/upgrade`, SoC/flash и выбранных kernel/rootfs;
-  - отдельные опции kernel/rootfs/reset/force;
-  - статусный checklist OK/WARN/BLOCK;
-  - понятная причина блокировки update-кнопок.
-- Добавлен базовый polling возврата камеры после `/ws/upgrade`:
-  - после flashing/rebooting приложение ожидает доступность status endpoint;
-  - показывает попытки возврата;
-  - фиксирует успешное возвращение камеры или ошибку таймаута.
-- Начата декомпозиция OpenIPC Update UI из `MajesticControlDialog.qml`:
-  - `OpenIpcPageHeader.qml`;
-  - `OpenIpcFirmwareStatusCardsGrid.qml`;
-  - `OpenIpcInfoRowsCard.qml`;
-  - `OpenIpcFirmwareQuickActionsCard.qml`;
-  - `OpenIpcUpdateWarningCard.qml`;
-  - `OpenIpcUpdateOptionsCard.qml`;
-  - `OpenIpcUpgradeProgressPanel.qml`;
-  - `OpenIpcFirmwareStatusGrid.qml`;
-  - `OpenIpcUpdateChecklistGrid.qml`.
-- Новые вынесенные OpenIPC QML-компоненты проверены отдельным `qmllint`.
-- P2-декомпозиция `MajesticControlDialog.qml` завершена:
-  - страницы вынесены в `MajesticOverviewPage.qml`, `MajesticSettingsPage.qml`, `OpenIpcStatusPage.qml`, `OpenIpcNetworkPage.qml`, `OpenIpcTimePage.qml`, `OpenIpcUpdatePage.qml`, `OpenIpcToolsPage.qml`, `MajesticEndpointsPage.qml`, `MajesticRawJsonPage.qml`, `MajesticMetricsPage.qml`;
-  - повторяемые панели вынесены в `OpenIpcLogsPanel.qml`, `MajesticBackupRestorePanel.qml`, `MajesticRollbackBanner.qml`;
-  - корневой диалог оставлен controller-слоем: состояние, API-вызовы, таймеры, Connections и подтверждающие диалоги;
-  - новые компоненты подключены в QML module и проходят `qmllint` без предупреждений.
+- Добавлены фильтры:
+  - все;
+  - с проблемами;
+  - offline;
+  - online;
+  - в сетке;
+  - не в сетке;
+  - auth;
+  - stream.
+- Добавлена массовая перепроверка камер.
+- Добавлена история проверок текущей сессии.
+- Добавлен экспорт диагностического отчёта.
+- Health Center использует общий status-layer.
 
-### Release / CI
+### Linux
 
-- Подготовлены release notes для `0.2.4`.
-- Исправлена Linux CI-зависимость, из-за которой падала установка GStreamer dev-пакетов.
-- Release `0.2.4` собран.
-- CI/release workflows обновлены для Qt WebSockets.
-- Подготовлена pre-release линия `0.2.5-pre.1`:
-  - `RELEASE_NOTES.md` обновлён под WebSockets-enabled GitHub artifacts;
-  - release workflow помечает теги с `-pre/-rc/-beta/-alpha` как GitHub pre-release;
-  - project version поднят до `0.2.5`.
-- Добавлен update-checker приложения:
-  - периодическая проверка `OpenIPC/dashboard` GitHub Releases;
-  - подключение к существующей кнопке “Проверить обновления” в настройках;
-  - модальное окно с release notes со страницы релиза;
-  - действия “Открыть релиз”, “Напомнить позже”, “Пропустить эту версию”;
-  - semver-сравнение stable/pre-release тегов.
-- Исправлен Linux fallback для RAM в status bar приложения:
+- Исправлен fallback отображения RAM:
   - `/proc/self/status` / `VmRSS`;
-  - fallback через `/proc/self/statm`;
-  - fallback через `getrusage(RUSAGE_SELF)`.
-- Опубликован pre-release `0.2.5-pre.2`:
-  - добавлена загрузка обновления приложения прямо из Dashboard;
-  - отображается прогресс загрузки;
-  - после загрузки запускается установка;
-  - временный установщик/AppImage удаляется после handoff;
-  - updater выбирает только совместимые release assets и больше не цепляет старую несовместимую ветку `2.9.0`.
-- На реальной OpenIPC-камере подтверждён native firmware update через `/ws/upgrade` из приложения с подробным логом процесса.
-- Подготовлен stable release `0.2.5`:
-  - `RELEASE_NOTES.md` переписан под финальный релиз без pre-release ограничений;
-  - P0/P0.5/P1 закрыты в коде и вынесены в release note;
-  - следующий фокус после релиза — P2: чистка legacy `qmllint` предупреждений, QML smoke-проверки и дальнейшая полировка архитектуры.
+  - `/proc/self/statm`;
+  - `getrusage(RUSAGE_SELF)`.
+- Закрыт сценарий, когда CPU отображался, а RAM оставалась `0 MB`.
+- Исправлена Linux CI-зависимость для GStreamer dev packages.
 
-## Что осталось сделать
+## 🟡 P2 — текущий активный этап
 
-### P0 — стабилизация текущего большого набора изменений — закрыто
+Цель P2: снизить технический долг в QML, закрепить правило маленьких компонентов и подготовить стабильную базу для следующих крупных функций.
 
-- GitHub Actions для `v0.2.5-pre.2` прошли успешно:
-  - Windows WebSocket-enabled build;
-  - Linux WebSocket-enabled AppImage;
-  - GitHub pre-release с двумя совместимыми asset.
-- На реальной камере подтверждён firmware update через `/ws/upgrade`.
-- OpenIPC Control Center локально запускается и получает данные с камеры.
-- Fallback без Qt WebSockets сохранён в коде firmware-client.
+### P2.1 — legacy `qmllint` cleanup
 
-### P0.5 — post-release стабилизация firmware update — закрыто в коде
+Статус: ✅ закрыто как baseline + safe cleanup.
 
-- Сделано: улучшено удобство return-polling после `/ws/upgrade`:
-  - явная фаза восстановления;
-  - health summary после возврата камеры;
-  - лог каждой попытки проверки status endpoint;
-  - автообновление status/network/time/update-info/metrics после возврата камеры.
-- Дополнено в P1: после возврата камеры запускаются Majestic API и RTSP probes.
-- Ручная регрессия остаётся обязательной при следующем реальном update:
-  - GitHub update;
-  - uploaded archive update;
-  - закрытие окна во время update;
-  - временная недоступность WebUI после reboot.
+Сделано:
 
-### P1 — Majestic/OpenIPC hardening — закрыто в коде
+- Снят актуальный полный legacy `qmllint` baseline.
+- Baseline зафиксирован в [`docs/QML_LINT_BASELINE.md`](QML_LINT_BASELINE.md).
+- Полный `qmllint` уменьшен примерно с `1322` до `1184` предупреждений.
+- C++ типы, используемые из QML, переведены на Qt QML type registration macros:
+  - `VideoPlayer`;
+  - `RemoteFsModel`;
+  - `AnalyticsModel`;
+  - `AnalyticsEngine`;
+  - `SshClient`;
+  - `CamexController`.
+- Для сгенерированной QML-регистрации добавлены include paths:
+  - `src/backend`;
+  - `src/backend/analytics`;
+  - `src/backend/gst`.
+- Из `main.cpp` убрана ручная регистрация этих QML-типов, singleton `SystemController` оставлен.
+- Исправлены безопасные предупреждения в:
+  - `Main.qml`;
+  - `SettingsDialog.qml`;
+  - `FileManagerDialog.qml`;
+  - `StyledScrollBar.qml`.
+- Проверки:
+  - `cmake --build build_release --config Release --parallel` — ✅;
+  - `ctest --test-dir build_release --output-on-failure` — ✅ `14/14`;
+  - `appOpenIPC-Dashboard_qmllint` — ожидаемо ❌ на задокументированном legacy baseline.
 
-- Firmware upgrade safety layer:
-  - uploaded archive проверяется до загрузки: файл существует, расширение `.tgz/.tar.gz/.gz`, размер `0..128 MB`;
-  - checklist показывает SoC/Flash/variant и оценивает имя uploaded archive на явный NOR/NAND или lite/ultimate mismatch;
-  - если update page отдаёт checksum/signature, они попадают в safety checklist;
-  - старт update блокируется без подтверждения стабильного питания/сети;
-  - reset/force блокируются без отдельного явного подтверждения.
-- Polling возврата камеры после `/ws/upgrade`:
-  - отдельные фазы `flashing/rebooting`, `probing`, `waiting`, `validating`, `online`, `degraded`, `failed`;
-  - лог каждой попытки status endpoint;
-  - после ответа status запускается health summary: Majestic API + RTSP main/sub;
-  - после возврата обновляются status/network/time/update-info/metrics.
-- Safe rollback v2 для Majestic:
-  - перед критичным apply сохраняется rollback snapshot;
-  - после apply/reload запускается health-watch Majestic API + RTSP main;
-  - если поток/API не восстановились, banner явно предлагает rollback;
-  - auto-rollback возможен только если пользователь включил его и API камеры ещё доступен.
-- Firmware backup/restore:
-  - добавлена отдельная карточка `OpenIPC backup / restore` во вкладке Tools;
-  - Majestic JSON backup визуально отделён от полного OpenIPC firmware/overlay backup;
-  - restore полного backup не угадывается через непроверенный endpoint: Dashboard открывает штатный WebUI restore только после жёсткого подтверждения.
-- Live logs v2:
-  - экспорт текущих/фильтрованных логов в `.log/.txt`;
-  - severity highlighting для error/warn/majestic/kernel;
-  - фильтры источника `all/majestic/kernel`;
-  - настройка OpenIPC syslog ring-buffer через firmware-client.
+Осталось в дальнейших P2.x:
 
-### P2 — качество QML и дальнейшая полировка
+- Чистить legacy-предупреждения по крупным файлам малыми безопасными порциями:
+  - `GridCell.qml`;
+  - `ArchiveView.qml`;
+  - `MajesticControlDialog.qml`;
+  - `analytics/ImageViewerWindow.qml`;
+  - `SettingsDialog.qml`;
+  - `FileManagerDialog.qml`.
+- Новые QML-компоненты не должны добавлять предупреждения сверх baseline.
 
-- Правило для нового функционала: если фича требует отдельного состояния, нескольких визуальных блоков или приближается к ~200-300 строкам, сразу заводить отдельный QML-компонент и, при необходимости, отдельный C++/QML controller/model, а не раздувать главный файл.
-- После крупных функциональных изменений не возвращать UI-блоки в `MajesticControlDialog.qml`, а расширять существующие page/panel-компоненты или создавать новые.
-- Постепенно снижать старый шум `qmllint` в корневом controller-диалоге:
-  - deferred `contentItem` warning;
-  - старые unqualified access warnings внутри timers/connections;
-  - типовые предупреждения старых helper-функций.
-- Добавить QML smoke-проверки для основных диалогов, если получится стабильно запускать headless/CI.
+### P2.2 — QML smoke-проверки
 
-### P3 — Health Center v2
+Статус: 🔜 следующий шаг P2.
+
+Что нужно сделать:
+
+- Подготовить минимальный smoke-run основных QML окон:
+  - Dashboard;
+  - Settings;
+  - Camera Search;
+  - Majestic/OpenIPC Control Center;
+  - Health Center.
+- Проверить, можно ли стабильно запускать smoke-тесты в CI/headless окружении.
+- Если headless нестабилен, оставить локальный smoke script и CI-friendly targeted `qmllint`.
+
+Готовность к закрытию:
+
+- Есть повторяемая команда smoke-проверки.
+- Команда задокументирована.
+- Smoke-проверка не требует реальной камеры для базового запуска UI.
+
+### P2.3 — дальнейшая декомпозиция крупных QML/controller файлов
+
+Статус: 🔜 после P2.1/P2.2.
+
+Правило:
+
+- Новый функционал не добавляем в уже раздутые QML-файлы, если он требует отдельного состояния, нескольких UI-блоков или приближается к 200-300 строкам.
+- Сразу создаём отдельный QML-компонент и, если нужно, отдельный C++/QML controller/model.
+
+Кандидаты на дальнейшую декомпозицию:
+
+- `SettingsDialog.qml`;
+- `AppUpdateDialog.qml`;
+- оставшиеся controller-блоки в `MajesticControlDialog.qml`;
+- крупные старые панели Dashboard/Analytics, если начнём их активно расширять.
+
+### P2.4 — UI polish после sidebar wave
+
+Статус: 🔜 после технической чистки.
+
+Что проверить:
+
+- collapsed/expanded sidebar на разных размерах окна;
+- выравнивание иконок и подписей;
+- длинные RU/EN строки;
+- keyboard focus;
+- tooltips;
+- визуальное состояние disabled/loading/error;
+- мелкие DPI/масштабирование Windows/Linux.
+
+## 🔜 P3 — Health Center v2
+
+Цель: превратить Health Center из диагностического окна в полноценный инструмент обслуживания камер.
+
+Планируемые функции:
 
 - Персистентная история проверок между запусками.
-- Отдельные health-профили:
+- Health-профили:
   - быстрый;
   - глубокий;
   - OpenIPC/Majestic;
@@ -242,127 +337,125 @@
   - firmware status;
   - `/metrics`;
   - `/ws/logs` readiness;
-  - disk/overlay/memory/temp.
-- Health report в более структурированном формате: JSON + human-readable TXT.
+  - RTSP main/sub;
+  - snapshot/JPEG endpoint.
+- Рекомендации по исправлению:
+  - неверные credentials;
+  - недоступен RTSP;
+  - Majestic API отвечает, но stream не идёт;
+  - камера online, но не в раскладке;
+  - firmware WebUI доступен, но Majestic недоступен.
+- Экспорт расширенного отчёта:
+  - status;
+  - probes;
+  - последние логи;
+  - версии firmware/Majestic;
+  - сетевые данные.
 
-### P4 — Поиск камер v2
+Готовность к закрытию:
 
-- Подробный live-log этапов discovery в UI.
-- Повторная проверка найденных устройств перед добавлением.
-- Умная дедупликация одного устройства по IP/MAC/hostname/ONVIF UUID.
-- Настраиваемые диапазоны сканирования.
-- Более понятная confidence-модель: почему камера считается OpenIPC/ONVIF/RTSP.
+- Health Center сохраняет историю.
+- Есть минимум 3 профиля проверки.
+- Отчёт помогает пользователю понять, что именно сломалось.
 
-### P5 — Live preview v2
+## 🔜 P4 — Camera onboarding / Discovery v2
 
-- Tooltip/пояснение для `Active / Pause / Limit`.
-- Preview budget modes:
-  - auto;
-  - economy;
-  - maximum.
-- Улучшить приоритеты preview:
-  - выбранная камера;
-  - fullscreen;
-  - тревожная;
-  - недавно добавленная;
-  - offline/ошибка.
-- Показывать причину паузы preview прямо в ячейке.
+Цель: сделать добавление камер ещё проще и надёжнее.
 
-### P6 — UX и полировка
+Планируемые функции:
 
-- Причесать все крупные диалоги под единый визуальный язык Control Center.
-- Добавить больше понятных empty states.
-- Привести кнопки опасных операций к единому паттерну:
-  - warning copy;
-  - confirm dialog;
-  - progress;
-  - recovery hint.
-- Улучшить onboarding: нашёл → проверил → добавил → показал → предложил health check.
+- Улучшенное обнаружение дублей.
+- Массовое добавление найденных камер.
+- Проверка credentials перед добавлением.
+- Выбор stream profile при добавлении:
+  - OpenIPC/Majestic;
+  - ONVIF;
+  - RTSP manual.
+- Более понятные причины “почему камера найдена, но не добавлена”.
+- Сохранение последнего результата поиска.
+- Улучшение работы с несколькими сетевыми интерфейсами.
 
-### P7 — Тесты
+## 🔜 P5 — Majestic/OpenIPC advanced v3
 
-- Unit-тесты для:
-  - firmware update payload;
-  - WebSocket availability fallback;
-  - Majestic rollback patch;
-  - backup restore diff;
-  - endpoint list generation, если вынесем в C++/модель.
-- Интеграционный smoke для firmware-client HTTP parsing.
-- Регрессионные тесты discovery/parser/status policy.
+Цель: приблизить управление к уровню WebUI камеры, но сохранить безопасность desktop-приложения.
 
-### P8 / Future — Web Server + Web Client
+Планируемые функции:
 
-Идея: добавить режим, в котором desktop-приложение на ПК работает как основной сервер, а другие устройства в локальной сети или через статический IP/домен открывают web-страницу с максимально полным повторением функционала Dashboard.
+- Дальнейшее расширение capabilities/endpoints view.
+- Более глубокая проверка firmware image metadata, если формат архива позволяет.
+- Поддержка checksum sidecar/download, если OpenIPC источники отдают такие данные.
+- Улучшенная visual diff-модель для Majestic restore.
+- Более явное разделение live-параметров и reload-required параметров.
+- Возможный wizard для безопасного изменения критичных video/network настроек.
 
-Базовая архитектура:
+## 🧊 P6 — Web version / Server mode
 
-```text
-Камеры OpenIPC / ONVIF / RTSP
-        ↓
-ПК-сервер с OpenIPC Dashboard
-        ↓
-Встроенный HTTP/WebSocket API server
-        ↓
-Web UI в браузере телефона / планшета / другого ПК
-```
+Статус: backlog, архитектурно возможно, но это отдельный крупный этап.
 
-Ключевые принципы:
+Идея:
 
-- Desktop-приложение остаётся главным backend-узлом:
-  - хранит камеры, группы, пользователей и настройки;
-  - выполняет discovery, health-check, Majestic/OpenIPC API, firmware operations;
-  - управляет правами доступа и аудитом действий;
-  - при необходимости проксирует или подготавливает видеопотоки для браузера.
-- Web UI — отдельный клиент, повторяющий дизайн и сценарии desktop UI.
-- QML-интерфейс нельзя просто “открыть в браузере” как есть; потребуется отдельный web frontend.
-- Backend-логику C++ желательно переиспользовать через внутренний API-слой.
+- На ПК запускается desktop/server edition OpenIPC Dashboard.
+- Другие устройства в LAN/Internet подключаются к web UI через браузер.
+- Web UI повторяет основные функции desktop-приложения.
 
-План реализации по этапам:
+Что потребуется:
 
-1. Встроенный HTTP/WebSocket сервер:
-   - авторизация;
-   - REST/WebSocket API для камер, статусов, групп, health, логов;
-   - настройка bind address/port;
-   - режим LAN-only по умолчанию.
-2. Web Dashboard v1:
-   - список камер;
-   - online/offline/attention статусы;
-   - grid layout;
-   - базовый live-view;
-   - быстрые действия по камере.
-3. Видео для браузера:
-   - использовать HLS/MJPEG/WebRTC, если камера/Majestic отдаёт подходящий поток;
-   - добавить server-side proxy только там, где это безопасно и оправдано;
-   - отдельно исследовать WebRTC gateway для низкой задержки.
-4. Web OpenIPC/Majestic Control Center:
-   - status/network/time/logs/backup/reboot/update;
-   - Majestic settings;
-   - endpoints/capabilities;
-   - безопасные подтверждения опасных операций.
-5. Пользователи, роли и безопасность:
-   - HTTPS/TLS;
-   - session/token auth;
-   - роли viewer/operator/admin;
-   - защита WebSocket/API;
-   - audit log для опасных действий.
-6. Удалённый доступ:
-   - reverse proxy/VPN как рекомендуемый безопасный сценарий;
-   - прямой доступ по статическому IP только после включения HTTPS и сильной авторизации;
-   - документация по безопасной публикации наружу.
+- Локальный HTTP/WebSocket server внутри приложения или отдельный companion server.
+- Auth/session модель.
+- Role-based permissions.
+- Streaming strategy:
+  - прямые ссылки на камеры;
+  - proxy;
+  - transcoding только если действительно потребуется.
+- API layer для Dashboard state.
+- Безопасная работа через статический IP/VPN/reverse proxy.
+- Отдельный security review.
 
-Основные сложности:
+Почему не P2/P3:
 
-- Браузер не воспроизводит RTSP напрямую, поэтому потребуется HLS/MJPEG/WebRTC или проксирование.
-- Полное повторение desktop-функционала — крупный milestone, а не маленькая доработка.
-- Доступ через интернет требует отдельной модели безопасности.
-- Нужно не дублировать бизнес-логику, а вынести её в общий backend/API-слой.
+- Это не “просто страница”.
+- Нужно проектировать безопасность, сеть, доступ к потокам и синхронизацию состояния.
+- Начинать стоит после стабилизации desktop-core и Health/Discovery v2.
 
-Ориентировочный масштаб: отдельное направление уровня `0.3.x`/`0.4.0`, после стабилизации текущего OpenIPC/Majestic/Firmware функционала.
+## 🧊 P7 — Analytics / Modules evolution
 
-## Ближайший рекомендуемый порядок
+Планируемые направления:
 
-1. Проверить GitHub Actions с `qtwebsockets`.
-2. Провести ручную проверку OpenIPC Control Center на реальной камере.
-3. Закоммитить текущий большой пакет изменений.
-4. Начать декомпозицию `MajesticControlDialog.qml`, потому что файл снова стал слишком крупным.
-5. После декомпозиции добить `qmllint` warnings уже по новым маленьким компонентам.
+- Улучшение UX модулей аналитики.
+- Более понятное управление моделями/артефактами.
+- Диагностика модулей.
+- Визуальная история событий.
+- Улучшенный экспорт событий и snapshot-данных.
+
+## ⛔ Решения, которые пока не делаем автоматически
+
+- Автоматический full restore OpenIPC backup через непроверенный endpoint.
+- Автоматический firmware rollback после неудачной прошивки: для firmware это опасная зона и зависит от bootloader/разметки/конкретной камеры.
+- Cloud relay / публичный удалённый доступ без отдельного security-дизайна.
+- Web version без auth, permissions и threat model.
+
+## Quality gates для следующих работ
+
+Перед коммитом:
+
+- `git diff --check`
+- Release build или релевантная локальная сборка
+- `ctest --test-dir build_release --output-on-failure`
+- targeted `qmllint` для изменённых/новых QML компонентов
+
+Перед релизом:
+
+- Windows build в GitHub Actions
+- Linux AppImage build в GitHub Actions
+- Проверка release assets
+- Проверка GitHub Release notes
+- Smoke-проверка приложения
+- Если затронут firmware upgrade — ручная проверка на реальной OpenIPC-камере только после backup и при стабильном питании
+
+## Ближайший практический порядок работ
+
+1. P2.2: подготовить минимальный QML smoke-run.
+2. P2.3: продолжить точечную чистку legacy QML по baseline.
+3. P2.3: вынести следующий крупный старый UI/controller блок, если он мешает чистке.
+4. P2.4: довести последние UI-polish мелочи после sidebar/layout wave.
+5. После закрытия P2 перейти к P3 Health Center v2.

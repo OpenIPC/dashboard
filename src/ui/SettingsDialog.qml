@@ -25,16 +25,18 @@ Window {
     }
 
     component StyledCheckBox: CheckBox {
+        id: checkBoxControl
+
         hoverEnabled: false
         background: Item {}
         indicator: Rectangle {
             implicitWidth: 18
             implicitHeight: 18
-            x: parent.leftPadding
-            y: parent.height / 2 - height / 2
+            x: checkBoxControl.leftPadding
+            y: checkBoxControl.height / 2 - height / 2
             radius: Theme.radiusXs
             color: Theme.topBarBackground
-            border.color: parent.checked ? Theme.accent : Theme.textFaint
+            border.color: checkBoxControl.checked ? Theme.accent : Theme.textFaint
             
             Rectangle {
                 width: 10
@@ -42,16 +44,16 @@ Window {
                 anchors.centerIn: parent
                 radius: 2
                 color: Theme.accent
-                visible: parent.parent.checked
+                visible: checkBoxControl.checked
             }
         }
         contentItem: Text {
-            text: parent.text
-            font: parent.font
-            opacity: parent.enabled ? 1.0 : 0.5
+            text: checkBoxControl.text
+            font: checkBoxControl.font
+            opacity: checkBoxControl.enabled ? 1.0 : 0.5
             color: Theme.textPrimary
             verticalAlignment: Text.AlignVCenter
-            leftPadding: parent.indicator.width + parent.spacing
+            leftPadding: checkBoxControl.indicator.width + checkBoxControl.spacing
         }
     }
 
@@ -85,10 +87,10 @@ Window {
         }
 
         up.indicator: Rectangle {
-            x: parent.width - width
-            height: parent.height
+            x: spinRoot.width - width
+            height: spinRoot.height
             width: 30
-            color: parent.up.pressed ? Theme.cardHover : "transparent"
+            color: spinRoot.up.pressed ? Theme.cardHover : "transparent"
             Text {
                 text: "+"
                 color: Theme.textMuted
@@ -99,9 +101,9 @@ Window {
 
         down.indicator: Rectangle {
             x: 0
-            height: parent.height
+            height: spinRoot.height
             width: 30
-            color: parent.down.pressed ? Theme.cardHover : "transparent"
+            color: spinRoot.down.pressed ? Theme.cardHover : "transparent"
             Text {
                 text: "-"
                 color: Theme.textMuted
@@ -589,16 +591,20 @@ Window {
             }
             
             Button {
+                id: minimizeSettingsButton
+
                 text: "—"
                 flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
                 contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+                background: Rectangle { color: minimizeSettingsButton.down ? "#444" : (minimizeSettingsButton.hovered ? "#3e3e40" : "transparent") }
             }
             
             Button {
+                id: maximizeSettingsButton
+
                 text: "□"
                 flat: true
                 Layout.preferredWidth: 40
@@ -608,17 +614,19 @@ Window {
                     else root.showMaximized()
                 }
                 contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+                background: Rectangle { color: maximizeSettingsButton.down ? "#444" : (maximizeSettingsButton.hovered ? "#3e3e40" : "transparent") }
             }
 
             Button {
+                id: closeSettingsButton
+
                 text: "✕"
                 flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.close()
                 contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
+                background: Rectangle { color: closeSettingsButton.down ? "#c42b1c" : (closeSettingsButton.hovered ? "#e81123" : "transparent") }
             }
         }
     }
@@ -647,6 +655,8 @@ Window {
                     model: tabLabels
 
                     Button {
+                        id: tabButton
+
                         text: modelData
                         Layout.preferredHeight: 35
                         Layout.preferredWidth: 100
@@ -659,7 +669,7 @@ Window {
                         }
                         
                         contentItem: Text {
-                            text: parent.text
+                            text: tabButton.text
                             color: bar.currentIndex === index ? Theme.textPrimary : Theme.textMuted
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -894,17 +904,17 @@ Window {
                                     }
                                     
                                     up.indicator: Rectangle {
-                                        x: parent.width - width
-                                        height: parent.height
+                                        x: segmentSpin.width - width
+                                        height: segmentSpin.height
                                         width: 30
-                                        color: parent.up.pressed ? "#3e3e40" : "transparent"
+                                        color: segmentSpin.up.pressed ? "#3e3e40" : "transparent"
                                         Text { text: "+"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
                                     }
                                     down.indicator: Rectangle {
                                         x: 0
-                                        height: parent.height
+                                        height: segmentSpin.height
                                         width: 30
-                                        color: parent.down.pressed ? "#3e3e40" : "transparent"
+                                        color: segmentSpin.down.pressed ? "#3e3e40" : "transparent"
                                         Text { text: "-"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
                                     }
                                 }
@@ -919,7 +929,7 @@ Window {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 
@@ -953,7 +963,7 @@ Window {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 
@@ -968,21 +978,23 @@ Window {
                             RowLayout {
                                 spacing: 10
                                 Button {
+                                    id: exportConfigButton
                                     text: I18n.t("Экспорт конфигурации")
                                     Layout.preferredHeight: 32
                                     Layout.preferredWidth: 190
                                     enabled: SystemController.userManager.canExport()
                                     background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    contentItem: Text { text: exportConfigButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     onClicked: exportConfigDialog.open()
                                 }
                                 Button {
+                                    id: importConfigButton
                                     text: I18n.t("Импорт конфигурации")
                                     Layout.preferredHeight: 32
                                     Layout.preferredWidth: 190
                                     enabled: SystemController.userManager.canExport()
                                     background: Rectangle { color: "#e53e3e"; radius: 6 }
-                                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    contentItem: Text { text: importConfigButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     onClicked: importConfigDialog.open()
                                 }
                             }
@@ -990,7 +1002,7 @@ Window {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 
@@ -1100,6 +1112,7 @@ Window {
                                     Layout.fillWidth: true
 
                                     Button {
+                                        id: checkUpdatesButton
                                         text: SystemController.appUpdateChecker.checking
                                               ? I18n.t("Проверка...")
                                               : I18n.t("Проверить обновления")
@@ -1109,11 +1122,12 @@ Window {
                                         Layout.preferredHeight: 34
                                         Layout.preferredWidth: 190
                                         background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        contentItem: Text { text: checkUpdatesButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         onClicked: startUpdateCheck()
                                     }
 
                                     Button {
+                                        id: openReleaseButton
                                         visible: SystemController.appUpdateChecker.hasUpdate
                                         text: I18n.t("Открыть релиз")
                                         Layout.preferredHeight: 34
@@ -1121,11 +1135,12 @@ Window {
                                         enabled: !SystemController.appUpdateChecker.downloading
                                                  && !SystemController.appUpdateChecker.installing
                                         background: Rectangle { color: Theme.success; radius: 6 }
-                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        contentItem: Text { text: openReleaseButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         onClicked: SystemController.appUpdateChecker.openReleasePage()
                                     }
 
                                     Button {
+                                        id: downloadUpdateButton
                                         visible: SystemController.appUpdateChecker.hasUpdate
                                         text: SystemController.appUpdateChecker.installing
                                               ? I18n.t("Запуск установки...")
@@ -1141,7 +1156,7 @@ Window {
                                                      || SystemController.appUpdateChecker.downloadedFilePath !== ""
                                                      || SystemController.appUpdateChecker.downloading)
                                         background: Rectangle { color: SystemController.appUpdateChecker.downloading ? "#475569" : Theme.accent; radius: 6 }
-                                        contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        contentItem: Text { text: downloadUpdateButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         onClicked: {
                                             if (SystemController.appUpdateChecker.downloading) {
                                                 root.updateInstallAfterDownload = false
@@ -1450,7 +1465,7 @@ Window {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 /*
@@ -1500,7 +1515,7 @@ Window {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 
@@ -1530,6 +1545,7 @@ Window {
                                 spacing: 10
                                 Layout.fillWidth: true
                                 StyledComboBox {
+                                    id: imageTransformCombo
                                     model: ["0°", "90°", "180°", "270°"]
                                     currentIndex: {
                                         if (playerOrientation === 90) return 1
@@ -1547,7 +1563,7 @@ Window {
                                     Layout.preferredHeight: 32
                                     background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
                                     contentItem: Text {
-                                        text: parent.displayText
+                                        text: imageTransformCombo.displayText
                                         color: "white"
                                         verticalAlignment: Text.AlignVCenter
                                         leftPadding: 8
@@ -1637,8 +1653,9 @@ Window {
                             }
 
                             // Reset Button
-                            Item { Layout.fillWidth: true; Layout.columnSpan: 2; height: 10 }
+                            Item { Layout.fillWidth: true; Layout.columnSpan: 2; Layout.preferredHeight: 10 }
                             Button {
+                                id: resetImageSettingsButton
                                 text: I18n.t("Сбросить настройки изображения")
                                 Layout.columnSpan: 2
                                 Layout.alignment: Qt.AlignHCenter
@@ -1653,13 +1670,13 @@ Window {
                                     applyCurrentSettings()
                                 }
                                 background: Rectangle { color: "#4a5568"; radius: 4 }
-                                contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                contentItem: Text { text: resetImageSettingsButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             }
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 1
+                            Layout.preferredHeight: 1
                             color: "#3b4657"
                         }
 
@@ -1726,6 +1743,7 @@ Window {
                                         model: ["eco", "balanced", "max"]
 
                                         Button {
+                                            id: analyticsPresetButton
                                             Layout.preferredWidth: 132
                                             Layout.preferredHeight: 34
                                             text: root.analyticsPresetLabel(modelData)
@@ -1735,13 +1753,13 @@ Window {
                                             background: Rectangle {
                                                 color: analyticsPerformancePreset === modelData
                                                        ? Theme.accent
-                                                       : (parent.hovered ? Theme.cardHover : Theme.controlBackground)
+                                                       : (analyticsPresetButton.hovered ? Theme.cardHover : Theme.controlBackground)
                                                 radius: Theme.radiusSm
                                                 border.color: analyticsPerformancePreset === modelData ? Theme.accentHover : Theme.controlBorder
                                             }
 
                                             contentItem: Text {
-                                                text: parent.text
+                                                text: analyticsPresetButton.text
                                                 color: Theme.textPrimary
                                                 font.pixelSize: 12
                                                 font.bold: analyticsPerformancePreset === modelData
@@ -1831,7 +1849,7 @@ Window {
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 1
+                                Layout.preferredHeight: 1
                                 color: "#3b4657"
                             }
 
@@ -1962,33 +1980,34 @@ Window {
                                 spacing: 12
                                 Text { text: I18n.t("Минимальная уверенность"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
                                 Slider {
+                                    id: evidenceMinConfidenceSlider
                                     Layout.fillWidth: true
                                     from: 0.1; to: 0.95
                                     value: evidenceMinConfidence
                                     onMoved: evidenceMinConfidence = value
                                     onPressedChanged: if (!pressed) applyCurrentSettings()
                                     background: Rectangle {
-                                        x: parent.leftPadding
-                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
-                                        width: parent.availableWidth
+                                        x: evidenceMinConfidenceSlider.leftPadding
+                                        y: evidenceMinConfidenceSlider.topPadding + evidenceMinConfidenceSlider.availableHeight / 2 - height / 2
+                                        width: evidenceMinConfidenceSlider.availableWidth
                                         height: 4
                                         radius: 2
                                         color: "#334155"
 
                                         Rectangle {
-                                            width: parent.width * ((parent.parent.value - parent.parent.from) / (parent.parent.to - parent.parent.from))
+                                            width: parent.width * ((evidenceMinConfidenceSlider.value - evidenceMinConfidenceSlider.from) / (evidenceMinConfidenceSlider.to - evidenceMinConfidenceSlider.from))
                                             height: parent.height
                                             radius: 2
                                             color: "#3b82f6"
                                         }
                                     }
                                     handle: Rectangle {
-                                        x: parent.leftPadding + (parent.availableWidth - width) * ((parent.value - parent.from) / (parent.to - parent.from))
-                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                                        x: evidenceMinConfidenceSlider.leftPadding + (evidenceMinConfidenceSlider.availableWidth - width) * ((evidenceMinConfidenceSlider.value - evidenceMinConfidenceSlider.from) / (evidenceMinConfidenceSlider.to - evidenceMinConfidenceSlider.from))
+                                        y: evidenceMinConfidenceSlider.topPadding + evidenceMinConfidenceSlider.availableHeight / 2 - height / 2
                                         width: 14
                                         height: 14
                                         radius: 7
-                                        color: parent.pressed ? "#60a5fa" : "#3b82f6"
+                                        color: evidenceMinConfidenceSlider.pressed ? "#60a5fa" : "#3b82f6"
                                         border.width: 1
                                         border.color: "#93c5fd"
                                     }
@@ -2148,6 +2167,7 @@ Window {
         }
 
         Button {
+            id: saveSettingsButton
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             anchors.rightMargin: 20
@@ -2160,7 +2180,7 @@ Window {
                 radius: Theme.radiusSm
             }
             contentItem: Text {
-                text: parent.text
+                text: saveSettingsButton.text
                 color: "white"
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

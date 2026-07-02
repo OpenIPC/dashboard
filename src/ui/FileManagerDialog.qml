@@ -53,16 +53,20 @@ Window {
             }
             
             Button {
+                id: minimizeFileManagerButton
+
                 text: "—"
                 flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
                 contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+                background: Rectangle { color: minimizeFileManagerButton.down ? "#444" : (minimizeFileManagerButton.hovered ? "#3e3e40" : "transparent") }
             }
             
             Button {
+                id: maximizeFileManagerButton
+
                 text: "□"
                 flat: true
                 Layout.preferredWidth: 40
@@ -72,17 +76,19 @@ Window {
                     else root.showMaximized()
                 }
                 contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
+                background: Rectangle { color: maximizeFileManagerButton.down ? "#444" : (maximizeFileManagerButton.hovered ? "#3e3e40" : "transparent") }
             }
 
             Button {
+                id: closeFileManagerButton
+
                 text: "✕"
                 flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.close()
                 contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
+                background: Rectangle { color: closeFileManagerButton.down ? "#c42b1c" : (closeFileManagerButton.hovered ? "#e81123" : "transparent") }
             }
         }
     }
@@ -171,14 +177,15 @@ Window {
                     // Header
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 30
+                        Layout.preferredHeight: 30
                         color: "#333"
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 4
                             Button {
+                                id: localNavigateUpButton
                                 text: ".."
-                                background: Rectangle { color: parent.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: localNavigateUpButton.down ? "#555" : "#444"; radius: 2 }
                                 contentItem: Text { text: ".."; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -237,7 +244,7 @@ Window {
                     // Header
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 24
+                        Layout.preferredHeight: 24
                         color: "#333"
                         z: 2
                         RowLayout {
@@ -394,14 +401,15 @@ Window {
                     // Header
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 30
+                        Layout.preferredHeight: 30
                         color: "#333" // Header color
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 4
                             Button {
+                                id: remoteNavigateUpButton
                                 text: ".."
-                                background: Rectangle { color: parent.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: remoteNavigateUpButton.down ? "#555" : "#444"; radius: 2 }
                                 contentItem: Text { text: ".."; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -414,8 +422,9 @@ Window {
                                 Layout.fillWidth: true
                             }
                             Button {
+                                id: remoteRefreshButton
                                 text: "⟳"
-                                background: Rectangle { color: parent.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: remoteRefreshButton.down ? "#555" : "#444"; radius: 2 }
                                 contentItem: Text { text: "⟳"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -427,7 +436,7 @@ Window {
                     // Header
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 24
+                        Layout.preferredHeight: 24
                         color: "#333"
                         z: 2
                         RowLayout {
@@ -810,15 +819,16 @@ Window {
                     { text: I18n.t("Выход"), action: () => root.close() }
                 ]
                 Button {
+                    id: functionBarButton
                     text: modelData.text
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     background: Rectangle {
-                        color: parent.down ? "#007acc" : "#444"
+                        color: functionBarButton.down ? "#007acc" : "#444"
                         border.color: "#222"
                     }
                     contentItem: Text {
-                        text: parent.text
+                        text: functionBarButton.text
                         color: "white"
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter

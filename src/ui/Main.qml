@@ -26,7 +26,7 @@ ApplicationWindow {
                 && SystemController.userManager.rememberedPassword !== "") {
             SystemController.userManager.loginWithRememberedCredentials()
         }
-        dashboardLoaded = SystemController.userManager.isLoggedIn
+        window.dashboardLoaded = SystemController.userManager.isLoggedIn
         Qt.callLater(function() {
             window.showMaximized()
         })
@@ -44,14 +44,14 @@ ApplicationWindow {
         id: authSwitchTimer
         interval: 0
         repeat: false
-        onTriggered: dashboardLoaded = SystemController.userManager.isLoggedIn
+        onTriggered: window.dashboardLoaded = SystemController.userManager.isLoggedIn
     }
 
     Loader {
         id: pageLoader
         anchors.fill: parent
         clip: true
-        sourceComponent: dashboardLoaded ? dashboardComponent : loginComponent
+        sourceComponent: window.dashboardLoaded ? dashboardComponent : loginComponent
     }
 
     Binding {

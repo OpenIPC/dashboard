@@ -3,10 +3,13 @@
 
 #include <QObject>
 #include <QVariantMap>
+#include <QtQml/qqmlregistration.h>
 
 class CamexController : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("Use SystemController.camexController")
 
 public:
     explicit CamexController(QObject *parent = nullptr);

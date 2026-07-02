@@ -256,14 +256,8 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("AppBuildYear", QString("2026"));
 #endif
 
-    // Register GStreamer Player
-    qmlRegisterType<GstPlayer>("OpenIPC", 1, 0, "VideoPlayer");
-    qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
-    qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
-    qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
-    qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");
-    qmlRegisterUncreatableType<CamexController>("OpenIPC", 1, 0, "CamexController", "Use SystemController.camexController");
-
+    // Most QML-facing C++ types are registered through qt_add_qml_module
+    // QML_* macros so qmltyperegistrar can expose them to qmllint too.
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 
     const QUrl url(u"qrc:/OpenIPC/src/ui/Main.qml"_qs);

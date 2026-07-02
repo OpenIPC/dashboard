@@ -2,6 +2,7 @@
 
 #include <QAbstractListModel>
 #include <QDateTime>
+#include <QtQml/qqmlregistration.h>
 #include <vector>
 
 struct AnalyticsSnapshot {
@@ -17,6 +18,7 @@ struct AnalyticsSnapshot {
 class AnalyticsModel : public QAbstractListModel
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(QString filterType READ filterType WRITE setFilterType NOTIFY filterTypeChanged)
 
 public:

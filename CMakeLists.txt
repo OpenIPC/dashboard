@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.5 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.5.1 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -403,6 +403,9 @@ add_executable(appOpenIPC-Dashboard
 )
 target_include_directories(appOpenIPC-Dashboard PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
     ${GST_INCLUDE_DIRS}
     ${qtkeychain_SOURCE_DIR}
     ${qtkeychain_BINARY_DIR}

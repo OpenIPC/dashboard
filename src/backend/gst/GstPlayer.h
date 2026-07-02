@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QMutex>
 #include <QTimer>
+#include <QtQml/qqmlregistration.h>
 #include <atomic>
 
 #include <gst/gst.h>
@@ -11,6 +12,7 @@
 class GstPlayer : public QQuickItem
 {
     Q_OBJECT
+    QML_NAMED_ELEMENT(VideoPlayer)
     Q_PROPERTY(QString url READ url WRITE setUrl NOTIFY urlChanged)
     Q_PROPERTY(bool running READ isRunning WRITE setRunning NOTIFY runningChanged)
     Q_PROPERTY(float scaleX READ scaleX NOTIFY scaleXChanged) // For weird aspect ratios if needed

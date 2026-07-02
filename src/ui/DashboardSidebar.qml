@@ -50,6 +50,22 @@ Rectangle {
         return dashboard && dashboard.actionAllowed ? dashboard.actionAllowed(action) : false
     }
 
+    function actionIconName(action) {
+        switch (action) {
+        case "search": return "search"
+        case "add_camera": return "add"
+        case "add_folder": return "create_new_folder"
+        case "health": return "security"
+        case "analytics": return "assessment"
+        case "settings": return "settings"
+        case "logs": return "description"
+        case "user": return "people"
+        case "camex": return "cloud_queue"
+        case "logout": return "exit_to_app"
+        default: return "apps"
+        }
+    }
+
     function cameraCount() {
         return dashboard && dashboard.cameraCount ? dashboard.cameraCount() : 0
     }
@@ -204,6 +220,7 @@ Rectangle {
                             required property var modelData
 
                             iconPath: actionTile.modelData.iconPath
+                            iconName: sidebar.actionIconName(actionTile.modelData.action)
                             label: actionTile.modelData.label
                             tooltip: actionTile.modelData.tooltip
                             primary: actionTile.modelData.primary === true

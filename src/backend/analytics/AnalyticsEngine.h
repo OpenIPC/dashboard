@@ -16,11 +16,13 @@
 #include <QMap>
 #include <QVariantMap>
 #include <QVariantList>
+#include <QtQml/qqmlregistration.h>
 #include "InferenceBackend.h"
 #include "YoloDetector.h"
 
 class AnalyticsEngine : public QObject {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(QVariantList analyticsEvents READ analyticsEvents NOTIFY analyticsEventsChanged)
     Q_PROPERTY(QVariantMap analyticsDiagnostics READ analyticsDiagnostics NOTIFY analyticsTelemetryChanged)
 public:

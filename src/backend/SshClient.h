@@ -6,6 +6,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QStringList>
+#include <QtQml/qqmlregistration.h>
 
 struct ssh_session_struct;
 typedef struct ssh_session_struct* ssh_session;
@@ -54,6 +55,7 @@ private:
 class SshClient : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(bool connected READ isConnected NOTIFY connectedChanged)
 
 public:
