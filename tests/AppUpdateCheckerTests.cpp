@@ -8,6 +8,7 @@ class AppUpdateCheckerTests : public QObject
 
 private slots:
     void comparesSemanticVersions();
+    void filtersIncompatibleLegacyReleaseLines();
 };
 
 void AppUpdateCheckerTests::comparesSemanticVersions()
@@ -28,6 +29,23 @@ void AppUpdateCheckerTests::comparesSemanticVersions()
                                              QStringLiteral("0.2.9")));
     QCOMPARE(AppUpdateChecker::compareVersions(QStringLiteral("v0.2.5+build.7"),
                                                QStringLiteral("0.2.5")), 0);
+}
+
+void AppUpdateCheckerTests::filtersIncompatibleLegacyReleaseLines()
+{
+    QVERIFY(AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("0.2.5.2"),
+                                                        QStringLiteral("0.2.5")));
+    QVERIFY(AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("0.3.0"),
+                                                        QStringLiteral("0.2.5")));
+    QVERIFY(!AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("1.0.0"),
+                                                         QStringLiteral("0.2.5")));
+    QVERIFY(!AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("2.9.0"),
+                                                         QStringLiteral("0.2.5")));
+
+    QVERIFY(AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("2.0.0"),
+                                                        QStringLiteral("1.9.0")));
+    QVERIFY(!AppUpdateChecker::isCompatibleUpdateVersion(QStringLiteral("4.0.0"),
+                                                         QStringLiteral("1.9.0")));
 }
 
 QTEST_MAIN(AppUpdateCheckerTests)

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 
 Item {
     id: root
@@ -6,15 +7,16 @@ Item {
     width: 25
     height: 25
 
-    // `path` is kept for backward compatibility with older call sites.
-    // New sidebar tiles should pass Material Icons ligature names through
-    // `name`, e.g. "search", "add", "folder", "settings".
+    // Prefer SVG path icons for release builds: they do not depend on a
+    // platform font cache and therefore survive clean Windows machines better.
+    // `name` remains supported for older call sites that still use ligatures.
     property string path: ""
     property string name: ""
     property string fallbackText: "•"
     property color color: "white"
     property int pixelSize: Math.max(12, Math.round(Math.min(root.width, root.height) * 0.82))
 
+    readonly property bool hasSvgPath: root.path.length > 0 && root.path.charAt(0) === "M"
     readonly property string effectiveName: root.name.length > 0
                                           ? root.name
                                           : (root.path.length > 0 && root.path.charAt(0) !== "M"
@@ -28,7 +30,30 @@ Item {
         source: "qrc:/OpenIPC/src/ui/fonts/MaterialIcons-Regular.ttf"
     }
 
+    Shape {
+        id: vectorIcon
+
+        visible: root.hasSvgPath
+        width: 24
+        height: 24
+        anchors.centerIn: parent
+        scale: Math.min(root.width, root.height) / 24
+        transformOrigin: Item.Center
+        antialiasing: true
+
+        ShapePath {
+            fillColor: root.color
+            strokeColor: "transparent"
+            strokeWidth: 0
+
+            PathSvg {
+                path: root.path
+            }
+        }
+    }
+
     Text {
+        visible: !root.hasSvgPath
         anchors.centerIn: parent
         width: parent.width
         height: parent.height

@@ -32,6 +32,10 @@ jobs:
           arch: 'win64_mingw'
           modules: 'qtmultimedia qtwebsockets'
 
+      - name: Install OpenSSL 1.1 runtime for Qt TLS
+        shell: pwsh
+        run: choco install openssl --version=1.1.1.2100 --allow-downgrade --no-progress -y
+
       - name: Download GStreamer (MinGW) from GitHub Release
         env:
            GH_TOKEN: ${{ github.token }}
@@ -351,6 +355,61 @@ jobs:
           Imports=qml
           Qml2Imports=qml
           "@ | Set-Content dist/qt.conf
+
+          # Qt 6.4 MinGW TLS backend uses OpenSSL 1.1 at runtime.
+          # GStreamer bundles OpenSSL 3 for its own stack, but Qt HTTPS/WebSocket
+          # updater needs libssl-1_1-x64.dll + libcrypto-1_1-x64.dll next to the exe.
+          $opensslDllPairs = @(
+            @("libssl-1_1-x64.dll", "libcrypto-1_1-x64.dll"),
+            @("libssl-3-x64.dll", "libcrypto-3-x64.dll")
+          )
+          $opensslSearchDirs = @(
+            $qtBin,
+            (Join-Path $qtRoot "bin"),
+            (Join-Path $env:OPENSSL_ROOT_DIR "bin"),
+            (Join-Path $gstRoot "bin"),
+            "C:\Program Files\OpenSSL-Win64\bin",
+            "C:\Program Files\OpenSSL-Win64\bin\VC\x64\MD",
+            "C:\Windows\System32",
+            "C:\Program Files\Git\mingw64\bin",
+            "C:\msys64\mingw64\bin"
+          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          function Copy-OpenSslPair([string[]] $pair) {
+            foreach ($dir in $opensslSearchDirs) {
+              $sslPath = Join-Path $dir $pair[0]
+              $cryptoPath = Join-Path $dir $pair[1]
+              if ((Test-Path $sslPath) -and (Test-Path $cryptoPath)) {
+                Copy-Item $sslPath -Destination dist/ -Force
+                Copy-Item $cryptoPath -Destination dist/ -Force
+                Write-Host "Copied OpenSSL runtime pair from $dir: $($pair -join ', ')"
+                return $true
+              }
+            }
+            return $false
+          }
+
+          $openssl11Copied = Copy-OpenSslPair $opensslDllPairs[0]
+          if (-not $openssl11Copied) {
+            Write-Error "OpenSSL 1.1 runtime DLL pair was not found. Qt TLS/updater would fail on clean machines."
+            Write-Host "Searched directories:"
+            $opensslSearchDirs | ForEach-Object { Write-Host " - $_" }
+            exit 1
+          }
+          [void](Copy-OpenSslPair $opensslDllPairs[1])
+
+          $distPath = (Resolve-Path dist).Path
+          $env:PATH = $distPath + ";" + $env:PATH
+          $tlsTest = Start-Process -FilePath (Join-Path $distPath "appOpenIPC-Dashboard.exe") `
+            -ArgumentList "--self-test-tls" `
+            -WorkingDirectory $distPath `
+            -Wait `
+            -PassThru `
+            -WindowStyle Hidden
+          if ($tlsTest.ExitCode -ne 0) {
+            Write-Error "TLS self-test failed in deployed dist. OpenSSL runtime is not loadable by Qt."
+            exit $tlsTest.ExitCode
+          }
 
           # Remove debug symbols to reduce size
           Get-ChildItem dist -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue

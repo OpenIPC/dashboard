@@ -67,6 +67,7 @@ public:
 
     static int compareVersions(const QString &left, const QString &right);
     static bool isVersionNewer(const QString &candidate, const QString &current);
+    static bool isCompatibleUpdateVersion(const QString &candidate, const QString &current);
 
 signals:
     void checkingChanged();

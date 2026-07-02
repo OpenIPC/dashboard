@@ -1,47 +1,57 @@
-# OpenIPC Dashboard v0.2.5.1
+# OpenIPC Dashboard v0.2.5.2
 
-Hotfix release for the Dashboard sidebar icon rendering issue reported by users after `v0.2.5`.
+Emergency hotfix after the removed `v0.2.5.1` release. This release focuses on startup stability, updater/TLS reliability, sidebar icon rendering on clean Windows machines, and camera onboarding templates requested by users.
 
 ## Русский
 
 ### Исправлено
 
-- Исправлено исчезновение иконок на плитках Metro sidebar у части пользователей.
-- Sidebar-иконки больше не зависят от `QtQuick.Shapes` / `qmlshapesplugin`.
-- Добавлен устойчивый fallback через встроенный `MaterialIcons-Regular.ttf`, упакованный в `qrc`.
-- Старые SVG-path параметры оставлены для совместимости, но плитки сайдбара теперь используют стабильные Material Icons ligature names.
-- Добавлен unit-тест, подтверждающий, что `0.2.5.1` корректно определяется как обновление после `0.2.5`.
+- Исправлен критический сбой запуска приложения: QML больше не падает на `VideoPlayer is not a type`.
+- Восстановлена явная runtime-регистрация C++ типов, используемых из QML: `VideoPlayer`, `AnalyticsModel`, `AnalyticsEngine`, `SshClient`, `RemoteFsModel`, `CamexController`, `SystemController`.
+- Исправлена упаковка Windows-релиза для updater/TLS: workflow теперь добавляет совместимые OpenSSL 1.1 DLL и запускает TLS self-test перед публикацией.
+- Updater теперь показывает понятную ошибку, если TLS/OpenSSL на машине пользователя недоступен.
+- Updater больше не предлагает старые несовместимые релизы другой архитектурной ветки, например `2.9.0`, как обновление для текущей `0.x` ветки.
+- Исправлено отображение иконок в Metro sidebar tiles на чистых Windows-системах: SVG-path иконки теперь рендерятся напрямую, без зависимости от системного шрифта.
+- Убран некритичный binding-loop warning в окне release notes updater-а.
 
-### Внутренние изменения
+### Добавлено
 
-- Зафиксирован текущий legacy `qmllint` baseline для дальнейшей аккуратной чистки QML.
-- Выполнена безопасная чистка части `qmllint` предупреждений в QML-компонентах.
-- C++ типы, используемые из QML, переведены на Qt QML type registration macros.
+- Добавлены RTSP-шаблоны камер XM/Xiongmai и XM/Sofia.
+- Добавлены RTSP-шаблоны Reolink, TP-Link и Uniview.
+- Добавлен C++ helper для Sofia password hash, чтобы формировать корректные XM/Sofia RTSP URL прямо из мастера добавления камеры.
+- Добавлен unit-тест, который защищает updater от выбора несовместимой legacy release line.
 
 ### Проверено
 
 - `cmake --build build_release --config Release --parallel`
-- `ctest --test-dir build_release --output-on-failure`
+- `ctest --test-dir build_release --output-on-failure` — 14/14 passed
 - `git diff --check`
+- `appOpenIPC-Dashboard.exe --self-test-tls` — `EXIT=0`
+- Smoke-запуск из `build_release`: приложение остаётся запущенным, QML root создаётся успешно.
 
 ## English
 
 ### Fixed
 
-- Fixed missing icons in Metro sidebar tiles on some user installations.
-- Sidebar icons no longer depend on `QtQuick.Shapes` / `qmlshapesplugin`.
-- Added a robust fallback through the bundled `MaterialIcons-Regular.ttf` resource.
-- Legacy SVG path properties are kept for compatibility, while sidebar tiles now use stable Material Icons ligature names.
-- Added a unit test to ensure `0.2.5.1` is correctly detected as newer than `0.2.5`.
+- Fixed a critical startup crash: QML no longer fails with `VideoPlayer is not a type`.
+- Restored explicit runtime registration for QML-facing C++ types: `VideoPlayer`, `AnalyticsModel`, `AnalyticsEngine`, `SshClient`, `RemoteFsModel`, `CamexController`, `SystemController`.
+- Fixed Windows release packaging for updater/TLS: the workflow now bundles compatible OpenSSL 1.1 DLLs and runs a TLS self-test before publishing.
+- The updater now reports a clear error when TLS/OpenSSL is unavailable on the user machine.
+- The updater no longer offers old incompatible releases from another architecture line, such as `2.9.0`, as updates for the current `0.x` line.
+- Fixed Metro sidebar tile icons on clean Windows systems: SVG path icons are now rendered directly without relying on a system font.
+- Removed a non-critical binding-loop warning in the updater release notes dialog.
 
-### Internal
+### Added
 
-- Documented the current legacy `qmllint` baseline for gradual QML cleanup.
-- Safely reduced a subset of QML lint warnings.
-- Moved QML-facing C++ types to Qt QML type registration macros.
+- Added XM/Xiongmai and XM/Sofia RTSP templates.
+- Added Reolink, TP-Link and Uniview RTSP templates.
+- Added a C++ helper for Sofia password hashing so XM/Sofia RTSP URLs can be generated correctly in the add-camera wizard.
+- Added a unit test that protects the updater from selecting an incompatible legacy release line.
 
 ### Verified
 
 - `cmake --build build_release --config Release --parallel`
-- `ctest --test-dir build_release --output-on-failure`
+- `ctest --test-dir build_release --output-on-failure` — 14/14 passed
 - `git diff --check`
+- `appOpenIPC-Dashboard.exe --self-test-tls` — `EXIT=0`
+- Smoke launch from `build_release`: the application stays running and the QML root object is created successfully.

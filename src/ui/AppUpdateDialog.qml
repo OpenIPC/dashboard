@@ -286,11 +286,15 @@ Window {
                 border.width: 1
 
                 ScrollView {
+                    id: releaseNotesScroll
+
                     anchors.fill: parent
                     anchors.margins: 12
                     clip: true
 
                     TextArea {
+                        width: releaseNotesScroll.availableWidth
+                        implicitWidth: releaseNotesScroll.availableWidth
                         text: root.releaseNotes.length > 0
                               ? root.releaseNotes
                               : I18n.t("GitHub Release не содержит описания.")

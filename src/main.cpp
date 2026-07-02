@@ -14,6 +14,7 @@
 #include <QPointer>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QSslSocket>
 #include "backend/SystemController.h"
 #include "backend/gst/GstPlayer.h"
 #include "backend/AnalyticsModel.h"
@@ -165,6 +166,15 @@ int main(int argc, char *argv[])
     app.setApplicationVersion(QString::fromUtf8(APP_VERSION));
 #endif
 
+    if (app.arguments().contains(QStringLiteral("--self-test-tls"))) {
+        const bool tlsAvailable = QSslSocket::supportsSsl();
+        qInfo().noquote() << "TLS self-test:"
+                          << "supportsSsl=" << tlsAvailable
+                          << "build=" << QSslSocket::sslLibraryBuildVersionString()
+                          << "runtime=" << QSslSocket::sslLibraryVersionString();
+        return tlsAvailable ? 0 : 2;
+    }
+
     // Configure GStreamer paths for standalone deployment
     // This allows the app to find plugins in ./lib/gstreamer-1.0 relative to executable
     const QString appDirPath = QCoreApplication::applicationDirPath();
@@ -256,8 +266,17 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("AppBuildYear", QString("2026"));
 #endif
 
-    // Most QML-facing C++ types are registered through qt_add_qml_module
-    // QML_* macros so qmltyperegistrar can expose them to qmllint too.
+    // Runtime registrations stay explicit. Qt 6.4's qmltyperegistrar does not
+    // reliably export classes that were added to the executable before
+    // qt_add_qml_module(), and missing VideoPlayer/RemoteFsModel/SshClient types
+    // make the application fail to start before the first window appears.
+    qmlRegisterType<GstPlayer>("OpenIPC", 1, 0, "VideoPlayer");
+    qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
+    qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
+    qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
+    qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");
+    qmlRegisterUncreatableType<CamexController>("OpenIPC", 1, 0, "CamexController",
+                                                "Use SystemController.camexController");
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 
     const QUrl url(u"qrc:/OpenIPC/src/ui/Main.qml"_qs);

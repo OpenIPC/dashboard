@@ -25,6 +25,7 @@
 #include <QImage>
 #include <QImageReader>
 #include <QClipboard>
+#include <QCryptographicHash>
 #include <QGuiApplication>
 #include <QThread>
 #include <QFileInfo>
@@ -399,6 +400,21 @@ PtzController* SystemController::ptzController() const
 QVariantMap SystemController::parseCameraQrPayload(const QString &payload) const
 {
     return CameraOnboardingParser::parse(payload);
+}
+
+QString SystemController::xmSofiaPasswordHash(const QString &password) const
+{
+    static constexpr char alphabet[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const QByteArray digest = QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Md5);
+
+    QString result;
+    result.reserve(8);
+    for (int i = 0; i < 8 && (i * 2 + 1) < digest.size(); ++i) {
+        const int first = static_cast<unsigned char>(digest.at(i * 2));
+        const int second = static_cast<unsigned char>(digest.at(i * 2 + 1));
+        result.append(QLatin1Char(alphabet[(first + second) % 62]));
+    }
+    return result;
 }
 
 QString SystemController::probeCameraEndpoint(const QString &kind,

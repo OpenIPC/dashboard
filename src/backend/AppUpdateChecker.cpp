@@ -15,6 +15,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
+#include <QSslSocket>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -24,6 +25,22 @@ namespace {
 
 constexpr int kInitialCheckDelayMs = 15 * 1000;
 constexpr int kPeriodicCheckMs = 6 * 60 * 60 * 1000;
+
+QString tlsUnavailableMessage()
+{
+    const QString buildVersion = QSslSocket::sslLibraryBuildVersionString();
+    const QString runtimeVersion = QSslSocket::sslLibraryVersionString();
+    QString details;
+    if (!buildVersion.isEmpty()) {
+        details += QStringLiteral(" build: ") + buildVersion;
+    }
+    if (!runtimeVersion.isEmpty()) {
+        details += QStringLiteral(" runtime: ") + runtimeVersion;
+    }
+    return QStringLiteral("Не удалось инициализировать TLS: отсутствуют совместимые OpenSSL DLL (libssl/libcrypto). "
+                          "Установите последнюю сборку OpenIPC Dashboard или переустановите приложение.%1")
+        .arg(details);
+}
 
 QStringList versionParts(const QString &value)
 {
@@ -90,6 +107,12 @@ void AppUpdateChecker::checkNow()
         return;
     }
 
+    if (!QSslSocket::supportsSsl()) {
+        setError(tlsUnavailableMessage());
+        emit checkFinished(false);
+        return;
+    }
+
     setChecking(true);
     setError(QString());
 
@@ -119,6 +142,10 @@ void AppUpdateChecker::openReleasePage() const
 void AppUpdateChecker::downloadUpdate()
 {
     if (m_downloading || m_installing) {
+        return;
+    }
+    if (!QSslSocket::supportsSsl()) {
+        setError(tlsUnavailableMessage());
         return;
     }
     if (m_assetDownloadUrl.trimmed().isEmpty()) {
@@ -309,6 +336,21 @@ bool AppUpdateChecker::isVersionNewer(const QString &candidate, const QString &c
     return compareVersions(candidate, current) > 0;
 }
 
+bool AppUpdateChecker::isCompatibleUpdateVersion(const QString &candidate, const QString &current)
+{
+    const int currentMajor = majorVersionOf(normalizeVersion(current));
+    const int candidateMajor = majorVersionOf(normalizeVersion(candidate));
+
+    // The 0.x line is the current C++/Qt dashboard. Older OpenIPC/dashboard
+    // releases used a different application architecture and may carry higher
+    // semantic major numbers, so never offer them as upgrades from 0.x.
+    if (currentMajor == 0) {
+        return candidateMajor == 0;
+    }
+
+    return candidateMajor >= currentMajor && candidateMajor <= currentMajor + 1;
+}
+
 void AppUpdateChecker::setChecking(bool checking)
 {
     if (m_checking == checking) {
@@ -435,9 +477,7 @@ void AppUpdateChecker::handleReply(QNetworkReply *reply)
         if (version.isEmpty() || !isVersionNewer(version, m_currentVersion)) {
             continue;
         }
-        const int currentMajor = majorVersionOf(normalizeVersion(m_currentVersion));
-        const int candidateMajor = majorVersionOf(version);
-        if (candidateMajor > currentMajor + 1) {
+        if (!isCompatibleUpdateVersion(version, m_currentVersion)) {
             continue;
         }
 

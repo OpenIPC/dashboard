@@ -83,6 +83,7 @@ public:
     NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
     AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
     Q_INVOKABLE QVariantMap parseCameraQrPayload(const QString &payload) const;
+    Q_INVOKABLE QString xmSofiaPasswordHash(const QString &password) const;
     Q_INVOKABLE QString probeCameraEndpoint(const QString &kind,
                                             const QString &host,
                                             int port,

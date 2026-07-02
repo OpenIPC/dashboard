@@ -37,6 +37,17 @@ Dialog {
     property string majesticProbeMessage: ""
     property string onvifProbeMessage: ""
     property bool internalUpdate: false
+    readonly property var rtspTemplateModel: [
+        "OpenIPC",
+        "XM / Xiongmai",
+        "XM / Sofia",
+        "Hikvision",
+        "Dahua",
+        "Reolink",
+        "TP-Link",
+        "Uniview",
+        "Custom"
+    ]
 
     onOpened: {
         internalUpdate = true
@@ -54,7 +65,7 @@ Dialog {
         sdProfileField.text = "1"
         urlTemplateCombo.currentIndex = detectTemplateIndex(initialHdUrl)
 
-        if (isEditMode && initialHdUrl !== "" && urlTemplateCombo.currentIndex === 3) {
+        if (isEditMode && initialHdUrl !== "" && urlTemplateCombo.currentText === "Custom") {
             hdUrlField.text = initialHdUrl
             sdUrlField.text = initialSdUrl
         } else {
@@ -374,7 +385,10 @@ Dialog {
                                         selectByMouse: true
                                         background: FieldBackground {}
                                         onTextChanged: {
-                                            if (!root.internalUpdate) root.resetProbeStates()
+                                            if (!root.internalUpdate) {
+                                                root.updateUrl()
+                                                root.resetProbeStates()
+                                            }
                                         }
                                     }
                                 }
@@ -393,7 +407,10 @@ Dialog {
                                         selectByMouse: true
                                         background: FieldBackground {}
                                         onTextChanged: {
-                                            if (!root.internalUpdate) root.resetProbeStates()
+                                            if (!root.internalUpdate) {
+                                                root.updateUrl()
+                                                root.resetProbeStates()
+                                            }
                                         }
                                     }
                                 }
@@ -461,7 +478,7 @@ Dialog {
                                     ComboBox {
                                         id: urlTemplateCombo
                                         Layout.fillWidth: true
-                                        model: ["OpenIPC", "Hikvision", "Dahua", "Custom"]
+                                        model: root.rtspTemplateModel
                                         currentIndex: 0
                                         onCurrentIndexChanged: {
                                             if (!root.internalUpdate) {
@@ -547,7 +564,7 @@ Dialog {
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: I18n.t("Для OpenIPC обычно используются RTSP 554, HTTP/Majestic 80 и пути /stream=0, /stream=1. Для Hikvision и Dahua шаблоны отличаются.")
+                                        text: I18n.t("OpenIPC: /stream=0 и /stream=1. XM/Xiongmai: user/password/channel/stream.sdp?real_stream, для XM Sofia пароль хэшируется. Hikvision, Dahua, Reolink, TP-Link и Uniview используют свои RTSP пути.")
                                         color: Theme.textSecondary
                                         wrapMode: Text.WordWrap
                                         font.pixelSize: 12
@@ -969,20 +986,49 @@ Dialog {
 
     function detectTemplateIndex(url) {
         var text = String(url || "")
-        if (text.indexOf("/Streaming/Channels/") >= 0) return 1
-        if (text.indexOf("/cam/realmonitor") >= 0) return 2
+        if (text.indexOf("user=") >= 0 && text.indexOf("real_stream") >= 0) return 1
+        if (text.indexOf("/Streaming/Channels/") >= 0) return 3
+        if (text.indexOf("/cam/realmonitor") >= 0) return 4
+        if (text.indexOf("/h264Preview_") >= 0) return 5
+        if (text.indexOf("/stream1") >= 0 || text.indexOf("/stream2") >= 0) return 6
+        if (text.indexOf("/media/video") >= 0) return 7
         if (text.indexOf("/stream=") >= 0 || text === "") return 0
-        return 3
+        return root.rtspTemplateModel.length - 1
     }
 
     function currentTemplate() {
         return urlTemplateCombo.currentText || "OpenIPC"
     }
 
+    function xmSafe(value, fallback) {
+        var text = String(value || "").trim()
+        if (text.length === 0 && fallback !== undefined) {
+            text = String(fallback)
+        }
+        return encodeURIComponent(text)
+    }
+
+    function sofiaHash(password) {
+        return SystemController.xmSofiaPasswordHash(String(password || ""))
+    }
+
     function generateRtspUrl(ip, port, stream, template) {
         var host = String(ip || "").trim()
         var rtspPort = parsePort(port, 554)
         var baseUrl = "rtsp://" + host + ":" + rtspPort
+
+        if (template === "XM / Xiongmai" || template === "XM / Sofia") {
+            var user = xmSafe(loginField.text, "admin")
+            var password = template === "XM / Sofia"
+                    ? sofiaHash(passwordField.text)
+                    : xmSafe(passwordField.text, "")
+            var channel = xmSafe(channelField.text, "1")
+            var xmStream = xmSafe(stream, "0")
+            return baseUrl + "/user=" + user
+                    + "&password=" + password
+                    + "&channel=" + channel
+                    + "&stream=" + xmStream + ".sdp?real_stream"
+        }
 
         if (template === "Hikvision") {
             var value = parseInt(stream)
@@ -997,6 +1043,18 @@ Dialog {
         if (template === "Dahua") {
             var ch = channelField.text || "1"
             return baseUrl + "/cam/realmonitor?channel=" + ch + "&subtype=" + stream
+        }
+
+        if (template === "Reolink") {
+            return baseUrl + (String(stream) === "1" ? "/h264Preview_01_sub" : "/h264Preview_01_main")
+        }
+
+        if (template === "TP-Link") {
+            return baseUrl + (String(stream) === "1" ? "/stream2" : "/stream1")
+        }
+
+        if (template === "Uniview") {
+            return baseUrl + (String(stream) === "1" ? "/media/video2" : "/media/video1")
         }
 
         return baseUrl + "/stream=" + stream

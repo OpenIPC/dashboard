@@ -681,6 +681,7 @@ QtObject {
         "SD профиль / stream": "SD profile / stream",
         "Подсказка": "Hint",
         "Для OpenIPC обычно используются RTSP 554, HTTP/Majestic 80 и пути /stream=0, /stream=1. Для Hikvision и Dahua шаблоны отличаются.": "OpenIPC usually uses RTSP 554, HTTP/Majestic 80 and /stream=0, /stream=1 paths. Hikvision and Dahua use different templates.",
+        "OpenIPC: /stream=0 и /stream=1. XM/Xiongmai: user/password/channel/stream.sdp?real_stream, для XM Sofia пароль хэшируется. Hikvision, Dahua, Reolink, TP-Link и Uniview используют свои RTSP пути.": "OpenIPC: /stream=0 and /stream=1. XM/Xiongmai: user/password/channel/stream.sdp?real_stream; XM Sofia hashes the password. Hikvision, Dahua, Reolink, TP-Link and Uniview use their own RTSP paths.",
         "Проверка подключения": "Connection checks",
         "Проверки не сохраняют камеру — они только показывают, какие сервисы реально отвечают.": "Checks do not save the camera; they only show which services actually respond.",
         "Проверяет TCP-порт и отправляет RTSP OPTIONS по основному URL.": "Checks the TCP port and sends RTSP OPTIONS to the main URL.",
