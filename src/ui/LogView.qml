@@ -8,11 +8,15 @@ Dialog {
     id: root
     title: I18n.t("Логи")
     modal: true
-    width: 800
-    height: 600
-    x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
+    width: Math.max(320, Math.min(800, (parent ? parent.width : 832) - 32))
+    height: Math.max(320, Math.min(600, (parent ? parent.height : 632) - 32))
+    x: parent ? (parent.width - width) / 2 : 0
+    y: parent ? (parent.height - height) / 2 : 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    readonly property bool layoutReady: width > 0
+                                        && height > 0
+                                        && (!parent || (width <= parent.width && height <= parent.height))
     
     background: Rectangle {
         color: Theme.metroSidebarBackground
@@ -24,9 +28,10 @@ Dialog {
     property bool showWarning: true
     property bool showError: true // Critical and Fatal
     property bool showDebug: false
+    property var logModel: SystemController.logModel
 
     onOpened: {
-        SystemController.logModel.reloadFromFile()
+        root.logModel.reloadFromFile()
         Qt.callLater(function() { logListView.positionViewAtEnd() })
     }
 
@@ -34,6 +39,7 @@ Dialog {
     }
 
     header: Rectangle {
+        id: headerBar
         height: 50
         color: "transparent"
         
@@ -53,16 +59,17 @@ Dialog {
             Item { Layout.fillWidth: true }
             
             Button {
+                id: exportButton
                 text: I18n.t("Экспорт")
-                enabled: SystemController.logModel.count > 0
+                enabled: root.logModel.count > 0
                 onClicked: saveDialog.open()
                 background: Rectangle {
-                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
+                    color: exportButton.down ? Theme.metroTileHover : Theme.metroSurface
                     radius: 4
                     border.color: Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
+                    text: exportButton.text
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -70,18 +77,19 @@ Dialog {
             }
 
             Button {
+                id: refreshButton
                 text: I18n.t("Обновить")
                 onClicked: {
-                    SystemController.logModel.reloadFromFile()
+                    root.logModel.reloadFromFile()
                     Qt.callLater(function() { logListView.positionViewAtEnd() })
                 }
                 background: Rectangle {
-                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
+                    color: refreshButton.down ? Theme.metroTileHover : Theme.metroSurface
                     radius: 4
                     border.color: Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
+                    text: refreshButton.text
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -89,16 +97,17 @@ Dialog {
             }
 
             Button {
+                id: clearButton
                 text: I18n.t("Очистить")
-                enabled: SystemController.logModel.count > 0
-                onClicked: SystemController.logModel.clear()
+                enabled: root.logModel.count > 0
+                onClicked: root.logModel.clear()
                 background: Rectangle {
-                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
+                    color: clearButton.down ? Theme.metroTileHover : Theme.metroSurface
                     radius: 4
                     border.color: Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
+                    text: clearButton.text
                     color: "white"
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -125,7 +134,7 @@ Dialog {
             defaultSuffix: "txt"
             // currentFile: "logs.txt"
             onAccepted: {
-                SystemController.logModel.saveLog(selectedFile)
+                root.logModel.saveLog(selectedFile)
             }
         }
         
@@ -169,17 +178,23 @@ Dialog {
                 anchors.fill: parent
                 anchors.margins: 5
                 clip: true
-                model: SystemController.logModel
+                model: root.logModel
                 
                 delegate: Item {
+                    id: logDelegate
+
+                    required property int type
+                    required property string formattedTime
+                    required property string message
+
                     width: ListView.view.width
                     height: visible ? 20 : 0
                     visible: {
-                        if (type === 0 && !root.showDebug) return false; // Debug
-                        if (type === 1 && !root.showWarning) return false; // Warning
-                        if (type === 2 && !root.showError) return false; // Critical
-                        if (type === 3 && !root.showError) return false; // Fatal
-                        if (type === 4 && !root.showInfo) return false; // Info
+                        if (logDelegate.type === 0 && !root.showDebug) return false; // Debug
+                        if (logDelegate.type === 1 && !root.showWarning) return false; // Warning
+                        if (logDelegate.type === 2 && !root.showError) return false; // Critical
+                        if (logDelegate.type === 3 && !root.showError) return false; // Fatal
+                        if (logDelegate.type === 4 && !root.showInfo) return false; // Info
                         return true;
                     }
 
@@ -188,7 +203,7 @@ Dialog {
                         spacing: 10
                         
                         Text {
-                            text: formattedTime
+                            text: logDelegate.formattedTime
                             color: Theme.textMuted
                             font.family: "Consolas, monospace"
                             font.pixelSize: 12
@@ -197,7 +212,7 @@ Dialog {
                         
                         Text {
                             text: {
-                                switch(type) {
+                                switch(logDelegate.type) {
                                     case 0: return "DBG";
                                     case 1: return "WRN";
                                     case 2: return "CRT";
@@ -207,7 +222,7 @@ Dialog {
                                 }
                             }
                             color: {
-                                switch(type) {
+                                switch(logDelegate.type) {
                                     case 0: return Theme.textMuted; // Debug
                                     case 1: return Theme.metroAmber; // Warning
                                     case 2: return Theme.metroRed; // Critical
@@ -223,7 +238,7 @@ Dialog {
                         }
                         
                         Text {
-                            text: message
+                            text: logDelegate.message
                             color: "white"
                             font.family: "Consolas, monospace"
                             font.pixelSize: 12
@@ -238,14 +253,14 @@ Dialog {
 
             Text {
                 anchors.centerIn: parent
-                visible: SystemController.logModel.count === 0
+                visible: root.logModel.count === 0
                 text: I18n.t("Логи пока пусты")
                 color: Theme.textMuted
                 font.pixelSize: 15
             }
 
             Connections {
-                target: SystemController.logModel
+                target: root.logModel
                 function onCountChanged() {
                     if (root.visible) {
                         Qt.callLater(function() { logListView.positionViewAtEnd() })

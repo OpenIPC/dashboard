@@ -273,6 +273,8 @@ set(SOURCES
     src/backend/gst/StreamSessionPolicy.h
     src/backend/AnalyticsModel.cpp
     src/backend/AnalyticsModel.h
+    src/backend/analytics/AnalyticsEvidenceImageProcessor.cpp
+    src/backend/analytics/AnalyticsEvidenceImageProcessor.h
     src/backend/analytics/AnalyticsEngine.cpp
     src/backend/analytics/AnalyticsEngine.h
     src/backend/analytics/InferenceBackend.h
@@ -381,6 +383,7 @@ set(QML_FILES
     src/ui/MajesticConfirmDialog.qml
     src/ui/MajesticEndpointProbeCard.qml
     src/ui/MajesticEndpointsPage.qml
+    src/ui/MajesticFileDialogs.qml
     src/ui/MajesticMetricsPage.qml
     src/ui/MajesticOverviewPage.qml
     src/ui/MajesticRawJsonPage.qml
@@ -856,6 +859,24 @@ if(BUILD_TESTING)
 
     add_test(NAME model_artifact_verifier_tests COMMAND model_artifact_verifier_tests)
 
+    add_executable(analytics_evidence_image_processor_tests
+        tests/AnalyticsEvidenceImageProcessorTests.cpp
+        src/backend/analytics/AnalyticsEvidenceImageProcessor.cpp
+        src/backend/analytics/AnalyticsEvidenceImageProcessor.h
+    )
+    openipc_enable_project_warnings(analytics_evidence_image_processor_tests)
+
+    target_include_directories(analytics_evidence_image_processor_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
+    )
+
+    target_link_libraries(analytics_evidence_image_processor_tests
+        PRIVATE Qt6::Core Qt6::Gui Qt6::Test
+    )
+
+    add_test(NAME analytics_evidence_image_processor_tests
+        COMMAND analytics_evidence_image_processor_tests)
+
     add_executable(camera_onboarding_parser_tests
         tests/CameraOnboardingParserTests.cpp
         src/backend/CameraOnboardingParser.cpp
@@ -961,7 +982,7 @@ if(BUILD_TESTING)
         add_test(NAME qml_smoke_scaled COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
     endif()
 
-    set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -972,7 +993,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     else()

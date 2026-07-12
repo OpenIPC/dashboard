@@ -174,6 +174,15 @@ Item {
                     return object.layoutReady ? "" : "analytics tabs or content overflow"
                 }
             },
+            {
+                name: "Application Logs",
+                component: logViewComponent,
+                parentObject: host,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.layoutReady ? "" : "log dialog exceeds its host"
+                }
+            },
             { name: "Majestic/OpenIPC Control Center", component: majesticComponent, parentObject: host }
         ]
     }
@@ -453,6 +462,13 @@ Item {
             cameraPort: 80
             cameraUser: "root"
             cameraPassword: ""
+        }
+    }
+
+    Component {
+        id: logViewComponent
+
+        LogView {
         }
     }
 }

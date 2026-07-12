@@ -1,4 +1,5 @@
 #include "AnalyticsEngine.h"
+#include "AnalyticsEvidenceImageProcessor.h"
 #include "ModelArtifactVerifier.h"
 #include "YoloDetector.h"
 #include "../PathUtils.h"
@@ -42,159 +43,6 @@ static void ensureGstInitOnce() {
         gst_init(nullptr, nullptr);
         initialized = true;
     }
-}
-
-static int detectionChannelLuma(QRgb px)
-{
-    return (qRed(px) * 54 + qGreen(px) * 183 + qBlue(px) * 19) >> 8;
-}
-
-static QRect detectionBoundsForImage(const QImage &image, const QVariantMap &det, double padXFactor, double padYFactor)
-{
-    if (image.isNull()) {
-        return QRect();
-    }
-
-    double x = det.value("x").toDouble();
-    double y = det.value("y").toDouble();
-    double w = det.value("w").toDouble();
-    double h = det.value("h").toDouble();
-    if (w <= 0.0 || h <= 0.0) {
-        return QRect();
-    }
-
-    const bool normalized = (x <= 1.0 && y <= 1.0 && w <= 1.0 && h <= 1.0);
-    if (normalized) {
-        x *= image.width();
-        y *= image.height();
-        w *= image.width();
-        h *= image.height();
-    }
-
-    QRect rect(qRound(x), qRound(y), qRound(w), qRound(h));
-    if (!rect.isValid()) {
-        return QRect();
-    }
-
-    const int padX = qRound(rect.width() * padXFactor);
-    const int padY = qRound(rect.height() * padYFactor);
-    rect.adjust(-padX, -padY, padX, padY);
-
-    const double targetAspect = 4.0 / 5.0;
-    if (rect.width() > 0 && rect.height() > 0) {
-        const double currentAspect = static_cast<double>(rect.width()) / static_cast<double>(rect.height());
-        if (currentAspect > targetAspect) {
-            const int desiredHeight = qRound(rect.width() / targetAspect);
-            const int delta = desiredHeight - rect.height();
-            rect.adjust(0, -delta / 2, 0, delta - delta / 2);
-        } else {
-            const int desiredWidth = qRound(rect.height() * targetAspect);
-            const int delta = desiredWidth - rect.width();
-            rect.adjust(-delta / 2, 0, delta - delta / 2, 0);
-        }
-    }
-
-    return rect.intersected(QRect(0, 0, image.width(), image.height()));
-}
-
-static QImage upscaleEvidenceCrop(const QImage &image)
-{
-    if (image.isNull()) {
-        return image;
-    }
-
-    constexpr int kMinShortSide = 360;
-    constexpr int kMaxLongSide = 900;
-    const int shortSide = qMin(image.width(), image.height());
-    const int longSide = qMax(image.width(), image.height());
-    if (shortSide <= 0 || shortSide >= kMinShortSide) {
-        return image;
-    }
-
-    double scale = static_cast<double>(kMinShortSide) / static_cast<double>(shortSide);
-    scale = qMin(scale, static_cast<double>(kMaxLongSide) / static_cast<double>(longSide));
-    scale = qBound(1.0, scale, 3.0);
-    if (scale <= 1.01) {
-        return image;
-    }
-
-    return image.scaled(qRound(image.width() * scale),
-                        qRound(image.height() * scale),
-                        Qt::KeepAspectRatio,
-                        Qt::SmoothTransformation);
-}
-
-static QImage enhanceEvidenceCrop(const QImage &source)
-{
-    if (source.isNull()) {
-        return source;
-    }
-
-    QImage image = source.convertToFormat(QImage::Format_RGB32);
-    const int sampleStep = qMax(1, qMin(image.width(), image.height()) / 180);
-    qint64 lumaSum = 0;
-    int sampleCount = 0;
-
-    for (int y = 0; y < image.height(); y += sampleStep) {
-        const auto *line = reinterpret_cast<const QRgb *>(image.constScanLine(y));
-        for (int x = 0; x < image.width(); x += sampleStep) {
-            lumaSum += detectionChannelLuma(line[x]);
-            sampleCount += 1;
-        }
-    }
-
-    const double avgLuma = sampleCount > 0
-        ? static_cast<double>(lumaSum) / static_cast<double>(sampleCount)
-        : 128.0;
-    const bool lowLight = avgLuma < 105.0;
-    const double contrast = lowLight ? 1.18 : 1.08;
-    const int lift = lowLight ? 12 : 2;
-
-    auto enhanceChannel = [&](int value) {
-        double adjusted = (static_cast<double>(value) - 128.0) * contrast + 128.0 + lift;
-        adjusted = qBound(0.0, adjusted, 255.0);
-        const double normalized = adjusted / 255.0;
-        const double shadowLift = (lowLight ? 0.14 : 0.05) * (1.0 - normalized);
-        adjusted += (255.0 - adjusted) * shadowLift;
-        return qBound(0, qRound(adjusted), 255);
-    };
-
-    for (int y = 0; y < image.height(); ++y) {
-        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
-        for (int x = 0; x < image.width(); ++x) {
-            const QRgb px = line[x];
-            line[x] = qRgb(enhanceChannel(qRed(px)),
-                           enhanceChannel(qGreen(px)),
-                           enhanceChannel(qBlue(px)));
-        }
-    }
-
-    if (image.width() < 5 || image.height() < 5) {
-        return image;
-    }
-
-    QImage sharpened = image.copy();
-    constexpr double kSharpenAmount = 0.32;
-    for (int y = 1; y < image.height() - 1; ++y) {
-        const auto *prev = reinterpret_cast<const QRgb *>(image.constScanLine(y - 1));
-        const auto *curr = reinterpret_cast<const QRgb *>(image.constScanLine(y));
-        const auto *next = reinterpret_cast<const QRgb *>(image.constScanLine(y + 1));
-        auto *dst = reinterpret_cast<QRgb *>(sharpened.scanLine(y));
-
-        for (int x = 1; x < image.width() - 1; ++x) {
-            const QRgb center = curr[x];
-            auto sharpenChannel = [&](int centerValue, int n1, int n2, int n3, int n4) {
-                const double neighborAvg = (n1 + n2 + n3 + n4) / 4.0;
-                return qBound(0, qRound(centerValue + ((centerValue - neighborAvg) * kSharpenAmount)), 255);
-            };
-
-            dst[x] = qRgb(sharpenChannel(qRed(center), qRed(curr[x - 1]), qRed(curr[x + 1]), qRed(prev[x]), qRed(next[x])),
-                          sharpenChannel(qGreen(center), qGreen(curr[x - 1]), qGreen(curr[x + 1]), qGreen(prev[x]), qGreen(next[x])),
-                          sharpenChannel(qBlue(center), qBlue(curr[x - 1]), qBlue(curr[x + 1]), qBlue(prev[x]), qBlue(next[x])));
-        }
-    }
-
-    return sharpened;
 }
 
 AnalyticsEngine::AnalyticsEngine(QObject *parent)
@@ -3618,11 +3466,10 @@ QString AnalyticsEngine::saveSnapshotImage(const QImage &frame, const QString &c
 
     const bool isFaceModule = (moduleId.compare("Face Detector", Qt::CaseInsensitive) == 0);
     if (isFaceModule && !img.isNull()) {
-        const QRect rect = detectionBoundsForImage(img, det, 0.55, 0.70);
+        const QRect rect = AnalyticsEvidenceImageProcessor::detectionBounds(img, det, 0.55, 0.70);
         if (rect.isValid() && rect.width() > 10 && rect.height() > 10) {
             img = img.copy(rect);
-            img = upscaleEvidenceCrop(img);
-            img = enhanceEvidenceCrop(img);
+            img = AnalyticsEvidenceImageProcessor::prepareCrop(img);
         }
     }
 

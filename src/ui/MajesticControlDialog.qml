@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import OpenIPC
 
@@ -1117,12 +1116,12 @@ Dialog {
                                             cameraHost, cameraPort, cameraUser, cameraPassword, path))
     }
 
-    function openSnapshotDialog() { snapshotDialog.open() }
-    function openSaveBackupDialog() { saveBackupDialog.open() }
-    function openBackupRestoreDialog() { openBackupDialog.open() }
-    function openPcmDialog() { pcmDialog.open() }
-    function openFirmwareBackupDialog() { firmwareBackupDialog.open() }
-    function openFirmwareUploadDialog() { firmwareUploadDialog.open() }
+    function openSnapshotDialog() { fileDialogs.openSnapshot() }
+    function openSaveBackupDialog() { fileDialogs.openSaveBackup() }
+    function openBackupRestoreDialog() { fileDialogs.openBackupRestore() }
+    function openPcmDialog() { fileDialogs.openPcm() }
+    function openFirmwareBackupDialog() { fileDialogs.openFirmwareBackup() }
+    function openFirmwareUploadDialog() { fileDialogs.openFirmwareUpload() }
     function openFirmwareRestoreWebUiConfirm() { firmwareRestoreWebUiConfirm.open() }
     function openFirmwareNetworkConfirm() { firmwareNetworkConfirm.open() }
     function openFirmwareNetworkResetConfirm() { firmwareNetworkResetConfirm.open() }
@@ -3151,39 +3150,21 @@ Dialog {
         onAccepted: dialog.startUploadedFirmwareUpdate()
     }
 
-    FileDialog {
-        id: snapshotDialog; title: I18n.t("Сохранить снимок Majestic"); fileMode: FileDialog.SaveFile; defaultSuffix: "jpg"
-        nameFilters: [I18n.t("JPEG (*.jpg *.jpeg)"), I18n.t("Все файлы (*)")]
-        onAccepted: track(SystemController.majesticClient.takeSnapshot(cameraHost, cameraPort, cameraUser, cameraPassword, selectedFile.toString(), overviewPage.snapshotWidth, overviewPage.snapshotHeight, overviewPage.snapshotQuality, overviewPage.snapshotGray))
-    }
-    FileDialog {
-        id: saveBackupDialog; title: I18n.t("Сохранить backup Majestic"); fileMode: FileDialog.SaveFile; defaultSuffix: "json"
-        nameFilters: [I18n.t("JSON (*.json)"), I18n.t("Все файлы (*)")]
-        onAccepted: track(SystemController.majesticClient.saveConfigurationBackup(originalConfig, currentSchema, selectedFile.toString()))
-    }
-    FileDialog {
-        id: openBackupDialog; title: I18n.t("Открыть backup Majestic"); fileMode: FileDialog.OpenFile
-        nameFilters: [I18n.t("JSON (*.json)"), I18n.t("Все файлы (*)")]
-        onAccepted: track(SystemController.majesticClient.loadConfigurationBackup(selectedFile.toString()))
-    }
-    FileDialog {
-        id: pcmDialog; title: I18n.t("Выбрать PCM (S16 LE, 8 кГц, mono)"); fileMode: FileDialog.OpenFile
-        nameFilters: [I18n.t("PCM (*.pcm *.raw)"), I18n.t("Все файлы (*)")]
-        onAccepted: track(SystemController.majesticClient.playPcmFile(cameraHost, cameraPort, cameraUser, cameraPassword, selectedFile.toString()))
-    }
-    FileDialog {
-        id: firmwareBackupDialog
-        title: I18n.t("Сохранить firmware backup OpenIPC")
-        fileMode: FileDialog.SaveFile
-        defaultSuffix: "tgz"
-        nameFilters: [I18n.t("OpenIPC backup (*.tgz *.tar.gz)"), I18n.t("Все файлы (*)")]
-        onAccepted: saveFullFirmwareBackup(String(selectedFile))
-    }
-    FileDialog {
-        id: firmwareUploadDialog
-        title: I18n.t("Выбрать firmware archive OpenIPC")
-        fileMode: FileDialog.OpenFile
-        nameFilters: [I18n.t("OpenIPC firmware (*.tgz *.gz)"), I18n.t("Все файлы (*)")]
-        onAccepted: uploadFirmwareArchive(String(selectedFile))
+    MajesticFileDialogs {
+        id: fileDialogs
+        cameraHost: dialog.cameraHost
+        cameraPort: dialog.cameraPort
+        cameraUser: dialog.cameraUser
+        cameraPassword: dialog.cameraPassword
+        majesticClient: SystemController.majesticClient
+        originalConfig: dialog.originalConfig
+        currentSchema: dialog.currentSchema
+        snapshotWidth: overviewPage.snapshotWidth
+        snapshotHeight: overviewPage.snapshotHeight
+        snapshotQuality: overviewPage.snapshotQuality
+        snapshotGray: overviewPage.snapshotGray
+        onRequestCreated: (requestId) => dialog.track(requestId)
+        onFirmwareBackupSelected: (path) => dialog.saveFullFirmwareBackup(path)
+        onFirmwareUploadSelected: (path) => dialog.uploadFirmwareArchive(path)
     }
 }

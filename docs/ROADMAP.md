@@ -573,6 +573,9 @@ Smoke-run покрывает:
 Уже сделано в текущей ветке:
 
 - `MajesticApplyConfirmDialog.qml` вынесен из `MajesticControlDialog.qml` без изменения поведения apply-flow.
+- `MajesticFileDialogs.qml` отделяет snapshot/config/PCM/firmware file pickers от Control Center и сохраняет прежние backend-вызовы.
+- обработка crop/upscale/enhance для аналитических evidence вынесена из `AnalyticsEngine.cpp` в `AnalyticsEvidenceImageProcessor`.
+- для алгоритма evidence image processing добавлены отдельные unit-тесты границ детекции, валидации и улучшения малых снимков.
 
 Приоритет разбиения:
 
@@ -590,7 +593,14 @@ Smoke-run покрывает:
 
 ### P8.3 QML/runtime hardening
 
-Статус: 🔜 следующая очередь.
+Статус: 🟡 в работе.
+
+Уже сделано:
+
+- smoke matrix создаёт Settings, Analytics, Majestic Control Center и окно application logs;
+- smoke запускается в обычном режиме и при `QT_SCALE_FACTOR=1.5`;
+- `LogView` получил адаптивные размеры, явные model roles и безопасные ссылки на кнопки/модель;
+- новый `MajesticFileDialogs.qml` проходит QML cache compilation, а весь набор компонентов — оба smoke-теста.
 
 Задачи:
 
@@ -601,7 +611,12 @@ Smoke-run покрывает:
 
 ### P8.4 CI cleanup
 
-Статус: 🔜 следующая очередь.
+Статус: 🟡 частично выполнено.
+
+Уже сделано:
+
+- production workflows переведены на Node 24-compatible поколения официальных `actions/*`;
+- CI и release используют одинаковые Qt `6.4.2` modules и GStreamer `1.26.10` для Windows.
 
 Задачи:
 
@@ -637,8 +652,9 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Закрыть P8.1: application logs должны отображаться в окне “Логи”, экспортироваться и иметь unit/smoke coverage.
-2. Начать P8.2 с самого безопасного split: вынести из `MajesticControlDialog.qml` уже готовые визуальные блоки без изменения backend-контрактов.
-3. После каждого split запускать `cmake --build build_release --target appOpenIPC-Dashboard -j 2` и targeted smoke/unit-тесты.
-4. Стабилизировать CI на `main`, синхронизировав dependency install с успешным release workflow.
-5. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
+1. Продолжить P8.2: вынести из `AnalyticsEngine.cpp` event/evidence storage и module inventory, сохраняя публичный QML API.
+2. Разделить `MajesticControlDialog.qml` на state/actions/connectors; визуальные страницы и file/confirm dialogs уже отделены.
+3. Начать безопасное выделение settings/state IO из `SystemController.cpp` и закреплять контракты unit-тестами.
+4. Завершить P8.3: привести targeted `qmllint` к чистому запуску и унифицировать loading/empty/error states аналитики.
+5. Завершить P8.4: проверить чистый CI-run на `main` без Node deprecation warnings и убрать оставшиеся расхождения workflows.
+6. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
