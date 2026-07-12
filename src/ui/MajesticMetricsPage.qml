@@ -12,9 +12,10 @@ ColumnLayout {
 
     spacing: 10
 
-    RowLayout {
+    ColumnLayout {
         Layout.fillWidth: true
         Layout.margins: 12
+        spacing: 8
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -36,11 +37,16 @@ ColumnLayout {
             }
         }
 
-        MajesticButton {
-            text: root.controller && root.controller.activeMetricsId.length ? I18n.t("Обновление…") : I18n.t("Обновить метрики")
-            primary: true
-            enabled: root.controller && !root.controller.activeMetricsId.length
-            onClicked: root.controller.refreshMetrics()
+        Flow {
+            Layout.fillWidth: true
+            spacing: 8
+
+            MajesticButton {
+                text: root.controller && root.controller.activeMetricsId.length ? I18n.t("Обновление…") : I18n.t("Обновить метрики")
+                primary: true
+                enabled: root.controller && !root.controller.activeMetricsId.length
+                onClicked: root.controller.refreshMetrics()
+            }
         }
     }
 

@@ -12,12 +12,15 @@ Rectangle {
     Layout.fillWidth: true
     Layout.leftMargin: 16
     Layout.rightMargin: 16
-    Layout.preferredHeight: 166
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    Layout.minimumHeight: 166
+    Layout.preferredHeight: Math.max(Layout.minimumHeight, backupContent.implicitHeight + 28)
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
+        id: backupContent
+
         anchors.fill: parent
         anchors.margins: 14
         spacing: 10
@@ -48,9 +51,9 @@ Rectangle {
             Rectangle {
                 implicitWidth: backupStateText.implicitWidth + 18
                 implicitHeight: 24
-                radius: 12
-                color: root.controller && root.controller.firmwareBackupSaved ? "#052e1b" : "#422006"
-                border.color: root.controller && root.controller.firmwareBackupSaved ? Theme.success : Theme.warning
+                radius: Theme.metroTileRadius
+                color: root.controller && root.controller.firmwareBackupSaved ? Theme.successSurface : Theme.warningSurface
+                border.color: root.controller && root.controller.firmwareBackupSaved ? Theme.metroGreen : Theme.metroAmber
 
                 Text {
                     id: backupStateText
@@ -94,7 +97,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: I18n.t("Restore полного backup может менять overlay, сеть и пароли. Поэтому восстановление вынесено в штатный WebUI камеры и требует отдельного подтверждения.")
-            color: Theme.warning
+            color: Theme.metroAmber
             wrapMode: Text.WordWrap
             font.pixelSize: 11
         }

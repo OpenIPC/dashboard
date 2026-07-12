@@ -15,9 +15,9 @@ Dialog {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     
     background: Rectangle {
-        color: "#252526"
+        color: Theme.metroSidebarBackground
         radius: 8
-        border.color: "#3c3c3c"
+        border.color: Theme.metroStroke
     }
     
     property bool showInfo: true
@@ -25,35 +25,7 @@ Dialog {
     property bool showError: true // Critical and Fatal
     property bool showDebug: false
 
-    component StyledCheckBox: CheckBox {
-        hoverEnabled: false
-        background: Item {}
-        indicator: Rectangle {
-            implicitWidth: 18
-            implicitHeight: 18
-            x: parent.leftPadding
-            y: parent.height / 2 - height / 2
-            radius: 3
-            color: "#252526"
-            border.color: parent.checked ? "#4caf50" : "#666666"
-            
-            Rectangle {
-                width: 10
-                height: 10
-                anchors.centerIn: parent
-                radius: 2
-                color: "#4caf50"
-                visible: parent.parent.checked
-            }
-        }
-        contentItem: Text {
-            text: parent.text
-            font: parent.font
-            opacity: parent.enabled ? 1.0 : 0.5
-            color: "white"
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: parent.indicator.width + parent.spacing
-        }
+    component StyledCheckBox: MetroCheckBox {
     }
 
     header: Rectangle {
@@ -79,9 +51,9 @@ Dialog {
                 text: I18n.t("Скачать")
                 onClicked: saveDialog.open()
                 background: Rectangle {
-                    color: parent.down ? "#3e3e42" : "#2d2d30"
+                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
                     radius: 4
-                    border.color: "#3c3c3c"
+                    border.color: Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
@@ -95,9 +67,9 @@ Dialog {
                 text: I18n.t("Очистить")
                 onClicked: SystemController.logModel.clear()
                 background: Rectangle {
-                    color: parent.down ? "#3e3e42" : "#2d2d30"
+                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
                     radius: 4
-                    border.color: "#3c3c3c"
+                    border.color: Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
@@ -107,16 +79,11 @@ Dialog {
                 }
             }
 
-            Text {
-                text: "×"
-                color: "#aaaaaa"
-                font.pixelSize: 24
-                Layout.alignment: Qt.AlignVCenter
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.close()
-                }
+            MetroWindowButton {
+                kind: "close"
+                Layout.preferredWidth: 38
+                Layout.preferredHeight: 34
+                onClicked: root.close()
             }
         }
     }
@@ -167,8 +134,8 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "#1e1e1e"
-            border.color: "#3c3c3c"
+            color: Theme.metroBackground
+            border.color: Theme.metroStroke
             radius: 4
             
             ListView {
@@ -196,7 +163,7 @@ Dialog {
                         
                         Text {
                             text: formattedTime
-                            color: "#888888"
+                            color: Theme.textMuted
                             font.family: "Consolas, monospace"
                             font.pixelSize: 12
                             Layout.preferredWidth: 140
@@ -215,11 +182,11 @@ Dialog {
                             }
                             color: {
                                 switch(type) {
-                                    case 0: return "#aaaaaa"; // Debug
-                                    case 1: return "#dcdcaa"; // Warning
-                                    case 2: return "#f44747"; // Critical
-                                    case 3: return "#f44747"; // Fatal
-                                    case 4: return "#569cd6"; // Info
+                                    case 0: return Theme.textMuted; // Debug
+                                    case 1: return Theme.metroAmber; // Warning
+                                    case 2: return Theme.metroRed; // Critical
+                                    case 3: return Theme.metroRed; // Fatal
+                                    case 4: return Theme.metroBlue; // Info
                                     default: return "white";
                                 }
                             }

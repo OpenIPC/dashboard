@@ -326,7 +326,7 @@ Item {
                     ColumnLayout {
                         Layout.preferredWidth: 190
                         spacing: 2
-                        Text { text: I18n.t("Камера"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: I18n.t("Камера"); color: Theme.textMuted; font.pixelSize: 11 }
                         StyledComboBox {
                             id: cameraCombo
                             Layout.fillWidth: true
@@ -343,7 +343,7 @@ Item {
                     ColumnLayout {
                         Layout.preferredWidth: 190
                         spacing: 2
-                        Text { text: I18n.t("Объект"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: I18n.t("Объект"); color: Theme.textMuted; font.pixelSize: 11 }
                         TextField {
                             id: labelField
                             Layout.fillWidth: true
@@ -355,7 +355,7 @@ Item {
                             }
                             color: Theme.textSecondary
                             selectionColor: Theme.accent
-                            placeholderTextColor: "#777"
+                            placeholderTextColor: Theme.textFaint
                             background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
                         }
                     }
@@ -363,7 +363,7 @@ Item {
                     ColumnLayout {
                         Layout.preferredWidth: 150
                         spacing: 2
-                        Text { text: I18n.t("Дата от"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: I18n.t("Дата от"); color: Theme.textMuted; font.pixelSize: 11 }
                         TextField {
                             id: startDateField
                             Layout.fillWidth: true
@@ -375,7 +375,7 @@ Item {
                             }
                             color: Theme.textSecondary
                             selectionColor: Theme.accent
-                            placeholderTextColor: "#777"
+                            placeholderTextColor: Theme.textFaint
                             background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
                         }
                     }
@@ -383,7 +383,7 @@ Item {
                     ColumnLayout {
                         Layout.preferredWidth: 150
                         spacing: 2
-                        Text { text: I18n.t("Дата до"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: I18n.t("Дата до"); color: Theme.textMuted; font.pixelSize: 11 }
                         TextField {
                             id: endDateField
                             Layout.fillWidth: true
@@ -395,7 +395,7 @@ Item {
                             }
                             color: Theme.textSecondary
                             selectionColor: Theme.accent
-                            placeholderTextColor: "#777"
+                            placeholderTextColor: Theme.textFaint
                             background: Rectangle { color: root.controlBgColor; radius: Theme.radiusSm; border.color: root.controlBorderColor }
                         }
                     }
@@ -403,7 +403,7 @@ Item {
                     ColumnLayout {
                         Layout.preferredWidth: 150
                         spacing: 2
-                        Text { text: I18n.t("Сортировка"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: I18n.t("Сортировка"); color: Theme.textMuted; font.pixelSize: 11 }
                         StyledComboBox {
                             id: sortCombo
                             Layout.fillWidth: true
@@ -424,7 +424,7 @@ Item {
                         implicitHeight: 30
                         contentItem: Text {
                             text: parent.text
-                            color: "#ddd"
+                            color: Theme.textSecondary
                             font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -444,7 +444,7 @@ Item {
 
                     Text {
                         text: I18n.t("Быстрый период")
-                        color: "#888"
+                        color: Theme.textMuted
                         font.pixelSize: 11
                     }
 
@@ -453,7 +453,7 @@ Item {
                         implicitHeight: 28
                         contentItem: Text {
                             text: parent.text
-                            color: "#ddd"
+                            color: Theme.textSecondary
                             font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -477,7 +477,7 @@ Item {
                         implicitHeight: 28
                         contentItem: Text {
                             text: parent.text
-                            color: "#ddd"
+                            color: Theme.textSecondary
                             font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -500,7 +500,7 @@ Item {
                         implicitHeight: 28
                         contentItem: Text {
                             text: parent.text
-                            color: "#ddd"
+                            color: Theme.textSecondary
                             font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -523,7 +523,7 @@ Item {
                         implicitHeight: 28
                         contentItem: Text {
                             text: parent.text
-                            color: "#ddd"
+                            color: Theme.textSecondary
                             font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -559,7 +559,7 @@ Item {
 
                 Text {
                     text: I18n.t("Показано %1 из %2", [filteredCount, totalCount])
-                    color: "#888"
+                    color: Theme.textMuted
                     font.pixelSize: 11
                 }
                 Item { Layout.fillWidth: true }
@@ -568,7 +568,7 @@ Item {
                     implicitHeight: 26
                     contentItem: Text {
                         text: parent.text
-                        color: "#ddd"
+                        color: Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -607,7 +607,7 @@ Item {
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: parent.checked ? "#3b82f6" : "#ddd"
+                        color: parent.checked ? Theme.metroBlue : Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -621,7 +621,7 @@ Item {
 
                 Text {
                     text: root.selectedCount > 0 ? I18n.t("Выбрано: %1", [root.selectedCount]) : ""
-                    color: "#aaa"
+                    color: Theme.textMuted
                     font.pixelSize: 11
                     visible: root.selectedCount > 0
                 }
@@ -634,7 +634,7 @@ Item {
                     implicitHeight: 26
                     contentItem: Text {
                         text: parent.text
-                        color: "#ddd"
+                        color: Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -669,7 +669,7 @@ Item {
 
                     Text {
                         text: I18n.t("Даты")
-                        color: "#aaa"
+                        color: Theme.textMuted
                         font.pixelSize: 12
                     }
 
@@ -689,11 +689,11 @@ Item {
                             }
                             contentItem: Text {
                                 text: model.text
-                                color: "#ddd"
+                                color: Theme.textSecondary
                                 elide: Text.ElideRight
                             }
                             background: Rectangle {
-                                color: index === root.selectedDateIndex ? "#2d2d2d" : "transparent"
+                                color: index === root.selectedDateIndex ? Theme.metroTileHover : "transparent"
                                 radius: Theme.radiusSm
                             }
                         }
@@ -701,7 +701,7 @@ Item {
 
                     Text {
                         text: dateGroupsModel.count <= 1 ? I18n.t("Нет событий") : ""
-                        color: "#666"
+                        color: Theme.textFaint
                         font.pixelSize: 12
                         visible: dateGroupsModel.count <= 1
                     }
@@ -791,7 +791,7 @@ Item {
                                         }
 
                                         Rectangle {
-                                            color: "#6b7280"
+                                            color: Theme.textFaint
                                             radius: Theme.radiusSm
                                             visible: label === "" && root.moduleBadgeText !== ""
                                             Text {
@@ -815,7 +815,7 @@ Item {
 
                                 Text {
                                     text: capturedAtText !== "" ? capturedAtText : (fileModified ? Qt.formatDateTime(fileModified, "yyyy-MM-dd HH:mm:ss") : "")
-                                    color: "#aaa"
+                                    color: Theme.textMuted
                                     font.pixelSize: 10
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
@@ -829,8 +829,8 @@ Item {
                                 anchors.right: parent.right
                                 anchors.top: parent.top
                                 anchors.margins: 8
-                                color: "#252526"
-                                border.color: "#666666"
+                                color: Theme.metroSidebarBackground
+                                border.color: Theme.textFaint
                                 visible: root.selectionMode
                                 z: 3
 
@@ -839,7 +839,7 @@ Item {
                                     height: 10
                                     anchors.centerIn: parent
                                     radius: 2
-                                    color: "#4caf50"
+                                    color: Theme.metroGreen
                                     visible: root.isSelected(fileUrl)
                                 }
                             }
@@ -976,7 +976,7 @@ Item {
         onOpened: resetGeometry()
 
         Overlay.modal: Rectangle { color: "#00000099" }
-        background: Rectangle { color: "#1b1b1b"; radius: 8; border.color: "#3a3a3a" }
+        background: Rectangle { color: "#1b1b1b"; radius: 8; border.color: Theme.metroStroke }
 
         function currentItem() {
             if (root.currentIndex < 0 || root.currentIndex >= filteredModel.count) return null
@@ -1014,7 +1014,7 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            color: "#2d2d30"
+            color: Theme.metroSurface
             z: 10
 
             MouseArea {
@@ -1052,24 +1052,19 @@ Item {
                     }
                 }
 
-                Button {
-                    text: "□"
-                    flat: true
+                MetroWindowButton {
+                    kind: "maximize"
+                    maximized: previewPopup.maximized
                     Layout.preferredWidth: 34
                     Layout.fillHeight: true
                     onClicked: previewPopup.toggleMaximize()
-                    contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
                 }
 
-                Button {
-                    text: "✕"
-                    flat: true
+                MetroWindowButton {
+                    kind: "close"
                     Layout.preferredWidth: 34
                     Layout.fillHeight: true
                     onClicked: previewPopup.close()
-                    contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
                 }
             }
         }
@@ -1112,15 +1107,15 @@ Item {
                 text: I18n.t("Назад")
                 contentItem: Text {
                     text: parent.text
-                    color: "#ddd"
+                    color: Theme.textSecondary
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
+                    color: parent.hovered ? Theme.metroTileHover : Theme.metroSidebarBackground
                     radius: 4
-                    border.color: "#3a3a3a"
+                    border.color: Theme.metroStroke
                 }
                 onClicked: previewPopup.previous()
             }
@@ -1128,15 +1123,15 @@ Item {
                 text: I18n.t("Вперед")
                 contentItem: Text {
                     text: parent.text
-                    color: "#ddd"
+                    color: Theme.textSecondary
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
+                    color: parent.hovered ? Theme.metroTileHover : Theme.metroSidebarBackground
                     radius: 4
-                    border.color: "#3a3a3a"
+                    border.color: Theme.metroStroke
                 }
                 onClicked: previewPopup.next()
             }
@@ -1144,15 +1139,15 @@ Item {
                 text: I18n.t("Открыть файл")
                 contentItem: Text {
                     text: parent.text
-                    color: "#ddd"
+                    color: Theme.textSecondary
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
+                    color: parent.hovered ? Theme.metroTileHover : Theme.metroSidebarBackground
                     radius: 4
-                    border.color: "#3a3a3a"
+                    border.color: Theme.metroStroke
                 }
                 onClicked: {
                     var item = previewPopup.currentItem()
@@ -1168,15 +1163,15 @@ Item {
                 opacity: enabled ? 1 : 0.5
                 contentItem: Text {
                     text: parent.text
-                    color: "#ddd"
+                    color: Theme.textSecondary
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    color: parent.hovered ? "#2d2d2d" : "#252526"
+                    color: parent.hovered ? Theme.metroTileHover : Theme.metroSidebarBackground
                     radius: 4
-                    border.color: "#3a3a3a"
+                    border.color: Theme.metroStroke
                 }
                 onClicked: {
                     var item = previewPopup.currentItem()
@@ -1191,7 +1186,7 @@ Item {
             anchors.right: parent.right
             anchors.top: previewTitleBar.bottom
             height: 48
-            color: "#111111cc"
+            color: Theme.overlayDark
 
             RowLayout {
                 anchors.fill: parent
@@ -1199,7 +1194,7 @@ Item {
                 spacing: 12
 
                 Text {
-                    color: "#ddd"
+                    color: Theme.textSecondary
                     text: {
                         var item = previewPopup.currentItem()
                         if (!item) return ""
@@ -1212,7 +1207,7 @@ Item {
                 }
 
                 Text {
-                    color: "#888"
+                    color: Theme.textMuted
                     text: {
                         var item = previewPopup.currentItem()
                         if (!item) return ""
@@ -1228,7 +1223,7 @@ Item {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 100
-            color: "#0f0f0fcc"
+            color: Theme.overlayDark
 
             ListView {
                 id: filmstrip
@@ -1244,8 +1239,8 @@ Item {
                     width: 120
                     height: 84
                     radius: 4
-                    color: index === root.currentIndex ? "#3b82f6" : "#222"
-                    border.color: "#333"
+                    color: index === root.currentIndex ? Theme.metroBlue : "#222"
+                    border.color: Theme.metroTile
                     border.width: 1
 
                     Image {

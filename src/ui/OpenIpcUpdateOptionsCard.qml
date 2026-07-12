@@ -23,12 +23,15 @@ Rectangle {
     Layout.fillWidth: true
     Layout.leftMargin: 16
     Layout.rightMargin: 16
-    Layout.preferredHeight: (root.updateReset || root.updateForce) ? 168 : 144
-    color: Theme.cardBackground
-    border.color: (root.updateReset || root.updateForce || (!root.updateKernel && !root.updateRootfs)) ? Theme.warning : Theme.cardBorder
-    radius: Theme.radiusLg
+    Layout.minimumHeight: (root.updateReset || root.updateForce) ? 168 : 144
+    Layout.preferredHeight: Math.max(Layout.minimumHeight, optionsContent.implicitHeight + 28)
+    color: Theme.metroSurface
+    border.color: (root.updateReset || root.updateForce || (!root.updateKernel && !root.updateRootfs)) ? Theme.metroAmber : Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
+        id: optionsContent
+
         anchors.fill: parent
         anchors.margins: 14
         spacing: 8
@@ -46,7 +49,7 @@ Rectangle {
 
             Text {
                 text: root.optionsSummary
-                color: Theme.accentHover
+                color: Theme.metroBlue
                 font.family: "Consolas"
                 font.pixelSize: 12
             }
@@ -111,7 +114,7 @@ Rectangle {
                   : (root.updateReset || root.updateForce)
                     ? I18n.t("Reset/Force — опасные опции. Используйте их только если понимаете последствия.")
                     : I18n.t("Стандартный безопасный режим: kernel + rootfs, без reset/force.")
-            color: (!root.updateKernel && !root.updateRootfs) || root.updateReset || root.updateForce ? Theme.warning : Theme.textMuted
+            color: (!root.updateKernel && !root.updateRootfs) || root.updateReset || root.updateForce ? Theme.metroAmber : Theme.textMuted
             wrapMode: Text.WordWrap
             font.pixelSize: 11
         }

@@ -1,0 +1,458 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Window
+import OpenIPC
+
+Item {
+    id: root
+
+    width: 1280
+    height: 720
+    visible: false
+
+    signal smokeFinished(bool ok, string message)
+
+    property bool smokeOk: false
+    property string smokeMessage: ""
+    property int caseIndex: -1
+    property var currentObject: null
+
+    QtObject {
+        id: streamingSettingsStub
+
+        property string preferredStream: "auto"
+        property bool showStatsOverlay: true
+        property bool smartStreamBudget: true
+        property int maxPreviewStreams: 16
+        property int playerBufferMode: 1
+        property string playerRtspTransport: "tcp"
+        property string playerHwDecoding: "auto"
+        property real playerBrightness: 1.0
+        property real playerContrast: 1.0
+        property int playerHue: 0
+        property real playerSaturation: 1.0
+        property real playerGamma: 1.0
+        property int playerOrientation: 0
+        property bool playerMirror: false
+
+        function applyCurrentSettings() {}
+    }
+
+    ListModel {
+        id: toolbarLayoutsModel
+
+        ListElement { name: "Layout 01"; isDefault: false }
+        ListElement { name: "Very long layout 02"; isDefault: false }
+        ListElement { name: "Layout 03"; isDefault: false }
+        ListElement { name: "Very long layout 04"; isDefault: false }
+        ListElement { name: "Layout 05"; isDefault: false }
+        ListElement { name: "Very long layout 06"; isDefault: false }
+        ListElement { name: "Layout 07"; isDefault: false }
+        ListElement { name: "Very long layout 08"; isDefault: false }
+    }
+
+    Item {
+        id: host
+        width: root.width
+        height: root.height
+        visible: false
+    }
+
+    Timer {
+        id: smokeStepTimer
+
+        interval: 16
+        repeat: false
+        onTriggered: root.runNextCase()
+    }
+
+    Component.onCompleted: smokeStepTimer.start()
+
+    function cases() {
+        return [
+            { name: "Login", component: loginComponent, parentObject: host },
+            {
+                name: "Dashboard",
+                component: dashboardComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady ? "" : "dashboard layout has invalid geometry"
+                }
+            },
+            {
+                name: "Dashboard Compact",
+                component: compactDashboardComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady ? "" : "compact dashboard layout has invalid geometry"
+                }
+            },
+            {
+                name: "Sidebar Tools Collapse",
+                component: collapsedSidebarComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady
+                        ? ""
+                        : "sidebar tools did not collapse cleanly"
+                }
+            },
+            {
+                name: "Layout Toolbar Overflow",
+                component: compactLayoutToolbarComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady ? "" : "layout toolbar actions are clipped"
+                }
+            },
+            { name: "Grid Cell", component: gridCellComponent, parentObject: host },
+            { name: "Grid Cell Compact", component: compactGridCellComponent, parentObject: host },
+            {
+                name: "Sidebar Camera Card",
+                component: sidebarCameraCardComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady
+                        ? ""
+                        : "sidebar camera metadata is clipped"
+                }
+            },
+            {
+                name: "Settings",
+                component: settingsComponent,
+                parentObject: null,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.contentLayoutReady
+                        ? ""
+                        : "main settings content has invalid geometry"
+                }
+            },
+            {
+                name: "Settings Compact",
+                component: compactSettingsComponent,
+                parentObject: null,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.contentLayoutReady
+                        ? ""
+                        : "compact settings content has invalid geometry"
+                }
+            },
+            {
+                name: "Settings Streaming Compact",
+                component: compactStreamingSettingsComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady
+                        ? ""
+                        : "compact streaming settings layout overflow"
+                }
+            },
+            { name: "Camera Search", component: cameraSearchComponent, parentObject: host },
+            {
+                name: "Health Center",
+                component: healthCenterComponent,
+                parentObject: host,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.layoutReady && object.diagnosticProfileCount === 4
+                        ? ""
+                        : "health v2 layout or profiles are invalid (top="
+                          + object.statsTopInDialog + ", headerBottom="
+                          + object.headerBottomInDialog + ", profiles="
+                          + object.diagnosticProfileCount + ")"
+                }
+            },
+            {
+                name: "Analytics",
+                component: analyticsComponent,
+                parentObject: host,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.layoutReady ? "" : "analytics tabs or content overflow"
+                }
+            },
+            { name: "Majestic/OpenIPC Control Center", component: majesticComponent, parentObject: host }
+        ]
+    }
+
+    function cleanupCurrent() {
+        if (currentObject) {
+            currentObject.destroy()
+            currentObject = null
+        }
+    }
+
+    function finish(ok, message) {
+        cleanupCurrent()
+        smokeOk = ok
+        smokeMessage = message
+        smokeFinished(ok, message)
+    }
+
+    function runNextCase() {
+        if (currentObject && caseIndex >= 0) {
+            var completedCase = cases()[caseIndex]
+            if (completedCase.validate) {
+                var validationError = completedCase.validate(currentObject)
+                if (validationError) {
+                    finish(false, completedCase.name + ": " + validationError)
+                    return
+                }
+            }
+        }
+
+        cleanupCurrent()
+
+        var allCases = cases()
+        caseIndex += 1
+        if (caseIndex >= allCases.length) {
+            finish(true, "QML smoke passed: " + allCases.length + " components")
+            return
+        }
+
+        var smokeCase = allCases[caseIndex]
+        if (smokeCase.component.status === Component.Error) {
+            finish(false, smokeCase.name + ": " + smokeCase.component.errorString())
+            return
+        }
+
+        var created = smokeCase.component.createObject(smokeCase.parentObject)
+        if (!created) {
+            finish(false, smokeCase.name + ": createObject returned null")
+            return
+        }
+
+        currentObject = created
+        if (currentObject.hasOwnProperty("visible")) {
+            currentObject.visible = smokeCase.showForLayout === true
+        }
+
+        smokeStepTimer.restart()
+    }
+
+    Component {
+        id: loginComponent
+
+        LoginView {
+            width: 1280
+            height: 720
+        }
+    }
+
+    Component {
+        id: dashboardComponent
+
+        DashboardView {
+            width: 1280
+            height: 720
+        }
+    }
+
+    Component {
+        id: compactDashboardComponent
+
+        DashboardView {
+            width: 960
+            height: 540
+            isSidebarVisible: true
+        }
+    }
+
+    Component {
+        id: compactLayoutToolbarComponent
+
+        DashboardLayoutToolbar {
+            width: 480
+            height: 32
+            layoutsModel: toolbarLayoutsModel
+            currentLayoutIndex: 0
+        }
+    }
+
+    Component {
+        id: collapsedSidebarComponent
+
+        Item {
+            id: collapsedSidebarHost
+
+            width: 300
+            height: 540
+            property bool toolsExpanded: true
+            readonly property bool layoutReady: !toolsExpanded
+                                                && !testSidebar.toolsContentVisible
+
+            Component.onCompleted: testSidebar.toolsExpandedToggleRequested()
+
+            DashboardSidebar {
+                id: testSidebar
+
+                width: collapsedSidebarHost.width
+                height: collapsedSidebarHost.height
+                sidebarWidth: collapsedSidebarHost.width
+                systemController: SystemController
+                toolsExpanded: collapsedSidebarHost.toolsExpanded
+                onToolsExpandedToggleRequested: collapsedSidebarHost.toolsExpanded =
+                                                    !collapsedSidebarHost.toolsExpanded
+            }
+        }
+    }
+
+    Component {
+        id: gridCellComponent
+
+        GridCell {
+            width: 320
+            height: 180
+            cameraName: "Smoke Cell"
+            status: "Offline"
+            streamUrl: ""
+            sdStreamUrl: ""
+            hdStreamUrl: ""
+            recordingOwner: "manual"
+            canLive: false
+            canPlayback: false
+            canPtz: false
+            canExport: false
+            canSettings: false
+        }
+    }
+
+    Component {
+        id: compactGridCellComponent
+
+        GridCell {
+            width: 160
+            height: 90
+            cameraName: "Smoke Compact Cell"
+            status: "Offline"
+            streamUrl: ""
+            sdStreamUrl: ""
+            hdStreamUrl: ""
+            canLive: false
+            canPlayback: false
+            canPtz: false
+            canExport: false
+            canSettings: false
+        }
+    }
+
+    Component {
+        id: sidebarCameraCardComponent
+
+        Item {
+            width: 300
+            height: 96
+
+            readonly property bool layoutReady: cardRepeater.count > 0
+                                                && cardRepeater.itemAt(0)
+                                                && cardRepeater.itemAt(0).cameraIp === "192.168.1.219"
+
+            ListModel {
+                id: cardModel
+                ListElement {
+                    cameraName: "OpenIPC smoke camera"
+                    cameraIp: "192.168.1.219"
+                    cameraPort: 554
+                }
+            }
+
+            Repeater {
+                id: cardRepeater
+                model: cardModel
+
+                delegate: DeviceListItem {
+                    width: 300
+                    effectiveStatus: "Online"
+                    effectiveDetail: "Optional probe warning"
+                    online: true
+                    canSettings: true
+                    systemController: SystemController
+                }
+            }
+        }
+    }
+
+    Component {
+        id: settingsComponent
+
+        SettingsDialog {
+        }
+    }
+
+    Component {
+        id: compactSettingsComponent
+
+        SettingsDialog {
+            width: 560
+            height: 480
+            language: "en"
+        }
+    }
+
+    Component {
+        id: compactStreamingSettingsComponent
+
+        SettingsStreamingPage {
+            width: 520
+            height: 420
+            settings: streamingSettingsStub
+        }
+    }
+
+    Component {
+        id: cameraSearchComponent
+
+        CameraSearchDialog {
+        }
+    }
+
+    Component {
+        id: healthCenterComponent
+
+        Window {
+            id: healthTestWindow
+
+            width: 1280
+            height: 720
+            visible: false
+
+            property alias layoutReady: healthDialog.layoutReady
+            property alias diagnosticProfileCount: healthDialog.diagnosticProfileCount
+            property alias statsTopInDialog: healthDialog.statsTopInDialog
+            property alias headerBottomInDialog: healthDialog.headerBottomInDialog
+
+            onVisibleChanged: {
+                if (visible)
+                    Qt.callLater(function() { healthDialog.open() })
+            }
+
+            CameraHealthDialog {
+                id: healthDialog
+
+                autoRefreshOnOpen: false
+            }
+        }
+    }
+
+    Component {
+        id: analyticsComponent
+
+        AnalyticsView {
+        }
+    }
+
+    Component {
+        id: majesticComponent
+
+        MajesticControlDialog {
+            cameraName: "Smoke Camera"
+            cameraHost: "127.0.0.1"
+            cameraPort: 80
+            cameraUser: "root"
+            cameraPassword: ""
+        }
+    }
+}

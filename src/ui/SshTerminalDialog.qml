@@ -9,7 +9,7 @@ Window {
     width: 800
     height: 600
     visible: false
-    color: "#1e1e1e"
+    color: Theme.metroBackground
     flags: Qt.Window | Qt.FramelessWindowHint
     
     property string cameraIp: ""
@@ -35,7 +35,7 @@ Window {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        color: "#2d2d30"
+        color: Theme.metroSurface
         z: 100
 
         MouseArea {
@@ -55,37 +55,29 @@ Window {
                 Layout.fillWidth: true
             }
             
-            Button {
-                text: "—"
-                flat: true
+            MetroWindowButton {
+                kind: "minimize"
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
-                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
             }
             
-            Button {
-                text: "□"
-                flat: true
+            MetroWindowButton {
+                kind: "maximize"
+                maximized: root.visibility === Window.Maximized
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: {
                     if (root.visibility === Window.Maximized) root.showNormal()
                     else root.showMaximized()
                 }
-                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
             }
 
-            Button {
-                text: "✕"
-                flat: true
+            MetroWindowButton {
+                kind: "close"
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.close()
-                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
             }
         }
     }
@@ -125,7 +117,7 @@ Window {
             TextArea {
                 id: outputArea
                 readOnly: true
-                color: "#00ff00" // Terminal green
+                color: Theme.metroGreen // Terminal green
                 font.family: "Consolas, monospace"
                 font.pixelSize: 14
                 background: null
@@ -136,7 +128,7 @@ Window {
         Rectangle {
             Layout.fillWidth: true
             height: 1
-            color: "#3c3c3c"
+            color: Theme.metroStroke
         }
         
         RowLayout {
@@ -146,7 +138,7 @@ Window {
             
             Text {
                 text: ">"
-                color: "#00ff00"
+                color: Theme.metroGreen
                 font.family: "Consolas, monospace"
                 font.bold: true
             }
@@ -158,7 +150,7 @@ Window {
                 font.family: "Consolas, monospace"
                 background: null
                 placeholderText: I18n.t("Введите команду...")
-                placeholderTextColor: "#555555"
+                placeholderTextColor: Theme.metroTilePressed
                 
                 onAccepted: {
                     if (text.trim() !== "") {

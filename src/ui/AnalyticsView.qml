@@ -17,9 +17,9 @@ Dialog {
     height: parent.height * 0.9
     
     background: Rectangle {
-        color: Theme.panelAltBackground
-        radius: Theme.radiusLg
-        border.color: Theme.panelBorder
+        color: Theme.metroSidebarBackground
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
         border.width: 1
     }
     
@@ -52,25 +52,14 @@ Dialog {
             }
         }
 
-        Button {
-            text: "✕"
+        MetroWindowButton {
+            kind: "close"
             width: 32
             height: 32
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.topMargin: 8
             anchors.rightMargin: 10
-            background: Rectangle {
-                color: parent.hovered ? "#c42b1c" : "transparent"
-                radius: Theme.radiusSm
-            }
-            contentItem: Text {
-                text: parent.text
-                color: Theme.textPrimary
-                font.pixelSize: 16
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
             onClicked: root.close()
         }
         
@@ -78,7 +67,7 @@ Dialog {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: Theme.panelBorder
+            color: Theme.metroStroke
         }
     }
     
@@ -88,6 +77,10 @@ Dialog {
     property string objectSnapshotsDir: ""
     property string plateSnapshotsDir: ""
     property var analyticsDiagnosticsData: ({})
+    readonly property bool layoutReady: bar.width > 0
+                                        && bar.height >= 40
+                                        && bar.count === 7
+                                        && overviewPage.layoutReady
     readonly property int summaryColumns: width >= 1500 ? 6 : width >= 1100 ? 3 : 2
     property int rulesModuleType: 1
 
@@ -333,33 +326,49 @@ Dialog {
         TabBar {
             id: bar
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
+            Layout.preferredHeight: 44
+            spacing: 6
             background: Rectangle {
-                color: Theme.panelBackground
-                radius: Theme.radiusLg
-                border.color: Theme.panelBorder
-                border.width: 1
+                color: "transparent"
             }
             
             component CustomTabButton: TabButton {
                 id: tabBtn
-                width: implicitWidth + 28
+                implicitWidth: Math.max(92, tabLabel.implicitWidth + 28)
+                implicitHeight: 38
+                width: implicitWidth
+                height: implicitHeight
+                focusPolicy: Qt.StrongFocus
                 background: Rectangle {
-                    color: tabBtn.checked ? Theme.panelAltBackground : Theme.cardBackground
+                    color: tabBtn.checked
+                           ? Theme.metroSurfaceAlt
+                           : tabBtn.hovered ? Theme.metroTileHover : Theme.metroTile
+                    radius: Theme.metroTileRadius
+                    border.color: tabBtn.visualFocus || tabBtn.checked
+                                  ? Theme.metroStrokeStrong
+                                  : Theme.metroStroke
+                    border.width: tabBtn.visualFocus || tabBtn.checked ? 2 : 1
+
                     Rectangle {
                         anchors.bottom: parent.bottom
-                        width: parent.width
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
                         height: 2
-                        color: tabBtn.checked ? Theme.accent : "transparent"
+                        color: tabBtn.checked ? Theme.metroBlue : "transparent"
                     }
                 }
                 contentItem: Text {
+                    id: tabLabel
+
                     text: tabBtn.text
-                    color: tabBtn.checked ? Theme.accent : Theme.textMuted
+                    color: tabBtn.checked ? Theme.metroBlue : Theme.textMuted
                     font.pixelSize: 13
                     font.bold: tabBtn.checked
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
                 }
             }
             
@@ -376,10 +385,94 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: Theme.panelBackground
-            radius: Theme.radiusLg
-            border.color: Theme.panelBorder
+            color: Theme.metroBackground
+            radius: Theme.metroTileRadius
+            border.color: Theme.metroStroke
             border.width: 1
+
+            Component {
+                id: eventsPageComponent
+
+                EventsPanel {
+                    model: SystemController.analyticsEngine
+                    moduleType: -1
+                    snapshotsDir: root.evidenceSnapshotsDir
+                    clipsDir: root.evidenceClipsDir
+                    moduleBadgeText: I18n.t("Лента событий")
+                }
+            }
+
+            Component {
+                id: archivePageComponent
+
+                Item {
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+
+                        TabBar {
+                            id: archiveBar
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 36
+                            background: Rectangle {
+                                color: Theme.panelSoftBackground
+                                radius: Theme.radiusMd
+                                border.color: Theme.cardBorder
+                            }
+
+                            component ArchiveTabButton: TabButton {
+                                id: archiveTabBtn
+                                width: implicitWidth + 28
+                                background: Rectangle {
+                                    color: archiveTabBtn.checked ? Theme.metroSurfaceAlt : Theme.metroTile
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: 2
+                                        color: archiveTabBtn.checked ? Theme.metroBlue : "transparent"
+                                    }
+                                }
+                                contentItem: Text {
+                                    text: archiveTabBtn.text
+                                    color: archiveTabBtn.checked ? Theme.metroBlue : Theme.textMuted
+                                    font.pixelSize: 13
+                                    font.bold: archiveTabBtn.checked
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            ArchiveTabButton { text: I18n.t("Лица") }
+                            ArchiveTabButton { text: I18n.t("Объекты") }
+                            ArchiveTabButton { text: I18n.t("Номера") }
+                        }
+
+                        StackLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            currentIndex: archiveBar.currentIndex
+
+                            FaceSnapshotsPanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: root.faceSnapshotsDir
+                                clipsDirOverride: root.evidenceClipsDir
+                            }
+
+                            ObjectCounterPanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: root.objectSnapshotsDir
+                                clipsDirOverride: root.evidenceClipsDir
+                            }
+
+                            LicensePlatePanel {
+                                model: SystemController.analyticsEngine
+                                snapshotsDirOverride: root.plateSnapshotsDir
+                                clipsDirOverride: root.evidenceClipsDir
+                            }
+                        }
+                    }
+                }
+            }
 
             StackLayout {
                 anchors.fill: parent
@@ -387,6 +480,8 @@ Dialog {
                 currentIndex: bar.currentIndex
 
                 AnalyticsOverviewPanel {
+                    id: overviewPage
+
                     diagnostics: analyticsDiagnosticsData
                 }
 
@@ -397,12 +492,9 @@ Dialog {
                 AnalyticsModulesPanel {
                 }
 
-                EventsPanel {
-                    model: SystemController.analyticsEngine
-                    moduleType: -1
-                    snapshotsDir: evidenceSnapshotsDir
-                    clipsDir: evidenceClipsDir
-                    moduleBadgeText: I18n.t("Лента событий")
+                Loader {
+                    active: StackLayout.isCurrentItem
+                    sourceComponent: eventsPageComponent
                 }
 
                 Item {
@@ -441,78 +533,16 @@ Dialog {
                     }
                 }
 
-                Item {
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 8
-
-                        TabBar {
-                            id: archiveBar
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 36
-                            background: Rectangle {
-                                color: Theme.panelSoftBackground
-                                radius: Theme.radiusMd
-                                border.color: Theme.cardBorder
-                            }
-
-                            component ArchiveTabButton: TabButton {
-                                id: archiveTabBtn
-                                width: implicitWidth + 28
-                                background: Rectangle {
-                                    color: archiveTabBtn.checked ? Theme.panelAltBackground : Theme.cardBackground
-                                    Rectangle {
-                                        anchors.bottom: parent.bottom
-                                        width: parent.width
-                                        height: 2
-                                        color: archiveTabBtn.checked ? Theme.accent : "transparent"
-                                    }
-                                }
-                                contentItem: Text {
-                                    text: archiveTabBtn.text
-                                    color: archiveTabBtn.checked ? Theme.accent : Theme.textMuted
-                                    font.pixelSize: 13
-                                    font.bold: archiveTabBtn.checked
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                            }
-
-                            ArchiveTabButton { text: I18n.t("Лица") }
-                            ArchiveTabButton { text: I18n.t("Объекты") }
-                            ArchiveTabButton { text: I18n.t("Номера") }
-                        }
-
-                        StackLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            currentIndex: archiveBar.currentIndex
-
-                            FaceSnapshotsPanel {
-                                model: SystemController.analyticsEngine
-                                snapshotsDirOverride: faceSnapshotsDir
-                                clipsDirOverride: evidenceClipsDir
-                            }
-
-                            ObjectCounterPanel {
-                                model: SystemController.analyticsEngine
-                                snapshotsDirOverride: objectSnapshotsDir
-                                clipsDirOverride: evidenceClipsDir
-                            }
-
-                            LicensePlatePanel {
-                                model: SystemController.analyticsEngine
-                                snapshotsDirOverride: plateSnapshotsDir
-                                clipsDirOverride: evidenceClipsDir
-                            }
-                        }
-                    }
+                Loader {
+                    active: StackLayout.isCurrentItem
+                    sourceComponent: archivePageComponent
                 }
 
                 ScrollView {
                     id: diagnosticsScroll
                     clip: true
                     contentWidth: availableWidth
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                     ColumnLayout {
                         width: diagnosticsScroll.availableWidth

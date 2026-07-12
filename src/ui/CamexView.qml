@@ -89,9 +89,9 @@ Dialog {
     }
 
     background: Rectangle {
-        color: Theme.panelAltBackground
-        radius: Theme.radiusLg
-        border.color: Theme.panelBorder
+        color: Theme.metroSidebarBackground
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
         border.width: 1
     }
 
@@ -123,26 +123,15 @@ Dialog {
             }
         }
 
-        Button {
+        MetroWindowButton {
             id: closeButton
-            text: "x"
+            kind: "close"
             width: 32
             height: 32
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.topMargin: 10
             anchors.rightMargin: 10
-            background: Rectangle {
-                color: parent.hovered ? Theme.danger : "transparent"
-                radius: Theme.radiusSm
-            }
-            contentItem: Text {
-                text: parent.text
-                color: Theme.textPrimary
-                font.pixelSize: 16
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
             onClicked: root.close()
         }
 
@@ -150,7 +139,7 @@ Dialog {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: Theme.panelBorder
+            color: Theme.metroStroke
         }
     }
 
@@ -164,9 +153,9 @@ Dialog {
 
         background: Rectangle {
             color: parent.enabled ? (parent.hovered ? parent.hoverColor : parent.buttonColor) : Theme.controlBackgroundAlt
-            border.color: parent.hovered ? Theme.accent : Theme.controlBorderStrong
+            border.color: parent.hovered ? Theme.metroBlue : Theme.metroStroke
             border.width: 1
-            radius: Theme.radiusMd
+            radius: Theme.metroTileRadius
         }
 
         contentItem: Text {
@@ -180,48 +169,10 @@ Dialog {
         }
     }
 
-    component StyledCheckBox: CheckBox {
-        id: checkRoot
-
-        hoverEnabled: true
-        spacing: 8
+    component StyledCheckBox: MetroCheckBox {
         implicitHeight: 28
         leftPadding: 0
         rightPadding: 8
-
-        indicator: Rectangle {
-            implicitWidth: 18
-            implicitHeight: 18
-            x: checkRoot.leftPadding
-            y: checkRoot.height / 2 - height / 2
-            radius: Theme.radiusXs
-            color: checkRoot.checked ? Theme.accent : Theme.controlBackground
-            border.color: checkRoot.checked ? Theme.accent : (checkRoot.hovered ? Theme.accent : Theme.controlBorderStrong)
-            border.width: 1
-
-            Rectangle {
-                width: 8
-                height: 8
-                anchors.centerIn: parent
-                radius: 2
-                color: Theme.textPrimary
-                visible: checkRoot.checked
-            }
-        }
-
-        contentItem: Text {
-            text: checkRoot.text
-            color: checkRoot.enabled ? Theme.textSecondary : Theme.textMuted
-            font.pixelSize: 12
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: checkRoot.indicator.width + checkRoot.spacing
-            elide: Text.ElideRight
-        }
-
-        background: Rectangle {
-            color: checkRoot.hovered ? Theme.cardHover : "transparent"
-            radius: Theme.radiusSm
-        }
     }
 
     component FieldRow: ColumnLayout {
@@ -254,9 +205,9 @@ Dialog {
             font.pixelSize: 13
             background: Rectangle {
                 color: Theme.controlBackground
-                border.color: parent.activeFocus ? Theme.accent : Theme.controlBorder
+                border.color: parent.activeFocus ? Theme.metroBlue : Theme.metroStroke
                 border.width: 1
-                radius: Theme.radiusMd
+                radius: Theme.metroTileRadius
             }
         }
     }
@@ -267,10 +218,10 @@ Dialog {
         default property alias content: body.data
 
         Layout.fillWidth: true
-        color: Theme.panelSoftBackground
-        border.color: Theme.panelBorder
+        color: Theme.metroSurface
+        border.color: Theme.metroStroke
         border.width: 1
-        radius: Theme.radiusLg
+        radius: Theme.metroTileRadius
         implicitHeight: headerColumn.implicitHeight + body.implicitHeight + 30
 
         ColumnLayout {
@@ -392,10 +343,10 @@ Dialog {
             bottomPadding: 6
             spacing: 6
             background: Rectangle {
-                color: Theme.panelBackground
-                border.color: Theme.panelBorder
+                color: Theme.metroBackground
+                border.color: Theme.metroStroke
                 border.width: 1
-                radius: Theme.radiusLg
+                radius: Theme.metroTileRadius
             }
 
             component CamexTabButton: TabButton {
@@ -405,9 +356,9 @@ Dialog {
                 implicitHeight: 32
 
                 background: Rectangle {
-                    color: tabButton.checked ? Theme.controlBackground : (tabButton.hovered ? Theme.cardHover : "transparent")
-                    radius: Theme.radiusSm
-                    border.color: tabButton.checked ? Theme.accent : "transparent"
+                    color: tabButton.checked ? Theme.metroSurfaceAlt : (tabButton.hovered ? Theme.metroTileHover : "transparent")
+                    radius: Theme.metroTileRadius
+                    border.color: tabButton.checked ? Theme.metroBlue : "transparent"
                     border.width: tabButton.checked ? 1 : 0
 
                     Rectangle {
@@ -416,13 +367,13 @@ Dialog {
                         anchors.bottom: parent.bottom
                         height: 2
                         radius: 1
-                        color: tabButton.checked ? Theme.accent : "transparent"
+                        color: tabButton.checked ? Theme.metroBlue : "transparent"
                     }
                 }
 
                 contentItem: Text {
                     text: tabButton.text
-                    color: tabButton.checked ? Theme.accent : Theme.textMuted
+                    color: tabButton.checked ? Theme.metroBlue : Theme.textMuted
                     font.pixelSize: 13
                     font.bold: tabButton.checked
                     horizontalAlignment: Text.AlignHCenter

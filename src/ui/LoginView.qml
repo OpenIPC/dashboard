@@ -5,7 +5,7 @@ import OpenIPC
 
 Rectangle {
     id: root
-    color: "#1e1e1e" // Main background
+    color: Theme.metroBackground // Main background
 
     property bool authenticating: false
     property string errorMessage: ""
@@ -75,11 +75,11 @@ Rectangle {
         width: 360
         height: SystemController.userManager.hasUsers ? 440 : 520
         anchors.centerIn: parent
-        color: "#2a2f33"
+        color: Theme.metroSurface
         radius: 4
         
         // Shadow effect (simulated with border for now, or just dark background)
-        border.color: "#3c3c3c"
+        border.color: Theme.metroStroke
         border.width: 1
 
         ColumnLayout {
@@ -107,14 +107,14 @@ Rectangle {
                 spacing: 5
                 Text {
                     text: I18n.t("Логин")
-                    color: "#2196f3" // Blue label color
+                    color: Theme.metroBlue // Blue label color
                     font.pixelSize: 12
                 }
                 Rectangle {
                     Layout.fillWidth: true
                     height: 40
                     color: "transparent"
-                    border.color: "#2196f3" // Blue border for active/filled
+                    border.color: Theme.metroBlue // Blue border for active/filled
                     border.width: 1
                     radius: 4
                     
@@ -132,7 +132,7 @@ Rectangle {
                         Text {
                             anchors.fill: parent
                             text: "" // No placeholder in screenshot, label is above
-                            color: "#666666"
+                            color: Theme.textFaint
                             visible: !parent.text && !parent.activeFocus
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -146,14 +146,14 @@ Rectangle {
                 spacing: 5
                 Text {
                     text: I18n.t("Пароль")
-                    color: "#666666" // Grey label when not focused (simulated)
+                    color: Theme.textFaint // Grey label when not focused (simulated)
                     font.pixelSize: 12
                 }
                 Rectangle {
                     Layout.fillWidth: true
                     height: 40
-                    color: "#333333" // Darker background for inactive
-                    border.color: "#444444"
+                    color: Theme.metroTile // Darker background for inactive
+                    border.color: Theme.metroStroke
                     border.width: 1
                     radius: 4
                     
@@ -179,15 +179,15 @@ Rectangle {
 
                 Text {
                     text: I18n.t("Подтвердите пароль")
-                    color: "#666666"
+                    color: Theme.textFaint
                     font.pixelSize: 12
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     height: 40
-                    color: "#333333"
-                    border.color: "#444444"
+                    color: Theme.metroTile
+                    border.color: Theme.metroStroke
                     border.width: 1
                     radius: 4
 
@@ -211,37 +211,9 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 10
                 
-                CheckBox {
+                MetroCheckBox {
                     id: rememberMeCheck
                     text: I18n.t("Запомнить меня")
-                    hoverEnabled: false
-                    background: Item {}
-                    
-                    contentItem: Text {
-                        text: parent.text
-                        font.pixelSize: 14
-                        color: "white"
-                        verticalAlignment: Text.AlignVCenter
-                        leftPadding: parent.indicator.width + parent.spacing
-                    }
-                    
-                    indicator: Rectangle {
-                        implicitWidth: 18
-                        implicitHeight: 18
-                        x: parent.leftPadding
-                        y: parent.height / 2 - height / 2
-                        radius: 2
-                        color: "transparent"
-                        border.color: "#666666"
-                        
-                        Rectangle {
-                            width: 10
-                            height: 10
-                            anchors.centerIn: parent
-                            color: "#2196f3"
-                            visible: parent.parent.checked
-                        }
-                    }
                 }
             }
 
@@ -249,7 +221,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: root.errorMessage
-                color: "#f44336"
+                color: Theme.metroRed
                 font.pixelSize: 12
                 visible: root.errorMessage !== ""
                 horizontalAlignment: Text.AlignHCenter
@@ -261,7 +233,7 @@ Rectangle {
                 text: SystemController.userManager.hasUsers
                     ? I18n.t("Будет запомнен логин и пароль для следующего входа.")
                     : I18n.t("Для первого запуска создайте учетную запись администратора.")
-                color: "#888888"
+                color: Theme.textMuted
                 font.pixelSize: 11
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -273,7 +245,7 @@ Rectangle {
                 text: SystemController.userManager.hasUsers
                     ? I18n.t("Будет запомнено только имя пользователя. Пароль всегда требуется вводить заново.")
                     : I18n.t("Для первого запуска создайте учетную запись администратора.")
-                color: "#888888"
+                color: Theme.textMuted
                 font.pixelSize: 11
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -286,7 +258,7 @@ Rectangle {
                 Layout.preferredHeight: 40
                 
                 background: Rectangle {
-                    color: parent.down ? "#1976d2" : "#2196f3"
+                    color: parent.down ? Theme.metroBlue : Theme.metroBlue
                     radius: 4
                 }
                 

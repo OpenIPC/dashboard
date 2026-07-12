@@ -11,12 +11,15 @@ Rectangle {
     signal copyWebUiRequested()
 
     Layout.fillWidth: true
-    Layout.preferredHeight: 252
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    Layout.minimumHeight: 252
+    Layout.preferredHeight: Math.max(Layout.minimumHeight, quickActionsContent.implicitHeight + 32)
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
+        id: quickActionsContent
+
         anchors.fill: parent
         anchors.margins: 16
         spacing: 10
@@ -86,13 +89,13 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.panelBorder
+            color: Theme.metroStroke
         }
 
         Text {
             Layout.fillWidth: true
             text: I18n.t("Write-операции используют те же CGI/JSON endpoints, что и WebUI камеры. Опасные действия требуют подтверждения.")
-            color: Theme.warning
+            color: Theme.metroAmber
             wrapMode: Text.WordWrap
             font.pixelSize: 11
         }

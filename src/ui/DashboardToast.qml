@@ -7,9 +7,9 @@ Rectangle {
 
     width: parent ? Math.min(parent.width - 40, 500) : 500
     height: 50
-    color: "#333333"
-    radius: Theme.radiusMd
-    border.color: Theme.success
+    color: Theme.metroTile
+    radius: Theme.metroTileRadius
+    border.color: Theme.metroGreen
     border.width: 1
     opacity: 0
     visible: opacity > 0
@@ -33,7 +33,7 @@ Rectangle {
             text: "check_circle"
             font.family: "Material Icons"
             font.pixelSize: 24
-            color: Theme.success
+            color: Theme.metroGreen
         }
 
         Text {
@@ -47,9 +47,9 @@ Rectangle {
         DashboardDialogButton {
             text: I18n.t("Открыть папку")
             visible: root.filePath !== ""
-            buttonColor: Theme.controlBackground
-            buttonHoverColor: Theme.cardHover
-            buttonBorderColor: Theme.success
+            buttonColor: Theme.metroSurfaceAlt
+            buttonHoverColor: Theme.metroTileHover
+            buttonBorderColor: Theme.metroGreen
             buttonTextColor: Theme.textPrimary
             onClicked: {
                 var folder = root.filePath.substring(0, root.filePath.lastIndexOf("/"))

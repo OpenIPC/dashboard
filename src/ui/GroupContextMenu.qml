@@ -1,3 +1,4 @@
+import QtQuick
 import QtQuick.Controls
 import OpenIPC
 
@@ -10,15 +11,22 @@ Menu {
     signal renameRequested(string groupName)
     signal deleteRequested(string groupName)
 
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Переименовать группу")
         enabled: menuRoot.canSettings
         onTriggered: menuRoot.renameRequested(menuRoot.targetGroup)
     }
 
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Удалить группу")
         enabled: menuRoot.canSettings
         onTriggered: menuRoot.deleteRequested(menuRoot.targetGroup)
+    }
+    background: Rectangle {
+        implicitWidth: 210
+        implicitHeight: 40
+        color: Theme.metroSurface
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
     }
 }

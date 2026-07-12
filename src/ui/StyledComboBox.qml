@@ -7,7 +7,8 @@ ComboBox {
 
     signal userSelected(int index)
 
-    implicitHeight: 34
+    implicitHeight: 36
+    focusPolicy: Qt.StrongFocus
 
     onActivated: function(index) {
         combo.userSelected(index)
@@ -15,7 +16,9 @@ ComboBox {
 
     contentItem: Text {
         text: combo.displayText
-        color: Theme.textSecondary
+        color: combo.enabled ? Theme.textSecondary : Theme.textFaint
+        font.family: Theme.metroFontFamily
+        font.pixelSize: 12
         verticalAlignment: Text.AlignVCenter
         leftPadding: 10
         rightPadding: 26
@@ -23,23 +26,30 @@ ComboBox {
     }
 
     background: Rectangle {
-        color: Theme.controlBackground
-        radius: Theme.radiusSm
-        border.color: combo.visualFocus ? Theme.accent : Theme.controlBorder
-        border.width: 1
+        color: combo.enabled ? Theme.controlBackground : Theme.metroTileDisabled
+        radius: Theme.metroTileRadius
+        border.color: combo.visualFocus || combo.hovered ? Theme.metroStrokeStrong : Theme.metroStroke
+        border.width: combo.visualFocus || combo.hovered ? 2 : 1
     }
 
-    indicator: Text {
-        text: "\u25BE"
-        color: Theme.textMuted
-        font.pixelSize: 13
+    indicator: Canvas {
         width: 16
-        height: combo.height
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
+        height: 10
         x: combo.width - width - 10
-        y: 0
+        y: (combo.height - height) / 2
         opacity: combo.enabled ? 1.0 : 0.45
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.clearRect(0, 0, width, height)
+            ctx.beginPath()
+            ctx.moveTo(3, 3)
+            ctx.lineTo(width / 2, height - 2)
+            ctx.lineTo(width - 3, 3)
+            ctx.strokeStyle = Theme.textMuted
+            ctx.lineWidth = 1.8
+            ctx.lineCap = "square"
+            ctx.stroke()
+        }
     }
 
     popup: Popup {
@@ -47,9 +57,9 @@ ComboBox {
         width: combo.width
         padding: 4
         background: Rectangle {
-            color: Theme.panelAltBackground
-            radius: Theme.radiusSm
-            border.color: Theme.controlBorder
+            color: Theme.metroSurface
+            radius: Theme.metroTileRadius
+            border.color: Theme.metroStroke
         }
 
         contentItem: ListView {
@@ -63,8 +73,8 @@ ComboBox {
                 id: row
                 width: ListView.view ? ListView.view.width : combo.width
                 height: 32
-                radius: Theme.radiusXs
-                color: mouse.containsMouse || combo.currentIndex === index ? Theme.cardHover : "transparent"
+                radius: Theme.metroTileRadius
+                color: mouse.containsMouse || combo.currentIndex === index ? Theme.metroTileHover : "transparent"
 
                 Text {
                     anchors.fill: parent
@@ -72,6 +82,8 @@ ComboBox {
                     anchors.rightMargin: 10
                     text: combo.textAt(index)
                     color: Theme.textSecondary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
                 }

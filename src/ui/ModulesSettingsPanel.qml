@@ -9,7 +9,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#1e1e1e"
+        color: Theme.metroBackground
     }
 
     FontLoader {
@@ -25,35 +25,7 @@ Item {
         return SystemController.normalizeLocalPath((typeof path === "string") ? path : path.toString())
     }
     
-    component StyledCheckBox: CheckBox {
-        hoverEnabled: false
-        background: Item {}
-        indicator: Rectangle {
-            implicitWidth: 18
-            implicitHeight: 18
-            x: parent.leftPadding
-            y: parent.height / 2 - height / 2
-            radius: 3
-            color: "#252526"
-            border.color: parent.checked ? "#3b82f6" : "#666666"
-            
-            Rectangle {
-                width: 10
-                height: 10
-                anchors.centerIn: parent
-                radius: 2
-                color: "#3b82f6"
-                visible: parent.parent.checked
-            }
-        }
-        contentItem: Text {
-            text: parent.text
-            font: parent.font
-            opacity: parent.enabled ? 1.0 : 0.5
-            color: "white"
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: parent.indicator.width + parent.spacing
-        }
+    component StyledCheckBox: MetroCheckBox {
     }
 
     // Enum mapping from C++
@@ -86,9 +58,9 @@ Item {
             id: moduleDelegate
             width: ListView.view.width
             height: contentLayout.implicitHeight + 32
-            color: "#1f2733"
+            color: Theme.metroSurfaceAlt
             radius: 6
-            border.color: "#334155"
+            border.color: Theme.metroStroke
             
             property int moduleType: model.type
             property bool isEnabled: SystemController.analyticsEngine.isModuleEnabled(moduleType)
@@ -155,14 +127,14 @@ Item {
                             }
                             Text {
                                 text: "v" + (moduleDelegate.diagnostics.version || model.version)
-                                color: "#666"
+                                color: Theme.textFaint
                                 font.pixelSize: 12
                             }
                         }
                         
                         Text {
                             text: I18n.t(model.description)
-                            color: "#d8dee9"
+                            color: Theme.textSecondary
                             font.pixelSize: 13
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
@@ -176,13 +148,13 @@ Item {
 
                         Text {
                             text: I18n.t("License: ") + (moduleDelegate.diagnostics.licenseId || "—")
-                            color: "#94a3b8"
+                            color: Theme.textMuted
                             font.pixelSize: 11
                         }
 
                         Text {
                             text: moduleDelegate.diagnostics.sourceUrl || ""
-                            color: "#60a5fa"
+                            color: Theme.metroBlueHover
                             font.pixelSize: 11
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
@@ -221,7 +193,7 @@ Item {
                                         if (moduleDelegate.status === "error") return I18n.t("Error: ") + moduleDelegate.errorMsg
                                         return I18n.t("Disabled")
                                     }
-                                    color: moduleDelegate.status === "error" ? "#dc3545" : (moduleDelegate.status === "ready" ? "#28a745" : "#6c757d")
+                                    color: moduleDelegate.status === "error" ? Theme.metroRed : (moduleDelegate.status === "ready" ? Theme.metroGreen : Theme.textFaint)
                                     font.pixelSize: 12
                                 }
                             }
@@ -254,7 +226,7 @@ Item {
                         
                         Text {
                             text: moduleDelegate.snapshotsDir === "Default directory" ? I18n.t("Default directory") : moduleDelegate.snapshotsDir
-                            color: "#d8dee9"
+                            color: Theme.textSecondary
                             font.pixelSize: 13
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
@@ -265,7 +237,7 @@ Item {
                             Layout.preferredWidth: 34
                             ToolTip.visible: hovered
                             ToolTip.text: I18n.t("Choose...")
-                            background: Rectangle { color: "#4a5568"; radius: 4 }
+                            background: Rectangle { color: Theme.metroStroke; radius: 4 }
                             contentItem: Text {
                                 text: "folder_open"
                                 font.family: iconFontFamily
@@ -290,13 +262,13 @@ Item {
                             text: I18n.t("Use default")
                             background: Rectangle {
                                 radius: 4
-                                color: parent.down ? "#334155" : "#1f2733"
-                                border.color: "#475569"
+                                color: parent.down ? Theme.metroStroke : Theme.metroSurfaceAlt
+                                border.color: Theme.metroStroke
                                 border.width: 1
                             }
                             contentItem: Text {
                                 text: parent.text
-                                color: "#e2e8f0"
+                                color: Theme.textSecondary
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 font.pixelSize: 12
@@ -353,7 +325,7 @@ Item {
                                     default: return "";
                                 }
                             }
-                            color: "#888"
+                            color: Theme.textMuted
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
@@ -362,7 +334,7 @@ Item {
                         Text {
                             visible: false
                             text: ""
-                            color: "#f0ad4e"
+                            color: Theme.metroAmber
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true

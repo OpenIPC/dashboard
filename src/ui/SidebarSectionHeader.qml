@@ -15,9 +15,9 @@ Rectangle {
 
     Layout.fillWidth: true
     Layout.preferredHeight: 34
-    color: Theme.controlBackgroundAlt
-    radius: Theme.radiusMd
-    border.color: Theme.panelBorder
+    color: Theme.metroSurfaceAlt
+    radius: Theme.metroTileRadius
+    border.color: Theme.metroStroke
     border.width: 1
 
     RowLayout {
@@ -30,6 +30,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.title
             color: Theme.textSecondary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 12
             font.bold: true
             elide: Text.ElideRight
@@ -38,15 +39,16 @@ Rectangle {
         Rectangle {
             Layout.preferredWidth: Math.max(30, groupCountText.implicitWidth + 16)
             Layout.preferredHeight: 20
-            radius: 10
-            color: Theme.panelSoftBackground
-            border.color: Theme.controlBorder
+            radius: Theme.metroTileRadius
+            color: Theme.metroSurface
+            border.color: Theme.metroStroke
 
             Text {
                 id: groupCountText
                 anchors.centerIn: parent
                 text: root.count
                 color: Theme.textSecondary
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 11
                 font.bold: true
             }

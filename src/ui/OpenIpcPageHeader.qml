@@ -2,16 +2,16 @@ import QtQuick
 import QtQuick.Layouts
 import OpenIPC
 
-RowLayout {
+ColumnLayout {
     id: root
 
     property string title: ""
     property string description: ""
-    default property alias actions: actionsRow.data
+    default property alias actions: actionsFlow.data
 
     Layout.fillWidth: true
     Layout.margins: 16
-    spacing: 12
+    spacing: 10
 
     ColumnLayout {
         Layout.fillWidth: true
@@ -19,8 +19,9 @@ RowLayout {
 
         Text {
             text: root.title
-            color: Theme.accentHover
-            font.pixelSize: 28
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
+            font.pixelSize: 26
             font.bold: true
         }
 
@@ -28,13 +29,15 @@ RowLayout {
             Layout.fillWidth: true
             text: root.description
             color: Theme.textMuted
+            font.family: Theme.metroFontFamily
             font.pixelSize: 12
             wrapMode: Text.WordWrap
         }
     }
 
-    RowLayout {
-        id: actionsRow
+    Flow {
+        id: actionsFlow
+        Layout.fillWidth: true
         spacing: 8
     }
 }

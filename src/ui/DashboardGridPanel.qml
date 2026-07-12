@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import OpenIPC
 
@@ -186,32 +187,41 @@ Rectangle {
         onSettingsRequested: gridPanel.settingsRequested()
     }
 
-    Rectangle {
+    Button {
+        id: revealSidebarButton
+
         visible: gridPanel.sidebarOpenProgress < 0.01
         width: 18
         height: 84
-        radius: 9
         anchors.right: parent.right
         anchors.rightMargin: -9
         anchors.verticalCenter: parent.verticalCenter
-        color: revealArea.containsMouse ? Theme.cardHover : Theme.cardBackground
-        border.color: Theme.controlBorderStrong
+        padding: 0
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
         z: 5
 
-        Text {
-            anchors.centerIn: parent
+        background: Rectangle {
+            radius: 9
+            color: revealSidebarButton.hovered || revealSidebarButton.visualFocus
+                   ? Theme.cardHover
+                   : Theme.cardBackground
+            border.color: revealSidebarButton.visualFocus ? Theme.accent : Theme.controlBorderStrong
+            border.width: revealSidebarButton.visualFocus ? 2 : 1
+        }
+
+        contentItem: Text {
             text: "«"
             color: Theme.textSecondary
             font.pixelSize: 16
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
 
-        MouseArea {
-            id: revealArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: gridPanel.sidebarOpenRequested()
-        }
+        ToolTip.visible: hovered || visualFocus
+        ToolTip.text: I18n.t("Показать боковую панель")
+        ToolTip.delay: 450
+        onClicked: gridPanel.sidebarOpenRequested()
     }
 
 }

@@ -14,7 +14,7 @@ Rectangle {
     Layout.leftMargin: 12
     Layout.rightMargin: 12
     Layout.preferredHeight: visible ? 116 : 0
-    color: "#1f2937"
+    color: Theme.metroTile
     border.color: Theme.warning
     radius: Theme.radiusSm
 

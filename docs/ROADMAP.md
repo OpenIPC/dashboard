@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-02.
+Последнее обновление: 2026-07-11.
 
 Текущий стабильный релиз: `v0.2.5.2`.
 
-Текущий фокус разработки: `P2 — качество QML, smoke-проверки и архитектурная полировка`.
+Текущий фокус разработки: `Post-P7 analytics hardening / release prep`.
 
 ## Обозначения
 
@@ -28,6 +28,27 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 - in-app updater приложения через GitHub Releases;
 - более компактный Dashboard UI и sidebar;
 - релизные Windows/Linux сборки через GitHub Actions.
+
+## Актуализация 2026-07-04
+
+Свежий обзор локального проекта и `OpenIPC/viewer` показывает, что Dashboard должен сохранять позицию не просто видеопросмотрщика, а OpenIPC-native desktop control center.
+
+Что у нас сильнее и должно оставаться продуктовым ядром:
+
+- глубокое OpenIPC/Majestic управление: firmware status/network/time/logs/backup/reboot/update и `/ws/upgrade`;
+- schema-safe Majestic editor с diff, redaction, reload и rollback-health;
+- discovery с OpenIPC mDNS, ONVIF, Majestic/WebUI fingerprinting, RTSP probe и Dahua SDK merge;
+- строгие stream/reconnect/preview-budget политики с unit-тестами;
+- in-app updater, Windows installer и Linux AppImage уже в текущей ветке релизов.
+
+Что берём из подхода `OpenIPC/viewer` как инженерный ориентир:
+
+- более явные границы между domain/services/UI вместо роста одного большого контроллера;
+- small View/ViewModel style для крупных экранов, чтобы новые функции не раздували legacy QML;
+- smoke/integration проверки пользовательских сценариев, а не только backend-политик;
+- аккуратную публичную документацию первого запуска, диагностики и troubleshooting.
+
+Главный ближайший риск: backend уже достаточно крепкий, но QML runtime пока проверяется слабее, чем C++ policy-слой. Поэтому P2.2 выполняется до Health Center v2 и Discovery v2.
 
 ## ✅ Hotfix `v0.2.5.2`
 
@@ -223,7 +244,7 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 - Закрыт сценарий, когда CPU отображался, а RAM оставалась `0 MB`.
 - Исправлена Linux CI-зависимость для GStreamer dev packages.
 
-## 🟡 P2 — текущий активный этап
+## ✅ P2 — QML debt cleanup и UI foundation
 
 Цель P2: снизить технический долг в QML, закрепить правило маленьких компонентов и подготовить стабильную базу для следующих крупных функций.
 
@@ -271,18 +292,25 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 
 ### P2.2 — QML smoke-проверки
 
-Статус: 🔜 следующий шаг P2.
+Статус: ✅ завершено.
 
-Что нужно сделать:
+Реализовано:
 
-- Подготовить минимальный smoke-run основных QML окон:
-  - Dashboard;
-  - Settings;
-  - Camera Search;
-  - Majestic/OpenIPC Control Center;
-  - Health Center.
-- Проверить, можно ли стабильно запускать smoke-тесты в CI/headless окружении.
-- Если headless нестабилен, оставить локальный smoke script и CI-friendly targeted `qmllint`.
+- добавлен CLI-режим `--smoke-qml`;
+- добавлен `SmokeHarness.qml`, который создаёт основные QML поверхности без реальной камеры;
+- добавлен CTest `qml_smoke`;
+- smoke отключает реальные camera health probes через `OPENIPC_SMOKE_QML=1`, чтобы не трогать LAN при UI-проверке;
+- CI запускает `qml_smoke` отдельным шагом после unit-тестов, чтобы runtime-ошибки QML были видны отдельно.
+
+Smoke-run покрывает:
+
+- Dashboard;
+- Grid Cell без реального RTSP-потока;
+- компактный Grid Cell 160×90 для базовой проверки малых плиток;
+- Settings;
+- Camera Search;
+- Majestic/OpenIPC Control Center;
+- Health Center.
 
 Готовность к закрытию:
 
@@ -292,101 +320,143 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 
 ### P2.3 — дальнейшая декомпозиция крупных QML/controller файлов
 
-Статус: 🔜 после P2.1/P2.2.
+Статус: ✅ закрыто для текущего baseline.
+
+Сделано:
+
+- из `GridCell.qml` вынесен `StreamStatsBadge.qml`, общий badge/formatter статистики preview/fullscreen потоков.
+- из `GridCell.qml` вынесены `RecordingPulseIndicator.qml` и `StreamQualityBadge.qml` для дальнейшей разгрузки stream-cell UI.
+- из `GridCell.qml` вынесен `GridCellControlsOverlay.qml`: верхняя панель live/audio/record/snapshot/analytics теперь живёт отдельным UI-компонентом.
+- `AppUpdateDialog.qml` превращён в тонкую window-оболочку; вся визуальная часть и action bar вынесены в `AppUpdateContent.qml`.
+- из `SettingsDialog.qml` вынесены `SettingsUpdatePanel.qml`, `SettingsAboutPage.qml`, `SettingsOAuthDialog.qml`, `SettingsFooterBar.qml`, `SettingsSaveNotification.qml`, `SettingsAnalyticsPerformancePanel.qml`, `SettingsEvidencePanel.qml` и общий `SettingsSpinBox.qml`.
+- повторяющиеся confirmation-dialogs в `MajesticControlDialog.qml` заменены общим `MajesticConfirmDialog.qml`.
+
+Итог:
+
+- самые рискованные раздутые UI-области разделены на компоненты без изменения backend-контрактов;
+- `AppUpdateDialog.qml` теперь отвечает за состояние update-flow, а не за всю верстку;
+- `SettingsDialog.qml` стал меньше примерно на четверть и получил отдельные панели для update/about/OAuth/footer/analytics evidence;
+- `MajesticControlDialog.qml` оставлен главным orchestration-controller, но однотипный нижний confirm-layer больше не дублируется.
 
 Правило:
 
 - Новый функционал не добавляем в уже раздутые QML-файлы, если он требует отдельного состояния, нескольких UI-блоков или приближается к 200-300 строкам.
 - Сразу создаём отдельный QML-компонент и, если нужно, отдельный C++/QML controller/model.
 
-Кандидаты на дальнейшую декомпозицию:
+Что не тащим в P2.3:
 
-- `SettingsDialog.qml`;
-- `AppUpdateDialog.qml`;
-- оставшиеся controller-блоки в `MajesticControlDialog.qml`;
-- крупные старые панели Dashboard/Analytics, если начнём их активно расширять.
+- глубокий распил `MajesticControlDialog.qml` по API-domain controllers: это отдельный архитектурный шаг, потому что файл держит таймеры, request ownership, rollback/watchdog и firmware-update state machine;
+- перенос старых streaming-настроек из `SettingsDialog.qml` в отдельную страницу: безопаснее делать вместе с P2.4-polish, чтобы сразу проверить layout и локализацию;
+- крупные старые панели Dashboard/Analytics — только если начнём их активно расширять.
 
 ### P2.4 — UI polish после sidebar wave
 
-Статус: 🔜 после технической чистки.
+Статус: ✅ закрыто 2026-07-09.
 
-Что проверить:
+Что сделано:
 
-- collapsed/expanded sidebar на разных размерах окна;
-- выравнивание иконок и подписей;
-- длинные RU/EN строки;
-- keyboard focus;
-- tooltips;
-- визуальное состояние disabled/loading/error;
-- мелкие DPI/масштабирование Windows/Linux.
+- Sidebar получил адаптивную ширину `264-320 px`; collapsed/expanded состояния и минимальный Dashboard `960x540` покрыты smoke.
+- Ручки открытия/закрытия sidebar, layout-toolbar, вкладки и основные controls получили keyboard focus и видимое focus-состояние.
+- Layout-toolbar отделён от window controls и получил горизонтальный overflow для большого числа раскладок.
+- `SettingsDialog` получил безопасный минимум `560x480`, гибкие вкладки, перенос длинных RU/EN строк и `Ctrl+S`/`Esc`.
+- Streaming/video-настройки вынесены из `SettingsDialog.qml` в адаптивный `SettingsStreamingPage.qml`.
+- Analytics, evidence и update-панели перестраиваются на узкой ширине без переполнения.
+- Tooltips добавлены для icon-only, disabled и оконных controls; состояния disabled/loading/error визуально разведены.
+- Smoke-матрица проверяет Dashboard, Settings, streaming-page и layout-toolbar на обычных и минимальных размерах.
+- Добавлен `qml_smoke_scaled` с `QT_SCALE_FACTOR=1.5`; он запускается в Windows/Linux CI.
 
-## 🔜 P3 — Health Center v2
+## ✅ P3 — Health Center v2
 
 Цель: превратить Health Center из диагностического окна в полноценный инструмент обслуживания камер.
 
-Планируемые функции:
+Статус: ✅ закрыто 2026-07-09.
 
-- Персистентная история проверок между запусками.
+Реализовано:
+
+- Отдельный `CameraHealthController` выполняет проверки с ограниченным параллелизмом, сообщает прогресс и не блокирует UI.
+- История до 30 завершённых запусков сохраняется в транзакционном `state.sqlite3` и восстанавливается при следующем запуске.
 - Health-профили:
-  - быстрый;
-  - глубокий;
-  - OpenIPC/Majestic;
-  - RTSP-only.
-- Deeper probes:
+  - быстрый — RTSP main и snapshot;
+  - глубокий — полный набор RTSP/OpenIPC/Majestic;
+  - OpenIPC/Majestic — WebUI прошивки и API;
+  - RTSP-only — main/sub endpoints.
+- Глубокие probes:
   - Majestic config/schema;
   - firmware status;
   - `/metrics`;
   - `/ws/logs` readiness;
   - RTSP main/sub;
   - snapshot/JPEG endpoint.
-- Рекомендации по исправлению:
+- Рекомендации различают:
   - неверные credentials;
   - недоступен RTSP;
-  - Majestic API отвечает, но stream не идёт;
+  - firmware/WebUI отвечает, но stream не идёт;
   - камера online, но не в раскладке;
   - firmware WebUI доступен, но Majestic недоступен.
-- Экспорт расширенного отчёта:
+- Расширенный отчёт включает:
   - status;
-  - probes;
+  - каждый probe и его длительность;
   - последние логи;
   - версии firmware/Majestic;
-  - сетевые данные.
+  - IP, HTTP/RTSP-порты и stream URL без credentials.
+- UI получил selector профиля, живой прогресс, постоянную историю, выбор запуска для экспорта и отдельное окно probe-доказательств.
+- Добавлены unit-тесты policy/controller, локальные RTSP/HTTP test servers и QML smoke при обычном и `150%` масштабе.
 
 Готовность к закрытию:
 
-- Health Center сохраняет историю.
-- Есть минимум 3 профиля проверки.
-- Отчёт помогает пользователю понять, что именно сломалось.
+- ✅ Health Center сохраняет историю.
+- ✅ Есть 4 профиля проверки.
+- ✅ Отчёт и рекомендации показывают, какой endpoint сломан и что проверять дальше.
 
-## 🔜 P4 — Camera onboarding / Discovery v2
+## ✅ P4 — Camera onboarding / Discovery v2
 
 Цель: сделать добавление камер ещё проще и надёжнее.
 
-Планируемые функции:
+Реализовано:
 
-- Улучшенное обнаружение дублей.
-- Массовое добавление найденных камер.
-- Проверка credentials перед добавлением.
-- Выбор stream profile при добавлении:
+- Улучшенное обнаружение дублей по IP, serial/fingerprint/evidence и признаку уже добавленной камеры.
+- Сохранение последнего результата поиска и восстановление discovery-сессии после перезапуска.
+- Массовое добавление найденных камер через backend без ручной сборки URL в QML.
+- Проверка credentials перед добавлением с прогрессом и понятным статусом по каждой найденной камере.
+- Выбор onboarding profile при добавлении:
   - OpenIPC/Majestic;
   - ONVIF;
   - RTSP manual.
-- Более понятные причины “почему камера найдена, но не добавлена”.
-- Сохранение последнего результата поиска.
-- Улучшение работы с несколькими сетевыми интерфейсами.
+- Более понятные причины “почему камера найдена, но не добавлена”: validation status, discovery evidence, отметка “уже в списке”.
+- Улучшение работы с несколькими сетевыми интерфейсами: интерфейс показывает IP/prefix, а последняя discovery-сессия хранит выбранный адаптер и профиль поиска.
 
-## 🔜 P5 — Majestic/OpenIPC advanced v3
+Проверено:
+
+- `cmake --build build_release --target appOpenIPC-Dashboard -j 2`;
+- `ctest --test-dir build_release -R "camera_model_tests|network_discovery_service_tests|camera_onboarding_parser_tests|qml_smoke|state_store_tests" --output-on-failure`;
+- `ctest --test-dir build_release --output-on-failure`.
+
+## ✅ P5 — Majestic/OpenIPC advanced v3
 
 Цель: приблизить управление к уровню WebUI камеры, но сохранить безопасность desktop-приложения.
 
-Планируемые функции:
+Реализовано:
 
-- Дальнейшее расширение capabilities/endpoints view.
-- Более глубокая проверка firmware image metadata, если формат архива позволяет.
-- Поддержка checksum sidecar/download, если OpenIPC источники отдают такие данные.
-- Улучшенная visual diff-модель для Majestic restore.
-- Более явное разделение live-параметров и reload-required параметров.
-- Возможный wizard для безопасного изменения критичных video/network настроек.
+- Safe capabilities/actions matrix для OpenIPC Control Center: diff apply, pipeline reload, live ISP, network write, firmware update и restore теперь имеют явные gates и причины блокировки.
+- Расширенный endpoints/capabilities view: endpoints получили статусы, риск-классы, подтверждение probe/capability и отдельный action-gates блок.
+- Firmware archive manifest/checksum inspection:
+  - расчёт локального SHA-256 перед upload;
+  - проверка опубликованного checksum из update page;
+  - поддержка sidecar `.sha256`, `.sha256sum`, `.sha256.txt`;
+  - обнаружение signature-файлов `.sig`, `.asc`, `.minisig`;
+  - checksum mismatch блокирует дальнейший upload/update.
+- Firmware update checklist использует manifest/checksum state, а не только наличие текста checksum на странице камеры.
+- Majestic restore получил visual diff summary: всего изменений, live, reload-required, critical и secret-sensitive параметры.
+- Начат дальнейший split Control Center:
+  - `OpenIpcSafeActionsPanel.qml`;
+  - `OpenIpcFirmwareManifestPanel.qml`;
+  - `MajesticRestoreDiffPanel.qml`.
+
+Проверено:
+
+- `cmake -S . -B build_release`;
+- `cmake --build build_release --target appOpenIPC-Dashboard -j 2`;
+- `ctest --test-dir build_release -R "qml_smoke|majestic_client_tests|openipc_firmware_client_tests|camera_model_tests" --output-on-failure`.
 
 ## 🧊 P6 — Web version / Server mode
 
@@ -417,15 +487,41 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 - Нужно проектировать безопасность, сеть, доступ к потокам и синхронизацию состояния.
 - Начинать стоит после стабилизации desktop-core и Health/Discovery v2.
 
-## 🧊 P7 — Analytics / Modules evolution
+## ✅ P7 — Analytics / Modules evolution
 
-Планируемые направления:
+Цель: сделать аналитику не просто набором вкладок, а понятным рабочим центром для модулей, артефактов, событий и evidence-данных.
 
-- Улучшение UX модулей аналитики.
-- Более понятное управление моделями/артефактами.
-- Диагностика модулей.
-- Визуальная история событий.
-- Улучшенный экспорт событий и snapshot-данных.
+Реализовано:
+
+- Modules Center v2:
+  - инвентаризация AI-модулей через `AnalyticsEngine::moduleInventory()`;
+  - карточки модулей показывают статус артефакта, размер модели, storage footprint и временные хвосты;
+  - ручная SHA-256/size проверка модели;
+  - безопасная очистка `.part/.tmp/.download/.previous` без удаления установленной модели;
+  - быстрый переход к source repository модуля.
+- Diagnostics API:
+  - `verifyModuleArtifact`;
+  - `cleanupModuleArtifacts`;
+  - `analyticsRecommendations`;
+  - `analyticsEvidenceSummary`;
+  - `getCameraAnalyticsDiagnostics`.
+- Analytics Overview v2:
+  - compact summary по evidence-артефактам;
+  - счетчики файлов/снимков/клипов/занятого места;
+  - рекомендации по состоянию event store, evidence, modules, assignments и rules.
+- Events export:
+  - экспорт текущей ленты с учетом фильтров;
+  - JSON/CSV;
+  - дефолтный путь `Documents/OpenIPC/Analytics`.
+- Event feed UX:
+  - быстрые кнопки экспорта;
+  - статус результата экспорта прямо в панели событий.
+
+Проверено:
+
+- `cmake --build build_release --target appOpenIPC-Dashboard -j 2`;
+- `ctest --test-dir build_release -R "qml_smoke|model_artifact_verifier_tests|camera_model_tests" --output-on-failure`;
+- `git diff --check`.
 
 ## ⛔ Решения, которые пока не делаем автоматически
 
@@ -454,8 +550,7 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 
 ## Ближайший практический порядок работ
 
-1. P2.2: подготовить минимальный QML smoke-run.
-2. P2.3: продолжить точечную чистку legacy QML по baseline.
-3. P2.3: вынести следующий крупный старый UI/controller блок, если он мешает чистке.
-4. P2.4: довести последние UI-polish мелочи после sidebar/layout wave.
-5. После закрытия P2 перейти к P3 Health Center v2.
+1. Post-P7: полный `ctest`, затем ручная smoke-проверка Analytics Overview/Modules/Events на реальной камере.
+2. Post-P5/P7: ручная проверка Control Center на реальной OpenIPC-камере: endpoints, checksum upload, restore preview и action gates.
+3. Release-candidate notes для накопленных P3/P4/P5/P7 изменений.
+4. Следующее продуктовое решение: P8 Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.

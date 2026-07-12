@@ -51,6 +51,7 @@ public:
     Q_INVOKABLE void setSettings(const QVariantMap &settings);
     Q_INVOKABLE QVariantMap getEvidenceSettings() const;
     Q_INVOKABLE void setEvidenceSettings(const QVariantMap &settings);
+    Q_INVOKABLE QVariantMap enableAnalyticsEvidenceDefaults(bool snapshots = true, bool clips = true);
     Q_INVOKABLE QVariantMap getPerformanceSettings() const;
     Q_INVOKABLE void setPerformanceSettings(const QVariantMap &settings);
     Q_INVOKABLE void startOAuth(const QString &provider, const QString &clientId, const QString &clientSecret = QString());
@@ -65,6 +66,18 @@ public:
     Q_INVOKABLE QVariantMap analyticsDiagnostics() const;
     Q_INVOKABLE QVariantMap getModuleTelemetry(int type) const;
     Q_INVOKABLE QVariantList getObjectCounterSummary() const;
+    Q_INVOKABLE QVariantList moduleInventory() const;
+    Q_INVOKABLE QVariantMap verifyModuleArtifact(int type) const;
+    Q_INVOKABLE QVariantMap cleanupModuleArtifacts(int type);
+    Q_INVOKABLE QVariantMap analyticsEvidenceSummary() const;
+    Q_INVOKABLE QVariantList analyticsRecommendations() const;
+    Q_INVOKABLE QVariantMap getCameraAnalyticsDiagnostics(const QString &cameraId) const;
+    Q_INVOKABLE QVariantMap exportAnalyticsEvents(const QString &path = QString(),
+                                                  int type = -1,
+                                                  const QString &cameraId = QString(),
+                                                  const QString &text = QString(),
+                                                  const QString &format = QString(),
+                                                  int limit = 5000) const;
     Q_INVOKABLE QVariantList queryAnalyticsEvents(int type = -1,
                                                    const QString &cameraId = QString(),
                                                    const QString &text = QString(),
@@ -136,7 +149,7 @@ private:
     QMutex m_snapshotMutex;
 
     // Evidence (snapshots/clips) settings
-    bool m_evidenceEnabled = false;
+    bool m_evidenceEnabled = true;
     bool m_evidenceSnapshotsEnabled = true;
     bool m_evidenceClipsEnabled = true;
     QString m_evidenceSnapshotsDir;
@@ -147,6 +160,7 @@ private:
     int m_evidenceCooldownMs = 2000;
     float m_evidenceMinConfidence = 0.6f;
     int m_evidenceClipFps = 10;
+    bool m_autoEvidenceMigrationDone = false;
 
     // Upload settings
     bool m_uploadEnabled = false;
@@ -228,6 +242,7 @@ private:
 
     QVariantList m_analyticsEvents;
     int m_maxAnalyticsEvents = 250;
+    mutable QMutex m_analyticsEventsMutex;
     QString m_eventStorePath;
     QString m_eventStoreConnectionName;
     bool m_eventStoreReady = false;
@@ -260,6 +275,9 @@ private:
                       bool isRuntime = false, int retryCount = 0);
     void recordSkippedFrame(const QString &cameraId);
     bool moduleHasClipRules(const QVariantMap &extraConfig) const;
+    bool configRequestsEvidenceCapture(const QVariantMap &extraConfig) const;
+    bool hasEvidenceCaptureConfiguration() const;
+    bool ensureEvidenceCaptureEnabled(bool snapshots, bool clips);
     QString ensurePendingClip(const QString &cameraId, const QVariantMap &detection, qint64 nowMs);
     QVariantList updateObjectCounterTracking(const QString &cameraId, QVector<DetectionBox> &results, qint64 nowMs);
     QVariantList evaluateRulesForDetection(const QString &cameraId,

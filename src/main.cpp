@@ -166,6 +166,8 @@ int main(int argc, char *argv[])
     app.setApplicationVersion(QString::fromUtf8(APP_VERSION));
 #endif
 
+    const bool smokeQml = app.arguments().contains(QStringLiteral("--smoke-qml"));
+
     if (app.arguments().contains(QStringLiteral("--self-test-tls"))) {
         const bool tlsAvailable = QSslSocket::supportsSsl();
         qInfo().noquote() << "TLS self-test:"
@@ -229,6 +231,10 @@ int main(int argc, char *argv[])
     qInfo() << "Custom Qt message handler enabled:" << useCustomLogger;
     qInfo() << "Log file path:" << state.logFile.fileName();
 
+    if (smokeQml) {
+        qputenv("OPENIPC_SMOKE_QML", "1");
+    }
+
     // Register the C++ backend controller FIRST to ensure it outlives the engine
     SystemController systemController;    
     QPointer<SystemController> systemControllerPtr(&systemController);
@@ -279,7 +285,9 @@ int main(int argc, char *argv[])
                                                 "Use SystemController.camexController");
     qmlRegisterSingletonInstance("OpenIPC", 1, 0, "SystemController", &systemController);
 
-    const QUrl url(u"qrc:/OpenIPC/src/ui/Main.qml"_qs);
+    const QUrl url = smokeQml
+        ? QUrl(u"qrc:/OpenIPC/src/ui/SmokeHarness.qml"_qs)
+        : QUrl(u"qrc:/OpenIPC/src/ui/Main.qml"_qs);
     qInfo() << "engine.load start" << url;
     
     // Connect to objectCreated to catch errors early
@@ -299,6 +307,37 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "No root objects loaded - Code -1";
         return -1;
+    }
+
+    if (smokeQml) {
+        QObject *rootObject = engine.rootObjects().constFirst();
+        const bool connected = QObject::connect(rootObject, SIGNAL(smokeFinished(bool,QString)),
+                                                &app, SLOT(quit()));
+
+        if (!connected) {
+            qCritical() << "Smoke harness did not expose smokeFinished(bool, QString)";
+            return -2;
+        }
+
+        QTimer::singleShot(15000, &app, []() {
+            qCritical() << "QML smoke timed out";
+            QCoreApplication::exit(3);
+        });
+
+        const int smokeEventLoopResult = app.exec();
+        if (smokeEventLoopResult != 0) {
+            return smokeEventLoopResult;
+        }
+
+        const bool smokeOk = rootObject->property("smokeOk").toBool();
+        const QString smokeMessage = rootObject->property("smokeMessage").toString();
+        if (smokeOk) {
+            qInfo().noquote() << smokeMessage;
+            return 0;
+        }
+
+        qCritical().noquote() << "QML smoke failed:" << smokeMessage;
+        return 4;
     }
     
     if (auto windowObj = qobject_cast<QWindow*>(engine.rootObjects().constFirst())) {

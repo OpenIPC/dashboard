@@ -8,11 +8,11 @@ Rectangle {
     visible: false
     width: 300
     height: 50
-    color: "#2a2d2e"
+    color: Theme.metroTile
     opacity: 0.9
     z: 1000
-    radius: Theme.radiusSm
-    border.color: Theme.accent
+    radius: Theme.metroTileRadius
+    border.color: Theme.metroBlue
     border.width: 1
 
     property string proxyIp: ""

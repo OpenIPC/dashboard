@@ -12,10 +12,12 @@ The normal scan limits active probing to the selected interface's local `/24`. D
 
 ## Compared with OpenIPC Viewer
 
-The current Viewer discovery implementation uses ONVIF WS-Discovery with a six-second window and deduplicates Device Service URIs. Its discovery abstraction mentions future mDNS support, but the mDNS implementation is not present. Dashboard keeps correct WS-Discovery and adds firmware-native OpenIPC mDNS, Majestic/WebUI fingerprints, bounded subnet probing, progress, cancellation, confidence and cross-protocol deduplication.
+As of 2026-07-04, OpenIPC Viewer has moved to a source-based discovery pipeline with ONVIF, mDNS and an opt-in subnet sweep. Dashboard should no longer claim that Viewer lacks mDNS. The remaining Dashboard distinction is the OpenIPC-control-center bias: discovery evidence is merged with Majestic/WebUI fingerprints, RTSP probes and Dahua SDK results, then carried into onboarding, health/status and OpenIPC/Majestic tooling with confidence and evidence text.
 
 - [Viewer WS-Discovery implementation](https://github.com/OpenIPC/viewer/blob/main/src/OpenIPC.Viewer.Devices/Onvif/Discovery/WsDiscoveryService.cs)
-- [Viewer discovery interface](https://github.com/OpenIPC/viewer/blob/main/src/OpenIPC.Viewer.Core/Onvif/Discovery/IDiscoveryService.cs)
+- [Viewer discovery aggregator](https://github.com/OpenIPC/viewer/blob/main/src/OpenIPC.Viewer.Devices/Discovery/DiscoveryAggregator.cs)
+- [Viewer mDNS source](https://github.com/OpenIPC/viewer/blob/main/src/OpenIPC.Viewer.Devices/Discovery/MdnsDiscoverySource.cs)
+- [Viewer subnet sweep source](https://github.com/OpenIPC/viewer/blob/main/src/OpenIPC.Viewer.Devices/Discovery/SubnetSweepDiscoverySource.cs)
 
 ## Network boundary
 

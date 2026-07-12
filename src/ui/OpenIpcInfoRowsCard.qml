@@ -9,12 +9,15 @@ Rectangle {
     property var rows: []
 
     Layout.fillWidth: true
-    Layout.preferredHeight: 252
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    Layout.minimumHeight: 252
+    Layout.preferredHeight: Math.max(Layout.minimumHeight, infoRowsContent.implicitHeight + 32)
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
+        id: infoRowsContent
+
         anchors.fill: parent
         anchors.margins: 16
         spacing: 10
@@ -22,6 +25,7 @@ Rectangle {
         Text {
             text: root.title
             color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.bold: true
             font.pixelSize: 18
         }
@@ -44,6 +48,7 @@ Rectangle {
                     Text {
                         text: rowDelegate.modelData.label
                         color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
                         font.bold: true
                         font.pixelSize: 12
                     }
@@ -52,6 +57,7 @@ Rectangle {
                         Layout.fillWidth: true
                         text: rowDelegate.modelData.hint
                         color: Theme.textMuted
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 10
                         elide: Text.ElideRight
                     }
@@ -60,7 +66,7 @@ Rectangle {
                 Text {
                     Layout.preferredWidth: 210
                     text: rowDelegate.modelData.value
-                    color: Theme.accentHover
+                    color: Theme.metroBlue
                     font.family: "Consolas"
                     font.pixelSize: 11
                     horizontalAlignment: Text.AlignRight

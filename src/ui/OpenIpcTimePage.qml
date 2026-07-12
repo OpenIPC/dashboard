@@ -51,27 +51,30 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: 16
             Layout.rightMargin: 16
-            Layout.preferredHeight: 230
+            Layout.minimumHeight: 230
+            Layout.preferredHeight: Math.max(Layout.minimumHeight, timeCardContent.implicitHeight + 28)
             color: Theme.cardBackground
             border.color: Theme.cardBorder
             radius: Theme.radiusLg
 
             ColumnLayout {
+                id: timeCardContent
+
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 10
 
-                RowLayout {
+                Text {
                     Layout.fillWidth: true
+                    text: I18n.t("Время и NTP OpenIPC")
+                    color: Theme.textPrimary
+                    font.bold: true
+                    font.pixelSize: 17
+                }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: I18n.t("Время и NTP OpenIPC")
-                        color: Theme.textPrimary
-                        font.bold: true
-                        font.pixelSize: 17
-                    }
-
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
                     MajesticButton {
                         text: I18n.t("NTP sync")
                         enabled: root.controller && !root.controller.firmwareBusy
@@ -130,12 +133,15 @@ ScrollView {
                     required property var modelData
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 82
+                    Layout.minimumHeight: 82
+                    Layout.preferredHeight: Math.max(Layout.minimumHeight, timeRowContent.implicitHeight + 28)
                     color: Theme.cardBackground
                     border.color: Theme.cardBorder
                     radius: Theme.radiusLg
 
                     RowLayout {
+                        id: timeRowContent
+
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 14

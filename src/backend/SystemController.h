@@ -12,6 +12,7 @@
 #include <QNetworkReply>
 #include <QAuthenticator>
 #include <QHash>
+#include <QSet>
 #include "CameraModel.h"
 #include "analytics/AnalyticsEngine.h"
 #include "UserManager.h"
@@ -24,6 +25,7 @@
 #include "NetworkDiscoveryService.h"
 #include "OpenIpcFirmwareClient.h"
 #include "AppUpdateChecker.h"
+#include "CameraHealthController.h"
 
 class StatusChecker;
 
@@ -46,6 +48,8 @@ class SystemController : public QObject
     Q_PROPERTY(OpenIpcFirmwareClient* firmwareClient READ firmwareClient CONSTANT)
     Q_PROPERTY(NetworkDiscoveryService* networkDiscovery READ networkDiscovery CONSTANT)
     Q_PROPERTY(AppUpdateChecker* appUpdateChecker READ appUpdateChecker CONSTANT)
+    Q_PROPERTY(CameraHealthController* cameraHealthController READ cameraHealthController CONSTANT)
+    Q_PROPERTY(QString discoveryLastUpdated READ discoveryLastUpdated NOTIFY discoverySessionChanged)
     Q_PROPERTY(QVariantMap appSettings READ getAppSettings WRITE saveAppSettings NOTIFY appSettingsChanged)
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
@@ -82,6 +86,8 @@ public:
     OpenIpcFirmwareClient* firmwareClient() const { return m_firmwareClient; }
     NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
     AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
+    CameraHealthController* cameraHealthController() const { return m_cameraHealthController; }
+    QString discoveryLastUpdated() const { return m_discoveryLastUpdated; }
     Q_INVOKABLE QVariantMap parseCameraQrPayload(const QString &payload) const;
     Q_INVOKABLE QString xmSofiaPasswordHash(const QString &password) const;
     Q_INVOKABLE QString probeCameraEndpoint(const QString &kind,
@@ -98,6 +104,17 @@ public slots:
     void stopService();
     void scanNetwork(const QString &interfaceName = "", bool deepScan = false);
     Q_INVOKABLE void stopNetworkScan();
+    Q_INVOKABLE void clearDiscoveryResults();
+    Q_INVOKABLE void refreshDiscoveryAddedFlags();
+    Q_INVOKABLE QString discoverySessionSummary() const;
+    Q_INVOKABLE void validateDiscoverySelection(const QVariantList &indexes,
+                                                const QString &login,
+                                                const QString &password,
+                                                const QString &profile);
+    Q_INVOKABLE int addDiscoveredCameras(const QVariantList &indexes,
+                                         const QString &login,
+                                         const QString &password,
+                                         const QString &profile);
     void addDevice(int index); // Adds from discovery to device list
     Q_INVOKABLE void addManualCamera(const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
     Q_INVOKABLE void updateCamera(int index, const QString &name, const QString &ip, const QString &url, int port, int onvifPort, const QString &login = "", const QString &password = "", const QString &sdUrl = "");
@@ -208,6 +225,8 @@ public slots:
     Q_INVOKABLE bool deleteLocalFile(const QString &fileUrl);
     Q_INVOKABLE bool localFileExists(const QString &fileUrl) const;
     Q_INVOKABLE QVariantMap getFileInfo(const QString &fileUrl) const;
+    Q_INVOKABLE QVariantMap inspectFirmwareArchive(const QString &fileUrl,
+                                                   const QString &expectedSha256 = QString()) const;
     Q_INVOKABLE bool copyImageToClipboard(const QString &fileUrl);
     Q_INVOKABLE void copyTextToClipboard(const QString &text);
     Q_INVOKABLE bool saveTextFile(const QString &pathOrUrl, const QString &content) const;
@@ -238,11 +257,20 @@ signals:
                                      const QString &message,
                                      int httpStatus,
                                      int elapsedMs);
+    void discoverySessionChanged();
+    void discoveryValidationProgress(int completed, int total);
+    void discoveryValidationFinished(int okCount, int failCount);
+    void discoveryBatchAddFinished(int addedCount, int skippedCount);
 
 private slots:
     void performSave();
 
 private:
+    struct DiscoveryValidationProbe {
+        int index = -1;
+        QString label;
+    };
+
     QString m_serviceStatus;
     QProcess *m_process;
     CameraModel *m_cameraModel;     // All added cameras (Device List)
@@ -271,9 +299,19 @@ private:
     OpenIpcFirmwareClient *m_firmwareClient;
     NetworkDiscoveryService *m_networkDiscovery;
     AppUpdateChecker *m_appUpdateChecker;
+    CameraHealthController *m_cameraHealthController;
     StatusChecker *m_statusChecker;
     QHash<QString, qint64> m_streamOfflineUntilMs;
     QHash<QString, QString> m_cameraStatusDetails;
+    QString m_discoveryLastUpdated;
+    QString m_discoveryLastInterface;
+    bool m_discoveryLastDeepScan = false;
+    QHash<QString, DiscoveryValidationProbe> m_discoveryValidationProbes;
+    QHash<int, int> m_discoveryValidationRemaining;
+    QHash<int, bool> m_discoveryValidationFailed;
+    QHash<int, QStringList> m_discoveryValidationMessages;
+    int m_discoveryValidationCompleted = 0;
+    int m_discoveryValidationTotal = 0;
     
     // App Settings
     QVariantMap m_appSettings;
@@ -294,6 +332,19 @@ private:
     QString stateDatabasePath() const;
     static QJsonObject cameraToJson(const Camera &cam);
     static Camera cameraFromJson(const QJsonObject &obj);
+    int findDiscoveryMergeIndex(const Camera &candidate) const;
+    void mergeDiscoveryCamera(const Camera &incoming);
+    void markDiscoveryAddedFlags();
+    void setDiscoveryValidationState(int index, const QString &status, const QString &message);
+    Camera cameraFromDiscoveryForAdd(const Camera &source,
+                                     const QString &profile,
+                                     const QString &login,
+                                     const QString &password) const;
+    QString discoveryProfileForCamera(const Camera &camera, const QString &requestedProfile) const;
+    QString rtspPathForProfile(const Camera &camera, const QString &profile, bool subStream) const;
+    QString buildSanitizedRtspUrl(const Camera &camera, const QString &profile, bool subStream) const;
+    void handleDiscoveryValidationProbe(const QString &requestId, bool success,
+                                        const QString &message, int httpStatus, int elapsedMs);
 };
 
 #endif // SYSTEMCONTROLLER_H

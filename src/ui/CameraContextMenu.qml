@@ -24,12 +24,12 @@ Menu {
     signal groupChanged()
     signal permissionDenied()
 
-    palette.text: "#cccccc"
-    palette.windowText: "#cccccc"
-    palette.buttonText: "#cccccc"
-    palette.highlightedText: "white"
+    palette.text: Theme.textSecondary
+    palette.windowText: Theme.textSecondary
+    palette.buttonText: Theme.textSecondary
+    palette.highlightedText: Theme.textPrimary
     
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Архив")
         // icon.source: "qrc:/OpenIPC/src/ui/icons/archive.svg" // Placeholder
         onTriggered: {
@@ -38,9 +38,9 @@ Menu {
         }
     }
     
-    MenuSeparator {}
+    MetroMenuSeparator {}
     
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Открыть в браузере")
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
@@ -51,7 +51,7 @@ Menu {
         }
     }
     
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("SSH Терминал")
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
@@ -59,7 +59,7 @@ Menu {
         }
     }
 
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("OpenIPC Control Center")
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
@@ -67,7 +67,7 @@ Menu {
         }
     }
 
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Проверить здоровье")
         onTriggered: {
             if (!contextMenu.canSettings) { contextMenu.permissionDenied(); return }
@@ -75,7 +75,7 @@ Menu {
         }
     }
 
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Файловый менеджер")
         onTriggered: {
             if (!canExport) { contextMenu.permissionDenied(); return }
@@ -83,7 +83,7 @@ Menu {
         }
     }
     
-    MenuSeparator {}
+    MetroMenuSeparator {}
     
     Menu {
         id: groupsMenu
@@ -92,19 +92,13 @@ Menu {
         background: Rectangle {
             implicitWidth: 200
             implicitHeight: 40
-            color: "#252526"
-            border.color: "#3c3c3c"
-            radius: 4
+            color: Theme.metroSidebarBackground
+            border.color: Theme.metroStroke
+            radius: Theme.metroTileRadius
         }
 
-        MenuItem {
-            contentItem: Text {
-                text: I18n.t("Без группы")
-                color: "#cccccc"
-                font.pixelSize: 14
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 12
-            }
+        MetroMenuItem {
+            text: I18n.t("Без группы")
             onTriggered: {
                 if (!canSettings) { contextMenu.permissionDenied(); return }
                 SystemController.setCameraGroup(cameraIndex, "")
@@ -112,18 +106,12 @@ Menu {
             }
         }
 
-        MenuSeparator { visible: SystemController.cameraGroups.length > 0 }
+        MetroMenuSeparator { visible: SystemController.cameraGroups.length > 0 }
 
         Instantiator {
             model: SystemController.cameraGroups
-            delegate: MenuItem {
-                contentItem: Text {
-                    text: modelData
-                    color: "#cccccc"
-                    font.pixelSize: 14
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: 12
-                }
+            delegate: MetroMenuItem {
+                text: modelData
                 onTriggered: {
                     if (!canSettings) { contextMenu.permissionDenied(); return }
                     SystemController.setCameraGroup(cameraIndex, modelData)
@@ -135,9 +123,9 @@ Menu {
         }
     }
     
-    MenuSeparator {}
+    MetroMenuSeparator {}
     
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Редактировать камеру")
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
@@ -145,7 +133,7 @@ Menu {
         }
     }
     
-    MenuItem {
+    MetroMenuItem {
         text: I18n.t("Удалить камеру")
         onTriggered: {
             if (!canSettings) { contextMenu.permissionDenied(); return }
@@ -156,8 +144,8 @@ Menu {
     background: Rectangle {
         implicitWidth: 200
         implicitHeight: 40
-        color: "#252526"
-        border.color: "#3c3c3c"
-        radius: 4
+        color: Theme.metroSidebarBackground
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
     }
 }

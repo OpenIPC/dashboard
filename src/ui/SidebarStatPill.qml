@@ -11,9 +11,9 @@ Rectangle {
 
     Layout.fillWidth: true
     implicitHeight: 54
-    radius: Theme.radiusLg
-    color: Theme.panelSoftBackground
-    border.color: Theme.panelBorder
+    radius: Theme.metroTileRadius
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
     border.width: 1
 
     ColumnLayout {
@@ -27,6 +27,7 @@ Rectangle {
         Text {
             text: root.value
             color: root.accentColor
+            font.family: Theme.metroFontFamily
             font.pixelSize: 18
             font.bold: true
             elide: Text.ElideRight
@@ -36,6 +37,7 @@ Rectangle {
         Text {
             text: root.title
             color: Theme.textMuted
+            font.family: Theme.metroFontFamily
             font.pixelSize: 10
             elide: Text.ElideRight
             Layout.fillWidth: true

@@ -196,18 +196,11 @@ Item {
                 }
             }
 
-            CheckBox {
+            MetroCheckBox {
                 id: dontShowEmptyHint
                 Layout.alignment: Qt.AlignHCenter
                 text: I18n.t("Не показывать при следующем запуске")
                 checked: false
-                contentItem: Text {
-                    text: dontShowEmptyHint.text
-                    color: Theme.textMuted
-                    font.pixelSize: 12
-                    leftPadding: dontShowEmptyHint.indicator.width + dontShowEmptyHint.spacing
-                    verticalAlignment: Text.AlignVCenter
-                }
             }
         }
     }

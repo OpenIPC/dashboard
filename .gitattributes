@@ -1,0 +1,32 @@
+* text=auto
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.iss text eol=crlf
+*.ps1 text eol=crlf
+
+*.c text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.qml text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary
+*.dll binary
+*.exe binary
+*.lib binary
+*.a binary
+*.so binary

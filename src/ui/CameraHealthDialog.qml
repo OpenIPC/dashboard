@@ -13,10 +13,26 @@ Dialog {
     x: parent ? (parent.width - width) / 2 : 0
     y: parent ? (parent.height - height) / 2 : 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    leftPadding: 16
+    rightPadding: 16
+    topPadding: healthHeader.height + 16
+    bottomPadding: 16
 
     property int dataVersion: 0
+    readonly property var healthController: SystemController.cameraHealthController
+    readonly property int diagnosticProfileCount: healthController
+                                                  ? healthController.profiles.length : 0
+    readonly property bool layoutReady: healthStatsRow.width > 0
+                                        && healthStatsRow.height >= 60
+                                        && totalStatCard.height >= 60
+                                        && healthProfileBar.height >= 50
+                                        && root.statsTopInDialog >= root.headerBottomInDialog
     property string filterText: ""
     property string filterMode: "all"
+    property string selectedProfile: "quick"
+    property string selectedRunId: ""
+    property var detailsResult: ({})
+    property bool autoRefreshOnOpen: true
     property string iconFontFamily: materialIcons.status === FontLoader.Ready ? materialIcons.name : "Material Icons"
     property bool reportCopied: false
     property bool reportSaved: false
@@ -24,6 +40,9 @@ Dialog {
     property string lastReportPath: ""
     property double lastAutoRefreshMs: 0
     readonly property int autoRefreshCooldownMs: 15000
+    readonly property real statsTopInDialog: healthStatsRow.mapToItem(root.parent, 0, 0).y
+    readonly property real headerHeight: healthHeader.height
+    readonly property real headerBottomInDialog: healthHeader.mapToItem(root.parent, 0, 0).y + healthHeader.height
 
     signal editRequested(int cameraIndex)
     signal majesticRequested(int cameraIndex)
@@ -32,7 +51,7 @@ Dialog {
     onOpened: {
         root.reportCopied = false
         var now = Date.now()
-        if (now - root.lastAutoRefreshMs >= root.autoRefreshCooldownMs) {
+        if (root.autoRefreshOnOpen && now - root.lastAutoRefreshMs >= root.autoRefreshCooldownMs) {
             root.lastAutoRefreshMs = now
             root.recheckAll()
         }
@@ -41,10 +60,6 @@ Dialog {
     FontLoader {
         id: materialIcons
         source: "qrc:/OpenIPC/src/ui/fonts/MaterialIcons-Regular.ttf"
-    }
-
-    ListModel {
-        id: healthHistoryModel
     }
 
     function isOnlineStatus(statusText) {
@@ -61,6 +76,13 @@ Dialog {
         return fallbackStatus || ""
     }
 
+    function latestHealthResult(ip) {
+        var version = dataVersion
+        if (!ip || ip === "" || !root.healthController)
+            return ({})
+        return root.healthController.resultForCamera(ip)
+    }
+
     function cameraDetail(ip) {
         var version = dataVersion
         if (!ip || ip === "" || typeof SystemController.cameraStatusDetail !== "function") return ""
@@ -70,6 +92,9 @@ Dialog {
     function cameraAttentionReason(ip, fallbackStatus) {
         var version = dataVersion
         if (!ip || ip === "") return ""
+        var healthResult = root.latestHealthResult(ip)
+        if (healthResult && healthResult.recommendation)
+            return String(healthResult.recommendation)
         if (typeof SystemController.cameraAttentionReason === "function")
             return SystemController.cameraAttentionReason(ip, fallbackStatus || "")
         return cameraDetail(ip)
@@ -93,25 +118,63 @@ Dialog {
 
     function onlineCount() {
         var version = dataVersion
-        if (typeof SystemController.onlineCameraCount === "function")
-            return SystemController.onlineCameraCount()
-        return 0
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (!camera) continue
+            var healthResult = root.latestHealthResult(camera.cameraIp)
+            var healthKnown = healthResult.status === "ok"
+                    || healthResult.status === "warning"
+                    || healthResult.status === "error"
+            if (healthResult.status === "ok" || healthResult.status === "warning"
+                    || (!healthKnown
+                        && root.isOnlineStatus(root.effectiveCameraStatus(
+                                                   camera.cameraIp, camera.status)))) {
+                count++
+            }
+        }
+        return count
     }
 
     function issueCount() {
         var version = dataVersion
-        if (typeof SystemController.camerasNeedingAttentionCount === "function")
-            return SystemController.camerasNeedingAttentionCount()
-        return 0
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (!camera) continue
+            var healthResult = root.latestHealthResult(camera.cameraIp)
+            var healthKnown = healthResult.status === "ok"
+                    || healthResult.status === "warning"
+                    || healthResult.status === "error"
+            if (healthResult.status === "error" || healthResult.status === "warning"
+                    || (!healthKnown
+                        && typeof SystemController.cameraNeedsAttention === "function"
+                        && SystemController.cameraNeedsAttention(
+                            camera.cameraIp, camera.status))) {
+                count++
+            }
+        }
+        return count
     }
 
     function checkHistoryLabel() {
-        if (healthHistoryModel.count === 0)
+        if (!root.healthController || root.healthController.history.length === 0)
             return I18n.t("История проверок пуста")
-        return I18n.t("Последняя проверка") + ": " + healthHistoryModel.get(0).time
+        var run = root.healthController.history[0]
+        return I18n.t("Последняя проверка") + ": "
+                + String(run.completedAtLabel || run.completedAt || "")
     }
 
     function issueKind(ip, fallbackStatus) {
+        var healthResult = root.latestHealthResult(ip)
+        if (healthResult.status === "error")
+            return "offline"
+        if (healthResult.status === "warning")
+            return "warning"
+        if (healthResult.status === "ok")
+            return "ok"
+        if (healthResult.status === "running")
+            return "checking"
         var statusText = root.effectiveCameraStatus(ip, fallbackStatus)
         var detailText = root.cameraAttentionReason(ip, fallbackStatus)
         var text = (statusText + " " + detailText).toLowerCase()
@@ -134,11 +197,15 @@ Dialog {
     function filterMatchesForMode(mode, ip, fallbackStatus) {
         var version = dataVersion
         var statusText = root.effectiveCameraStatus(ip, fallbackStatus)
+        var healthResult = root.latestHealthResult(ip)
+        var healthOnline = healthResult.status === "ok" || healthResult.status === "warning"
+        var healthKnown = healthOnline || healthResult.status === "error"
+        var online = healthKnown ? healthOnline : root.isOnlineStatus(statusText)
         var kind = root.issueKind(ip, fallbackStatus)
         if (mode === "all") return true
         if (mode === "issues") return kind !== "ok"
-        if (mode === "offline") return !root.isOnlineStatus(statusText)
-        if (mode === "online") return root.isOnlineStatus(statusText)
+        if (mode === "offline") return !online
+        if (mode === "online") return online
         if (mode === "inGrid") return root.isCameraInGrid(ip)
         if (mode === "notInGrid") return !root.isCameraInGrid(ip)
         if (mode === "auth") return kind === "auth"
@@ -170,53 +237,22 @@ Dialog {
         return [name || "", ip || "", searchText || "", detailText || ""].join(" ").toLowerCase().indexOf(query) !== -1
     }
 
-    function addHistoryEntry(title, summary) {
-        healthHistoryModel.insert(0, {
-            time: Qt.formatDateTime(new Date(), "HH:mm:ss"),
-            title: title,
-            summary: summary
-        })
-        while (healthHistoryModel.count > 8)
-            healthHistoryModel.remove(healthHistoryModel.count - 1)
-    }
-
     function recheckAll() {
-        var total = SystemController.cameraModel.rowCount()
-        root.addHistoryEntry(I18n.t("Массовая проверка"), I18n.t("Запущена проверка камер") + ": " + total)
-        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
-            var cam = SystemController.cameraModel.getCamera(i)
-            if (cam && cam.cameraIp) SystemController.refreshCameraHealth(cam.cameraIp)
-        }
+        if (root.healthController)
+            root.healthController.runAll(root.selectedProfile)
     }
 
     function recheckCamera(ip, name) {
         if (!ip || ip === "")
             return
-        root.addHistoryEntry(I18n.t("Проверка камеры"), (name && name !== "" ? name : ip) + " · " + ip)
-        SystemController.refreshCameraHealth(ip)
+        if (root.healthController)
+            root.healthController.runCamera(ip, root.selectedProfile)
     }
 
     function healthReport() {
-        var report = I18n.t("Диагностический отчет камер") + " — " + Qt.formatDateTime(new Date(), "yyyy-MM-dd HH:mm:ss")
-        report += "\n" + I18n.t("Всего") + ": " + SystemController.cameraModel.rowCount()
-                + " | " + I18n.t("Онлайн") + ": " + root.onlineCount()
-                + " | " + I18n.t("Требуют внимания") + ": " + root.issueCount()
-        report += "\n"
-
-        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
-            var cam = SystemController.cameraModel.getCamera(i)
-            if (!cam) continue
-            var name = cam.cameraName && cam.cameraName.trim() !== "" ? cam.cameraName : (I18n.t("Камера") + " " + cam.cameraIp)
-            var statusText = root.effectiveCameraStatus(cam.cameraIp, cam.status)
-            var detailText = root.cameraAttentionReason(cam.cameraIp, cam.status)
-            report += "\n" + (i + 1) + ". " + name
-            report += "\n   IP: " + (cam.cameraIp || "—")
-            report += "\n   " + I18n.t("Статус") + ": " + I18n.t(statusText || "Неизвестно")
-            report += "\n   " + I18n.t("Причина") + ": " + (detailText !== "" ? I18n.t(detailText) : I18n.t("Диагностика без замечаний"))
-            report += "\n   " + I18n.t("В раскладке") + ": " + (root.isCameraInGrid(cam.cameraIp) ? I18n.t("Да") : I18n.t("Нет"))
-        }
-
-        return report
+        return root.healthController
+                ? root.healthController.reportText(root.selectedRunId)
+                : ""
     }
 
     function copyHealthReport() {
@@ -245,7 +281,6 @@ Dialog {
         if (ok) {
             root.lastReportPath = String(pathOrUrl)
             root.reportSaved = true
-            root.addHistoryEntry(I18n.t("Экспорт отчета"), I18n.t("Отчет сохранен"))
         } else {
             root.reportSaveFailed = true
         }
@@ -277,6 +312,8 @@ Dialog {
 
         Layout.fillWidth: true
         implicitHeight: 64
+        Layout.preferredHeight: 64
+        Layout.minimumHeight: 64
         radius: Theme.radiusMd
         color: Theme.panelSoftBackground
         border.color: Theme.panelBorder
@@ -352,6 +389,17 @@ Dialog {
         function onCameraStatusDetailsChanged() { root.dataVersion++ }
     }
 
+    Connections {
+        target: root.healthController
+        ignoreUnknownSignals: true
+        function onCurrentResultsChanged() { root.dataVersion++ }
+        function onHistoryChanged() { root.dataVersion++ }
+        function onRunCompleted(runId) {
+            root.selectedRunId = runId
+            root.dataVersion++
+        }
+    }
+
     background: Rectangle {
         color: Theme.panelBackground
         radius: Theme.radiusLg
@@ -360,9 +408,13 @@ Dialog {
     }
 
     header: Rectangle {
+        id: healthHeader
+
         height: 70
         color: Theme.topBarBackground
         radius: Theme.radiusLg
+        border.color: Theme.panelBorderStrong
+        border.width: 1
 
         RowLayout {
             anchors.fill: parent
@@ -406,8 +458,14 @@ Dialog {
 
             Button {
                 id: checkAllButton
-                text: I18n.t("Проверить все")
+                text: root.healthController && root.healthController.running
+                      ? (I18n.language === "ru" ? "Проверка "
+                         : "Checking ")
+                        + root.healthController.completedProbes + "/"
+                        + root.healthController.totalProbes
+                      : I18n.t("Проверить все")
                 Layout.preferredHeight: 34
+                enabled: !root.healthController || !root.healthController.running
                 onClicked: root.recheckAll()
                 background: Rectangle {
                     color: checkAllButton.down ? Theme.accent : Theme.controlBackground
@@ -468,38 +526,30 @@ Dialog {
                 }
             }
 
-            Button {
+            MetroWindowButton {
                 id: closeButton
+                kind: "close"
                 Layout.preferredWidth: 38
                 Layout.preferredHeight: 34
                 onClicked: root.close()
-                background: Rectangle {
-                    color: closeButton.hovered ? Theme.cardHover : Theme.controlBackground
-                    radius: Theme.radiusMd
-                    border.color: Theme.controlBorder
-                }
-                contentItem: Text {
-                    text: "close"
-                    color: Theme.textPrimary
-                    font.family: root.iconFontFamily
-                    font.pixelSize: 20
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
             }
         }
     }
 
     contentItem: ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 16
         spacing: 12
 
         RowLayout {
+            id: healthStatsRow
+
             Layout.fillWidth: true
+            Layout.preferredHeight: 64
+            Layout.minimumHeight: 64
             spacing: 10
 
             StatCard {
+                id: totalStatCard
+
                 title: "Всего"
                 value: String(SystemController.cameraModel.rowCount())
                 accent: Theme.textPrimary
@@ -519,6 +569,16 @@ Dialog {
                 value: String(root.issueCount())
                 accent: root.issueCount() > 0 ? Theme.warning : Theme.success
             }
+        }
+
+        HealthProfileBar {
+            id: healthProfileBar
+
+            Layout.fillWidth: true
+            Layout.preferredHeight: 58
+            controller: root.healthController
+            selectedProfile: root.selectedProfile
+            onProfileSelected: profileId => root.selectedProfile = profileId
         }
 
         TextField {
@@ -554,89 +614,14 @@ Dialog {
             FilterChip { mode: "stream"; label: "Поток"; count: root.countByFilter("stream") }
         }
 
-        Rectangle {
+        HealthHistoryStrip {
+            id: healthHistoryStrip
+
             Layout.fillWidth: true
-            Layout.preferredHeight: 76
-            radius: Theme.radiusMd
-            color: Theme.panelAltBackground
-            border.color: Theme.panelBorder
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 12
-                spacing: 12
-
-                ColumnLayout {
-                    Layout.preferredWidth: 190
-                    Layout.fillHeight: true
-                    spacing: 4
-                    Text {
-                        text: I18n.t("История проверок")
-                        color: Theme.textPrimary
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: root.checkHistoryLabel()
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                    }
-                }
-
-                ListView {
-                    id: healthHistoryList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    orientation: ListView.Horizontal
-                    spacing: 8
-                    clip: true
-                    model: healthHistoryModel
-
-                    delegate: Rectangle {
-                        id: historyRow
-                        width: 210
-                        height: healthHistoryList.height
-                        radius: Theme.radiusSm
-                        color: Theme.controlBackground
-                        border.color: Theme.controlBorder
-
-                        required property string time
-                        required property string title
-                        required property string summary
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 2
-                            Text {
-                                text: historyRow.time + " · " + historyRow.title
-                                color: Theme.textPrimary
-                                font.pixelSize: 11
-                                font.bold: true
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            Text {
-                                text: historyRow.summary
-                                color: Theme.textMuted
-                                font.pixelSize: 10
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        visible: healthHistoryModel.count === 0
-                        text: I18n.t("История проверок пуста")
-                        color: Theme.textMuted
-                        font.pixelSize: 12
-                    }
-                }
-            }
+            Layout.preferredHeight: 82
+            controller: root.healthController
+            selectedRunId: root.selectedRunId
+            onRunSelected: runId => root.selectedRunId = runId
         }
 
         Rectangle {
@@ -671,7 +656,7 @@ Dialog {
             delegate: Rectangle {
                 id: row
                 width: cameraList.width
-                height: rowVisible ? 88 : 0
+                height: rowVisible ? 94 : 0
                 visible: rowVisible
                 radius: Theme.radiusMd
                 color: hover.hovered ? Theme.cardHover : Theme.cardBackground
@@ -684,10 +669,21 @@ Dialog {
 
                 property int cameraIndex: row.index
                 property string rowName: row.cameraName && row.cameraName.trim() !== "" ? row.cameraName : (I18n.t("Камера") + " " + row.cameraIp)
+                property var healthResult: {
+                    var version = root.dataVersion
+                    return root.healthController
+                            ? root.healthController.resultForCamera(row.cameraIp)
+                            : ({})
+                }
                 property string rowStatus: root.effectiveCameraStatus(row.cameraIp, row.status)
-                property string rowDetail: root.cameraAttentionReason(row.cameraIp, row.status)
-                property string rowIssueKind: root.issueKind(row.cameraIp, row.status)
-                property bool online: root.isOnlineStatus(rowStatus)
+                property string rowDetail: String(healthResult.recommendation || "")
+                                           || root.cameraAttentionReason(row.cameraIp, row.status)
+                property string rowIssueKind: healthResult.status === "error" ? "offline"
+                                              : (healthResult.status === "warning" ? "warning"
+                                                 : root.issueKind(row.cameraIp, row.status))
+                property bool online: healthResult.status === "ok"
+                                      || healthResult.status === "warning"
+                                      || root.isOnlineStatus(rowStatus)
                 property bool inGrid: root.isCameraInGrid(row.cameraIp)
                 property bool rowVisible: root.rowMatches(rowName, row.cameraIp, row.status,
                                                           root.cameraStatusSearchText(row.cameraIp, row.status),
@@ -780,29 +776,40 @@ Dialog {
                         horizontalAlignment: Text.AlignHCenter
                     }
 
-                    RowLayout {
+                    Flow {
                         Layout.preferredWidth: 250
+                        Layout.preferredHeight: 62
                         spacing: 6
 
                         Button {
                             text: I18n.t("Проверить")
-                            Layout.preferredHeight: 28
+                            height: 28
+                            enabled: !root.healthController || !root.healthController.running
                             onClicked: root.recheckCamera(row.cameraIp, row.rowName)
                         }
                         Button {
+                            text: I18n.language === "ru" ? "Детали" : "Details"
+                            height: 28
+                            enabled: Boolean(row.healthResult.ip)
+                            onClicked: {
+                                root.detailsResult = row.healthResult
+                                healthDetailsDialog.open()
+                            }
+                        }
+                        Button {
                             text: I18n.t("OpenIPC")
-                            Layout.preferredHeight: 28
+                            height: 28
                             onClicked: root.majesticRequested(row.cameraIndex)
                         }
                         Button {
                             text: row.inGrid ? I18n.t("В сетке") : I18n.t("В сетку")
                             enabled: !row.inGrid
-                            Layout.preferredHeight: 28
+                            height: 28
                             onClicked: root.addToGridRequested(row.cameraIndex)
                         }
                         Button {
                             text: I18n.t("Правка")
-                            Layout.preferredHeight: 28
+                            height: 28
                             onClicked: root.editRequested(row.cameraIndex)
                         }
                     }
@@ -820,6 +827,12 @@ Dialog {
             horizontalAlignment: Text.AlignHCenter
             font.pixelSize: 13
         }
+    }
+
+    HealthDetailsDialog {
+        id: healthDetailsDialog
+        parent: root.parent
+        healthResult: root.detailsResult
     }
 
     FileDialog {

@@ -33,9 +33,9 @@ Rectangle {
     Layout.leftMargin: 16
     Layout.rightMargin: 16
     Layout.preferredHeight: visible ? 220 : 0
-    color: Theme.cardBackground
-    border.color: (root.upgradeRebooting || root.returnPolling) ? Theme.warning : Theme.cardBorder
-    radius: Theme.radiusLg
+    color: Theme.metroSurface
+    border.color: (root.upgradeRebooting || root.returnPolling) ? Theme.metroAmber : Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
         anchors.fill: parent
@@ -49,6 +49,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: I18n.t("Firmware upgrade progress")
                 color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 font.bold: true
                 font.pixelSize: 15
             }
@@ -69,11 +70,11 @@ Rectangle {
             Rectangle {
                 implicitWidth: phaseText.implicitWidth + 18
                 implicitHeight: 24
-                radius: 12
-                color: root.returnPhase === "online" ? "#052e1b"
-                                                      : (root.returnPhase === "failed" ? "#3f1212" : "#422006")
-                border.color: root.returnPhase === "online" ? Theme.success
-                                                            : (root.returnPhase === "failed" ? Theme.danger : Theme.warning)
+                radius: Theme.metroTileRadius
+                color: root.returnPhase === "online" ? Theme.successSurface
+                                                      : (root.returnPhase === "failed" ? Theme.dangerSurface : Theme.warningSurface)
+                border.color: root.returnPhase === "online" ? Theme.metroGreen
+                                                            : (root.returnPhase === "failed" ? Theme.metroRed : Theme.metroAmber)
 
                 Text {
                     id: phaseText
@@ -81,6 +82,7 @@ Rectangle {
                     text: root.phaseLabel()
                     color: root.returnPhase === "online" ? Theme.success
                                                          : (root.returnPhase === "failed" ? Theme.danger : Theme.warning)
+                    font.family: Theme.metroFontFamily
                     font.bold: true
                     font.pixelSize: 10
                 }
@@ -91,6 +93,7 @@ Rectangle {
                 text: root.returnHealthText
                 color: root.returnPhase === "failed" ? Theme.danger : Theme.textSecondary
                 elide: Text.ElideRight
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 11
             }
         }
@@ -99,7 +102,8 @@ Rectangle {
             visible: root.returnPolling
             Layout.fillWidth: true
             text: I18n.t("Ожидание возврата камеры… попытка %1/%2", [root.returnPollTries, root.returnPollMaxTries])
-            color: Theme.warning
+            color: Theme.metroAmber
+            font.family: Theme.metroFontFamily
             font.pixelSize: 11
         }
 
@@ -114,13 +118,13 @@ Rectangle {
                 text: root.progressText.length ? root.progressText : I18n.t("Progress появится после старта /ws/upgrade.")
                 color: Theme.textSecondary
                 selectedTextColor: Theme.textPrimary
-                selectionColor: Theme.accent
+                selectionColor: Theme.metroBlue
                 font.family: "Consolas"
                 font.pixelSize: 11
                 background: Rectangle {
-                    radius: Theme.radiusMd
+                    radius: Theme.metroTileRadius
                     color: Theme.controlBackground
-                    border.color: Theme.controlBorder
+                    border.color: Theme.metroStroke
                 }
             }
         }

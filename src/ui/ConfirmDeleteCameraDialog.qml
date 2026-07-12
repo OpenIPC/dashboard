@@ -17,9 +17,9 @@ Dialog {
     signal deleteAccepted(int cameraIndex)
 
     background: Rectangle {
-        color: Theme.panelAltBackground
-        border.color: Theme.panelBorderStrong
-        radius: Theme.radiusMd
+        color: Theme.metroSurface
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
     }
 
     header: Rectangle {
@@ -51,18 +51,18 @@ Dialog {
 
             DashboardDialogButton {
                 text: I18n.t("ОТМЕНА")
-                buttonColor: "#444444"
-                buttonHoverColor: "#555555"
-                buttonBorderColor: "#444444"
+                buttonColor: Theme.metroTile
+                buttonHoverColor: Theme.metroTileHover
+                buttonBorderColor: Theme.metroStroke
                 buttonTextColor: Theme.textPrimary
                 onClicked: root.close()
             }
 
             DashboardDialogButton {
                 text: I18n.t("УДАЛИТЬ")
-                buttonColor: Theme.danger
-                buttonHoverColor: "#e53935"
-                buttonBorderColor: Theme.danger
+                buttonColor: Theme.metroRed
+                buttonHoverColor: Theme.metroRed
+                buttonBorderColor: Theme.metroRed
                 buttonTextColor: Theme.textPrimary
                 buttonTextBold: true
                 onClicked: {

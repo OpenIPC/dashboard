@@ -60,6 +60,14 @@ QVariant CameraModel::data(const QModelIndex &index, int role) const
         return camera.discoveryConfidence;
     case IsOpenIpcRole:
         return camera.isOpenIpc;
+    case OnboardingProfileRole:
+        return camera.onboardingProfile;
+    case ValidationStatusRole:
+        return camera.validationStatus;
+    case ValidationMessageRole:
+        return camera.validationMessage;
+    case AlreadyAddedRole:
+        return camera.alreadyAdded;
     default:
         return QVariant();
     }
@@ -88,6 +96,10 @@ QHash<int, QByteArray> CameraModel::roleNames() const
     roles[DiscoveryEvidenceRole] = "discoveryEvidence";
     roles[DiscoveryConfidenceRole] = "discoveryConfidence";
     roles[IsOpenIpcRole] = "isOpenIpc";
+    roles[OnboardingProfileRole] = "onboardingProfile";
+    roles[ValidationStatusRole] = "validationStatus";
+    roles[ValidationMessageRole] = "validationMessage";
+    roles[AlreadyAddedRole] = "alreadyAdded";
     return roles;
 }
 

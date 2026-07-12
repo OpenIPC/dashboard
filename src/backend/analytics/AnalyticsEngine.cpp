@@ -4,6 +4,7 @@
 #include "../PathUtils.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QDebug>
 #include <QTimer>
 #include <QDateTime>
@@ -16,6 +17,7 @@
 #include <QSslSocket>
 #include <QtConcurrent>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QEventLoop>
 #include <QProcess>
 #include <QJsonDocument>
@@ -40,6 +42,159 @@ static void ensureGstInitOnce() {
         gst_init(nullptr, nullptr);
         initialized = true;
     }
+}
+
+static int detectionChannelLuma(QRgb px)
+{
+    return (qRed(px) * 54 + qGreen(px) * 183 + qBlue(px) * 19) >> 8;
+}
+
+static QRect detectionBoundsForImage(const QImage &image, const QVariantMap &det, double padXFactor, double padYFactor)
+{
+    if (image.isNull()) {
+        return QRect();
+    }
+
+    double x = det.value("x").toDouble();
+    double y = det.value("y").toDouble();
+    double w = det.value("w").toDouble();
+    double h = det.value("h").toDouble();
+    if (w <= 0.0 || h <= 0.0) {
+        return QRect();
+    }
+
+    const bool normalized = (x <= 1.0 && y <= 1.0 && w <= 1.0 && h <= 1.0);
+    if (normalized) {
+        x *= image.width();
+        y *= image.height();
+        w *= image.width();
+        h *= image.height();
+    }
+
+    QRect rect(qRound(x), qRound(y), qRound(w), qRound(h));
+    if (!rect.isValid()) {
+        return QRect();
+    }
+
+    const int padX = qRound(rect.width() * padXFactor);
+    const int padY = qRound(rect.height() * padYFactor);
+    rect.adjust(-padX, -padY, padX, padY);
+
+    const double targetAspect = 4.0 / 5.0;
+    if (rect.width() > 0 && rect.height() > 0) {
+        const double currentAspect = static_cast<double>(rect.width()) / static_cast<double>(rect.height());
+        if (currentAspect > targetAspect) {
+            const int desiredHeight = qRound(rect.width() / targetAspect);
+            const int delta = desiredHeight - rect.height();
+            rect.adjust(0, -delta / 2, 0, delta - delta / 2);
+        } else {
+            const int desiredWidth = qRound(rect.height() * targetAspect);
+            const int delta = desiredWidth - rect.width();
+            rect.adjust(-delta / 2, 0, delta - delta / 2, 0);
+        }
+    }
+
+    return rect.intersected(QRect(0, 0, image.width(), image.height()));
+}
+
+static QImage upscaleEvidenceCrop(const QImage &image)
+{
+    if (image.isNull()) {
+        return image;
+    }
+
+    constexpr int kMinShortSide = 360;
+    constexpr int kMaxLongSide = 900;
+    const int shortSide = qMin(image.width(), image.height());
+    const int longSide = qMax(image.width(), image.height());
+    if (shortSide <= 0 || shortSide >= kMinShortSide) {
+        return image;
+    }
+
+    double scale = static_cast<double>(kMinShortSide) / static_cast<double>(shortSide);
+    scale = qMin(scale, static_cast<double>(kMaxLongSide) / static_cast<double>(longSide));
+    scale = qBound(1.0, scale, 3.0);
+    if (scale <= 1.01) {
+        return image;
+    }
+
+    return image.scaled(qRound(image.width() * scale),
+                        qRound(image.height() * scale),
+                        Qt::KeepAspectRatio,
+                        Qt::SmoothTransformation);
+}
+
+static QImage enhanceEvidenceCrop(const QImage &source)
+{
+    if (source.isNull()) {
+        return source;
+    }
+
+    QImage image = source.convertToFormat(QImage::Format_RGB32);
+    const int sampleStep = qMax(1, qMin(image.width(), image.height()) / 180);
+    qint64 lumaSum = 0;
+    int sampleCount = 0;
+
+    for (int y = 0; y < image.height(); y += sampleStep) {
+        const auto *line = reinterpret_cast<const QRgb *>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); x += sampleStep) {
+            lumaSum += detectionChannelLuma(line[x]);
+            sampleCount += 1;
+        }
+    }
+
+    const double avgLuma = sampleCount > 0
+        ? static_cast<double>(lumaSum) / static_cast<double>(sampleCount)
+        : 128.0;
+    const bool lowLight = avgLuma < 105.0;
+    const double contrast = lowLight ? 1.18 : 1.08;
+    const int lift = lowLight ? 12 : 2;
+
+    auto enhanceChannel = [&](int value) {
+        double adjusted = (static_cast<double>(value) - 128.0) * contrast + 128.0 + lift;
+        adjusted = qBound(0.0, adjusted, 255.0);
+        const double normalized = adjusted / 255.0;
+        const double shadowLift = (lowLight ? 0.14 : 0.05) * (1.0 - normalized);
+        adjusted += (255.0 - adjusted) * shadowLift;
+        return qBound(0, qRound(adjusted), 255);
+    };
+
+    for (int y = 0; y < image.height(); ++y) {
+        auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb px = line[x];
+            line[x] = qRgb(enhanceChannel(qRed(px)),
+                           enhanceChannel(qGreen(px)),
+                           enhanceChannel(qBlue(px)));
+        }
+    }
+
+    if (image.width() < 5 || image.height() < 5) {
+        return image;
+    }
+
+    QImage sharpened = image.copy();
+    constexpr double kSharpenAmount = 0.32;
+    for (int y = 1; y < image.height() - 1; ++y) {
+        const auto *prev = reinterpret_cast<const QRgb *>(image.constScanLine(y - 1));
+        const auto *curr = reinterpret_cast<const QRgb *>(image.constScanLine(y));
+        const auto *next = reinterpret_cast<const QRgb *>(image.constScanLine(y + 1));
+        auto *dst = reinterpret_cast<QRgb *>(sharpened.scanLine(y));
+
+        for (int x = 1; x < image.width() - 1; ++x) {
+            const QRgb center = curr[x];
+            auto sharpenChannel = [&](int centerValue, int n1, int n2, int n3, int n4) {
+                const double neighborAvg = (n1 + n2 + n3 + n4) / 4.0;
+                return qBound(0, qRound(centerValue + ((centerValue - neighborAvg) * kSharpenAmount)), 255);
+            };
+
+            dst[x] = qRgb(sharpenChannel(qRed(center), qRed(curr[x - 1]), qRed(curr[x + 1]), qRed(prev[x]), qRed(next[x])),
+                          sharpenChannel(qGreen(center), qGreen(curr[x - 1]), qGreen(curr[x + 1]), qGreen(prev[x]), qGreen(next[x])),
+                          sharpenChannel(qBlue(center), qBlue(curr[x - 1]), qBlue(curr[x + 1]), qBlue(prev[x]), qBlue(next[x])));
+        }
+    }
+
+    return sharpened;
 }
 
 AnalyticsEngine::AnalyticsEngine(QObject *parent)
@@ -104,6 +259,7 @@ AnalyticsEngine::~AnalyticsEngine()
 
 QVariantList AnalyticsEngine::analyticsEvents() const
 {
+    QMutexLocker locker(&m_analyticsEventsMutex);
     return m_analyticsEvents;
 }
 
@@ -156,8 +312,14 @@ QVariantList AnalyticsEngine::queryAnalyticsEvents(int type, const QString &came
         }
     }
 
+    QVariantList eventSnapshot;
+    {
+        QMutexLocker locker(&m_analyticsEventsMutex);
+        eventSnapshot = m_analyticsEvents;
+    }
+
     QVariantList filtered;
-    for (const QVariant &eventVar : m_analyticsEvents) {
+    for (const QVariant &eventVar : eventSnapshot) {
         const QVariantMap event = eventVar.toMap();
         if (type >= 0 && event.value("moduleType").toInt() != type) {
             continue;
@@ -188,20 +350,29 @@ void AnalyticsEngine::clearAnalyticsEvents(int type, const QString &cameraId)
 {
     const QString trimmedCameraId = cameraId.trimmed();
     if (type < 0 && trimmedCameraId.isEmpty()) {
-        if (m_analyticsEvents.isEmpty()) {
-            deleteStoredAnalyticsEvents(type, trimmedCameraId);
-            return;
+        bool wasEmpty = false;
+        {
+            QMutexLocker locker(&m_analyticsEventsMutex);
+            wasEmpty = m_analyticsEvents.isEmpty();
+            m_analyticsEvents.clear();
         }
-        m_analyticsEvents.clear();
         deleteStoredAnalyticsEvents(type, trimmedCameraId);
-        emit analyticsEventsChanged();
+        if (!wasEmpty) {
+            emit analyticsEventsChanged();
+        }
         return;
+    }
+
+    QVariantList eventSnapshot;
+    {
+        QMutexLocker locker(&m_analyticsEventsMutex);
+        eventSnapshot = m_analyticsEvents;
     }
 
     QVariantList filtered;
     bool changed = false;
 
-    for (const QVariant &eventVar : m_analyticsEvents) {
+    for (const QVariant &eventVar : eventSnapshot) {
         const QVariantMap event = eventVar.toMap();
         bool matches = true;
 
@@ -225,9 +396,568 @@ void AnalyticsEngine::clearAnalyticsEvents(int type, const QString &cameraId)
         return;
     }
 
-    m_analyticsEvents = filtered;
+    {
+        QMutexLocker locker(&m_analyticsEventsMutex);
+        m_analyticsEvents = filtered;
+    }
     deleteStoredAnalyticsEvents(type, trimmedCameraId);
     emit analyticsEventsChanged();
+}
+
+QVariantList AnalyticsEngine::moduleInventory() const
+{
+    QVariantList result;
+
+    for (int typeValue = static_cast<int>(FaceDetector);
+         typeValue <= static_cast<int>(LicensePlate);
+         ++typeValue) {
+        const ModuleType type = static_cast<ModuleType>(typeValue);
+        if (!m_modules.contains(type)) {
+            continue;
+        }
+
+        const ModuleContext &ctx = m_modules[type];
+        const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+        const QFileInfo modelInfo(modelPath);
+        const QFileInfo partialInfo(modelPath + QStringLiteral(".part"));
+        const QFileInfo previousInfo(modelPath + QStringLiteral(".previous"));
+        const bool installed = modelInfo.exists() && modelInfo.isFile();
+        const bool sizeMatches = installed && (ctx.modelSizeBytes <= 0 || modelInfo.size() == ctx.modelSizeBytes);
+
+        int assignedCameras = 0;
+        for (auto cameraIt = m_cameraModules.begin(); cameraIt != m_cameraModules.end(); ++cameraIt) {
+            if (cameraIt.value().value(type, false)) {
+                assignedCameras += 1;
+            }
+        }
+
+        QVariantMap entry = getModuleDiagnostics(typeValue);
+        entry["type"] = typeValue;
+        entry["enabled"] = ctx.enabled;
+        entry["installed"] = installed;
+        entry["sizeMatches"] = sizeMatches;
+        entry["verificationState"] = !installed
+            ? QStringLiteral("missing")
+            : (!sizeMatches
+                ? QStringLiteral("size_mismatch")
+                : (ctx.status == QStringLiteral("ready") ? QStringLiteral("trusted") : QStringLiteral("size_ok")));
+        entry["partialPath"] = partialInfo.absoluteFilePath();
+        entry["partialExists"] = partialInfo.exists() && partialInfo.isFile();
+        entry["partialBytes"] = partialInfo.exists() ? static_cast<qlonglong>(partialInfo.size()) : 0;
+        entry["previousPath"] = previousInfo.absoluteFilePath();
+        entry["previousExists"] = previousInfo.exists() && previousInfo.isFile();
+        entry["previousBytes"] = previousInfo.exists() ? static_cast<qlonglong>(previousInfo.size()) : 0;
+        entry["storageBytes"] = static_cast<qlonglong>(
+            (modelInfo.exists() ? modelInfo.size() : 0)
+            + (partialInfo.exists() ? partialInfo.size() : 0)
+            + (previousInfo.exists() ? previousInfo.size() : 0));
+        entry["assignedCameras"] = assignedCameras;
+        entry["telemetry"] = getModuleTelemetry(typeValue);
+        result.append(entry);
+    }
+
+    return result;
+}
+
+QVariantMap AnalyticsEngine::verifyModuleArtifact(int type) const
+{
+    const ModuleType moduleType = static_cast<ModuleType>(type);
+    QVariantMap result;
+    result["type"] = type;
+    result["ok"] = false;
+    result["verified"] = false;
+
+    if (!m_modules.contains(moduleType)) {
+        result["status"] = QStringLiteral("error");
+        result["message"] = QStringLiteral("Unknown module");
+        return result;
+    }
+
+    const ModuleContext &ctx = m_modules[moduleType];
+    const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+    const QFileInfo modelInfo(modelPath);
+    result["path"] = modelPath;
+    result["fileName"] = ctx.modelFileName;
+    result["expectedSizeBytes"] = static_cast<qlonglong>(ctx.modelSizeBytes);
+    result["actualSizeBytes"] = modelInfo.exists() ? static_cast<qlonglong>(modelInfo.size()) : 0;
+    result["expectedSha256"] = ctx.modelSha256;
+
+    if (!modelInfo.exists() || !modelInfo.isFile()) {
+        result["status"] = QStringLiteral("missing");
+        result["message"] = QStringLiteral("Model file is missing");
+        return result;
+    }
+
+    QString verificationError;
+    const bool verified = ModelArtifactVerifier::verify(modelPath, ctx.modelSha256,
+                                                        ctx.modelSizeBytes, &verificationError);
+    result["ok"] = verified;
+    result["verified"] = verified;
+    result["status"] = verified ? QStringLiteral("verified") : QStringLiteral("failed");
+    result["message"] = verified
+        ? QStringLiteral("Model artifact is verified")
+        : verificationError;
+    return result;
+}
+
+QVariantMap AnalyticsEngine::cleanupModuleArtifacts(int type)
+{
+    const ModuleType moduleType = static_cast<ModuleType>(type);
+    QVariantMap result;
+    result["type"] = type;
+    result["ok"] = false;
+    result["removedCount"] = 0;
+    result["freedBytes"] = 0;
+
+    if (!m_modules.contains(moduleType)) {
+        result["message"] = QStringLiteral("Unknown module");
+        return result;
+    }
+
+    if (m_currentDownloads.contains(moduleType)) {
+        result["message"] = QStringLiteral("Download is active; cleanup skipped");
+        return result;
+    }
+
+    const ModuleContext &ctx = m_modules[moduleType];
+    const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+    const QStringList candidates{
+        modelPath + QStringLiteral(".part"),
+        modelPath + QStringLiteral(".tmp"),
+        modelPath + QStringLiteral(".download"),
+        modelPath + QStringLiteral(".previous")
+    };
+
+    QVariantList removed;
+    qint64 freedBytes = 0;
+    for (const QString &candidate : candidates) {
+        QFileInfo info(candidate);
+        if (!info.exists() || !info.isFile()) {
+            continue;
+        }
+
+        const qint64 fileSize = info.size();
+        if (QFile::remove(candidate)) {
+            QVariantMap item;
+            item["path"] = candidate;
+            item["bytes"] = static_cast<qlonglong>(fileSize);
+            removed.append(item);
+            freedBytes += fileSize;
+        }
+    }
+
+    result["ok"] = true;
+    result["removedCount"] = removed.size();
+    result["removed"] = removed;
+    result["freedBytes"] = static_cast<qlonglong>(freedBytes);
+    result["message"] = removed.isEmpty()
+        ? QStringLiteral("No temporary artifacts found")
+        : QStringLiteral("Temporary artifacts removed");
+
+    if (!removed.isEmpty()) {
+        emit analyticsTelemetryChanged();
+    }
+    return result;
+}
+
+QVariantMap AnalyticsEngine::analyticsEvidenceSummary() const
+{
+    auto scanDirectory = [](const QString &path) -> QVariantMap {
+        QVariantMap entry;
+        const QString cleanPath = QDir::cleanPath(path);
+        QFileInfo rootInfo(cleanPath);
+        entry["path"] = cleanPath;
+        entry["exists"] = rootInfo.exists() && rootInfo.isDir();
+        entry["files"] = 0;
+        entry["imageFiles"] = 0;
+        entry["videoFiles"] = 0;
+        entry["bytes"] = 0;
+
+        if (!rootInfo.exists() || !rootInfo.isDir()) {
+            return entry;
+        }
+
+        static const QSet<QString> imageSuffixes{
+            QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"), QStringLiteral("webp")
+        };
+        static const QSet<QString> videoSuffixes{
+            QStringLiteral("mp4"), QStringLiteral("mkv"), QStringLiteral("avi"), QStringLiteral("mov")
+        };
+
+        int files = 0;
+        int imageFiles = 0;
+        int videoFiles = 0;
+        qint64 bytes = 0;
+        constexpr int kMaxScannedFiles = 20000;
+
+        QDirIterator iterator(cleanPath, QDir::Files, QDirIterator::Subdirectories);
+        while (iterator.hasNext() && files < kMaxScannedFiles) {
+            iterator.next();
+            const QFileInfo info = iterator.fileInfo();
+            const QString suffix = info.suffix().toLower();
+            files += 1;
+            bytes += info.size();
+            if (imageSuffixes.contains(suffix)) {
+                imageFiles += 1;
+            } else if (videoSuffixes.contains(suffix)) {
+                videoFiles += 1;
+            }
+        }
+
+        entry["files"] = files;
+        entry["imageFiles"] = imageFiles;
+        entry["videoFiles"] = videoFiles;
+        entry["bytes"] = static_cast<qlonglong>(bytes);
+        entry["truncated"] = files >= kMaxScannedFiles;
+        return entry;
+    };
+
+    QVariantMap result;
+    result["enabled"] = m_evidenceEnabled;
+    result["snapshotsEnabled"] = m_evidenceSnapshotsEnabled;
+    result["clipsEnabled"] = m_evidenceClipsEnabled;
+    result["snapshotsDir"] = m_evidenceSnapshotsDir;
+    result["clipsDir"] = m_evidenceClipsDir;
+
+    QVariantList directories;
+    QSet<QString> seenPaths;
+    auto addDirectory = [&](const QString &path, const QString &kind, const QString &moduleName = QString()) {
+        if (path.trimmed().isEmpty()) {
+            return;
+        }
+        const QString cleanPath = QDir::cleanPath(path);
+        if (seenPaths.contains(cleanPath)) {
+            return;
+        }
+        seenPaths.insert(cleanPath);
+        QVariantMap entry = scanDirectory(cleanPath);
+        entry["kind"] = kind;
+        entry["moduleName"] = moduleName;
+        directories.append(entry);
+    };
+
+    addDirectory(m_evidenceSnapshotsDir, QStringLiteral("snapshots"));
+    addDirectory(m_evidenceClipsDir, QStringLiteral("clips"));
+    for (auto it = m_modules.begin(); it != m_modules.end(); ++it) {
+        addDirectory(it.value().snapshotsDir, QStringLiteral("module_snapshots"), it.value().name);
+    }
+
+    int totalFiles = 0;
+    int totalImages = 0;
+    int totalVideos = 0;
+    qint64 totalBytes = 0;
+    for (const QVariant &dirVar : directories) {
+        const QVariantMap dir = dirVar.toMap();
+        totalFiles += dir.value("files").toInt();
+        totalImages += dir.value("imageFiles").toInt();
+        totalVideos += dir.value("videoFiles").toInt();
+        totalBytes += dir.value("bytes").toLongLong();
+    }
+
+    result["directories"] = directories;
+    result["directoryCount"] = directories.size();
+    result["totalFiles"] = totalFiles;
+    result["totalImageFiles"] = totalImages;
+    result["totalVideoFiles"] = totalVideos;
+    result["totalBytes"] = static_cast<qlonglong>(totalBytes);
+    return result;
+}
+
+QVariantList AnalyticsEngine::analyticsRecommendations() const
+{
+    QVariantList result;
+    auto add = [&](const QString &level, const QString &title, const QString &message, const QString &action = QString()) {
+        QVariantMap item;
+        item["level"] = level;
+        item["title"] = title;
+        item["message"] = message;
+        item["action"] = action;
+        result.append(item);
+    };
+
+    if (!m_eventStoreReady) {
+        add(QStringLiteral("danger"),
+            QStringLiteral("Event store is unavailable"),
+            QStringLiteral("Analytics events will remain only in memory until SQLite storage is available."),
+            m_eventStorePath);
+    }
+
+    if (!m_evidenceEnabled) {
+        add(QStringLiteral("warning"),
+            QStringLiteral("Evidence capture is disabled"),
+            QStringLiteral("Enable analytics evidence if you need snapshots, clips and persistent incident context."));
+    } else {
+        if (m_evidenceSnapshotsEnabled && !QDir(m_evidenceSnapshotsDir).exists()) {
+            add(QStringLiteral("warning"),
+                QStringLiteral("Snapshot directory is not created yet"),
+                QStringLiteral("The directory will be created on first event, but checking the path now helps avoid permission issues."),
+                m_evidenceSnapshotsDir);
+        }
+        if (m_evidenceClipsEnabled && !QDir(m_evidenceClipsDir).exists()) {
+            add(QStringLiteral("info"),
+                QStringLiteral("Clip directory is not created yet"),
+                QStringLiteral("Buffered clips will be written here when a rule requests video evidence."),
+                m_evidenceClipsDir);
+        }
+    }
+
+    int enabledModules = 0;
+    int enabledReadyModules = 0;
+    int assignedModules = 0;
+    int configuredRules = 0;
+    QSet<QString> camerasWithAnalytics;
+
+    for (int typeValue = static_cast<int>(FaceDetector);
+         typeValue <= static_cast<int>(LicensePlate);
+         ++typeValue) {
+        const ModuleType type = static_cast<ModuleType>(typeValue);
+        if (!m_modules.contains(type)) {
+            continue;
+        }
+
+        const ModuleContext &ctx = m_modules[type];
+        const QString modelPath = QDir(m_modulesDir).filePath(ctx.modelFileName);
+        const QFileInfo modelInfo(modelPath);
+        if (ctx.enabled) {
+            enabledModules += 1;
+            if (ctx.status == QStringLiteral("ready")) {
+                enabledReadyModules += 1;
+            } else {
+                add(QStringLiteral("warning"),
+                    QStringLiteral("Enabled module is not ready"),
+                    QStringLiteral("%1: %2").arg(ctx.name, ctx.error.isEmpty() ? ctx.status : ctx.error),
+                    modelPath);
+            }
+        }
+
+        if (modelInfo.exists() && ctx.modelSizeBytes > 0 && modelInfo.size() != ctx.modelSizeBytes) {
+            add(QStringLiteral("danger"),
+                QStringLiteral("Model artifact size mismatch"),
+                QStringLiteral("%1 has an unexpected size. Run artifact verification or reload the module.").arg(ctx.name),
+                modelPath);
+        }
+
+        const QVariantList rules = ctx.extraConfig.value("rules").toList();
+        for (const QVariant &ruleVar : rules) {
+            if (ruleVar.toMap().value("enabled", true).toBool()) {
+                configuredRules += 1;
+            }
+        }
+    }
+
+    for (auto cameraIt = m_cameraModules.begin(); cameraIt != m_cameraModules.end(); ++cameraIt) {
+        bool hasEnabledAssignment = false;
+        for (auto moduleIt = cameraIt.value().begin(); moduleIt != cameraIt.value().end(); ++moduleIt) {
+            if (moduleIt.value()) {
+                assignedModules += 1;
+                hasEnabledAssignment = true;
+            }
+        }
+        if (hasEnabledAssignment) {
+            camerasWithAnalytics.insert(cameraIt.key());
+        }
+    }
+
+    if (enabledModules == 0) {
+        add(QStringLiteral("warning"),
+            QStringLiteral("No AI module is enabled"),
+            QStringLiteral("Enable at least one module before assigning analytics to cameras."));
+    } else if (enabledReadyModules < enabledModules) {
+        add(QStringLiteral("info"),
+            QStringLiteral("Some modules are still preparing"),
+            QStringLiteral("Analytics will start for assigned cameras as soon as enabled modules become ready."));
+    }
+
+    if (assignedModules == 0) {
+        add(QStringLiteral("warning"),
+            QStringLiteral("No camera has analytics assigned"),
+            QStringLiteral("Assign enabled modules to cameras on the Cameras tab."));
+    }
+
+    if (configuredRules == 0) {
+        add(QStringLiteral("info"),
+            QStringLiteral("No analytics rules configured"),
+            QStringLiteral("The event feed can show generic detections; add rules for precise incident workflows."));
+    }
+
+    if (result.isEmpty()) {
+        add(QStringLiteral("success"),
+            QStringLiteral("Analytics pipeline looks healthy"),
+            QStringLiteral("Modules, event storage and camera assignments are ready."),
+            QStringLiteral("%1 camera(s) with AI").arg(camerasWithAnalytics.size()));
+    }
+
+    return result;
+}
+
+QVariantMap AnalyticsEngine::getCameraAnalyticsDiagnostics(const QString &cameraId) const
+{
+    QVariantMap result;
+    const QString trimmedCameraId = cameraId.trimmed();
+    result["cameraId"] = trimmedCameraId;
+    result["found"] = false;
+
+    if (trimmedCameraId.isEmpty()) {
+        result["pipelineState"] = QStringLiteral("unknown");
+        result["message"] = QStringLiteral("Camera id is empty");
+        return result;
+    }
+
+    const QVariantMap diagnostics = analyticsDiagnostics();
+    const QVariantList cameras = diagnostics.value("cameraStats").toList();
+    for (const QVariant &cameraVar : cameras) {
+        const QVariantMap camera = cameraVar.toMap();
+        if (camera.value("cameraId").toString() == trimmedCameraId) {
+            result = camera;
+            result["found"] = true;
+            break;
+        }
+    }
+
+    if (!result.value("found").toBool()) {
+        result["pipelineState"] = hasActiveModules(trimmedCameraId)
+            ? QStringLiteral("waiting")
+            : QStringLiteral("unassigned");
+        result["assignedModules"] = m_cameraModules.value(trimmedCameraId).size();
+        result["activeModules"] = 0;
+        result["readyModules"] = 0;
+    }
+
+    QVariantList recommendations;
+    auto add = [&](const QString &level, const QString &title, const QString &message) {
+        QVariantMap item;
+        item["level"] = level;
+        item["title"] = title;
+        item["message"] = message;
+        recommendations.append(item);
+    };
+
+    const int assigned = result.value("assignedModules").toInt();
+    const int ready = result.value("readyModules").toInt();
+    const QString pipelineState = result.value("pipelineState").toString();
+    if (assigned == 0) {
+        add(QStringLiteral("warning"),
+            QStringLiteral("No modules assigned"),
+            QStringLiteral("Enable analytics modules for this camera in the Cameras tab."));
+    } else if (ready == 0) {
+        add(QStringLiteral("warning"),
+            QStringLiteral("Assigned modules are not ready"),
+            QStringLiteral("Check module downloads, verification status and global module toggles."));
+    } else if (pipelineState == QStringLiteral("throttled")) {
+        add(QStringLiteral("info"),
+            QStringLiteral("Frames are throttled"),
+            QStringLiteral("Lower AI FPS or increase max parallel jobs only if CPU headroom allows it."));
+    } else if (pipelineState == QStringLiteral("waiting")) {
+        add(QStringLiteral("info"),
+            QStringLiteral("Waiting for frames"),
+            QStringLiteral("The camera has active analytics, but no frame has reached the engine yet."));
+    } else {
+        add(QStringLiteral("success"),
+            QStringLiteral("Camera analytics is ready"),
+            QStringLiteral("The camera has active modules and can feed the analytics pipeline."));
+    }
+
+    result["recommendations"] = recommendations;
+    return result;
+}
+
+QVariantMap AnalyticsEngine::exportAnalyticsEvents(const QString &path,
+                                                   int type,
+                                                   const QString &cameraId,
+                                                   const QString &text,
+                                                   const QString &format,
+                                                   int limit) const
+{
+    QVariantMap result;
+    result["ok"] = false;
+
+    QString normalizedFormat = format.trimmed().toLower();
+    if (normalizedFormat.isEmpty()) {
+        normalizedFormat = QStringLiteral("json");
+    }
+    if (normalizedFormat != QStringLiteral("json") && normalizedFormat != QStringLiteral("csv")) {
+        result["message"] = QStringLiteral("Unsupported export format");
+        return result;
+    }
+
+    QString targetPath = PathUtils::localPathFromUserInput(path.trimmed());
+    if (targetPath.isEmpty()) {
+        QString baseDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        if (baseDir.isEmpty()) {
+            baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        }
+        targetPath = QDir(baseDir).filePath(QStringLiteral("OpenIPC/Analytics/analytics-events-%1.%2")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")),
+                 normalizedFormat));
+    }
+
+    QDir outputDir(QFileInfo(targetPath).absolutePath());
+    if (!outputDir.exists() && !outputDir.mkpath(QStringLiteral("."))) {
+        result["path"] = targetPath;
+        result["message"] = QStringLiteral("Cannot create export directory");
+        return result;
+    }
+
+    const QVariantList events = queryAnalyticsEvents(type, cameraId, text, limit);
+    QSaveFile file(targetPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        result["path"] = targetPath;
+        result["message"] = file.errorString();
+        return result;
+    }
+
+    if (normalizedFormat == QStringLiteral("json")) {
+        const QJsonDocument doc(QJsonArray::fromVariantList(events));
+        file.write(doc.toJson(QJsonDocument::Indented));
+    } else {
+        auto csvCell = [](const QString &value) {
+            QString cell = value;
+            cell.replace(QStringLiteral("\""), QStringLiteral("\"\""));
+            if (cell.contains(QLatin1Char(',')) || cell.contains(QLatin1Char('"'))
+                || cell.contains(QLatin1Char('\n')) || cell.contains(QLatin1Char('\r'))) {
+                cell = QStringLiteral("\"%1\"").arg(cell);
+            }
+            return cell;
+        };
+
+        QString csv;
+        csv += QStringLiteral("timestamp,cameraId,eventType,moduleType,label,confidence,ruleName,message,snapshotPath,clipPath\n");
+        for (const QVariant &eventVar : events) {
+            const QVariantMap event = eventVar.toMap();
+            const QStringList row{
+                event.value("timestampText").toString(),
+                event.value("cameraId").toString(),
+                event.value("eventType").toString(),
+                event.value("moduleType").toString(),
+                event.value("label").toString(),
+                event.value("confidence").toString(),
+                event.value("ruleName").toString(),
+                event.value("message").toString(),
+                event.value("snapshotPath").toString(),
+                event.value("clipPath").toString()
+            };
+
+            QStringList escaped;
+            for (const QString &cell : row) {
+                escaped.append(csvCell(cell));
+            }
+            csv += escaped.join(QLatin1Char(',')) + QLatin1Char('\n');
+        }
+        file.write(csv.toUtf8());
+    }
+
+    if (!file.commit()) {
+        result["path"] = targetPath;
+        result["message"] = file.errorString();
+        return result;
+    }
+
+    result["ok"] = true;
+    result["path"] = targetPath;
+    result["format"] = normalizedFormat;
+    result["count"] = events.size();
+    result["message"] = QStringLiteral("Exported %1 analytics event(s)").arg(events.size());
+    return result;
 }
 
 QVariantMap AnalyticsEngine::telemetryStateToVariant(const TelemetryState &state) const
@@ -414,7 +1144,10 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
         : 0.0;
     result["cameraStats"] = cameraStats;
     result["moduleStats"] = moduleStats;
-    result["eventBufferSize"] = m_analyticsEvents.size();
+    {
+        QMutexLocker locker(&m_analyticsEventsMutex);
+        result["eventBufferSize"] = m_analyticsEvents.size();
+    }
     result["eventStoreReady"] = m_eventStoreReady;
     result["eventStorePath"] = m_eventStorePath;
     result["objectCounterSummary"] = getObjectCounterSummary();
@@ -1105,6 +1838,78 @@ bool AnalyticsEngine::moduleHasClipRules(const QVariantMap &extraConfig) const
     return false;
 }
 
+bool AnalyticsEngine::configRequestsEvidenceCapture(const QVariantMap &extraConfig) const
+{
+    const QVariantList rules = extraConfig.value("rules").toList();
+    for (const QVariant &ruleVar : rules) {
+        const QVariantMap rule = ruleVar.toMap();
+        if (!rule.value("enabled", true).toBool()) {
+            continue;
+        }
+        if (rule.value("actionSnapshot", true).toBool() ||
+            rule.value("actionClip", true).toBool()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AnalyticsEngine::hasEvidenceCaptureConfiguration() const
+{
+    for (auto it = m_modules.constBegin(); it != m_modules.constEnd(); ++it) {
+        if (configRequestsEvidenceCapture(it.value().extraConfig)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AnalyticsEngine::ensureEvidenceCaptureEnabled(bool snapshots, bool clips)
+{
+    bool changed = false;
+
+    auto setIfChanged = [&](auto &field, const auto &value) {
+        if (field != value) {
+            field = value;
+            changed = true;
+        }
+    };
+
+    auto defaultEvidenceDir = [](QStandardPaths::StandardLocation primary, const QString &suffix) {
+        QString root = QStandardPaths::writableLocation(primary);
+        if (root.trimmed().isEmpty()) {
+            root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        }
+        return QDir(root).filePath(suffix);
+    };
+
+    setIfChanged(m_evidenceEnabled, true);
+    if (snapshots) {
+        setIfChanged(m_evidenceSnapshotsEnabled, true);
+        if (m_evidenceSnapshotsDir.trimmed().isEmpty()) {
+            setIfChanged(m_evidenceSnapshotsDir,
+                         defaultEvidenceDir(QStandardPaths::PicturesLocation, QStringLiteral("OpenIPC/Evidence")));
+        }
+        ensureDir(m_evidenceSnapshotsDir);
+    }
+    if (clips) {
+        setIfChanged(m_evidenceClipsEnabled, true);
+        if (m_evidenceClipsDir.trimmed().isEmpty()) {
+            setIfChanged(m_evidenceClipsDir,
+                         defaultEvidenceDir(QStandardPaths::MoviesLocation, QStringLiteral("OpenIPC/Evidence")));
+        }
+        ensureDir(m_evidenceClipsDir);
+    }
+
+    const int minBuffer = qMax(10, m_evidencePreSeconds + m_evidencePostSeconds + 5);
+    if (m_evidenceMaxBufferSeconds < minBuffer) {
+        m_evidenceMaxBufferSeconds = minBuffer;
+        changed = true;
+    }
+
+    return changed;
+}
+
 QString AnalyticsEngine::ensurePendingClip(const QString &cameraId, const QVariantMap &detection, qint64 nowMs)
 {
     QString clipPath;
@@ -1440,12 +2245,15 @@ void AnalyticsEngine::appendAnalyticsEvents(const QVariantList &events)
 
     persistAnalyticsEvents(events);
 
-    for (int i = events.size() - 1; i >= 0; --i) {
-        m_analyticsEvents.prepend(events.at(i));
-    }
+    {
+        QMutexLocker locker(&m_analyticsEventsMutex);
+        for (int i = events.size() - 1; i >= 0; --i) {
+            m_analyticsEvents.prepend(events.at(i));
+        }
 
-    while (m_analyticsEvents.size() > m_maxAnalyticsEvents) {
-        m_analyticsEvents.removeLast();
+        while (m_analyticsEvents.size() > m_maxAnalyticsEvents) {
+            m_analyticsEvents.removeLast();
+        }
     }
 
     emit analyticsEventsChanged();
@@ -1978,7 +2786,7 @@ void AnalyticsEngine::processFrame(const QImage &frame, const QString &cameraId)
             }
 
             emit frameProcessed(cameraId, allDetections);
-        });
+        }, Qt::QueuedConnection);
     });
 }
 
@@ -2030,6 +2838,7 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
         return;
     }
 
+    bool evidenceChanged = false;
     if (enabled) {
         m_cameraModules[cameraId][type] = true;
     } else if (m_cameraModules.contains(cameraId)) {
@@ -2040,6 +2849,8 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
     }
 
     if (enabled) {
+        evidenceChanged = ensureEvidenceCaptureEnabled(true, true);
+
         if (m_modules.contains(type)) {
             ModuleContext &ctx = m_modules[type];
             if (ctx.enabled && (!ctx.backend || !ctx.backend->isLoaded())) {
@@ -2117,6 +2928,9 @@ void AnalyticsEngine::setCameraModuleEnabled(const QString &cameraId, ModuleType
     }
 
     emit settingsChanged();
+    if (evidenceChanged) {
+        emit analyticsTelemetryChanged();
+    }
 }
 
 bool AnalyticsEngine::isCameraModuleEnabled(const QString &cameraId, ModuleType type) const
@@ -2285,6 +3099,13 @@ void AnalyticsEngine::setSettings(const QVariantMap &settings)
             emit settingsChanged();
         }
     }
+
+    const bool shouldMigrateEvidenceDefaults = !m_autoEvidenceMigrationDone && hasEvidenceCaptureConfiguration();
+    m_autoEvidenceMigrationDone = true;
+    if (shouldMigrateEvidenceDefaults && ensureEvidenceCaptureEnabled(true, true)) {
+        emit settingsChanged();
+        emit analyticsTelemetryChanged();
+    }
 }
 
 QVariantMap AnalyticsEngine::getEvidenceSettings() const
@@ -2397,7 +3218,22 @@ void AnalyticsEngine::setEvidenceSettings(const QVariantMap &settings)
 
     if (changed) {
         emit settingsChanged();
+        emit analyticsTelemetryChanged();
     }
+}
+
+QVariantMap AnalyticsEngine::enableAnalyticsEvidenceDefaults(bool snapshots, bool clips)
+{
+    const bool changed = ensureEvidenceCaptureEnabled(snapshots, clips);
+    if (changed) {
+        emit settingsChanged();
+        emit analyticsTelemetryChanged();
+    }
+
+    QVariantMap result = buildEvidenceSettings(true);
+    result["ok"] = true;
+    result["changed"] = changed;
+    return result;
 }
 
 QString AnalyticsEngine::analyticsSecretKey(const QString &name) const
@@ -2700,10 +3536,18 @@ void AnalyticsEngine::setModuleConfig(int type, const QVariantMap &config)
             changed = true;
         }
     }
+
+    const bool evidenceChanged = configRequestsEvidenceCapture(ctx.extraConfig)
+        ? ensureEvidenceCaptureEnabled(true, true)
+        : false;
     
     if (changed) {
         emit moduleConfigChanged(type);
         emit settingsChanged();
+    }
+    if (evidenceChanged) {
+        emit settingsChanged();
+        emit analyticsTelemetryChanged();
     }
 }
 
@@ -2774,25 +3618,11 @@ QString AnalyticsEngine::saveSnapshotImage(const QImage &frame, const QString &c
 
     const bool isFaceModule = (moduleId.compare("Face Detector", Qt::CaseInsensitive) == 0);
     if (isFaceModule && !img.isNull()) {
-        double x = det.value("x").toDouble();
-        double y = det.value("y").toDouble();
-        double w = det.value("w").toDouble();
-        double h = det.value("h").toDouble();
-        if (w > 0.0 && h > 0.0) {
-            bool normalized = (x <= 1.0 && y <= 1.0 && w <= 1.0 && h <= 1.0);
-            if (normalized) {
-                x *= img.width();
-                y *= img.height();
-                w *= img.width();
-                h *= img.height();
-            }
-            QRect rect(qRound(x), qRound(y), qRound(w), qRound(h));
-            int pad = qRound(qMin(rect.width(), rect.height()) * 0.15);
-            rect.adjust(-pad, -pad, pad, pad);
-            rect = rect.intersected(QRect(0, 0, img.width(), img.height()));
-            if (rect.isValid()) {
-                img = img.copy(rect);
-            }
+        const QRect rect = detectionBoundsForImage(img, det, 0.55, 0.70);
+        if (rect.isValid() && rect.width() > 10 && rect.height() > 10) {
+            img = img.copy(rect);
+            img = upscaleEvidenceCrop(img);
+            img = enhanceEvidenceCrop(img);
         }
     }
 

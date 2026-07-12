@@ -15,62 +15,58 @@ Button {
     property bool compact: false
 
     Layout.fillWidth: true
-    implicitHeight: root.compact ? 50 : 64
+    implicitHeight: root.compact ? 46 : 58
     padding: 0
     hoverEnabled: true
+    focusPolicy: Qt.StrongFocus
 
     background: Rectangle {
-        radius: Theme.radiusLg
+        radius: Theme.metroTileRadius
         color: !root.enabled
-               ? Theme.controlBackgroundAlt
+               ? Theme.metroTileDisabled
                : root.primary
-                 ? (root.hovered ? Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.24)
-                                 : Qt.rgba(37 / 255, 99 / 255, 235 / 255, 0.14))
-                 : (root.hovered ? Theme.cardHover : Theme.panelSoftBackground)
+                 ? (root.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                 : (root.down ? Theme.metroTilePressed : (root.hovered ? Theme.metroTileHover : Theme.metroTile))
         border.color: !root.enabled
-                      ? Theme.panelBorder
+                      ? Theme.metroStroke
                       : root.primary
-                        ? (root.hovered ? Theme.accentHover : Theme.accent)
-                        : (root.hovered ? Theme.accent : Theme.panelBorder)
-        border.width: 1
+                        ? Theme.metroBlue
+                        : (root.hovered ? Theme.metroStrokeStrong : Theme.metroStroke)
+        border.width: root.hovered || root.activeFocus ? 2 : 1
 
         Rectangle {
-            width: 3
-            radius: 2
+            width: 4
+            radius: 0
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.margins: 8
             visible: root.primary
-            color: Theme.accent
+            color: Theme.textPrimary
             opacity: root.enabled ? 1 : 0.35
         }
     }
 
     contentItem: ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: root.compact ? 6 : 8
-        anchors.rightMargin: root.compact ? 6 : 8
-        anchors.topMargin: root.compact ? 6 : 8
-        anchors.bottomMargin: root.compact ? 5 : 7
-        spacing: root.compact ? 3 : 5
+        anchors.leftMargin: root.compact ? 5 : 8
+        anchors.rightMargin: root.compact ? 5 : 8
+        anchors.topMargin: root.compact ? 5 : 7
+        anchors.bottomMargin: root.compact ? 4 : 6
+        spacing: 2
 
-        Rectangle {
+        Item {
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: root.compact ? 22 : 26
-            Layout.preferredHeight: root.compact ? 22 : 26
-            radius: root.compact ? 7 : 8
-            color: root.primary ? Qt.rgba(96 / 255, 165 / 255, 250 / 255, 0.15) : Theme.controlBackground
-            border.color: root.primary ? Theme.accent : Theme.controlBorder
+            Layout.preferredWidth: root.compact ? 20 : 24
+            Layout.preferredHeight: root.compact ? 19 : 23
 
             SidebarIcon {
                 anchors.centerIn: parent
-                width: root.compact ? 13 : 15
-                height: root.compact ? 13 : 15
+                width: root.compact ? 16 : 18
+                height: root.compact ? 16 : 18
                 name: root.iconName
                 path: root.iconPath
                 color: root.enabled
-                       ? (root.primary ? Theme.accentHover : (root.hovered ? Theme.accentHover : Theme.textSecondary))
+                       ? (root.primary ? Theme.textPrimary : (root.hovered ? Theme.textPrimary : Theme.textSecondary))
                        : Theme.textMuted
             }
         }
@@ -82,8 +78,9 @@ Button {
             Text {
                 anchors.fill: parent
                 text: I18n.t(root.label)
-                color: root.enabled ? Theme.textPrimary : Theme.textMuted
-                font.pixelSize: root.compact ? 11 : 12
+                color: root.enabled ? (root.primary ? Theme.textPrimary : Theme.textSecondary) : Theme.textMuted
+                font.family: Theme.metroFontFamily
+                font.pixelSize: root.compact ? 10 : 11
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
@@ -104,7 +101,9 @@ Button {
         }
     }
 
-    ToolTip.visible: root.hovered && root.tooltip.length > 0
-    ToolTip.text: I18n.t(root.tooltip)
+    ToolTip.visible: (root.hovered || root.visualFocus) && root.tooltip.length > 0
+    ToolTip.text: root.enabled
+                  ? I18n.t(root.tooltip)
+                  : I18n.t(root.tooltip) + "\n" + I18n.t("Недостаточно прав")
     ToolTip.delay: 450
 }

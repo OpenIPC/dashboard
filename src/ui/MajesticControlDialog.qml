@@ -89,6 +89,7 @@ Dialog {
     property string firmwareArchivePath: ""
     property string firmwareArchiveName: ""
     property real firmwareArchiveSizeBytes: 0
+    property var firmwareArchiveInspection: ({})
     property bool firmwarePowerSafetyConfirmed: false
     property bool firmwareDangerOptionsConfirmed: false
     property bool firmwarePostReturnProbeActive: false
@@ -676,7 +677,7 @@ Dialog {
         if (lower.indexOf("warn") >= 0 || lower.indexOf("timeout") >= 0
                 || lower.indexOf("retry") >= 0) return Theme.warning
         if (lower.indexOf("majestic") >= 0) return Theme.accentHover
-        if (lower.indexOf("kernel") >= 0 || lower.indexOf("dmesg") >= 0) return "#93c5fd"
+        if (lower.indexOf("kernel") >= 0 || lower.indexOf("dmesg") >= 0) return Theme.infoText
         return Theme.textSecondary
     }
 
@@ -776,6 +777,7 @@ Dialog {
         firmwareArchivePath = ""
         firmwareArchiveName = ""
         firmwareArchiveSizeBytes = 0
+        firmwareArchiveInspection = ({})
     }
 
     function firmwareArchiveSizeText() {
@@ -836,6 +838,14 @@ Dialog {
         firmwareArchivePath = localPath
         firmwareArchiveName = String(info.fileName || "")
         firmwareArchiveSizeBytes = Number(info.size || 0)
+        firmwareArchiveInspection = SystemController.inspectFirmwareArchive(localPath, firmwarePublishedChecksum())
+        if (firmwareArchiveManifestState() === "block") {
+            firmwareBusy = false
+            statusError = true
+            statusText = firmwareArchiveManifestSummary()
+            firmwareArchiveUploaded = false
+            return
+        }
         firmwareBusy = true
         statusError = false
         statusText = I18n.t("Загрузка firmware-архива на камеру… %1 (%2)", [firmwareArchiveName, firmwareArchiveSizeText()])
@@ -889,6 +899,70 @@ Dialog {
         return I18n.t("checksum/signature не опубликованы update page — проверяем источник, размер и совместимость")
     }
 
+    function firmwarePublishedChecksum() {
+        return String(firmwareUpdateInfo.sha256 || firmwareUpdateInfo.checksum || firmwareUpdateInfo.digest || "").trim()
+    }
+
+    function firmwareArchiveManifestState() {
+        if (!firmwareArchiveName.length) return "warn"
+        return String(firmwareArchiveInspection.checksumStatus || "warn")
+    }
+
+    function firmwareArchiveManifestSummary() {
+        if (!firmwareArchiveName.length)
+            return I18n.t("Локальный firmware archive ещё не выбран. При upload приложение посчитает SHA-256 и проверит sidecar-файлы рядом с архивом.")
+        var issues = firmwareArchiveInspection.issues || []
+        if (issues.length > 0)
+            return I18n.t("Archive заблокирован: %1", [issues.join("; ")])
+        if (firmwareArchiveManifestState() === "ok")
+            return I18n.t("Archive проверен: checksum совпадает с опубликованным значением или sidecar-файлом.")
+        return I18n.t("Archive принят с предупреждением: опубликованный checksum или sidecar не найден, остаётся ручная проверка источника.")
+    }
+
+    function firmwareArchiveManifestRows() {
+        var rows = [
+            { label: I18n.t("Файл"), value: firmwareArchiveName.length ? firmwareArchiveName : I18n.t("не выбран") },
+            { label: I18n.t("Размер"), value: firmwareArchiveSizeText() }
+        ]
+        if (!firmwareArchiveName.length) {
+            rows.push({ label: "SHA-256", value: I18n.t("будет рассчитан при upload"), state: "warn" })
+            return rows
+        }
+        rows.push({
+            label: "SHA-256",
+            value: firmwareArchiveInspection.sha256 || I18n.t("не рассчитан"),
+            mono: true,
+            state: firmwareArchiveInspection.sha256 ? "ok" : "warn"
+        })
+        rows.push({
+            label: I18n.t("Update page"),
+            value: firmwarePublishedChecksum() || I18n.t("checksum не опубликован"),
+            mono: firmwarePublishedChecksum().length > 0,
+            state: firmwarePublishedChecksum().length > 0
+                   ? (firmwareArchiveInspection.expectedMatches === false ? "block" : "ok")
+                   : "warn"
+        })
+        rows.push({
+            label: I18n.t("Sidecar"),
+            value: firmwareArchiveInspection.sidecarPath
+                   ? firmwareArchiveInspection.sidecarPath
+                   : I18n.t(".sha256/.sha256sum рядом с архивом не найден"),
+            mono: true,
+            state: firmwareArchiveInspection.sidecarPath
+                   ? (firmwareArchiveInspection.sidecarMatches === false ? "block" : "ok")
+                   : "warn"
+        })
+        rows.push({
+            label: I18n.t("Signature"),
+            value: firmwareArchiveInspection.signaturePath
+                   ? firmwareArchiveInspection.signaturePath
+                   : I18n.t(".sig/.asc/.minisig не найден"),
+            mono: true,
+            state: firmwareArchiveInspection.signaturePath ? "ok" : "warn"
+        })
+        return rows
+    }
+
     function firmwareDangerousOptionsActive() {
         return firmwareUpdateReset || firmwareUpdateForce
     }
@@ -901,6 +975,7 @@ Dialog {
         if (source === "github" && firmwareUpdateInfo.githubAvailable !== true) return I18n.t("GitHub update недоступен по данным камеры")
         if (source === "uploaded" && !firmwareArchiveUploaded) return I18n.t("сначала загрузите firmware archive")
         if (source === "uploaded" && firmwareArchiveSizeBytes <= 0) return I18n.t("неизвестен размер загруженного firmware archive")
+        if (source === "uploaded" && firmwareArchiveManifestState() === "block") return firmwareArchiveManifestSummary()
         if (source === "uploaded" && firmwareArchiveCompatibility().state === "block") return firmwareArchiveCompatibility().text
         if (!firmwarePowerSafetyConfirmed) return I18n.t("подтвердите стабильное питание и сеть")
         if (firmwareDangerousOptionsActive() && !firmwareDangerOptionsConfirmed)
@@ -1251,6 +1326,72 @@ Dialog {
         ]
     }
 
+    function safeActionRows() {
+        var uploadedBlockReason = firmwareUpdateBlockReason("uploaded")
+        var githubBlockReason = firmwareUpdateBlockReason("github")
+        return [
+            {
+                title: I18n.t("Majestic diff apply"),
+                text: I18n.t("Отправляет только изменённые ключи, неизвестные поля текущей камеры не удаляются."),
+                guard: capabilities.configWrite === true
+                       ? I18n.t("Защита: schema, redaction секретов, rollback snapshot для критичных изменений.")
+                       : I18n.t("Закрыто: камера не отдала schema/config write capability."),
+                enabled: capabilities.configWrite === true,
+                level: "safe"
+            },
+            {
+                title: I18n.t("Pipeline reload"),
+                text: I18n.t("Применяет codec/resolution/FPS без reboot камеры, но поток кратко прерывается."),
+                guard: capabilities.pipelineReload === true
+                       ? I18n.t("Защита: выполняется только после diff, который требует reload.")
+                       : I18n.t("Закрыто: endpoint reload не подтверждён этой камерой."),
+                enabled: capabilities.pipelineReload === true,
+                level: "warn"
+            },
+            {
+                title: I18n.t("Live ISP"),
+                text: I18n.t("Меняет яркость/контраст/зеркало live без записи majestic.yaml."),
+                guard: capabilities.liveImage === true
+                       ? I18n.t("Защита: короткий debounce и только live-поля из schema.")
+                       : I18n.t("Закрыто: live image endpoint не подтверждён."),
+                enabled: capabilities.liveImage === true,
+                level: "safe"
+            },
+            {
+                title: I18n.t("OpenIPC network write"),
+                text: I18n.t("Записывает сетевую конфигурацию OpenIPC, потенциально меняет доступность камеры."),
+                guard: Object.keys(firmwareNetwork || {}).length > 0
+                       ? I18n.t("Защита: отдельный confirm перед сохранением и reset через firmware API.")
+                       : I18n.t("Сначала загрузите вкладку Сеть, чтобы видеть текущие значения."),
+                enabled: Object.keys(firmwareNetwork || {}).length > 0,
+                level: "warn"
+            },
+            {
+                title: I18n.t("Firmware update from upload"),
+                text: I18n.t("Устанавливает локальный archive через /ws/upgrade после upload в /tmp/firmware.tgz."),
+                guard: uploadedBlockReason.length ? uploadedBlockReason : I18n.t("Защита: SoC/Flash, checksum, backup, питание и опасные опции."),
+                enabled: uploadedBlockReason.length === 0,
+                level: "danger"
+            },
+            {
+                title: I18n.t("Firmware update from GitHub"),
+                text: I18n.t("Запускает штатный updater камеры по данным update page."),
+                guard: githubBlockReason.length ? githubBlockReason : I18n.t("Защита: update-info, WebSocket updater, backup и power-gate."),
+                enabled: githubBlockReason.length === 0,
+                level: "danger"
+            },
+            {
+                title: I18n.t("Majestic restore diff"),
+                text: I18n.t("Применяет backup как diff к текущей конфигурации, без удаления неизвестных полей."),
+                guard: backupRestorePath.length
+                       ? backupRestoreRiskSummary()
+                       : I18n.t("Сначала откройте Majestic backup для preview."),
+                enabled: backupRestorePath.length > 0 && backupRestoreChanges.length > 0 && capabilities.configWrite === true,
+                level: backupRestoreCriticalCount() > 0 ? "warn" : "safe"
+            }
+        ]
+    }
+
     function groupFieldCount(groupId) {
         var count = 0
         for (var i = 0; i < fields.length; ++i) {
@@ -1460,6 +1601,53 @@ Dialog {
     function backupRestoreSummary() {
         if (!backupRestorePath.length) return I18n.t("Backup не выбран.")
         return I18n.t("Backup: %1 · отличий: %2", [backupRestorePath, backupRestoreChanges.length])
+    }
+
+    function backupRestoreReloadCount() {
+        var count = 0
+        for (var i = 0; i < backupRestoreChanges.length; ++i)
+            if (fieldRequiresPipelineReload(backupRestoreChanges[i].path)) count++
+        return count
+    }
+
+    function backupRestoreLiveCount() {
+        return Math.max(0, backupRestoreChanges.length - backupRestoreReloadCount())
+    }
+
+    function backupRestoreCriticalCount() {
+        return criticalChanges(backupRestoreChanges).length
+    }
+
+    function backupRestoreSecretCount() {
+        var count = 0
+        for (var i = 0; i < backupRestoreChanges.length; ++i) {
+            var path = String(backupRestoreChanges[i].path || "")
+            var tail = path.substring(path.lastIndexOf(".") + 1)
+            if (isSensitiveKey(path) || isSensitiveKey(tail)) count++
+        }
+        return count
+    }
+
+    function backupRestoreRiskSummary() {
+        if (!backupRestorePath.length) return I18n.t("Backup не выбран.")
+        if (!backupRestoreChanges.length) return I18n.t("Backup совпадает с текущей конфигурацией.")
+        var parts = [
+            I18n.t("diff %1", [backupRestoreChanges.length]),
+            I18n.t("reload %1", [backupRestoreReloadCount()]),
+            I18n.t("critical %1", [backupRestoreCriticalCount()])
+        ]
+        if (backupRestoreSecretCount() > 0) parts.push(I18n.t("secret %1", [backupRestoreSecretCount()]))
+        return parts.join(" · ")
+    }
+
+    function backupRestoreRiskRows() {
+        return [
+            { label: I18n.t("Всего"), value: String(backupRestoreChanges.length), state: backupRestoreChanges.length ? "warn" : "ok" },
+            { label: I18n.t("Live"), value: String(backupRestoreLiveCount()), state: "ok" },
+            { label: I18n.t("Reload"), value: String(backupRestoreReloadCount()), state: backupRestoreReloadCount() ? "warn" : "ok" },
+            { label: I18n.t("Critical"), value: String(backupRestoreCriticalCount()), state: backupRestoreCriticalCount() ? "block" : "ok" },
+            { label: I18n.t("Secrets"), value: String(backupRestoreSecretCount()), state: backupRestoreSecretCount() ? "warn" : "ok" }
+        ]
     }
 
     function previewBackupRestore() {
@@ -1784,7 +1972,7 @@ Dialog {
         return [
             { title: "LOAD", value: String(metric("node_load1", "—")), subtitle: I18n.t("Средняя нагрузка 1 мин"), percent: Math.min(100, Number(metric("node_load1", 0)) * 35), accent: Theme.accent },
             { title: I18n.t("Память"), value: pulse.mem_used !== undefined ? pulse.mem_used + "%" : ramPercent() + "%", subtitle: ramText(), percent: Number(pulse.mem_used !== undefined ? pulse.mem_used : ramPercent()), accent: Theme.accent },
-            { title: I18n.t("Температура"), value: pulse.soc_temp || tempText(), subtitle: statusDevice.soc || I18n.t("Температура SoC"), percent: Math.min(100, Number(metric("node_hwmon_temp_celsius", 0)) / 90 * 100), accent: "#f97316" },
+            { title: I18n.t("Температура"), value: pulse.soc_temp || tempText(), subtitle: statusDevice.soc || I18n.t("Температура SoC"), percent: Math.min(100, Number(metric("node_hwmon_temp_celsius", 0)) / 90 * 100), accent: Theme.metroOrange },
             { title: "UPTIME", value: pulse.uptime || uptimeText(), subtitle: pulse.mj_uptime ? ("Majestic " + pulse.mj_uptime) : I18n.t("Время работы Linux"), percent: 100, accent: Theme.success }
         ]
     }
@@ -1856,9 +2044,13 @@ Dialog {
             },
             {
                 title: I18n.t("4. Checksum / подпись"),
-                text: firmwareUpdateChecksumText(),
-                state: (firmwareUpdateInfo.sha256 || firmwareUpdateInfo.checksum
-                        || firmwareUpdateInfo.digest || firmwareUpdateInfo.signature) ? "ok" : "warn"
+                text: firmwareArchiveName.length
+                      ? firmwareArchiveManifestSummary()
+                      : firmwareUpdateChecksumText(),
+                state: firmwareArchiveName.length
+                       ? firmwareArchiveManifestState()
+                       : ((firmwareUpdateInfo.sha256 || firmwareUpdateInfo.checksum
+                           || firmwareUpdateInfo.digest || firmwareUpdateInfo.signature) ? "ok" : "warn")
             },
             {
                 title: I18n.t("5. Backup"),
@@ -1955,7 +2147,7 @@ Dialog {
             { title: I18n.t("Метрик"), value: String(count), subtitle: metricsUpdatedAt.length ? I18n.t("Обновлено: %1", [metricsUpdatedAt]) : I18n.t("Нет данных"), percent: count > 0 ? 100 : 0, accent: Theme.accent },
             { title: "LOAD", value: String(metric("node_load1", "—")), subtitle: I18n.t("Средняя нагрузка 1 мин"), percent: Math.min(100, Number(metric("node_load1", 0)) * 35), accent: Theme.accent },
             { title: I18n.t("Память"), value: ramPercent() + "%", subtitle: ramText(), percent: ramPercent(), accent: Theme.accent },
-            { title: I18n.t("Температура"), value: tempText(), subtitle: I18n.t("Температура SoC"), percent: Math.min(100, Number(metric("node_hwmon_temp_celsius", 0)) / 90 * 100), accent: "#f97316" },
+            { title: I18n.t("Температура"), value: tempText(), subtitle: I18n.t("Температура SoC"), percent: Math.min(100, Number(metric("node_hwmon_temp_celsius", 0)) / 90 * 100), accent: Theme.metroOrange },
             { title: "RTSP", value: metricSumText(["rtsp", "clients"]), subtitle: I18n.t("Клиенты RTSP"), percent: metricClientPercent(["rtsp", "clients"]), accent: Theme.success },
             { title: "HLS", value: metricSumText(["hls", "clients"]), subtitle: I18n.t("Клиенты HLS"), percent: metricClientPercent(["hls", "clients"]), accent: Theme.success },
             { title: "WebRTC", value: metricSumText(["webrtc", "clients"]), subtitle: I18n.t("Клиенты WebRTC"), percent: metricClientPercent(["webrtc", "clients"]), accent: Theme.success },
@@ -1999,7 +2191,7 @@ Dialog {
                 level: "warn",
                 title: I18n.t("Температура высокая"),
                 text: I18n.t("SoC: %1. Проверьте охлаждение и нагрузку encoder.", [tempText()]),
-                color: "#f97316"
+                color: Theme.metroOrange
             })
         }
         if (rows.length === 0) {
@@ -2084,6 +2276,71 @@ Dialog {
         Qt.openUrlExternally(value)
     }
 
+    function endpointProbeState(row) {
+        var name = String(row.name || "").toLowerCase()
+        if (name.indexOf("основной rtsp") >= 0) return rtspMainProbeState
+        if (name.indexOf("дополнительный rtsp") >= 0) return rtspSubProbeState
+        if (name.indexOf("config.json") >= 0 || name.indexOf("schema") >= 0) return majesticApiProbeState
+        return ""
+    }
+
+    function endpointCapabilityState(row) {
+        var name = String(row.name || "").toLowerCase()
+        var value = String(row.value || "").toLowerCase()
+        if (name.indexOf("write config") >= 0) return capabilities.configWrite === true ? "ok" : "block"
+        if (name.indexOf("reset default") >= 0) return capabilities.resetDefaults === true ? "ok" : "block"
+        if (name.indexOf("live image") >= 0) return capabilities.liveImage === true ? "ok" : "block"
+        if (name.indexOf("play_audio") >= 0) return capabilities.playAudio === true ? "ok" : "block"
+        if (name.indexOf("metrics") >= 0) return capabilities.metrics === true ? "ok" : "warn"
+        if (name.indexOf("reload pipeline") >= 0) return capabilities.pipelineReload === true ? "ok" : "warn"
+        if (value.indexOf("/ws/") >= 0) return SystemController.firmwareClient.webSocketsAvailable ? "ok" : "warn"
+        if (name === "hls") return configValue("hls.enabled", false) === true ? "ok" : "warn"
+        if (name === "mjpeg") return configValue("mjpeg.enabled", false) === true ? "ok" : "warn"
+        if (name.indexOf("webrtc") >= 0) return configValue("webrtc.enabled", false) === true ? "ok" : "warn"
+        return "info"
+    }
+
+    function endpointState(row) {
+        var probe = endpointProbeState(row)
+        if (probe === "ok") return "ok"
+        if (probe === "fail") return "warn"
+        if (probe === "running") return "warn"
+        return endpointCapabilityState(row)
+    }
+
+    function endpointRisk(row) {
+        var value = String(row.value || "").toLowerCase()
+        var name = String(row.name || "").toLowerCase()
+        if (value.indexOf("/ws/upgrade") >= 0 || value.indexOf("upload firmware") >= 0) return "danger"
+        if (name.indexOf("write config") >= 0 || name.indexOf("reset default") >= 0
+                || name.indexOf("reload pipeline") >= 0 || name.indexOf("night") >= 0
+                || name.indexOf("ir-cut") >= 0 || name.indexOf("подсвет") >= 0
+                || name.indexOf("play_audio") >= 0) return "warn"
+        return "safe"
+    }
+
+    function endpointStatusText(row) {
+        var probe = endpointProbeState(row)
+        if (probe.length) return probeStateText(probe, "", 0)
+        var state = endpointState(row)
+        if (state === "ok") return I18n.t("подтверждено")
+        if (state === "block") return I18n.t("capability закрыта")
+        if (state === "warn") return I18n.t("проверьте доступность")
+        return I18n.t("справочно")
+    }
+
+    function decorateEndpointRows(rows) {
+        var out = []
+        for (var i = 0; i < rows.length; ++i) {
+            var row = rows[i]
+            row.state = endpointState(row)
+            row.risk = endpointRisk(row)
+            row.statusText = endpointStatusText(row)
+            out.push(row)
+        }
+        return out
+    }
+
     function endpointRows() {
         var host = cameraHost.length ? cameraHost : "camera"
         var rtspPort = majesticRtspPort()
@@ -2091,7 +2348,7 @@ Dialog {
         var httpHost = host + (cameraPort && cameraPort !== 80 ? ":" + cameraPort : "")
         var displayAuth = cameraUser.length ? encodeURIComponent(cameraUser) + (cameraPassword.length ? ":••••" : "") + "@" : ""
         var realAuth = cameraUser.length ? encodeURIComponent(cameraUser) + (cameraPassword.length ? ":" + encodeURIComponent(cameraPassword) : "") + "@" : ""
-        return [
+        var rows = [
             { group: I18n.t("Видео"), name: I18n.t("Основной RTSP"), value: "rtsp://" + displayAuth + rtspHost + "/stream=0", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=0", openValue: "rtsp://" + realAuth + rtspHost + "/stream=0", openable: true, hint: I18n.t("Главный поток Majestic") },
             { group: I18n.t("Видео"), name: I18n.t("Дополнительный RTSP"), value: "rtsp://" + displayAuth + rtspHost + "/stream=1", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=1", openValue: "rtsp://" + realAuth + rtspHost + "/stream=1", openable: true, hint: I18n.t("Sub-stream, если включён в конфигурации") },
             { group: I18n.t("Видео"), name: "RTSP JPEG", value: "rtsp://" + displayAuth + rtspHost + "/stream=2", copyValue: "rtsp://" + realAuth + rtspHost + "/stream=2", openValue: "rtsp://" + realAuth + rtspHost + "/stream=2", openable: true, hint: I18n.t("JPEG-поток Majestic, если включён в прошивке") },
@@ -2127,15 +2384,18 @@ Dialog {
             { group: I18n.t("Аудио"), name: "play_audio", value: "POST http://" + httpHost + "/play_audio", copyValue: "http://" + httpHost + "/play_audio", openable: false, hint: I18n.t("Передать PCM S16LE на динамик камеры") },
             { group: I18n.t("Мониторинг"), name: "metrics", value: "http://" + httpHost + "/metrics", copyValue: "http://" + httpHost + "/metrics", openValue: "http://" + httpHost + "/metrics", openable: true, hint: I18n.t("Prometheus-метрики") }
         ]
+        return decorateEndpointRows(rows)
     }
 
     function endpointSummaryRows() {
         var rows = endpointRows()
         var ws = 0
         var openable = 0
+        var risky = 0
         for (var i = 0; i < rows.length; ++i) {
             if (String(rows[i].value || "").indexOf("ws://") >= 0 || String(rows[i].value || "").indexOf("wss://") >= 0) ws++
             if (rows[i].openable === true) openable++
+            if (rows[i].risk === "danger" || rows[i].risk === "warn") risky++
         }
         var caps = capabilityRows()
         var enabledCaps = 0
@@ -2144,6 +2404,7 @@ Dialog {
             { title: I18n.t("Endpoints"), value: String(rows.length), subtitle: I18n.t("Majestic/OpenIPC адреса") },
             { title: "WebSocket", value: String(ws), subtitle: SystemController.firmwareClient.webSocketsAvailable ? I18n.t("native модуль включён") : I18n.t("только справочно") },
             { title: I18n.t("Открываемые"), value: String(openable), subtitle: I18n.t("можно открыть из приложения") },
+            { title: I18n.t("Risk-gated"), value: String(risky), subtitle: I18n.t("требуют внимания") },
             { title: I18n.t("Capabilities"), value: enabledCaps + "/" + caps.length, subtitle: I18n.t("подтверждено этой камерой") }
         ]
     }
@@ -2214,8 +2475,8 @@ Dialog {
             anchors.rightMargin: 12
             spacing: 12
             Rectangle {
-                Layout.preferredWidth: 38; Layout.preferredHeight: 38; radius: 19; color: "#172554"
-                Text { anchors.centerIn: parent; text: "O"; color: "#93c5fd"; font.bold: true; font.pixelSize: 18 }
+                Layout.preferredWidth: 38; Layout.preferredHeight: 38; radius: 19; color: Theme.metroDeepBlue
+                Text { anchors.centerIn: parent; text: "O"; color: Theme.infoText; font.bold: true; font.pixelSize: 18 }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 1
@@ -2224,27 +2485,7 @@ Dialog {
             }
             BusyIndicator { running: loading; visible: running; Layout.preferredWidth: 30; Layout.preferredHeight: 30 }
             MajesticButton { text: "↻"; subtle: true; enabled: !loading; onClicked: refresh() }
-            MajesticButton { text: "✕"; subtle: true; onClicked: dialog.close() }
-        }
-    }
-
-    footer: Rectangle {
-        implicitHeight: 50
-        color: Theme.topBarBackground
-        RowLayout {
-            anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16
-            Text {
-                Layout.fillWidth: true
-                text: pipelineReloadNeeded ? I18n.t("Структурные параметры сохранены: примените reload pipeline")
-                                            : I18n.t("Поля получены от самой камеры — неподдерживаемые настройки скрыты")
-                color: pipelineReloadNeeded ? Theme.warning : Theme.textMuted; font.pixelSize: 11; elide: Text.ElideRight
-            }
-            MajesticButton {
-                visible: pipelineReloadNeeded; text: I18n.t("Применить reload")
-                primary: true
-                onClicked: triggerPipelineReload("")
-            }
-            MajesticButton { text: I18n.t("Закрыть"); onClicked: dialog.close() }
+            MetroWindowButton { kind: "close"; Layout.preferredWidth: 38; Layout.preferredHeight: 34; onClicked: dialog.close() }
         }
     }
 
@@ -2889,132 +3130,70 @@ Dialog {
         }
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: rollbackConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 620)
+        dialogWidth: 620
         title: I18n.t("Откатить критичные настройки Majestic")
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        message: I18n.t("Будет отправлен diff, который вернёт конфигурацию Majestic к снимку, сохранённому перед последним критичным apply. После отката может потребоваться reload pipeline.")
+        messageColor: Theme.warning
         onAccepted: dialog.rollbackPendingChanges()
-        contentItem: Label {
-            text: I18n.t("Будет отправлен diff, который вернёт конфигурацию Majestic к снимку, сохранённому перед последним критичным apply. После отката может потребоваться reload pipeline.")
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareNetworkConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 560)
         title: I18n.t("Подтвердить изменение сети")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: saveFirmwareNetwork()
-        contentItem: Label {
-            text: I18n.t("Сетевые настройки будут записаны в OpenIPC. Если IP/DHCP указан неверно, камера может стать недоступной до ручного восстановления. Продолжить?")
-            color: Theme.textSecondary
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Сетевые настройки будут записаны в OpenIPC. Если IP/DHCP указан неверно, камера может стать недоступной до ручного восстановления. Продолжить?")
+        onAccepted: dialog.saveFirmwareNetwork()
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareNetworkResetConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 560)
         title: I18n.t("Сбросить сетевую конфигурацию")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: resetFirmwareNetwork()
-        contentItem: Label {
-            text: I18n.t("Будет восстановлена network-конфигурация из прошивки. Все текущие изменения сети будут потеряны.")
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Будет восстановлена network-конфигурация из прошивки. Все текущие изменения сети будут потеряны.")
+        messageColor: Theme.warning
+        onAccepted: dialog.resetFirmwareNetwork()
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareTimeConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 560)
         title: I18n.t("Сохранить время и NTP")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: saveFirmwareTime()
-        contentItem: Label {
-            text: I18n.t("Настройки timezone и NTP будут записаны в /etc/TZ, /etc/timezone и /etc/ntp.conf на камере.")
-            color: Theme.textSecondary
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Настройки timezone и NTP будут записаны в /etc/TZ, /etc/timezone и /etc/ntp.conf на камере.")
+        onAccepted: dialog.saveFirmwareTime()
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareRebootConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 560)
         title: I18n.t("Перезагрузить камеру")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: requestFirmwareReboot()
-        contentItem: Label {
-            text: I18n.t("Камера будет перезагружена через штатный fw-restart.cgi. Видео и WebUI временно пропадут. Продолжить?")
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Камера будет перезагружена через штатный fw-restart.cgi. Видео и WebUI временно пропадут. Продолжить?")
+        messageColor: Theme.warning
+        onAccepted: dialog.requestFirmwareReboot()
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareRestoreWebUiConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 620)
+        dialogWidth: 620
         title: I18n.t("Восстановить OpenIPC backup")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: openWebUiPath("/cgi-bin/ext-backuper.cgi")
-        contentItem: Label {
-            text: I18n.t("Восстановление полного OpenIPC backup может изменить overlay, сеть, пароли и сервисы камеры. Dashboard откроет штатную страницу WebUI камеры; продолжайте только если backup точно от этой камеры.")
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Восстановление полного OpenIPC backup может изменить overlay, сеть, пароли и сервисы камеры. Dashboard откроет штатную страницу WebUI камеры; продолжайте только если backup точно от этой камеры.")
+        messageColor: Theme.warning
+        onAccepted: dialog.openWebUiPath("/cgi-bin/ext-backuper.cgi")
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareUpdateConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 620)
+        dialogWidth: 620
         title: I18n.t("Запустить обновление прошивки")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: startGithubFirmwareUpdate()
-        contentItem: Label {
-            text: I18n.t("Будет запущен GitHub update через /ws/upgrade. Опции: %1. Камера остановит видео и перезагрузится. Продолжить?", [firmwareUpdateOptionsSummary()])
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Будет запущен GitHub update через /ws/upgrade. Опции: %1. Камера остановит видео и перезагрузится. Продолжить?", [dialog.firmwareUpdateOptionsSummary()])
+        messageColor: Theme.warning
+        onAccepted: dialog.startGithubFirmwareUpdate()
     }
 
-    Dialog {
+    MajesticConfirmDialog {
         id: firmwareUploadedUpdateConfirm
-        modal: true
-        anchors.centerIn: parent
-        width: Math.min(dialog.width - 100, 620)
+        dialogWidth: 620
         title: I18n.t("Прошить загруженный архив")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: startUploadedFirmwareUpdate()
-        contentItem: Label {
-            text: I18n.t("Будет запущен /ws/upgrade с source=/tmp/firmware.tgz. Опции: %1. Убедитесь, что архив подходит этой камере и питание не будет отключено.", [firmwareUpdateOptionsSummary()])
-            color: Theme.warning
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
+        message: I18n.t("Будет запущен /ws/upgrade с source=/tmp/firmware.tgz. Опции: %1. Убедитесь, что архив подходит этой камере и питание не будет отключено.", [dialog.firmwareUpdateOptionsSummary()])
+        messageColor: Theme.warning
+        onAccepted: dialog.startUploadedFirmwareUpdate()
     }
 
     FileDialog {

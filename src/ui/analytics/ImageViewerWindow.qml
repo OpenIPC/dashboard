@@ -9,7 +9,7 @@ Window {
     width: 1200
     height: 800
     visible: false
-    color: "#1e1e1e"
+    color: Theme.metroBackground
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property var itemsModel: null
@@ -19,7 +19,7 @@ Window {
     property bool editMode: false
     property bool drawMode: false
     property bool cropMode: false
-    property color penColor: "#ff3b30"
+    property color penColor: Theme.metroRed
     property int penWidth: 3
     property real zoom: 1.0
     property real fitScale: 1.0
@@ -49,16 +49,16 @@ Window {
         font.pixelSize: 20
         contentItem: Text {
             text: parent.text
-            color: "#ddd"
+            color: Theme.textSecondary
             font.family: materialIcons.name
             font.pixelSize: 20
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
-            color: parent.hovered ? "#2d2d2d" : "transparent"
+            color: parent.hovered ? Theme.metroTileHover : "transparent"
             radius: 4
-            border.color: parent.down ? "#3b82f6" : "transparent"
+            border.color: parent.down ? Theme.metroBlue : "transparent"
         }
         ToolTip.visible: hovered
         ToolTip.delay: 300
@@ -296,7 +296,7 @@ Window {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        color: "#2d2d30"
+        color: Theme.metroSurface
         z: 10
 
         MouseArea {
@@ -317,34 +317,26 @@ Window {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Button {
-                text: "—"
-                flat: true
+            MetroWindowButton {
+                kind: "minimize"
                 Layout.preferredWidth: 36
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
-                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
             }
 
-            Button {
-                text: "□"
-                flat: true
+            MetroWindowButton {
+                kind: "maximize"
+                maximized: root.visibility === Window.FullScreen || root.visibility === Window.Maximized
                 Layout.preferredWidth: 36
                 Layout.fillHeight: true
                 onClicked: toggleFullscreen()
-                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#444" : (parent.hovered ? "#3e3e40" : "transparent") }
             }
 
-            Button {
-                text: "✕"
-                flat: true
+            MetroWindowButton {
+                kind: "close"
                 Layout.preferredWidth: 36
                 Layout.fillHeight: true
                 onClicked: root.close()
-                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: parent.down ? "#c42b1c" : (parent.hovered ? "#e81123" : "transparent") }
             }
         }
     }
@@ -360,7 +352,7 @@ Window {
             Layout.fillWidth: true
             Layout.preferredHeight: 48
             color: "#1f1f1f"
-            border.color: "#333"
+            border.color: Theme.metroTile
 
             RowLayout {
                 anchors.fill: parent
@@ -369,7 +361,7 @@ Window {
 
                 IconButton { text: "\ue5cb"; tip: I18n.t("Назад"); onClicked: previous() }
                 IconButton { text: "\ue5cc"; tip: I18n.t("Вперед"); onClicked: next() }
-                Rectangle { width: 1; height: 28; color: "#333" }
+                Rectangle { width: 1; height: 28; color: Theme.metroTile }
                 IconButton { text: "\ue900"; tip: "-"; onClicked: { zoom = Math.max(0.2, zoom - 0.1); centerContent() } }
                 IconButton { text: "\ue8ff"; tip: "+"; onClicked: { zoom = Math.min(5, zoom + 0.1); centerContent() } }
                 IconButton { text: "\uea10"; tip: I18n.t("Подогнать"); onClicked: { zoom = 1.0; centerContent() } }
@@ -379,26 +371,26 @@ Window {
                     implicitHeight: 30
                     contentItem: Text {
                         text: parent.text
-                        color: "#ddd"
+                        color: Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
-                    background: Rectangle { color: parent.hovered ? "#2d2d2d" : "transparent"; radius: 4 }
+                    background: Rectangle { color: parent.hovered ? Theme.metroTileHover : "transparent"; radius: 4 }
                     ToolTip.visible: hovered
                     ToolTip.delay: 300
                     ToolTip.text: "100%"
                     onClicked: { zoom = fitScale > 0 ? 1.0 / fitScale : 1.0; centerContent() }
                 }
-                Rectangle { width: 1; height: 28; color: "#333" }
+                Rectangle { width: 1; height: 28; color: Theme.metroTile }
                 IconButton { text: "\ue419"; tip: I18n.t("Повернуть влево"); onClicked: rotation = (rotation - 90) % 360 }
                 IconButton { text: "\ue41a"; tip: I18n.t("Повернуть вправо"); onClicked: rotation = (rotation + 90) % 360 }
                 IconButton { text: "\ue8d4"; tip: I18n.t("Отразить по горизонтали"); onClicked: flipH = !flipH }
                 IconButton { text: "\ue8d5"; tip: I18n.t("Отразить по вертикали"); onClicked: flipV = !flipV }
-                Rectangle { width: 1; height: 28; color: "#333" }
+                Rectangle { width: 1; height: 28; color: Theme.metroTile }
                 IconButton { text: "\ue41b"; tip: I18n.t("Слайд-шоу"); checkable: true; checked: slideshowRunning; onClicked: slideshowRunning = checked }
                 IconButton { text: "\ue5d0"; tip: I18n.t("Полный экран"); onClicked: toggleFullscreen() }
-                Rectangle { width: 1; height: 28; color: "#333" }
+                Rectangle { width: 1; height: 28; color: Theme.metroTile }
                 IconButton {
                     text: "\ue02c"
                     tip: I18n.t("Открыть клип")
@@ -430,7 +422,7 @@ Window {
                 IconButton { text: "\ue88e"; tip: I18n.t("Свойства"); checkable: true; checked: showProps; onClicked: showProps = checked }
                 IconButton { text: "\ue3c9"; tip: I18n.t("Редактировать"); checkable: true; checked: editMode; onClicked: editMode = checked }
                 Item { Layout.fillWidth: true }
-                Text { text: (currentIndex + 1) + " / " + (itemsModel ? itemsModel.count : 0); color: "#888" }
+                Text { text: (currentIndex + 1) + " / " + (itemsModel ? itemsModel.count : 0); color: Theme.textMuted }
             }
         }
 
@@ -439,7 +431,7 @@ Window {
             Layout.preferredHeight: editMode ? 40 : 0
             visible: editMode
             color: "#1b1b1b"
-            border.color: "#333"
+            border.color: Theme.metroTile
 
             RowLayout {
                 anchors.fill: parent
@@ -452,7 +444,7 @@ Window {
                 IconButton { text: "\ue166"; tip: I18n.t("Отменить"); onClicked: undoStroke() }
                 IconButton { text: "\ue5cd"; tip: I18n.t("Отмена обрезки"); onClicked: clearCrop() }
                 IconButton { text: "\ue5ca"; tip: I18n.t("Применить обрезку"); enabled: cropMode && hasCrop(); onClicked: applyCrop() }
-                Rectangle { width: 1; height: 24; color: "#333" }
+                Rectangle { width: 1; height: 24; color: Theme.metroTile }
                 RowLayout {
                     spacing: 4
                     visible: drawMode || textMode
@@ -461,11 +453,11 @@ Window {
                         height: 16
                         radius: 3
                         color: penColor
-                        border.color: "#333"
+                        border.color: Theme.metroTile
                     }
                     IconButton { text: "\ue3c7"; tip: I18n.t("Цвет"); onClicked: colorDialog.open() }
                 }
-                Slider {
+                MetroSlider {
                     visible: drawMode
                     from: 1
                     to: 10
@@ -474,7 +466,7 @@ Window {
                     implicitWidth: 90
                     onValueChanged: penWidth = Math.round(value)
                 }
-                Slider {
+                MetroSlider {
                     visible: textMode
                     from: 8
                     to: 64
@@ -489,7 +481,7 @@ Window {
                 Text {
                     visible: textMode
                     text: textSize + "px"
-                    color: "#aaa"
+                    color: Theme.textMuted
                     font.pixelSize: 12
                 }
                 IconButton { text: "\ue2c6"; tip: I18n.t("Сохранить как"); onClicked: saveEditedCopy() }
@@ -603,8 +595,8 @@ Window {
 
                                         Rectangle {
                                             anchors.fill: parent
-                                            color: selectedTextIndex === index ? "#1f2937" : "#11111199"
-                                            border.color: selectedTextIndex === index ? "#3b82f6" : "#555"
+                                            color: selectedTextIndex === index ? Theme.metroStroke : "#11111199"
+                                            border.color: selectedTextIndex === index ? Theme.metroBlue : Theme.metroTilePressed
                                             radius: 4
                                         }
 
@@ -662,7 +654,7 @@ Window {
                                             height: 12
                                             anchors.right: parent.right
                                             anchors.bottom: parent.bottom
-                                            color: "#3b82f6"
+                                            color: Theme.metroBlue
                                             radius: 2
                                             visible: editMode
                                             MouseArea {
@@ -708,7 +700,7 @@ Window {
                                 width: cropRect.width
                                 height: cropRect.height
                                 color: "transparent"
-                                border.color: "#3b82f6"
+                                border.color: Theme.metroBlue
                                 border.width: 2
                                 z: 2
                             }
@@ -755,8 +747,8 @@ Window {
                 Layout.preferredWidth: showProps ? 220 : 0
                 Layout.fillHeight: true
                 visible: showProps
-                color: "#1e1e1e"
-                border.color: "#333"
+                color: Theme.metroBackground
+                border.color: Theme.metroTile
 
                 ScrollView {
                     anchors.fill: parent
@@ -771,22 +763,22 @@ Window {
 
                         Text { text: I18n.t("Свойства"); color: "#bbb"; font.pixelSize: 14 }
                         Text { text: fileInfo.fileName || ""; color: "white"; wrapMode: Text.Wrap; font.pixelSize: 12 }
-                        Text { text: fileInfo.filePath || ""; color: "#888"; wrapMode: Text.Wrap; font.pixelSize: 11 }
-                        Text { text: I18n.t("Размер") + ": " + (fileInfo.size ? formatBytes(fileInfo.size) : "-"); color: "#aaa"; font.pixelSize: 11 }
-                        Text { text: I18n.t("Разрешение") + ": " + (fileInfo.width ? fileInfo.width + " x " + fileInfo.height : "-"); color: "#aaa"; font.pixelSize: 11 }
-                        Text { text: I18n.t("Создан") + ": " + (fileInfo.createdText || "-"); color: "#aaa"; font.pixelSize: 11 }
-                        Text { text: I18n.t("Изменен") + ": " + (fileInfo.modifiedText || "-"); color: "#aaa"; font.pixelSize: 11 }
+                        Text { text: fileInfo.filePath || ""; color: Theme.textMuted; wrapMode: Text.Wrap; font.pixelSize: 11 }
+                        Text { text: I18n.t("Размер") + ": " + (fileInfo.size ? formatBytes(fileInfo.size) : "-"); color: Theme.textMuted; font.pixelSize: 11 }
+                        Text { text: I18n.t("Разрешение") + ": " + (fileInfo.width ? fileInfo.width + " x " + fileInfo.height : "-"); color: Theme.textMuted; font.pixelSize: 11 }
+                        Text { text: I18n.t("Создан") + ": " + (fileInfo.createdText || "-"); color: Theme.textMuted; font.pixelSize: 11 }
+                        Text { text: I18n.t("Изменен") + ": " + (fileInfo.modifiedText || "-"); color: Theme.textMuted; font.pixelSize: 11 }
 
-                        Rectangle { height: 1; Layout.fillWidth: true; color: "#333" }
+                        Rectangle { height: 1; Layout.fillWidth: true; color: Theme.metroTile }
 
                         Text { text: I18n.t("Редактирование"); color: "#bbb"; font.pixelSize: 14; visible: editMode }
 
                         RowLayout {
                             visible: editMode && drawMode
                             spacing: 8
-                            Text { text: I18n.t("Цвет"); color: "#aaa" }
-                            Rectangle { width: 18; height: 18; color: penColor; radius: 3; border.color: "#333" }
-                            Slider {
+                            Text { text: I18n.t("Цвет"); color: Theme.textMuted }
+                            Rectangle { width: 18; height: 18; color: penColor; radius: 3; border.color: Theme.metroTile }
+                            MetroSlider {
                                 from: 1; to: 8
                                 value: penWidth
                                 onValueChanged: penWidth = Math.round(value)

@@ -207,7 +207,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: I18n.t("Speed"); color: "white"; font.pixelSize: root.compact ? 10 : 12 }
-                Slider {
+                MetroSlider {
                     id: speedSlider
                     Layout.fillWidth: true
                     from: 0.1

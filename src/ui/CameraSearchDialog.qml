@@ -26,9 +26,9 @@ Dialog {
         y: (parent.height - height) / 2
         
         background: Rectangle {
-            color: "#2b2b2b"
-            radius: 8
-            border.color: "#444444"
+            color: Theme.metroSurface
+            radius: Theme.metroTileRadius
+            border.color: Theme.metroStroke
         }
         
         header: Rectangle {
@@ -51,7 +51,7 @@ Dialog {
             
             Text {
                 text: I18n.t("Введите логин и пароль для выбранных камер:")
-                color: "#cccccc"
+                color: Theme.textSecondary
                 font.pixelSize: 12
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -59,7 +59,7 @@ Dialog {
 
             Text {
                 text: "⚠️ " + I18n.t("Сторонние камеры могут быть добавлены с ошибками")
-                color: "#ffab00"
+                color: Theme.metroAmber
                 font.pixelSize: 12
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
@@ -68,27 +68,31 @@ Dialog {
             ColumnLayout {
                 spacing: 5
                 Layout.fillWidth: true
-                Text { text: I18n.t("Логин"); color: "#aaaaaa"; font.pixelSize: 12 }
+                Text { text: I18n.t("Логин"); color: Theme.textMuted; font.pixelSize: 12 }
                 TextField {
                     id: batchLoginField
                     text: "root"
                     Layout.fillWidth: true
-                    color: "white"
-                    background: Rectangle { color: "#333"; radius: 4; border.color: "#555" }
+                    color: Theme.textPrimary
+                    selectionColor: Theme.metroBlue
+                    selectedTextColor: Theme.textPrimary
+                    background: Rectangle { color: Theme.metroSurfaceAlt; radius: Theme.metroTileRadius; border.color: batchLoginField.activeFocus ? Theme.metroBlue : Theme.metroStroke }
                 }
             }
             
             ColumnLayout {
                 spacing: 5
                 Layout.fillWidth: true
-                Text { text: I18n.t("Пароль"); color: "#aaaaaa"; font.pixelSize: 12 }
+                Text { text: I18n.t("Пароль"); color: Theme.textMuted; font.pixelSize: 12 }
                 TextField {
                     id: batchPasswordField
                     text: ""
                     echoMode: TextInput.Password
                     Layout.fillWidth: true
-                    color: "white"
-                    background: Rectangle { color: "#333"; radius: 4; border.color: "#555" }
+                    color: Theme.textPrimary
+                    selectionColor: Theme.metroBlue
+                    selectedTextColor: Theme.textPrimary
+                    background: Rectangle { color: Theme.metroSurfaceAlt; radius: Theme.metroTileRadius; border.color: batchPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke }
                 }
             }
             
@@ -100,16 +104,18 @@ Dialog {
                 Button {
                     text: I18n.t("Отмена")
                     Layout.fillWidth: true
-                    background: Rectangle { color: "#444"; radius: 4 }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    hoverEnabled: true
+                    background: Rectangle { color: parent.hovered ? Theme.metroTileHover : Theme.metroTile; radius: Theme.metroTileRadius; border.color: Theme.metroStroke }
+                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Theme.metroFontFamily }
                     onClicked: batchLoginDialog.close()
                 }
                 
                 Button {
                     text: I18n.t("Добавить")
                     Layout.fillWidth: true
-                    background: Rectangle { color: "#1976d2"; radius: 4 }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.bold: true }
+                    hoverEnabled: true
+                    background: Rectangle { color: parent.hovered ? Theme.metroBlueHover : Theme.metroBlue; radius: Theme.metroTileRadius; border.color: Theme.metroBlue }
+                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.bold: true; font.family: Theme.metroFontFamily }
                     onClicked: {
                         root.processBatchAdd(batchLoginField.text, batchPasswordField.text)
                         batchLoginDialog.close()
@@ -120,44 +126,13 @@ Dialog {
     }
 
     function processBatchAdd(login, password) {
-        var count = 0
-        for (var key in root.selectedIndices) {
-            if (root.selectedIndices[key] === true) {
-                var index = parseInt(key)
-                var cam = SystemController.discoveryModel.getCamera(index)
-                
-                var port = cam.cameraPort ? cam.cameraPort : 554
-                var onvifPort = cam.cameraOnvifPort ? cam.cameraOnvifPort : 80
-                
-                // Generate RTSP URL (OpenIPC default)
-                var auth = ""
-                if (login !== "") {
-                    auth = encodeURIComponent(login)
-                    if (password !== "") auth += ":" + encodeURIComponent(password)
-                    auth += "@"
-                }
-                var hdUrl = "rtsp://" + auth + cam.cameraIp + ":" + port + "/stream=0"
-                
-                SystemController.addManualCamera(
-                    cam.cameraName,
-                    cam.cameraIp,
-                    hdUrl,
-                    port,
-                    onvifPort,
-                    login,
-                    password
-                )
-                count++
-            }
-        }
-        console.log("Batch added " + count + " cameras")
-        root.close()
+        SystemController.addDiscoveredCameras(root.selectedIndexList(), login, password, root.selectedProfile)
     }
 
     background: Rectangle {
-        color: "#2b2b2b"
-        radius: 8
-        border.color: "#444444"
+        color: Theme.metroSidebarBackground
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
     
     header: Rectangle {
@@ -170,35 +145,60 @@ Dialog {
             anchors.top: parent.top
             anchors.topMargin: 20
             text: I18n.t("Найденные камеры")
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 18
             font.bold: true
         }
         
-        Text {
+        MetroWindowButton {
+            kind: "close"
+            width: 34
+            height: 34
             anchors.right: parent.right
             anchors.rightMargin: 20
             anchors.top: parent.top
-            anchors.topMargin: 20
-            text: "✕"
-            color: "#aaaaaa"
-            font.pixelSize: 18
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
+            anchors.topMargin: 16
+            onClicked: root.close()
         }
     }
     
     property var interfaces: []
     property var selectedIndices: ({}) // Map to track selected indices
     property int selectedCount: 0
+    property int validationCompleted: 0
+    property int validationTotal: 0
+    property int validationRevision: 0
+    readonly property string selectedProfile: profileCombo.currentValue || "openipc"
+
+    Connections {
+        target: SystemController
+
+        function onDiscoveryValidationProgress(completed, total) {
+            root.validationCompleted = completed
+            root.validationTotal = total
+        }
+
+        function onDiscoveryValidationFinished(okCount, failCount) {
+            root.validationCompleted = 0
+            root.validationTotal = 0
+            root.validationRevision += 1
+        }
+
+        function onDiscoveryBatchAddFinished(addedCount, skippedCount) {
+            if (addedCount > 0)
+                root.close()
+        }
+    }
     
     onOpened: {
         refreshInterfaces()
+        SystemController.refreshDiscoveryAddedFlags()
         selectedIndices = ({})
         selectedCount = 0
+        validationCompleted = 0
+        validationTotal = 0
+        validationRevision += 1
     }
     
     function toggleSelection(index, isSelected) {
@@ -213,6 +213,7 @@ Dialog {
             count++
         }
         selectedCount = count
+        validationRevision += 1
     }
     
     function refreshInterfaces() {
@@ -220,12 +221,45 @@ Dialog {
         interfaceModel.clear()
         interfaceModel.append({text: I18n.t("Все интерфейсы"), value: ""})
         for (var i = 0; i < interfaces.length; i++) {
+            var prefix = interfaces[i].prefixLength && interfaces[i].prefixLength > 0 ? "/" + interfaces[i].prefixLength : ""
             interfaceModel.append({
-                text: interfaces[i].name + " (" + interfaces[i].ip + ")",
+                text: interfaces[i].name + " (" + interfaces[i].ip + prefix + ")",
                 value: interfaces[i].id
             })
         }
         interfaceCombo.currentIndex = 0
+    }
+
+    function selectedIndexList() {
+        var indexes = []
+        for (var key in selectedIndices) {
+            if (selectedIndices[key] === true)
+                indexes.push(parseInt(key))
+        }
+        indexes.sort(function(a, b) { return a - b })
+        return indexes
+    }
+
+    function selectedReadyToAdd() {
+        validationRevision
+        var indexes = selectedIndexList()
+        if (indexes.length === 0)
+            return false
+        for (var i = 0; i < indexes.length; ++i) {
+            var cam = SystemController.discoveryModel.getCamera(indexes[i])
+            if (cam.alreadyAdded)
+                continue
+            if (cam.validationStatus !== "ok")
+                return false
+        }
+        return true
+    }
+
+    ListModel {
+        id: profileModel
+        ListElement { text: "OpenIPC / Majestic"; value: "openipc" }
+        ListElement { text: "ONVIF"; value: "onvif" }
+        ListElement { text: "RTSP manual"; value: "rtsp" }
     }
 
     contentItem: ColumnLayout {
@@ -248,7 +282,8 @@ Dialog {
                 Layout.fillWidth: true
                 Text { 
                     text: I18n.t("Сетевой интерфейс")
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.bold: true
                     font.pixelSize: 14
                 }
@@ -257,7 +292,7 @@ Dialog {
                 
                 Text {
                     text: I18n.t("ОБНОВИТЬ ИНТЕРФЕЙСЫ")
-                    color: "#1976d2"
+                    color: Theme.metroBlue
                     font.pixelSize: 12
                     MouseArea {
                         anchors.fill: parent
@@ -270,12 +305,12 @@ Dialog {
                     width: 40
                     height: 24
                     color: "transparent"
-                    border.color: "#444444"
-                    radius: 4
+                    border.color: Theme.metroStroke
+                    radius: Theme.metroTileRadius
                     Text {
                         anchors.centerIn: parent
                         text: I18n.t("ВСЕ")
-                        color: "#aaaaaa"
+                        color: Theme.textMuted
                         font.pixelSize: 11
                     }
                 }
@@ -283,7 +318,7 @@ Dialog {
             
             Text {
                 text: I18n.t("Выберите адаптер, который нужно сканировать.")
-                color: "#888888"
+                color: Theme.textMuted
                 font.pixelSize: 12
             }
             
@@ -296,9 +331,71 @@ Dialog {
                 model: ListModel { id: interfaceModel }
             }
 
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width > 640 ? 3 : 1
+                rowSpacing: 8
+                columnSpacing: 10
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: I18n.t("Профиль добавления"); color: Theme.textMuted; font.pixelSize: 11 }
+                    StyledComboBox {
+                        id: profileCombo
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        textRole: "text"
+                        valueRole: "value"
+                        model: profileModel
+                        currentIndex: 0
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: I18n.t("Логин для проверки"); color: Theme.textMuted; font.pixelSize: 11 }
+                    TextField {
+                        id: validationLoginField
+                        Layout.fillWidth: true
+                        implicitHeight: 38
+                        text: "root"
+                        color: Theme.textPrimary
+                        selectionColor: Theme.metroBlue
+                        selectedTextColor: Theme.textPrimary
+                        background: Rectangle {
+                            color: Theme.metroSurfaceAlt
+                            radius: Theme.metroTileRadius
+                            border.color: validationLoginField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: I18n.t("Пароль для проверки"); color: Theme.textMuted; font.pixelSize: 11 }
+                    TextField {
+                        id: validationPasswordField
+                        Layout.fillWidth: true
+                        implicitHeight: 38
+                        echoMode: TextInput.Password
+                        color: Theme.textPrimary
+                        selectionColor: Theme.metroBlue
+                        selectedTextColor: Theme.textPrimary
+                        background: Rectangle {
+                            color: Theme.metroSurfaceAlt
+                            radius: Theme.metroTileRadius
+                            border.color: validationPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                        }
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
-                CheckBox {
+                MajesticCheckBox {
                     id: deepScanCheck
                     text: I18n.t("Глубокий поиск OpenIPC")
                     ToolTip.visible: hovered
@@ -312,10 +409,20 @@ Dialog {
                                                              SystemController.networkDiscovery.foundCount])
                           : (SystemController.networkDiscovery.progress === 100
                              ? I18n.t("Поиск завершён · найдено %1", [SystemController.networkDiscovery.foundCount]) : "")
-                    color: SystemController.networkDiscovery.running ? "#60a5fa" : "#888888"
+                    color: SystemController.networkDiscovery.running ? Theme.metroBlue : Theme.textMuted
                     font.pixelSize: 11
                     elide: Text.ElideLeft
                 }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: validationTotal > 0
+                      ? I18n.t("Проверка выбранных: %1/%2", [validationCompleted, validationTotal])
+                      : SystemController.discoverySessionSummary()
+                color: validationTotal > 0 ? Theme.metroBlue : Theme.textMuted
+                font.pixelSize: 11
+                elide: Text.ElideRight
             }
 
             RowLayout {
@@ -334,15 +441,15 @@ Dialog {
                     background: Rectangle {
                         implicitHeight: 10
                         radius: 5
-                        color: "#111827"
-                        border.color: "#334155"
+                        color: Theme.metroSurfaceAlt
+                        border.color: Theme.metroStroke
                     }
                     contentItem: Item {
                         Rectangle {
                             width: discoveryProgress.visualPosition * parent.width
                             height: parent.height
                             radius: 5
-                            color: SystemController.networkDiscovery.running ? "#3b82f6" : "#16a34a"
+                            color: SystemController.networkDiscovery.running ? Theme.metroBlue : Theme.metroGreen
                         }
                     }
                 }
@@ -351,7 +458,7 @@ Dialog {
                     Layout.preferredWidth: 44
                     horizontalAlignment: Text.AlignRight
                     text: Math.round(SystemController.networkDiscovery.progress) + "%"
-                    color: SystemController.networkDiscovery.running ? "#93c5fd" : "#86efac"
+                    color: SystemController.networkDiscovery.running ? Theme.textSecondary : Theme.metroGreen
                     font.pixelSize: 12
                     font.bold: true
                 }
@@ -363,14 +470,15 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Найдено устройств: ") + resultsList.count
-                color: "white"
+                color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 font.bold: true
                 font.pixelSize: 14
             }
             Item { Layout.fillWidth: true }
             Text {
                 text: I18n.t("Найдено камер: ") + resultsList.count
-                color: "#888888"
+                color: Theme.textMuted
                 font.pixelSize: 12
             }
         }
@@ -385,34 +493,16 @@ Dialog {
                 anchors.fill: parent
                 spacing: 10
                 
-                CheckBox {
+                MetroCheckBox {
                     checked: false
-                    hoverEnabled: false
-                    background: Item {}
-                    indicator: Rectangle {
-                        implicitWidth: 18
-                        implicitHeight: 18
-                        x: parent.leftPadding
-                        y: parent.height / 2 - height / 2
-                        radius: 3
-                        color: "transparent"
-                        border.color: parent.checked ? "#3f89d6" : "#666"
-                        
-                        Rectangle {
-                            width: 10
-                            height: 10
-                            anchors.centerIn: parent
-                            radius: 2
-                            color: "#3f89d6"
-                            visible: parent.parent.checked
-                        }
-                    }
+                    enabled: false
+                    Layout.preferredWidth: 22
                 }
                 
-                Text { Layout.preferredWidth: 200; text: I18n.t("Устройство"); color: "#aaaaaa"; font.pixelSize: 12 }
-                Text { Layout.preferredWidth: 100; text: I18n.t("Сеть"); color: "#aaaaaa"; font.pixelSize: 12 }
-                Text { Layout.preferredWidth: 195; text: I18n.t("Порты"); color: "#aaaaaa"; font.pixelSize: 12 }
-                Text { Layout.fillWidth: true; text: I18n.t("Протокол"); color: "#aaaaaa"; font.pixelSize: 12 }
+                Text { Layout.preferredWidth: 200; text: I18n.t("Устройство"); color: Theme.textMuted; font.pixelSize: 12 }
+                Text { Layout.preferredWidth: 100; text: I18n.t("Сеть"); color: Theme.textMuted; font.pixelSize: 12 }
+                Text { Layout.preferredWidth: 195; text: I18n.t("Порты"); color: Theme.textMuted; font.pixelSize: 12 }
+                Text { Layout.fillWidth: true; text: I18n.t("Протокол"); color: Theme.textMuted; font.pixelSize: 12 }
             }
         }
         
@@ -427,18 +517,27 @@ Dialog {
             
             delegate: Rectangle {
                 width: resultsList.width
-                height: 60
-                color: "#333333"
-                radius: 4
+                height: 78
+                color: model.alreadyAdded ? Theme.successSurface
+                                           : (model.validationStatus === "fail" ? Theme.dangerSurface
+                                              : (model.validationStatus === "ok" ? Theme.successSurface : Theme.metroTile))
+                radius: Theme.metroTileRadius
+                border.color: model.alreadyAdded ? Theme.metroGreen
+                             : (model.validationStatus === "fail" ? Theme.metroRed
+                                : (model.validationStatus === "ok" ? Theme.metroGreen : Theme.metroStroke))
+                border.width: 1
                 
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
                     onClicked: {
-                        selectionCheck.checked = !selectionCheck.checked
+                        if (!model.alreadyAdded)
+                            selectionCheck.checked = !selectionCheck.checked
                     }
-                    onEntered: parent.color = "#3d3d3d"
-                    onExited: parent.color = "#333333"
+                    onEntered: if (!model.alreadyAdded && model.validationStatus !== "fail" && model.validationStatus !== "ok") parent.color = Theme.metroTileHover
+                    onExited: parent.color = model.alreadyAdded ? Theme.successSurface
+                                           : (model.validationStatus === "fail" ? Theme.dangerSurface
+                                              : (model.validationStatus === "ok" ? Theme.successSurface : Theme.metroTile))
                 }
                 
                 RowLayout {
@@ -446,30 +545,16 @@ Dialog {
                     anchors.margins: 10
                     spacing: 10
                     
-                    CheckBox {
+                    MetroCheckBox {
                         id: selectionCheck
                         checked: root.selectedIndices[index] === true
-                        hoverEnabled: false
-                        background: Item {}
-                        indicator: Rectangle {
-                            implicitWidth: 18
-                            implicitHeight: 18
-                            x: parent.leftPadding
-                            y: parent.height / 2 - height / 2
-                            radius: 3
-                            color: "transparent"
-                            border.color: parent.checked ? "#3f89d6" : "#666"
-                            
-                            Rectangle {
-                                width: 10
-                                height: 10
-                                anchors.centerIn: parent
-                                radius: 2
-                                color: "#3f89d6"
-                                visible: parent.parent.checked
-                            }
-                        }
+                        enabled: !model.alreadyAdded
+                        Layout.preferredWidth: 22
                         onCheckedChanged: {
+                            if (model.alreadyAdded && checked) {
+                                checked = false
+                                return
+                            }
                             root.toggleSelection(index, checked)
                         }
                     }
@@ -480,19 +565,29 @@ Dialog {
                         spacing: 2
                         Text { 
                             text: model.cameraName 
-                            color: "white"
+                            color: Theme.textPrimary
+                            font.family: Theme.metroFontFamily
                             font.bold: true
                             font.pixelSize: 13
                         }
                         Text { 
                             text: model.cameraIp
-                            color: "#aaaaaa"
+                            color: Theme.textSecondary
                             font.pixelSize: 12
                         }
                         Text {
                             text: (model.manufacturer ? model.manufacturer : "")
                                   + (model.discoveryMethods ? " · " + model.discoveryMethods : "")
-                            color: model.isOpenIpc ? "#60a5fa" : "#888888"
+                            color: model.isOpenIpc ? Theme.metroBlue : Theme.textMuted
+                            font.pixelSize: 10
+                            visible: text.length > 0
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: model.validationMessage || model.discoveryEvidence || ""
+                            color: model.validationStatus === "fail" ? Theme.danger
+                                  : (model.validationStatus === "ok" || model.alreadyAdded ? Theme.success : Theme.textMuted)
                             font.pixelSize: 10
                             visible: text.length > 0
                             elide: Text.ElideRight
@@ -507,12 +602,14 @@ Dialog {
                         Rectangle {
                             width: 60
                             height: 20
-                            color: "#444444"
+                            color: model.alreadyAdded ? Theme.successSurface : Theme.metroSurfaceAlt
+                            border.color: model.alreadyAdded ? Theme.metroGreen : "transparent"
                             radius: 10
                             Text {
                                 anchors.centerIn: parent
-                                text: model.isOpenIpc ? "OPENIPC" : (model.discoveryConfidence ? model.discoveryConfidence + "%" : "CAM")
-                                color: "#cccccc"
+                                text: model.alreadyAdded ? I18n.t("В списке")
+                                      : (model.isOpenIpc ? "OPENIPC" : (model.discoveryConfidence ? model.discoveryConfidence + "%" : "CAM"))
+                                color: model.alreadyAdded ? Theme.success : Theme.textSecondary
                                 font.pixelSize: 10
                             }
                         }
@@ -528,14 +625,14 @@ Dialog {
                             width: 40
                             height: 20
                             color: "transparent"
-                            border.color: "#ff9800"
+                            border.color: Theme.metroAmber
                             radius: 10
                             visible: model.discoveryMethods
                                      && model.discoveryMethods.indexOf("Dahua") >= 0
                             Text {
                                 anchors.centerIn: parent
                                 text: "SDK"
-                                color: "#ff9800"
+                                color: Theme.metroAmber
                                 font.pixelSize: 10
                                 font.bold: true
                             }
@@ -546,13 +643,13 @@ Dialog {
                             width: 65
                             height: 20
                             color: "transparent"
-                            border.color: "#4caf50"
+                            border.color: Theme.metroGreen
                             radius: 10
                             visible: true
                             Text {
                                 anchors.centerIn: parent
                                 text: "RTSP " + (model.cameraPort ? model.cameraPort : 554)
-                                color: "#4caf50"
+                                color: Theme.metroGreen
                                 font.pixelSize: 10
                             }
                         }
@@ -562,13 +659,13 @@ Dialog {
                             width: 65
                             height: 20
                             color: "transparent"
-                            border.color: "#2196f3"
+                            border.color: Theme.metroBlue
                             radius: 10
                             visible: true
                             Text {
                                 anchors.centerIn: parent
                                 text: "HTTP " + (model.cameraOnvifPort ? model.cameraOnvifPort : 80)
-                                color: "#2196f3"
+                                color: Theme.metroBlue
                                 font.pixelSize: 10
                             }
                         }
@@ -577,16 +674,41 @@ Dialog {
                     // Protocol Info
                     Row {
                         Layout.fillWidth: true
+                        spacing: 5
                         Rectangle {
                             width: 72
                             height: 20
-                            color: "#555555"
+                            color: Theme.metroSurfaceAlt
+                            border.color: Theme.metroStroke
+                            border.width: 1
                             radius: 10
                             Text {
                                 anchors.centerIn: parent
                                 text: model.isOpenIpc ? "mdns/api" : "onvif/rtsp"
-                                color: "white"
+                                color: Theme.textPrimary
                                 font.pixelSize: 10
+                            }
+                        }
+                        Rectangle {
+                            width: 84
+                            height: 20
+                            color: model.validationStatus === "running" ? Theme.metroDeepBlue
+                                  : (model.validationStatus === "ok" || model.alreadyAdded ? Theme.successSurface
+                                     : (model.validationStatus === "fail" ? Theme.dangerSurface : Theme.metroSurfaceAlt))
+                            border.color: model.validationStatus === "ok" || model.alreadyAdded ? Theme.metroGreen
+                                         : (model.validationStatus === "fail" ? Theme.metroRed : Theme.metroStroke)
+                            border.width: 1
+                            radius: 10
+                            Text {
+                                anchors.centerIn: parent
+                                text: model.alreadyAdded ? I18n.t("Добавлена")
+                                      : (model.validationStatus === "running" ? I18n.t("Проверка")
+                                         : (model.validationStatus === "ok" ? "OK"
+                                            : (model.validationStatus === "fail" ? I18n.t("Ошибка") : (model.onboardingProfile || root.selectedProfile))))
+                                color: model.validationStatus === "fail" ? Theme.danger
+                                      : (model.validationStatus === "ok" || model.alreadyAdded ? Theme.success : Theme.textPrimary)
+                                font.pixelSize: 10
+                                font.bold: model.validationStatus === "ok" || model.alreadyAdded
                             }
                         }
                     }
@@ -597,7 +719,7 @@ Dialog {
             Text {
                 anchors.centerIn: parent
                 text: I18n.t("Нажмите \"Сканировать\", чтобы найти камеры.\nПроверьте, что сеть помечена как «Частная»...")
-                color: "#888888"
+                color: Theme.textMuted
                 horizontalAlignment: Text.AlignHCenter
                 visible: resultsList.count === 0
             }
@@ -610,19 +732,22 @@ Dialog {
             Button {
                 text: SystemController.networkDiscovery.running
                       ? I18n.t("ОСТАНОВИТЬ") : I18n.t("СКАНИРОВАТЬ")
-                Layout.preferredWidth: 150
+                Layout.preferredWidth: 140
                 Layout.preferredHeight: 40
+                hoverEnabled: true
                 
                 background: Rectangle {
-                    color: "#1976d2"
-                    radius: 4
+                    color: parent.hovered ? Theme.metroBlueHover : Theme.metroBlue
+                    radius: Theme.metroTileRadius
+                    border.color: Theme.metroBlue
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     font.bold: true
+                    font.family: Theme.metroFontFamily
                 }
                 
                 onClicked: {
@@ -634,43 +759,107 @@ Dialog {
                     }
                 }
             }
-            
-            Item { Layout.fillWidth: true }
-            
+
             Button {
-                text: I18n.t("ДОБАВИТЬ ВЫБРАННЫЕ (") + root.selectedCount + ")"
-                Layout.preferredWidth: 200
+                text: I18n.t("ОЧИСТИТЬ")
+                Layout.preferredWidth: 110
                 Layout.preferredHeight: 40
-                enabled: root.selectedCount > 0
-                
+                enabled: !SystemController.networkDiscovery.running && resultsList.count > 0
+                hoverEnabled: true
+
                 background: Rectangle {
-                    color: parent.enabled ? "#1976d2" : "#444444"
-                    radius: 4
+                    color: parent.enabled ? (parent.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
+                    radius: Theme.metroTileRadius
+                    border.color: parent.enabled ? Theme.metroStroke : Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: parent.enabled ? "white" : "#888888"
+                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.family: Theme.metroFontFamily
+                }
+                onClicked: {
+                    SystemController.clearDiscoveryResults()
+                    selectedIndices = ({})
+                    selectedCount = 0
+                }
+            }
+            
+            Item { Layout.fillWidth: true }
+
+            Button {
+                text: validationTotal > 0
+                      ? I18n.t("ПРОВЕРКА %1/%2", [validationCompleted, validationTotal])
+                      : I18n.t("ПРОВЕРИТЬ ВЫБРАННЫЕ")
+                Layout.preferredWidth: 190
+                Layout.preferredHeight: 40
+                enabled: root.selectedCount > 0 && validationTotal === 0
+                hoverEnabled: true
+
+                background: Rectangle {
+                    color: parent.enabled ? (parent.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
+                    radius: Theme.metroTileRadius
+                    border.color: parent.enabled ? Theme.metroBlue : Theme.metroStroke
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.bold: parent.enabled
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+                onClicked: {
+                    SystemController.validateDiscoverySelection(
+                        root.selectedIndexList(),
+                        validationLoginField.text,
+                        validationPasswordField.text,
+                        root.selectedProfile
+                    )
+                }
+            }
+            
+            Button {
+                text: root.selectedReadyToAdd()
+                      ? I18n.t("ДОБАВИТЬ ВЫБРАННЫЕ (") + root.selectedCount + ")"
+                      : I18n.t("ПРОВЕРИТЬ И ДОБАВИТЬ (") + root.selectedCount + ")"
+                Layout.preferredWidth: 200
+                Layout.preferredHeight: 40
+                enabled: root.selectedCount > 0 && validationTotal === 0
+                hoverEnabled: true
+                
+                background: Rectangle {
+                    color: parent.enabled ? (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue) : Theme.metroTileDisabled
+                    radius: Theme.metroTileRadius
+                    border.color: parent.enabled ? Theme.metroBlue : Theme.metroStroke
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     font.bold: true
+                    font.family: Theme.metroFontFamily
                 }
                 onClicked: {
-                    if (root.selectedCount === 1) {
-                        for (var key in root.selectedIndices) {
-                            if (root.selectedIndices[key] === true) {
-                                var index = parseInt(key)
-                                var cam = SystemController.discoveryModel.getCamera(index)
-                                var port = cam.cameraPort ? cam.cameraPort : 554
-                                var onvifPort = cam.cameraOnvifPort ? cam.cameraOnvifPort : 80
-                                root.addCameraRequested(cam.cameraName, cam.cameraIp, port, onvifPort)
-                                root.close()
-                                return
-                            }
-                        }
-                    } else {
-                        batchPasswordField.text = ""
-                        batchLoginDialog.open()
+                    if (!root.selectedReadyToAdd()) {
+                        SystemController.validateDiscoverySelection(
+                            root.selectedIndexList(),
+                            validationLoginField.text,
+                            validationPasswordField.text,
+                            root.selectedProfile
+                        )
+                        return
                     }
+                    SystemController.addDiscoveredCameras(
+                        root.selectedIndexList(),
+                        validationLoginField.text,
+                        validationPasswordField.text,
+                        root.selectedProfile
+                    )
                 }
             }
         }

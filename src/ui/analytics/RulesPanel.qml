@@ -199,39 +199,9 @@ Item {
         }
     }
 
-    component RuleCheckBox: CheckBox {
-        id: checkRoot
-        spacing: 8
+    component RuleCheckBox: MetroCheckBox {
         implicitHeight: 24
-
-        indicator: Rectangle {
-            width: 18
-            height: 18
-            x: 0
-            y: (checkRoot.height - height) / 2
-            radius: 4
-            color: checkRoot.checked ? Theme.accent : Theme.controlBackground
-            border.color: checkRoot.checked ? Theme.accentHover : Theme.controlBorder
-            border.width: 1
-
-            Text {
-                anchors.centerIn: parent
-                visible: checkRoot.checked
-                text: "✓"
-                color: Theme.textPrimary
-                font.pixelSize: 12
-                font.bold: true
-            }
-        }
-
-        contentItem: Text {
-            text: checkRoot.text
-            color: checkRoot.enabled ? Theme.textSecondary : Theme.textMuted
-            font.pixelSize: 13
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: checkRoot.indicator.width + checkRoot.spacing
-            elide: Text.ElideRight
-        }
+        font.pixelSize: 13
     }
 
     ColumnLayout {
@@ -262,9 +232,9 @@ Item {
                 Layout.preferredWidth: root.ruleListWidth
                 Layout.minimumWidth: 240
                 Layout.fillHeight: true
-                color: "#111827"
+                color: Theme.metroSurfaceAlt
                 radius: 8
-                border.color: "#1f2937"
+                border.color: Theme.metroStroke
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -276,7 +246,7 @@ Item {
 
                         Text {
                             text: I18n.t("Список правил")
-                            color: "#e5e7eb"
+                            color: Theme.textSecondary
                             font.bold: true
                             font.pixelSize: 13
                         }
@@ -306,15 +276,15 @@ Item {
                             width: ListView.view.width
                             height: 56
                             radius: 8
-                            color: index === root.selectedRuleIndex ? "#1e293b" : "#0f172a"
-                            border.color: index === root.selectedRuleIndex ? "#3b82f6" : "#334155"
+                            color: index === root.selectedRuleIndex ? "#1e293b" : Theme.metroSurfaceAlt
+                            border.color: index === root.selectedRuleIndex ? Theme.metroBlue : Theme.metroStroke
 
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: 8
                                 spacing: 8
 
-                                CheckBox {
+                                RuleCheckBox {
                                     checked: model.enabled
                                     onToggled: {
                                         rulesModel.setProperty(index, "enabled", checked)
@@ -328,7 +298,7 @@ Item {
 
                                     Text {
                                         text: model.name
-                                        color: "#e5e7eb"
+                                        color: Theme.textSecondary
                                         font.bold: true
                                         elide: Text.ElideRight
                                     }
@@ -336,7 +306,7 @@ Item {
                                     Text {
                                         text: model.label + "  ·  ≥ " + Math.round(Number(model.minConfidence) * 100) + "%"
                                               + "  ·  " + Math.max(1, Math.round(Number(model.cooldownMs || 5000) / 1000)) + "s"
-                                        color: "#94a3b8"
+                                        color: Theme.textMuted
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
                                     }
@@ -353,7 +323,7 @@ Item {
                     Text {
                         visible: rulesModel.count === 0
                         text: I18n.t("Пока нет правил")
-                        color: "#6b7280"
+                        color: Theme.textFaint
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                     }
@@ -374,8 +344,8 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         radius: 8
-                        color: "#111827"
-                        border.color: "#1f2937"
+                        color: Theme.metroSurfaceAlt
+                        border.color: Theme.metroStroke
                         implicitHeight: triggerBlock.implicitHeight + 16
 
                         ColumnLayout {
@@ -386,7 +356,7 @@ Item {
 
                             Text {
                                 text: I18n.t("Блок 1 — Триггер")
-                                color: "#93c5fd"
+                                color: Theme.textSecondary
                                 font.bold: true
                             }
 
@@ -396,7 +366,7 @@ Item {
                                 text: root.selectedValue("name", "")
                                 placeholderText: I18n.t("Название правила")
                                 color: "white"
-                                background: Rectangle { color: "#0f172a"; border.color: "#334155"; radius: 4 }
+                                background: Rectangle { color: Theme.metroSurfaceAlt; border.color: Theme.metroStroke; radius: 4 }
                                 onEditingFinished: root.updateField("name", text.trim() === "" ? I18n.t("Правило") : text.trim())
                             }
 
@@ -462,8 +432,8 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         radius: 8
-                        color: "#111827"
-                        border.color: "#1f2937"
+                        color: Theme.metroSurfaceAlt
+                        border.color: Theme.metroStroke
                         implicitHeight: zoneBlock.implicitHeight + 16
 
                         ColumnLayout {
@@ -474,7 +444,7 @@ Item {
 
                             Text {
                                 text: I18n.t("Блок 2 — Зона")
-                                color: "#86efac"
+                                color: Theme.metroGreen
                                 font.bold: true
                             }
 
@@ -495,7 +465,7 @@ Item {
 
                             Text {
                                 text: I18n.t("Скоро вернём полигональные зоны; пока пресеты зоны уже сохраняются в правиле.")
-                                color: "#94a3b8"
+                                color: Theme.textMuted
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                                 font.pixelSize: 11
@@ -506,8 +476,8 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         radius: 8
-                        color: "#111827"
-                        border.color: "#1f2937"
+                        color: Theme.metroSurfaceAlt
+                        border.color: Theme.metroStroke
                         implicitHeight: actionsBlock.implicitHeight + 16
 
                         ColumnLayout {
@@ -518,7 +488,7 @@ Item {
 
                             Text {
                                 text: I18n.t("Блок 3 — Действия")
-                                color: "#fca5a5"
+                                color: Theme.metroRed
                                 font.bold: true
                             }
 

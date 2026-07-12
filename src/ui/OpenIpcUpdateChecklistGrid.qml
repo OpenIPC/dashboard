@@ -24,9 +24,9 @@ GridLayout {
 
             Layout.fillWidth: true
             Layout.preferredHeight: 112
-            color: Theme.cardBackground
-            border.color: rowCard.modelData.state === "block" ? Theme.danger : (rowCard.modelData.state === "warn" ? Theme.warning : Theme.cardBorder)
-            radius: Theme.radiusLg
+            color: Theme.metroSurface
+            border.color: rowCard.modelData.state === "block" ? Theme.metroRed : (rowCard.modelData.state === "warn" ? Theme.metroAmber : Theme.metroStroke)
+            radius: Theme.metroTileRadius
 
             ColumnLayout {
                 anchors.fill: parent
@@ -47,9 +47,9 @@ GridLayout {
                     Rectangle {
                         implicitWidth: badgeText.implicitWidth + 18
                         implicitHeight: 24
-                        radius: 12
-                        color: rowCard.modelData.state === "block" ? "#3f1212" : (rowCard.modelData.state === "warn" ? "#422006" : "#052e1b")
-                        border.color: rowCard.modelData.state === "block" ? Theme.danger : (rowCard.modelData.state === "warn" ? Theme.warning : Theme.success)
+                        radius: Theme.metroTileRadius
+                        color: rowCard.modelData.state === "block" ? Theme.dangerSurface : (rowCard.modelData.state === "warn" ? Theme.warningSurface : Theme.successSurface)
+                        border.color: rowCard.modelData.state === "block" ? Theme.metroRed : (rowCard.modelData.state === "warn" ? Theme.metroAmber : Theme.metroGreen)
 
                         Text {
                             id: badgeText

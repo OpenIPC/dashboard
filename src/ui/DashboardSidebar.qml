@@ -15,9 +15,14 @@ Rectangle {
     property int cameraDataVersion: 0
     property string deviceFilterText: ""
     property bool canSettings: false
+    property bool toolsExpanded: true
     property var systemController: null
+    readonly property bool toolsContentVisible: actionsGrid.visible
+                                                 && statusPanel.visible
+                                                 && deviceFilterField.visible
 
     signal closeSidebarRequested()
+    signal toolsExpandedToggleRequested()
     signal noAccessRequested()
     signal searchRequested()
     signal healthRequested()
@@ -36,15 +41,17 @@ Rectangle {
     signal deviceFilterChanged(string text)
 
     Layout.preferredWidth: sidebar.sidebarWidth
+    Layout.minimumWidth: 0
+    Layout.maximumWidth: sidebar.sidebarWidth
     Layout.fillHeight: true
     visible: true
     enabled: sidebar.sidebarOpenProgress > 0.01
     opacity: sidebar.sidebarOpenProgress
     clip: true
-    color: Theme.topBarBackground
-    radius: Theme.radiusLg
-    border.color: Theme.panelBorderStrong
-    border.width: 1
+    color: Theme.metroSidebarBackground
+    radius: 0
+    border.color: "transparent"
+    border.width: 0
 
     function actionAllowed(action) {
         return dashboard && dashboard.actionAllowed ? dashboard.actionAllowed(action) : false
@@ -138,32 +145,58 @@ Rectangle {
         else if (action === "camex") camexRequested()
     }
 
-    Rectangle {
+    Connections {
+        target: sidebar.systemController
+                ? sidebar.systemController.cameraHealthController : null
+        ignoreUnknownSignals: true
+        function onCurrentResultsChanged() { sidebar.cameraDataVersion++ }
+        function onHistoryChanged() { sidebar.cameraDataVersion++ }
+    }
+
+    Timer {
+        interval: 120000
+        repeat: true
+        triggeredOnStart: true
+        running: sidebar.visible && sidebar.systemController
+                 && sidebar.systemController.cameraHealthController
+        onTriggered: sidebar.systemController.cameraHealthController.refreshAllTelemetry()
+    }
+
+    Button {
+        id: hideSidebarButton
+
         visible: sidebar.sidebarOpenProgress > 0.01
         width: 18
         height: 84
-        radius: 9
         anchors.left: parent.left
         anchors.leftMargin: -9
         anchors.verticalCenter: parent.verticalCenter
-        color: hideArea.containsMouse ? Theme.cardHover : Theme.cardBackground
-        border.color: Theme.controlBorderStrong
+        padding: 0
+        hoverEnabled: true
+        focusPolicy: Qt.StrongFocus
         z: 6
 
-        Text {
-            anchors.centerIn: parent
+        background: Rectangle {
+            radius: 9
+            color: hideSidebarButton.hovered || hideSidebarButton.visualFocus
+                   ? Theme.metroTileHover
+                   : Theme.metroSurface
+            border.color: hideSidebarButton.visualFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+            border.width: hideSidebarButton.visualFocus ? 2 : 1
+        }
+
+        contentItem: Text {
             text: "»"
             color: Theme.textSecondary
             font.pixelSize: 16
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
 
-        MouseArea {
-            id: hideArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: sidebar.closeSidebarRequested()
-        }
+        ToolTip.visible: hovered || visualFocus
+        ToolTip.text: I18n.t("Скрыть боковую панель")
+        ToolTip.delay: 450
+        onClicked: sidebar.closeSidebarRequested()
     }
 
     ScrollView {
@@ -171,6 +204,7 @@ Rectangle {
         anchors.fill: parent
         visible: sidebar.sidebarOpenProgress > 0.01
         clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
@@ -183,22 +217,66 @@ Rectangle {
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.topMargin: 12
-                Layout.bottomMargin: 10
+                Layout.bottomMargin: 8
                 spacing: 8
 
-                Text {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: I18n.t("Действия")
-                    color: Theme.textSecondary
-                    font.bold: true
-                    font.pixelSize: 12
+                    spacing: 8
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t(sidebar.toolsExpanded ? "Действия" : "Устройства")
+                        color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
+                        font.bold: true
+                        font.pixelSize: 14
+                        elide: Text.ElideRight
+                    }
+
+                    Button {
+                        id: toolsToggleButton
+
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 28
+                        padding: 0
+                        hoverEnabled: true
+                        focusPolicy: Qt.StrongFocus
+
+                        background: Rectangle {
+                            radius: Theme.metroTileRadius
+                            color: toolsToggleButton.hovered || toolsToggleButton.visualFocus
+                                   ? Theme.metroTileHover : "transparent"
+                            border.color: toolsToggleButton.visualFocus
+                                          ? Theme.metroStrokeStrong : "transparent"
+                            border.width: toolsToggleButton.visualFocus ? 2 : 1
+                        }
+
+                        contentItem: SidebarIcon {
+                            name: "menu"
+                            fallbackText: "\u2261"
+                            color: toolsToggleButton.hovered
+                                   ? Theme.textPrimary : Theme.textSecondary
+                            pixelSize: 20
+                        }
+
+                        ToolTip.visible: hovered || visualFocus
+                        ToolTip.delay: 350
+                        ToolTip.text: I18n.t(sidebar.toolsExpanded
+                                            ? "Свернуть панель инструментов"
+                                            : "Развернуть панель инструментов")
+                        onClicked: sidebar.toolsExpandedToggleRequested()
+                    }
                 }
 
                 GridLayout {
+                    id: actionsGrid
+
                     Layout.fillWidth: true
                     columns: 3
-                    columnSpacing: 7
-                    rowSpacing: 7
+                    columnSpacing: 6
+                    rowSpacing: 6
+                    visible: sidebar.toolsExpanded
 
                     Repeater {
                         model: [
@@ -233,14 +311,17 @@ Rectangle {
             }
 
             Rectangle {
+                id: statusPanel
+
                 Layout.fillWidth: true
                 Layout.leftMargin: 15
                 Layout.rightMargin: 15
                 Layout.bottomMargin: 8
                 Layout.preferredHeight: 42
-                radius: Theme.radiusMd
-                color: Theme.panelSoftBackground
-                border.color: Theme.panelBorder
+                visible: sidebar.toolsExpanded
+                radius: Theme.metroTileRadius
+                color: Theme.metroSurface
+                border.color: Theme.metroStroke
                 border.width: 1
 
                 ColumnLayout {
@@ -259,6 +340,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: I18n.t("Состояние")
                             color: Theme.textSecondary
+                            font.family: Theme.metroFontFamily
                             font.pixelSize: 11
                             font.bold: true
                             elide: Text.ElideRight
@@ -267,6 +349,7 @@ Rectangle {
                         Text {
                             text: sidebar.currentUsername()
                             color: Theme.textMuted
+                            font.family: Theme.metroFontFamily
                             font.pixelSize: 10
                             elide: Text.ElideRight
                         }
@@ -280,6 +363,7 @@ Rectangle {
                                          Math.max(0, sidebar.cameraCount() - sidebar.onlineCameraCount())
                                      ])
                         color: Theme.textMuted
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 11
                         elide: Text.ElideRight
                     }
@@ -287,15 +371,17 @@ Rectangle {
             }
 
             Rectangle {
+                id: previewPanel
+
                 Layout.fillWidth: true
                 Layout.leftMargin: 15
                 Layout.rightMargin: 15
                 Layout.bottomMargin: 8
                 Layout.preferredHeight: 32
-                visible: sidebar.smartStreamBudgetEnabled()
-                radius: Theme.radiusMd
-                color: Theme.panelSoftBackground
-                border.color: Theme.panelBorder
+                visible: sidebar.toolsExpanded && sidebar.smartStreamBudgetEnabled()
+                radius: Theme.metroTileRadius
+                color: Theme.metroSurface
+                border.color: Theme.metroStroke
                 border.width: 1
 
                 RowLayout {
@@ -308,6 +394,7 @@ Rectangle {
                         Layout.fillWidth: true
                         text: I18n.t("Live-preview")
                         color: Theme.textSecondary
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 11
                         font.bold: true
                         elide: Text.ElideRight
@@ -320,6 +407,7 @@ Rectangle {
                                          sidebar.budgetPausedPreviewCount()
                                      ])
                         color: Theme.textMuted
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 10
                         elide: Text.ElideRight
                     }
@@ -333,6 +421,7 @@ Rectangle {
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 8
                 implicitHeight: 34
+                visible: sidebar.toolsExpanded
                 text: sidebar.deviceFilterText
                 placeholderText: I18n.t("Поиск устройств")
                 color: Theme.textPrimary
@@ -344,9 +433,9 @@ Rectangle {
                 rightPadding: 10
                 background: Rectangle {
                     color: Theme.controlBackground
-                    radius: Theme.radiusSm
-                    border.color: deviceFilterField.activeFocus ? Theme.accent : Theme.controlBorder
-                    border.width: 1
+                    radius: Theme.metroTileRadius
+                    border.color: deviceFilterField.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                    border.width: deviceFilterField.activeFocus ? 2 : 1
                 }
                 onTextChanged: {
                     if (text !== sidebar.deviceFilterText)
@@ -362,11 +451,13 @@ Rectangle {
                 Layout.rightMargin: 15
                 Layout.topMargin: 8
                 Layout.bottomMargin: 8
+                visible: sidebar.toolsExpanded
                 padding: 0
                 text: I18n.t("Устройства")
                 color: Theme.textPrimary
                 font.bold: true
-                font.pixelSize: 14
+                font.family: Theme.metroFontFamily
+                font.pixelSize: 15
             }
 
             ColumnLayout {
@@ -434,8 +525,6 @@ Rectangle {
 
                                     required property int index
                                     required property string cameraGroup
-                                    required property string cameraIp
-                                    required property string cameraName
                                     required property string status
 
                                     property int rowCameraIndex: deviceRow.index
@@ -449,11 +538,10 @@ Rectangle {
                                     width: ListView.view ? ListView.view.width : parent.width
                                     height: inGroup ? implicitHeight : 0
                                     visible: inGroup
-                                    cameraName: deviceRow.cameraName
-                                    cameraIp: deviceRow.cameraIp
                                     effectiveStatus: deviceRow.effectiveStatusValue
                                     effectiveDetail: deviceRow.effectiveDetailValue
                                     cameraIndex: deviceRow.rowCameraIndex
+                                    cameraDataVersion: sidebar.cameraDataVersion
                                     online: sidebar.isOnlineStatus(deviceRow.effectiveStatusValue)
                                     canSettings: sidebar.canSettings
                                     dashboard: sidebar.dashboard
@@ -465,8 +553,10 @@ Rectangle {
                                     onAddRequested: (cameraIndex) => sidebar.addCameraToGridRequested(cameraIndex)
                                     onMajesticRequested: (cameraIndex) => sidebar.majesticRequested(cameraIndex)
                                     onHealthRequested: (cameraIp) => {
-                                        if (sidebar.systemController)
-                                            sidebar.systemController.refreshCameraHealth(cameraIp)
+                                        if (sidebar.systemController
+                                                && sidebar.systemController.cameraHealthController)
+                                            sidebar.systemController.cameraHealthController.runCamera(
+                                                cameraIp, "openipc")
                                     }
                                     onRemoveRequested: (cameraIndex) => {
                                         if (sidebar.systemController)

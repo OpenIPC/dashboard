@@ -77,15 +77,15 @@ Dialog {
     }
 
     background: Rectangle {
-        color: Theme.panelBackground
-        border.color: Theme.panelBorder
-        radius: 12
+        color: Theme.metroSurface
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
     }
 
     header: Rectangle {
-        color: Theme.topBarBackground
+        color: Theme.metroSidebarBackground
         height: 70
-        radius: 12
+        radius: Theme.metroTileRadius
 
         Rectangle {
             anchors.left: parent.left
@@ -104,13 +104,14 @@ Dialog {
             Rectangle {
                 Layout.preferredWidth: 44
                 Layout.preferredHeight: 44
-                radius: 22
-                color: Theme.accent
+                radius: Theme.metroTileRadius
+                color: Theme.metroBlue
 
                 Text {
                     anchors.centerIn: parent
                     text: "M"
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.bold: true
                     font.pixelSize: 20
                 }
@@ -138,8 +139,8 @@ Dialog {
                 }
             }
 
-            WizardButton {
-                text: "×"
+            MetroWindowButton {
+                kind: "close"
                 Layout.preferredWidth: 42
                 Layout.preferredHeight: 42
                 onClicked: root.close()
@@ -153,7 +154,7 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-                color: Theme.appBackground
+                color: Theme.metroBackground
 
             RowLayout {
                 anchors.fill: parent
@@ -163,9 +164,9 @@ Dialog {
                 Rectangle {
                     Layout.preferredWidth: 230
                     Layout.fillHeight: true
-                    color: Theme.cardBackground
-                    border.color: Theme.panelBorder
-                    radius: 10
+                    color: Theme.metroSurface
+                    border.color: Theme.metroStroke
+                    radius: Theme.metroTileRadius
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -475,7 +476,7 @@ Dialog {
                                     Layout.fillWidth: true
                                     spacing: 5
                                     FieldLabel { text: I18n.t("Шаблон RTSP URL") }
-                                    ComboBox {
+                                    StyledComboBox {
                                         id: urlTemplateCombo
                                         Layout.fillWidth: true
                                         model: root.rtspTemplateModel
@@ -1125,14 +1126,15 @@ Dialog {
 
     component FieldLabel: Text {
         color: Theme.textSecondary
+        font.family: Theme.metroFontFamily
         font.pixelSize: 12
         font.bold: true
     }
 
     component FieldBackground: Rectangle {
         color: Theme.controlBackground
-        border.color: Theme.controlBorder
-        radius: 7
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
     }
 
     component FormGrid: GridLayout {
@@ -1150,17 +1152,19 @@ Dialog {
         implicitHeight: 38
         implicitWidth: Math.max(96, contentItem.implicitWidth + 28)
         font.bold: primary
+        font.family: Theme.metroFontFamily
 
         background: Rectangle {
-            radius: 8
+            radius: Theme.metroTileRadius
             color: !button.enabled
                    ? Theme.controlBackgroundAlt
                    : button.primary
-                     ? (button.down ? "#2563eb" : (button.hovered ? Theme.accentHover : Theme.accent))
+                      ? (button.down ? Theme.metroBlueHover : (button.hovered ? Theme.metroBlueHover : Theme.metroBlue))
                      : button.danger
-                       ? Theme.danger
-                       : (button.hovered ? Theme.cardHover : Theme.controlBackground)
-            border.color: button.primary ? Theme.accent : Theme.controlBorder
+                        ? Theme.metroRed
+                        : (button.hovered ? Theme.metroTileHover : Theme.metroTile)
+            border.color: button.primary ? Theme.metroBlue : (button.hovered ? Theme.metroStrokeStrong : Theme.metroStroke)
+            border.width: button.hovered || button.visualFocus ? 2 : 1
         }
 
         contentItem: Text {

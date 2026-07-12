@@ -36,11 +36,13 @@ ScrollView {
             }
         }
 
-        RowLayout {
+        GridLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16
             Layout.rightMargin: 16
-            spacing: 10
+            columns: width > 900 ? 3 : 1
+            rowSpacing: 10
+            columnSpacing: 10
 
             MajesticEndpointProbeCard {
                 controller: root.controller
@@ -96,6 +98,12 @@ ScrollView {
             }
         }
 
+        OpenIpcSafeActionsPanel {
+            rows: root.controller ? root.controller.safeActionRows() : []
+            title: I18n.t("Action gates")
+            description: I18n.t("Эти gates объясняют, почему часть endpoints только справочная, а часть доступна для выполнения из Control Center.")
+        }
+
         Repeater {
             model: root.controller ? root.controller.endpointRows() : []
 
@@ -107,12 +115,18 @@ ScrollView {
                 Layout.fillWidth: true
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                Layout.preferredHeight: 82
+                Layout.minimumHeight: 96
+                Layout.preferredHeight: Math.max(Layout.minimumHeight, endpointContent.implicitHeight + 24)
                 color: Theme.cardBackground
-                border.color: Theme.cardBorder
+                border.color: endpointDelegate.modelData.state === "block" ? Theme.metroRed
+                              : endpointDelegate.modelData.state === "warn" ? Theme.metroAmber
+                              : endpointDelegate.modelData.state === "ok" ? Theme.metroGreen
+                              : Theme.cardBorder
                 radius: Theme.radiusLg
 
                 RowLayout {
+                    id: endpointContent
+
                     anchors.fill: parent
                     anchors.margins: 12
                     spacing: 12
@@ -121,7 +135,7 @@ ScrollView {
                         Layout.preferredWidth: 92
                         Layout.preferredHeight: 26
                         radius: 13
-                        color: "#172554"
+                        color: Theme.metroDeepBlue
                         border.color: Theme.accent
 
                         Text {
@@ -135,13 +149,69 @@ ScrollView {
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 4
 
                         Text {
                             text: endpointDelegate.modelData.name
                             color: Theme.textPrimary
                             font.bold: true
                             font.pixelSize: 12
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Rectangle {
+                                implicitWidth: statusText.implicitWidth + 16
+                                implicitHeight: 22
+                                radius: Theme.metroTileRadius
+                                color: endpointDelegate.modelData.state === "block" ? Theme.dangerSurface
+                                      : endpointDelegate.modelData.state === "warn" ? Theme.warningSurface
+                                      : endpointDelegate.modelData.state === "ok" ? Theme.successSurface
+                                      : Theme.metroSurfaceAlt
+                                border.color: endpointDelegate.modelData.state === "block" ? Theme.metroRed
+                                              : endpointDelegate.modelData.state === "warn" ? Theme.metroAmber
+                                              : endpointDelegate.modelData.state === "ok" ? Theme.metroGreen
+                                              : Theme.metroStroke
+
+                                Text {
+                                    id: statusText
+                                    anchors.centerIn: parent
+                                    text: endpointDelegate.modelData.statusText
+                                    color: endpointDelegate.modelData.state === "block" ? Theme.danger
+                                           : endpointDelegate.modelData.state === "warn" ? Theme.warning
+                                           : endpointDelegate.modelData.state === "ok" ? Theme.success
+                                           : Theme.textSecondary
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
+
+                            Rectangle {
+                                implicitWidth: riskText.implicitWidth + 16
+                                implicitHeight: 22
+                                radius: Theme.metroTileRadius
+                                color: endpointDelegate.modelData.risk === "danger" ? Theme.dangerSurface
+                                      : endpointDelegate.modelData.risk === "warn" ? Theme.warningSurface
+                                      : Theme.metroSurfaceAlt
+                                border.color: endpointDelegate.modelData.risk === "danger" ? Theme.metroRed
+                                              : endpointDelegate.modelData.risk === "warn" ? Theme.metroAmber
+                                              : Theme.metroStroke
+
+                                Text {
+                                    id: riskText
+                                    anchors.centerIn: parent
+                                    text: endpointDelegate.modelData.risk === "danger" ? I18n.t("danger")
+                                          : endpointDelegate.modelData.risk === "warn" ? I18n.t("write/action")
+                                          : I18n.t("read-only")
+                                    color: endpointDelegate.modelData.risk === "danger" ? Theme.danger
+                                           : endpointDelegate.modelData.risk === "warn" ? Theme.warning
+                                           : Theme.textSecondary
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
                         }
 
                         Text {

@@ -7,6 +7,7 @@ Item {
     id: root
 
     property int refreshToken: 0
+    property string actionStatus: ""
 
     function refresh() {
         refreshToken += 1
@@ -63,6 +64,58 @@ Item {
     function moduleDiagnostics(type) {
         var token = refreshToken
         return SystemController.analyticsEngine.getModuleDiagnostics(type)
+    }
+
+    function moduleInventoryItem(type) {
+        var token = refreshToken
+        if (!SystemController.analyticsEngine.moduleInventory)
+            return ({})
+
+        var inventory = SystemController.analyticsEngine.moduleInventory()
+        for (var i = 0; i < inventory.length; ++i) {
+            if (Number(inventory[i].type) === Number(type))
+                return inventory[i]
+        }
+        return ({})
+    }
+
+    function artifactStateText(inventory) {
+        var state = inventory ? inventory.verificationState : ""
+        if (state === "trusted") return I18n.t("Проверена")
+        if (state === "size_ok") return I18n.t("Размер OK")
+        if (state === "size_mismatch") return I18n.t("Размер не совпадает")
+        return I18n.t("Нет файла")
+    }
+
+    function artifactStateColor(inventory) {
+        var state = inventory ? inventory.verificationState : ""
+        if (state === "trusted" || state === "size_ok") return Theme.success
+        if (state === "size_mismatch") return Theme.danger
+        return Theme.warning
+    }
+
+    function verifyModule(type) {
+        if (!SystemController.analyticsEngine.verifyModuleArtifact)
+            return
+        var result = SystemController.analyticsEngine.verifyModuleArtifact(type)
+        actionStatus = result.ok
+            ? I18n.t("Модель «%1» прошла проверку SHA-256.", [moduleName(type)])
+            : I18n.t("Проверка «%1» не пройдена: %2", [moduleName(type), result.message || I18n.t("нет деталей")])
+        refresh()
+    }
+
+    function cleanupArtifacts(type) {
+        if (!SystemController.analyticsEngine.cleanupModuleArtifacts)
+            return
+        var result = SystemController.analyticsEngine.cleanupModuleArtifacts(type)
+        actionStatus = result.ok
+            ? I18n.t("Очистка «%1»: удалено %2, освобождено %3.", [
+                moduleName(type),
+                result.removedCount || 0,
+                sizeText(result.freedBytes || 0)
+            ])
+            : I18n.t("Очистка «%1» не выполнена: %2", [moduleName(type), result.message || I18n.t("нет деталей")])
+        refresh()
     }
 
     function sizeText(bytes) {
@@ -243,6 +296,7 @@ Item {
                 property bool currentEnabled: root.moduleEnabled(moduleType)
                 property var telemetry: root.moduleTelemetry(moduleType)
                 property var diagnostics: root.moduleDiagnostics(moduleType)
+                property var inventory: root.moduleInventoryItem(moduleType)
                 property real progress: root.moduleProgress(moduleType)
                 property real displayProgress: currentStatus === "downloading"
                     ? Math.max(0, Math.min(0.99, Number(progress || 0)))
@@ -331,6 +385,34 @@ Item {
                             Layout.preferredWidth: Math.min(180, Math.max(128, moduleCard.width * 0.22))
                             text: I18n.t("Папка моделей")
                             onClicked: SystemController.openFolder(moduleCard.diagnostics.modulesDir || moduleCard.diagnostics.modelPath)
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: moduleCard.width >= 860 ? 3 : 1
+                        columnSpacing: 8
+                        rowSpacing: 8
+
+                        PanelButton {
+                            Layout.fillWidth: true
+                            text: I18n.t("Проверить SHA")
+                            enabled: moduleCard.inventory.installed === true
+                            onClicked: root.verifyModule(moduleCard.moduleType)
+                        }
+
+                        PanelButton {
+                            Layout.fillWidth: true
+                            text: I18n.t("Очистить хвосты")
+                            enabled: moduleCard.inventory.partialExists === true || moduleCard.inventory.previousExists === true
+                            onClicked: root.cleanupArtifacts(moduleCard.moduleType)
+                        }
+
+                        PanelButton {
+                            Layout.fillWidth: true
+                            text: I18n.t("Источник")
+                            enabled: moduleCard.diagnostics.sourceUrl !== undefined && moduleCard.diagnostics.sourceUrl !== ""
+                            onClicked: Qt.openUrlExternally(moduleCard.diagnostics.sourceUrl)
                         }
                     }
 
@@ -425,6 +507,15 @@ Item {
                             title: I18n.t("Задержка")
                             value: Number(moduleCard.telemetry.averageInferenceMs || 0).toFixed(1) + " ms"
                         }
+                        Metric {
+                            title: I18n.t("Артефакт")
+                            value: root.artifactStateText(moduleCard.inventory)
+                            accent: root.artifactStateColor(moduleCard.inventory)
+                        }
+                        Metric {
+                            title: I18n.t("Диск")
+                            value: root.sizeText(moduleCard.inventory.storageBytes)
+                        }
                     }
 
                     Rectangle {
@@ -461,7 +552,28 @@ Item {
                                 font.pixelSize: 10
                                 wrapMode: Text.WordWrap
                             }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: I18n.t("Целостность: %1 · ожидаемый размер: %2 · временные файлы: %3", [
+                                    root.artifactStateText(moduleCard.inventory),
+                                    root.sizeText(moduleCard.diagnostics.expectedModelSizeBytes),
+                                    root.sizeText((moduleCard.inventory.partialBytes || 0) + (moduleCard.inventory.previousBytes || 0))
+                                ])
+                                color: root.artifactStateColor(moduleCard.inventory)
+                                font.pixelSize: 10
+                                wrapMode: Text.WordWrap
+                            }
                         }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: root.actionStatus !== ""
+                        text: root.actionStatus
+                        color: root.actionStatus.indexOf(I18n.t("не")) >= 0 ? Theme.warning : Theme.textMuted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
                     }
 
                     Text {

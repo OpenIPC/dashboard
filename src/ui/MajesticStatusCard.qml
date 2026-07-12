@@ -8,13 +8,13 @@ Rectangle {
     property string value: "—"
     property string subtitle: ""
     property real percent: 0
-    property color accent: Theme.accent
+    property color accent: Theme.metroBlue
 
     Layout.fillWidth: true
     Layout.preferredHeight: 142
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
         anchors.fill: parent
@@ -24,6 +24,7 @@ Rectangle {
         Text {
             text: statusCard.title
             color: Theme.textMuted
+            font.family: Theme.metroFontFamily
             font.pixelSize: 11
             font.letterSpacing: 1.1
             font.capitalization: Font.AllUppercase
@@ -31,18 +32,19 @@ Rectangle {
         Text {
             text: statusCard.value
             color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.bold: true
             font.pixelSize: 24
         }
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 5
-            radius: 3
-            color: Theme.controlBackgroundAlt
+            radius: 0
+            color: Theme.metroSurfaceAlt
             Rectangle {
                 width: parent.width * Math.max(0, Math.min(100, statusCard.percent)) / 100
                 height: parent.height
-                radius: parent.radius
+                radius: 0
                 color: statusCard.accent
             }
         }
@@ -50,6 +52,7 @@ Rectangle {
             Layout.fillWidth: true
             text: statusCard.subtitle
             color: Theme.textMuted
+            font.family: Theme.metroFontFamily
             font.pixelSize: 12
             elide: Text.ElideRight
         }

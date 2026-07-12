@@ -29,7 +29,8 @@ ScrollView {
             Text {
                 Layout.fillWidth: true
                 text: I18n.t("Device Status")
-                color: Theme.accentHover
+                color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 28
                 font.bold: true
             }
@@ -37,13 +38,14 @@ ScrollView {
             Rectangle {
                 Layout.preferredWidth: 128
                 Layout.preferredHeight: 26
-                radius: 13
-                color: root.controller && root.controller.statusError ? "#7f1d1d" : "#166534"
+                radius: Theme.metroTileRadius
+                color: root.controller && root.controller.statusError ? Theme.dangerSurface : Theme.successSurface
 
                 Text {
                     anchors.centerIn: parent
                     text: root.controller && root.controller.statusError ? I18n.t("Требует внимания") : I18n.t("All systems OK")
                     color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.bold: true
                     font.pixelSize: 11
                 }
@@ -76,7 +78,7 @@ ScrollView {
                 value: root.controller ? String(root.controller.metric("node_load1", "—")) : "—"
                 subtitle: I18n.t("CPU load average")
                 percent: root.controller ? Math.min(100, Number(root.controller.metric("node_load1", 0)) * 35) : 0
-                accent: Theme.accent
+                accent: Theme.metroBlue
             }
 
             MajesticStatusCard {
@@ -84,7 +86,7 @@ ScrollView {
                 value: root.controller ? root.controller.ramPercent() + "%" : "—"
                 subtitle: root.controller ? root.controller.ramText() : ""
                 percent: root.controller ? root.controller.ramPercent() : 0
-                accent: Theme.accent
+                accent: Theme.metroBlue
             }
 
             MajesticStatusCard {
@@ -92,7 +94,7 @@ ScrollView {
                 value: root.controller ? root.controller.tempText() : "—"
                 subtitle: "SoC"
                 percent: root.controller ? Math.min(100, Number(root.controller.metric("node_hwmon_temp_celsius", 0)) / 90 * 100) : 0
-                accent: "#f97316"
+                accent: Theme.metroOrange
             }
 
             MajesticStatusCard {
@@ -100,8 +102,14 @@ ScrollView {
                 value: root.controller ? root.controller.uptimeText() : "—"
                 subtitle: "Majestic / node metrics"
                 percent: 100
-                accent: Theme.success
+                accent: Theme.metroGreen
             }
+        }
+
+        OpenIpcSafeActionsPanel {
+            rows: root.controller ? root.controller.safeActionRows() : []
+            title: I18n.t("Safe capabilities / actions")
+            description: I18n.t("Карта доступных действий Control Center с текущими safety-gates и причинами блокировки.")
         }
 
         GridLayout {
@@ -114,12 +122,15 @@ ScrollView {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 232
-                color: Theme.cardBackground
-                border.color: Theme.cardBorder
-                radius: Theme.radiusLg
+                Layout.minimumHeight: 232
+                Layout.preferredHeight: Math.max(Layout.minimumHeight, streamsContent.implicitHeight + 32)
+                color: Theme.metroSurface
+                border.color: Theme.metroStroke
+                radius: Theme.metroTileRadius
 
                 ColumnLayout {
+                    id: streamsContent
+
                     anchors.fill: parent
                     anchors.margins: 16
                     spacing: 10
@@ -127,6 +138,7 @@ ScrollView {
                     Text {
                         text: I18n.t("Streams")
                         color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
                         font.bold: true
                         font.pixelSize: 18
                     }
@@ -145,8 +157,8 @@ ScrollView {
                                 Rectangle {
                                     Layout.preferredWidth: 56
                                     Layout.preferredHeight: 24
-                                    radius: 12
-                                    color: Theme.accent
+                                    radius: Theme.metroTileRadius
+                                    color: Theme.metroBlue
 
                                     Text {
                                         anchors.centerIn: parent
@@ -168,7 +180,7 @@ ScrollView {
                                     visible: streamRow.modelData.codec.length > 0
                                     Layout.preferredWidth: 56
                                     Layout.preferredHeight: 22
-                                    radius: 11
+                                    radius: Theme.metroTileRadius
                                     color: "#f8fafc"
 
                                     Text {
@@ -200,7 +212,7 @@ ScrollView {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 1
-                        color: Theme.panelBorder
+                        color: Theme.metroStroke
                     }
 
                     Text {
@@ -217,12 +229,15 @@ ScrollView {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 232
-                color: Theme.cardBackground
-                border.color: Theme.cardBorder
-                radius: Theme.radiusLg
+                Layout.minimumHeight: 232
+                Layout.preferredHeight: Math.max(Layout.minimumHeight, capabilitiesContent.implicitHeight + 32)
+                color: Theme.metroSurface
+                border.color: Theme.metroStroke
+                radius: Theme.metroTileRadius
 
                 ColumnLayout {
+                    id: capabilitiesContent
+
                     anchors.fill: parent
                     anchors.margins: 16
                     spacing: 10
@@ -230,6 +245,7 @@ ScrollView {
                     Text {
                         text: I18n.t("Возможности этой камеры")
                         color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
                         font.bold: true
                         font.pixelSize: 18
                     }
@@ -254,7 +270,7 @@ ScrollView {
                                     Layout.preferredWidth: 9
                                     Layout.preferredHeight: 9
                                     radius: 5
-                                    color: capabilityRow.modelData.value ? Theme.success : Theme.textFaint
+                                    color: capabilityRow.modelData.value ? Theme.metroGreen : Theme.textFaint
                                 }
 
                                 Text {
@@ -275,7 +291,7 @@ ScrollView {
 
                     Text {
                         text: root.controller ? root.controller.cameraHost + ":" + root.controller.cameraPort : ""
-                        color: Theme.accentHover
+                        color: Theme.metroBlue
                         font.family: "Consolas"
                         font.pixelSize: 12
                     }
@@ -284,18 +300,22 @@ ScrollView {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 244
-                color: Theme.cardBackground
-                border.color: Theme.cardBorder
-                radius: Theme.radiusLg
+                Layout.minimumHeight: 244
+                Layout.preferredHeight: Math.max(Layout.minimumHeight, mechanicsContent.implicitHeight + 28)
+                color: Theme.metroSurface
+                border.color: Theme.metroStroke
+                radius: Theme.metroTileRadius
 
                 ColumnLayout {
+                    id: mechanicsContent
+
                     anchors.fill: parent
                     anchors.margins: 14
 
                     Text {
                         text: I18n.t("День / ночь и механика")
                         color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
                         font.bold: true
                         font.pixelSize: 15
                     }

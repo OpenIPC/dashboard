@@ -1,4 +1,4 @@
-﻿import QtQuick
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
@@ -7,12 +7,21 @@ import OpenIPC
 Window {
     id: root
     title: I18n.t("Настройки")
-    width: 680
-    height: 600
+    width: 760
+    height: 680
+    minimumWidth: 560
+    minimumHeight: 480
     visible: false
     color: Theme.appBackground
     flags: Qt.Window | Qt.FramelessWindowHint
     modality: Qt.ApplicationModal
+    readonly property bool contentLayoutReady: mainLayout.width > 0
+                                               && mainLayout.height > 0
+                                               && contentPanel.width > 0
+                                               && contentPanel.height > 0
+                                               && settingsStack.width > 0
+                                               && settingsStack.height > 0
+                                               && settingsStack.count === tabLabels.length
 
     // Make it non-modal but behave like a standalone window
     function open() {
@@ -24,37 +33,20 @@ Window {
         hide()
     }
 
-    component StyledCheckBox: CheckBox {
-        id: checkBoxControl
+    Shortcut {
+        sequence: StandardKey.Cancel
+        onActivated: root.close()
+    }
 
-        hoverEnabled: false
-        background: Item {}
-        indicator: Rectangle {
-            implicitWidth: 18
-            implicitHeight: 18
-            x: checkBoxControl.leftPadding
-            y: checkBoxControl.height / 2 - height / 2
-            radius: Theme.radiusXs
-            color: Theme.topBarBackground
-            border.color: checkBoxControl.checked ? Theme.accent : Theme.textFaint
-            
-            Rectangle {
-                width: 10
-                height: 10
-                anchors.centerIn: parent
-                radius: 2
-                color: Theme.accent
-                visible: checkBoxControl.checked
-            }
+    Shortcut {
+        sequence: StandardKey.Save
+        onActivated: {
+            root.applyCurrentSettings()
+            root.close()
         }
-        contentItem: Text {
-            text: checkBoxControl.text
-            font: checkBoxControl.font
-            opacity: checkBoxControl.enabled ? 1.0 : 0.5
-            color: Theme.textPrimary
-            verticalAlignment: Text.AlignVCenter
-            leftPadding: checkBoxControl.indicator.width + checkBoxControl.spacing
-        }
+    }
+
+    component StyledCheckBox: MetroCheckBox {
     }
 
     component StyledSpinBox: SpinBox {
@@ -62,6 +54,7 @@ Window {
         editable: true
         implicitHeight: 32
         implicitWidth: 120
+        focusPolicy: Qt.StrongFocus
 
         leftPadding: 30
         rightPadding: 30
@@ -144,7 +137,7 @@ Window {
     property bool playerMirror: false
 
     // Evidence settings (analytics-driven)
-    property bool evidenceEnabled: false
+    property bool evidenceEnabled: true
     property bool evidenceSnapshotsEnabled: true
     property bool evidenceClipsEnabled: true
     property string evidenceSnapshotsPath: ""
@@ -590,49 +583,40 @@ Window {
                 Layout.fillWidth: true
             }
             
-            Button {
-                id: minimizeSettingsButton
+            MetroWindowButton {
+                kind: "minimize"
 
-                text: "—"
-                flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
-                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: minimizeSettingsButton.down ? "#444" : (minimizeSettingsButton.hovered ? "#3e3e40" : "transparent") }
             }
             
-            Button {
-                id: maximizeSettingsButton
+            MetroWindowButton {
+                kind: "maximize"
+                maximized: root.visibility === Window.Maximized
 
-                text: "□"
-                flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: {
                     if (root.visibility === Window.Maximized) root.showNormal()
                     else root.showMaximized()
                 }
-                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: maximizeSettingsButton.down ? "#444" : (maximizeSettingsButton.hovered ? "#3e3e40" : "transparent") }
             }
 
-            Button {
-                id: closeSettingsButton
+            MetroWindowButton {
+                kind: "close"
 
-                text: "✕"
-                flat: true
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.close()
-                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: closeSettingsButton.down ? "#c42b1c" : (closeSettingsButton.hovered ? "#e81123" : "transparent") }
             }
         }
     }
 
     // Main Content
     ColumnLayout {
+        id: mainLayout
+
         anchors.top: titleBar.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -658,14 +642,18 @@ Window {
                         id: tabButton
 
                         text: modelData
+                        focusPolicy: Qt.StrongFocus
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.preferredHeight: 35
-                        Layout.preferredWidth: 100
                         
                         background: Rectangle {
-                            color: bar.currentIndex === index ? "#2d3442" : "transparent"
+                            color: bar.currentIndex === index ? Theme.metroTile : "transparent"
                             radius: Theme.radiusSm
-                            border.width: 1
-                            border.color: bar.currentIndex === index ? Theme.accent : Theme.textFaint
+                            border.width: tabButton.visualFocus ? 2 : 1
+                            border.color: tabButton.visualFocus || bar.currentIndex === index
+                                          ? Theme.accent
+                                          : Theme.textFaint
                         }
                         
                         contentItem: Text {
@@ -674,12 +662,12 @@ Window {
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             font.bold: true
+                            elide: Text.ElideRight
                         }
                         
                         onClicked: bar.currentIndex = index
                     }
                 }
-                Item { Layout.fillWidth: true }
             }
         }
         
@@ -695,11 +683,15 @@ Window {
         
         // Content
         Rectangle {
+            id: contentPanel
+
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: "transparent"
             
             StackLayout {
+                id: settingsStack
+
                 anchors.fill: parent
                 // margins: 0 to allow scrollbar to hit the edge
                 currentIndex: bar.currentIndex
@@ -708,6 +700,8 @@ Window {
                 // General Tab
                 // -------------------------------------------------
                 ScrollView {
+                    id: generalScroll
+
                     // Padding for content, but scrollbar stays at right edge
                     leftPadding: 20
                     rightPadding: 20
@@ -725,12 +719,12 @@ Window {
 
                     ColumnLayout {
                         id: generalCol
-                        width: parent.width - 40 // Adjust for padding
+                        width: generalScroll.availableWidth
                         spacing: 14
 
                         Text {
                             text: I18n.t("Приложение")
-                            color: "#ffffff"
+                            color: Theme.textPrimary
                             font.pixelSize: 16
                             font.bold: true
                         }
@@ -745,7 +739,7 @@ Window {
 
                             Text {
                                 text: I18n.t("Язык")
-                                color: "#a0aec0"
+                                color: Theme.textMuted
                                 font.pixelSize: 14
                                 Layout.preferredWidth: generalGrid.labelWidth
                             }
@@ -767,7 +761,7 @@ Window {
                                         language = selectedLanguage
                                     }
                                 }
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
+                                background: Rectangle { color: Theme.metroSurfaceAlt; radius: 4; border.color: Theme.metroStroke }
                                 contentItem: Text {
                                     text: langCombo.displayText
                                     color: "white"
@@ -782,7 +776,7 @@ Window {
                                     width: 12; height: 8
                                     onPaint: {
                                         var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
+                                        ctx.fillStyle = Theme.textMuted;
                                         ctx.beginPath();
                                         ctx.moveTo(0, 0);
                                         ctx.lineTo(width, 0);
@@ -795,7 +789,7 @@ Window {
 
                             Text {
                                 text: I18n.t("Папка записей")
-                                color: "#a0aec0"
+                                color: Theme.textMuted
                                 font.pixelSize: 14
                                 Layout.preferredWidth: generalGrid.labelWidth
                             }
@@ -808,12 +802,20 @@ Window {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 30
                                     color: "white"
-                                    background: Rectangle { color: "#1f2733"; border.color: "#4a5568"; radius: 4 }
+                                    background: Rectangle { color: Theme.metroSurfaceAlt; border.color: Theme.metroStroke; radius: 4 }
                                 }
                                 Button {
+                                    id: recordingsFolderButton
+
                                     Layout.preferredHeight: 30
                                     Layout.preferredWidth: 34
-                                    background: Rectangle { color: "#4a5568"; radius: 4 }
+                                    focusPolicy: Qt.StrongFocus
+                                    background: Rectangle {
+                                        color: recordingsFolderButton.hovered ? Theme.metroTileHover : Theme.metroStroke
+                                        border.color: recordingsFolderButton.visualFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                                        border.width: recordingsFolderButton.visualFocus ? 2 : 1
+                                        radius: Theme.metroTileRadius
+                                    }
                                     contentItem: Text {
                                         text: "folder_open"
                                         font.family: iconFontFamily
@@ -822,13 +824,16 @@ Window {
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
+                                    ToolTip.visible: hovered || visualFocus
+                                    ToolTip.text: I18n.t("Выберите папку")
+                                    ToolTip.delay: 450
                                     onClicked: recordingsDialog.open()
                                 }
                             }
 
                             Text {
                                 text: I18n.t("Папка снимков")
-                                color: "#a0aec0"
+                                color: Theme.textMuted
                                 font.pixelSize: 14
                                 Layout.preferredWidth: generalGrid.labelWidth
                             }
@@ -841,12 +846,20 @@ Window {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 30
                                     color: "white"
-                                    background: Rectangle { color: "#1f2733"; border.color: "#4a5568"; radius: 4 }
+                                    background: Rectangle { color: Theme.metroSurfaceAlt; border.color: Theme.metroStroke; radius: 4 }
                                 }
                                 Button {
+                                    id: screenshotsFolderButton
+
                                     Layout.preferredHeight: 30
                                     Layout.preferredWidth: 34
-                                    background: Rectangle { color: "#4a5568"; radius: 4 }
+                                    focusPolicy: Qt.StrongFocus
+                                    background: Rectangle {
+                                        color: screenshotsFolderButton.hovered ? Theme.metroTileHover : Theme.metroStroke
+                                        border.color: screenshotsFolderButton.visualFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                                        border.width: screenshotsFolderButton.visualFocus ? 2 : 1
+                                        radius: Theme.metroTileRadius
+                                    }
                                     contentItem: Text {
                                         text: "folder_open"
                                         font.family: iconFontFamily
@@ -855,13 +868,16 @@ Window {
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
+                                    ToolTip.visible: hovered || visualFocus
+                                    ToolTip.text: I18n.t("Выберите папку")
+                                    ToolTip.delay: 450
                                     onClicked: screenshotsDialog.open()
                                 }
                             }
 
                             Text {
                                 text: I18n.t("Длительность записи (мин)")
-                                color: "#a0aec0"
+                                color: Theme.textMuted
                                 font.pixelSize: 14
                                 Layout.preferredWidth: generalGrid.labelWidth
                             }
@@ -888,8 +904,8 @@ Window {
                                         text: segmentSpin.textFromValue(segmentSpin.value, segmentSpin.locale)
                                         font: segmentSpin.font
                                         color: "white"
-                                        selectionColor: "#2196F3"
-                                        selectedTextColor: "#ffffff"
+                                        selectionColor: Theme.metroBlue
+                                        selectedTextColor: Theme.textPrimary
                                         horizontalAlignment: Qt.AlignHCenter
                                         verticalAlignment: Qt.AlignVCenter
                                         readOnly: !segmentSpin.editable
@@ -898,8 +914,8 @@ Window {
                                     }
 
                                     background: Rectangle { 
-                                        color: "#1f2733"
-                                        border.color: "#4a5568"
+                                        color: Theme.metroSurfaceAlt
+                                        border.color: Theme.metroStroke
                                         radius: 4 
                                     }
                                     
@@ -907,21 +923,21 @@ Window {
                                         x: segmentSpin.width - width
                                         height: segmentSpin.height
                                         width: 30
-                                        color: segmentSpin.up.pressed ? "#3e3e40" : "transparent"
-                                        Text { text: "+"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
+                                        color: segmentSpin.up.pressed ? Theme.metroTileHover : "transparent"
+                                        Text { text: "+"; color: Theme.textMuted; font.pixelSize: 18; anchors.centerIn: parent }
                                     }
                                     down.indicator: Rectangle {
                                         x: 0
                                         height: segmentSpin.height
                                         width: 30
-                                        color: segmentSpin.down.pressed ? "#3e3e40" : "transparent"
-                                        Text { text: "-"; color: "#a0aec0"; font.pixelSize: 18; anchors.centerIn: parent }
+                                        color: segmentSpin.down.pressed ? Theme.metroTileHover : "transparent"
+                                        Text { text: "-"; color: Theme.textMuted; font.pixelSize: 18; anchors.centerIn: parent }
                                     }
                                 }
                                 
                                 Text {
                                     text: I18n.t("5-60 мин")
-                                    color: "#666"
+                                    color: Theme.textFaint
                                     font.pixelSize: 12
                                 }
                             }
@@ -930,7 +946,7 @@ Window {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 1
-                            color: "#3b4657"
+                            color: Theme.metroStroke
                         }
 
                         GridLayout {
@@ -943,7 +959,7 @@ Window {
 
                             Text {
                                 text: I18n.t("Уведомления")
-                                color: "#a0aec0"
+                                color: Theme.textMuted
                                 font.pixelSize: 14
                                 Layout.alignment: Qt.AlignVCenter
                                 Layout.preferredWidth: notificationsGrid.labelWidth
@@ -964,14 +980,14 @@ Window {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 1
-                            color: "#3b4657"
+                            color: Theme.metroStroke
                         }
 
                         ColumnLayout {
                             spacing: 12
                             Text {
                                 text: I18n.t("Управление конфигурацией")
-                                color: "#ffffff"
+                                color: Theme.textPrimary
                                 font.pixelSize: 16
                                 font.bold: true
                             }
@@ -980,21 +996,53 @@ Window {
                                 Button {
                                     id: exportConfigButton
                                     text: I18n.t("Экспорт конфигурации")
+                                    focusPolicy: Qt.StrongFocus
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     Layout.preferredHeight: 32
-                                    Layout.preferredWidth: 190
                                     enabled: SystemController.userManager.canExport()
-                                    background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                    contentItem: Text { text: exportConfigButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    background: Rectangle {
+                                        color: exportConfigButton.enabled ? Theme.metroBlue : Theme.metroTileDisabled
+                                        border.color: exportConfigButton.visualFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                                        border.width: exportConfigButton.visualFocus ? 2 : 1
+                                        radius: Theme.metroTileRadius
+                                    }
+                                    contentItem: Text {
+                                        text: exportConfigButton.text
+                                        color: exportConfigButton.enabled ? Theme.textPrimary : Theme.textFaint
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideRight
+                                    }
+                                    ToolTip.visible: hovered && !enabled
+                                    ToolTip.text: I18n.t("Недостаточно прав")
+                                    ToolTip.delay: 450
                                     onClicked: exportConfigDialog.open()
                                 }
                                 Button {
                                     id: importConfigButton
                                     text: I18n.t("Импорт конфигурации")
+                                    focusPolicy: Qt.StrongFocus
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
                                     Layout.preferredHeight: 32
-                                    Layout.preferredWidth: 190
                                     enabled: SystemController.userManager.canExport()
-                                    background: Rectangle { color: "#e53e3e"; radius: 6 }
-                                    contentItem: Text { text: importConfigButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    background: Rectangle {
+                                        color: importConfigButton.enabled ? Theme.metroRed : Theme.metroTileDisabled
+                                        border.color: importConfigButton.visualFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                                        border.width: importConfigButton.visualFocus ? 2 : 1
+                                        radius: Theme.metroTileRadius
+                                    }
+                                    contentItem: Text {
+                                        text: importConfigButton.text
+                                        color: importConfigButton.enabled ? Theme.textPrimary : Theme.textFaint
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideRight
+                                    }
+                                    ToolTip.visible: hovered && !enabled
+                                    ToolTip.text: I18n.t("Недостаточно прав")
+                                    ToolTip.delay: 450
                                     onClicked: importConfigDialog.open()
                                 }
                             }
@@ -1003,178 +1051,12 @@ Window {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 1
-                            color: "#3b4657"
+                            color: Theme.metroStroke
                         }
 
-                        ColumnLayout {
-                            spacing: 12
-                            Text {
-                                text: I18n.t("Обновления")
-                                color: "#ffffff"
-                                font.pixelSize: 16
-                                font.bold: true
-                            }
-
-                            GridLayout {
-                                id: updatesGrid
-                                columns: 2
-                                columnSpacing: 14
-                                rowSpacing: 10
-                                Layout.fillWidth: true
-                                property int labelWidth: 160
-
-                                Text { text: I18n.t("Статус"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                Text { text: updateStatusText(); color: "#e2e8f0"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-
-                                Text { text: I18n.t("Текущая версия"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                Text {
-                                    text: SystemController.appUpdateChecker.currentVersion
-                                    color: "#e2e8f0"
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    visible: SystemController.appUpdateChecker.hasUpdate
-                                    text: I18n.t("Новая версия")
-                                    color: "#a0aec0"
-                                    Layout.preferredWidth: updatesGrid.labelWidth
-                                    Layout.preferredHeight: visible ? implicitHeight : 0
-                                }
-                                RowLayout {
-                                    visible: SystemController.appUpdateChecker.hasUpdate
-                                    spacing: 8
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? implicitHeight : 0
-
-                                    Text {
-                                        text: SystemController.appUpdateChecker.latestVersion
-                                        color: Theme.success
-                                        font.bold: true
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Rectangle {
-                                        visible: SystemController.appUpdateChecker.latestPrerelease
-                                        Layout.preferredWidth: prereleaseSettingsLabel.implicitWidth + 16
-                                        Layout.preferredHeight: 22
-                                        radius: 11
-                                        color: Theme.warning
-
-                                        Text {
-                                            id: prereleaseSettingsLabel
-                                            anchors.centerIn: parent
-                                            text: I18n.t("Предварительный релиз")
-                                            color: "black"
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    visible: SystemController.appUpdateChecker.hasUpdate
-                                    text: I18n.t("Файл обновления")
-                                    color: "#a0aec0"
-                                    Layout.preferredWidth: updatesGrid.labelWidth
-                                    Layout.preferredHeight: visible ? implicitHeight : 0
-                                }
-                                Text {
-                                    visible: SystemController.appUpdateChecker.hasUpdate
-                                    text: SystemController.appUpdateChecker.assetName !== ""
-                                          ? SystemController.appUpdateChecker.assetName
-                                          : I18n.t("Для этой платформы нет подходящего файла обновления.")
-                                    color: SystemController.appUpdateChecker.downloadAvailable ? "#e2e8f0" : Theme.warning
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? implicitHeight : 0
-                                }
-
-                                Text {
-                                    visible: SystemController.appUpdateChecker.downloading || SystemController.appUpdateChecker.downloadedFilePath !== "" || SystemController.appUpdateChecker.installing
-                                    text: I18n.t("Прогресс")
-                                    color: "#a0aec0"
-                                    Layout.preferredWidth: updatesGrid.labelWidth
-                                    Layout.preferredHeight: visible ? implicitHeight : 0
-                                }
-                                ProgressBar {
-                                    visible: SystemController.appUpdateChecker.downloading || SystemController.appUpdateChecker.downloadedFilePath !== "" || SystemController.appUpdateChecker.installing
-                                    from: 0
-                                    to: 100
-                                    value: SystemController.appUpdateChecker.downloadProgress
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? 20 : 0
-                                }
-
-                                Text { text: I18n.t("Действие"); color: "#a0aec0"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                RowLayout {
-                                    spacing: 8
-                                    Layout.fillWidth: true
-
-                                    Button {
-                                        id: checkUpdatesButton
-                                        text: SystemController.appUpdateChecker.checking
-                                              ? I18n.t("Проверка...")
-                                              : I18n.t("Проверить обновления")
-                                        enabled: !SystemController.appUpdateChecker.checking
-                                                 && !SystemController.appUpdateChecker.downloading
-                                                 && !SystemController.appUpdateChecker.installing
-                                        Layout.preferredHeight: 34
-                                        Layout.preferredWidth: 190
-                                        background: Rectangle { color: "#3b82f6"; radius: 6 }
-                                        contentItem: Text { text: checkUpdatesButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                        onClicked: startUpdateCheck()
-                                    }
-
-                                    Button {
-                                        id: openReleaseButton
-                                        visible: SystemController.appUpdateChecker.hasUpdate
-                                        text: I18n.t("Открыть релиз")
-                                        Layout.preferredHeight: 34
-                                        Layout.preferredWidth: 140
-                                        enabled: !SystemController.appUpdateChecker.downloading
-                                                 && !SystemController.appUpdateChecker.installing
-                                        background: Rectangle { color: Theme.success; radius: 6 }
-                                        contentItem: Text { text: openReleaseButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                        onClicked: SystemController.appUpdateChecker.openReleasePage()
-                                    }
-
-                                    Button {
-                                        id: downloadUpdateButton
-                                        visible: SystemController.appUpdateChecker.hasUpdate
-                                        text: SystemController.appUpdateChecker.installing
-                                              ? I18n.t("Запуск установки...")
-                                              : SystemController.appUpdateChecker.downloadedFilePath !== ""
-                                                ? I18n.t("Установить и перезапустить")
-                                                : SystemController.appUpdateChecker.downloading
-                                                  ? I18n.t("Отмена")
-                                                  : I18n.t("Скачать и установить")
-                                        Layout.preferredHeight: 34
-                                        Layout.preferredWidth: 210
-                                        enabled: !SystemController.appUpdateChecker.installing
-                                                 && (SystemController.appUpdateChecker.downloadAvailable
-                                                     || SystemController.appUpdateChecker.downloadedFilePath !== ""
-                                                     || SystemController.appUpdateChecker.downloading)
-                                        background: Rectangle { color: SystemController.appUpdateChecker.downloading ? "#475569" : Theme.accent; radius: 6 }
-                                        contentItem: Text { text: downloadUpdateButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                        onClicked: {
-                                            if (SystemController.appUpdateChecker.downloading) {
-                                                root.updateInstallAfterDownload = false
-                                                SystemController.appUpdateChecker.cancelDownload()
-                                            } else if (SystemController.appUpdateChecker.downloadedFilePath !== "") {
-                                                SystemController.appUpdateChecker.installDownloadedUpdate()
-                                            } else {
-                                                root.updateInstallAfterDownload = true
-                                                SystemController.appUpdateChecker.downloadUpdate()
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Error message
-                                Text { text: updateStatus === "error" ? I18n.t("Ошибка") : ""; color: updateStatus === "error" ? "#e53e3e" : "transparent"; Layout.preferredWidth: updatesGrid.labelWidth }
-                                Text { text: updateStatus === "error" ? updateError : ""; color: "#e53e3e"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                            }
+                        SettingsUpdatePanel {
+                            settings: root
+                            updateChecker: SystemController.appUpdateChecker
                         }
                     }
                 }
@@ -1182,514 +1064,17 @@ Window {
                 // -------------------------------------------------
                 // Streaming Tab
                 // -------------------------------------------------
-                Item {
-                    ScrollView {
-                        anchors.fill: parent
-                        // Padding for content
-                        leftPadding: 20
-                        rightPadding: 20
-                        topPadding: 16
-                        bottomPadding: 16
-                        
-                        contentWidth: availableWidth
-                        contentHeight: streamingCol.height
-                        clip: true
-                        ScrollBar.vertical: StyledScrollBar {
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                        }
-
-                        ColumnLayout {
-                            id: streamingCol
-                            width: parent.width - 40 // Adjust for padding
-                            spacing: 14
-                            // anchors.top: parent.top
-                            // anchors.left: parent.left
-                            // anchors.leftMargin: 4
-
-                        Text {
-                            text: I18n.t("Трансляция (GStreamer)")
-                            color: "#ffffff"
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-
-                        GridLayout {
-                            id: streamingGrid
-                            columns: 2
-                            columnSpacing: 14
-                            rowSpacing: 10
-                            Layout.fillWidth: true
-                            property int labelWidth: 180
-
-                            Text {
-                                text: I18n.t("Режим буферизации (Latency)")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            StyledComboBox {
-                                id: bufferModeCombo
-                                model: [I18n.t("Стандартная (Stable / 2s)"), I18n.t("Минимальная (Low Latency / 200ms)"), I18n.t("Ультра-низкая (Realtime / 0ms)")]
-                                currentIndex: playerBufferMode
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: bufferModeCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onUserSelected: {
-                                    playerBufferMode = index
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Протокол RTSP")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            StyledComboBox {
-                                id: rtspTransportCombo
-                                model: ["TCP (Interleaved)", "UDP (Unicast)", "UDP (Multicast)", "HTTP (Tunneling)"]
-                                currentIndex: playerRtspTransport === "tcp" ? 0 : (playerRtspTransport === "udp" ? 1 : (playerRtspTransport === "udp_mcast" ? 2 : 3))
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: rtspTransportCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onUserSelected: {
-                                    if (index === 0) playerRtspTransport = "tcp"
-                                    else if (index === 1) playerRtspTransport = "udp"
-                                    else if (index === 2) playerRtspTransport = "udp_mcast"
-                                    else if (index === 3) playerRtspTransport = "http"
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Аппаратное декодирование")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            StyledComboBox {
-                                id: hwDecodingCombo
-                                model: [I18n.t("Авто"), "D3D11", "DXVA2", "Off (None)"]
-                                currentIndex: {
-                                    if (playerHwDecoding === "d3d11") return 1
-                                    if (playerHwDecoding === "dxva2") return 2
-                                    if (playerHwDecoding === "none") return 3
-                                    return 0 // auto
-                                }
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: hwDecodingCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onUserSelected: {
-                                    if (index === 1) playerHwDecoding = "d3d11"
-                                    else if (index === 2) playerHwDecoding = "dxva2"
-                                    else if (index === 3) playerHwDecoding = "none"
-                                    else playerHwDecoding = "auto"
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Предпочтительный поток")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            StyledComboBox {
-                                id: streamPrefCombo
-                                model: [I18n.t("Авто"), "HD", "SD"]
-                                currentIndex: preferredStream === "hd" ? 1 : preferredStream === "sd" ? 2 : 0
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: streamPrefCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onUserSelected: {
-                                    if (index === 1) preferredStream = "hd";
-                                    else if (index === 2) preferredStream = "sd";
-                                    else preferredStream = "auto";
-                                }
-                            }
-                            
-                            Text {
-                                text: I18n.t("Отображать статистику")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            RowLayout {
-                                spacing: 8
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                StyledCheckBox {
-                                    checked: showStatsOverlay
-                                    onToggled: showStatsOverlay = checked
-                                    text: I18n.t("Показывать codec/res/bitrate/fps")
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Умный бюджет превью")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            RowLayout {
-                                spacing: 8
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                StyledCheckBox {
-                                    checked: smartStreamBudget
-                                    onToggled: smartStreamBudget = checked
-                                    text: I18n.t("Ограничивать одновременные live-preview")
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
-                            Text {
-                                text: I18n.t("Максимум активных превью")
-                                color: smartStreamBudget ? "#a0aec0" : "#64748b"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            StyledSpinBox {
-                                from: 1
-                                to: 64
-                                value: maxPreviewStreams
-                                enabled: smartStreamBudget
-                                Layout.preferredWidth: 120
-                                onValueModified: maxPreviewStreams = value
-                            }
-
-                            Text {
-                                text: I18n.t("Fullscreen, запись и аналитика не ограничиваются.")
-                                color: "#7f8ea3"
-                                font.pixelSize: 12
-                                wrapMode: Text.WordWrap
-                                Layout.columnSpan: 2
-                                Layout.fillWidth: true
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: "#3b4657"
-                        }
-/*
-                            Text {
-                                text: I18n.t("Режим кадра")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: streamingGrid.labelWidth
-                            }
-                            ComboBox {
-                                id: fillModeCombo
-                                model: [I18n.t("Обрезать по краям"), I18n.t("Сохранять пропорции"), I18n.t("Растянуть")]
-                                currentIndex: playerFillMode === 1 ? 1 : (playerFillMode === 0 ? 2 : 0)
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                contentItem: Text {
-                                    text: fillModeCombo.displayText
-                                    color: "white"
-                                    verticalAlignment: Text.AlignVCenter
-                                    leftPadding: 8
-                                    rightPadding: 24
-                                }
-                                indicator: Canvas {
-                                    anchors.right: parent.right
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    anchors.margins: 8
-                                    width: 12; height: 8
-                                    onPaint: {
-                                        var ctx = getContext("2d");
-                                        ctx.fillStyle = "#a0aec0";
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, 0);
-                                        ctx.lineTo(width, 0);
-                                        ctx.lineTo(width/2, height);
-                                        ctx.closePath();
-                                        ctx.fill();
-                                    }
-                                }
-                                onActivated: {
-                                    if (index === 1) playerFillMode = 1.0; // fit/keep aspect
-                                    else if (index === 2) playerFillMode = 0.0; // stretch
-                                    else playerFillMode = -1.0; // crop/fill
-                                }
-                            }
-*/
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: "#3b4657"
-                        }
-
-                        Text {
-                            text: I18n.t("Настройки изображения")
-                            color: "#ffffff"
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-
-                        GridLayout {
-                            id: adjustmentsGrid
-                            columns: 2
-                            columnSpacing: 14
-                            rowSpacing: 10
-                            Layout.fillWidth: true
-                            property int labelWidth: 180
-                            
-                            // Transform
-                            Text {
-                                text: I18n.t("Поворот / Зеркало")
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            RowLayout {
-                                spacing: 10
-                                Layout.fillWidth: true
-                                StyledComboBox {
-                                    id: imageTransformCombo
-                                    model: ["0°", "90°", "180°", "270°"]
-                                    currentIndex: {
-                                        if (playerOrientation === 90) return 1
-                                        if (playerOrientation === 180) return 2
-                                        if (playerOrientation === 270) return 3
-                                        return 0
-                                    }
-                                    onUserSelected: {
-                                        if (index === 1) playerOrientation = 90
-                                        else if (index === 2) playerOrientation = 180
-                                        else if (index === 3) playerOrientation = 270
-                                        else playerOrientation = 0
-                                    }
-                                    Layout.preferredWidth: 100
-                                    Layout.preferredHeight: 32
-                                    background: Rectangle { color: "#1f2733"; radius: 4; border.color: "#4a5568" }
-                                    contentItem: Text {
-                                        text: imageTransformCombo.displayText
-                                        color: "white"
-                                        verticalAlignment: Text.AlignVCenter
-                                        leftPadding: 8
-                                    }
-                                }
-                                StyledCheckBox {
-                                    text: I18n.t("Зеркально")
-                                    checked: playerMirror
-                                    onToggled: playerMirror = checked
-                                }
-                            }
-
-                            // Brightness
-                            Text {
-                                text: I18n.t("Яркость") + " (" + playerBrightness.toFixed(2) + ")"
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            Slider {
-                                from: 0.0; to: 2.0
-                                value: playerBrightness
-                                Layout.fillWidth: true
-                                onMoved: playerBrightness = value
-                                onPressedChanged: if (!pressed) applyCurrentSettings()
-                            }
-                            
-                            // Contrast
-                            Text {
-                                text: I18n.t("Контраст") + " (" + playerContrast.toFixed(2) + ")"
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            Slider {
-                                from: 0.0; to: 2.0
-                                value: playerContrast
-                                Layout.fillWidth: true
-                                onMoved: playerContrast = value
-                                onPressedChanged: if (!pressed) applyCurrentSettings()
-                            }
-                            
-                            // Saturation
-                            Text {
-                                text: I18n.t("Насыщенность") + " (" + playerSaturation.toFixed(2) + ")"
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            Slider {
-                                from: 0.0; to: 2.0
-                                value: playerSaturation
-                                Layout.fillWidth: true
-                                onMoved: playerSaturation = value
-                                onPressedChanged: if (!pressed) applyCurrentSettings()
-                            }
-                            
-                            // Gamma
-                            Text {
-                                text: I18n.t("Гамма") + " (" + playerGamma.toFixed(2) + ")"
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            Slider {
-                                from: 0.01; to: 3.0
-                                value: playerGamma
-                                Layout.fillWidth: true
-                                onMoved: playerGamma = value
-                                onPressedChanged: if (!pressed) applyCurrentSettings()
-                            }
-
-                            // Hue
-                            Text {
-                                text: I18n.t("Оттенок") + " (" + playerHue + ")"
-                                color: "#a0aec0"
-                                font.pixelSize: 14
-                                Layout.preferredWidth: adjustmentsGrid.labelWidth
-                            }
-                            Slider {
-                                from: -180; to: 180
-                                stepSize: 1
-                                value: playerHue
-                                Layout.fillWidth: true
-                                onMoved: playerHue = value
-                                onPressedChanged: if (!pressed) applyCurrentSettings()
-                            }
-
-                            // Reset Button
-                            Item { Layout.fillWidth: true; Layout.columnSpan: 2; Layout.preferredHeight: 10 }
-                            Button {
-                                id: resetImageSettingsButton
-                                text: I18n.t("Сбросить настройки изображения")
-                                Layout.columnSpan: 2
-                                Layout.alignment: Qt.AlignHCenter
-                                onClicked: {
-                                    playerBrightness = 1.0
-                                    playerContrast = 1.0
-                                    playerHue = 0
-                                    playerSaturation = 1.0
-                                    playerGamma = 1.0
-                                    playerOrientation = 0
-                                    playerMirror = false
-                                    applyCurrentSettings()
-                                }
-                                background: Rectangle { color: "#4a5568"; radius: 4 }
-                                contentItem: Text { text: resetImageSettingsButton.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 1
-                            color: "#3b4657"
-                        }
-
-                        Item { Layout.fillHeight: true }
-                    }
-                    }
+                SettingsStreamingPage {
+                    settings: root
                 }
-                
+
                 // -------------------------------------------------
                 // Analytics Tab
                 // -------------------------------------------------
                 Item {
                     ScrollView {
+                        id: analyticsScroll
+
                         anchors.fill: parent
                         leftPadding: 20
                         rightPadding: 20
@@ -1707,530 +1092,55 @@ Window {
 
                         ColumnLayout {
                             id: analyticsContent
-                            width: parent.width - 40
+                            width: analyticsScroll.availableWidth
                             spacing: 16
 
-                            Text {
-                                text: I18n.t("Производительность аналитики")
-                                color: "white"
-                                font.pixelSize: 18
-                                font.bold: true
+                            SettingsAnalyticsPerformancePanel {
+                                settings: root
                             }
 
-                            Text {
-                                Layout.fillWidth: true
-                                text: I18n.t("Ограничьте частоту обработки и количество параллельных задач, чтобы камеры не перегружали CPU/GPU.")
-                                color: "#94a3b8"
-                                font.pixelSize: 13
-                                wrapMode: Text.WordWrap
+                            SettingsEvidencePanel {
+                                settings: root
+                                iconFontFamily: root.iconFontFamily
+                                onSnapshotsFolderRequested: evidenceSnapshotsDialog.open()
+                                onClipsFolderRequested: evidenceClipsDialog.open()
                             }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 12
-
-                                    Text {
-                                        text: I18n.t("Пресет нагрузки")
-                                        color: "#cbd5e1"
-                                        Layout.preferredWidth: 220
-                                    }
-
-                                    Repeater {
-                                        model: ["eco", "balanced", "max"]
-
-                                        Button {
-                                            id: analyticsPresetButton
-                                            Layout.preferredWidth: 132
-                                            Layout.preferredHeight: 34
-                                            text: root.analyticsPresetLabel(modelData)
-                                            hoverEnabled: true
-                                            onClicked: root.applyAnalyticsPreset(modelData)
-
-                                            background: Rectangle {
-                                                color: analyticsPerformancePreset === modelData
-                                                       ? Theme.accent
-                                                       : (analyticsPresetButton.hovered ? Theme.cardHover : Theme.controlBackground)
-                                                radius: Theme.radiusSm
-                                                border.color: analyticsPerformancePreset === modelData ? Theme.accentHover : Theme.controlBorder
-                                            }
-
-                                            contentItem: Text {
-                                                text: analyticsPresetButton.text
-                                                color: Theme.textPrimary
-                                                font.pixelSize: 12
-                                                font.bold: analyticsPerformancePreset === modelData
-                                                horizontalAlignment: Text.AlignHCenter
-                                                verticalAlignment: Text.AlignVCenter
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    Layout.leftMargin: 232
-                                    text: I18n.t("Текущий режим: %1", [root.analyticsPresetLabel(analyticsPerformancePreset)])
-                                          + " · "
-                                          + root.analyticsPresetDescription(analyticsPerformancePreset)
-                                    color: "#94a3b8"
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 12
-
-                                    Text {
-                                        text: I18n.t("FPS аналитики")
-                                        color: "#cbd5e1"
-                                        Layout.preferredWidth: 220
-                                    }
-
-                                    StyledSpinBox {
-                                        from: 1
-                                        to: 15
-                                        value: analyticsTargetFps
-                                        Layout.preferredWidth: 110
-                                        onValueModified: {
-                                            analyticsPerformancePreset = "custom"
-                                            analyticsTargetFps = value
-                                            applyCurrentSettings()
-                                        }
-                                    }
-
-                                    Text {
-                                        text: I18n.t("%1 кадр/с", [analyticsTargetFps])
-                                        color: "#94a3b8"
-                                        Layout.preferredWidth: 90
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 12
-
-                                    Text {
-                                        text: I18n.t("Параллельные задачи")
-                                        color: "#cbd5e1"
-                                        Layout.preferredWidth: 220
-                                    }
-
-                                    StyledSpinBox {
-                                        from: 1
-                                        to: 8
-                                        value: analyticsMaxParallelJobs
-                                        Layout.preferredWidth: 110
-                                        onValueModified: {
-                                            analyticsPerformancePreset = "custom"
-                                            analyticsMaxParallelJobs = value
-                                            applyCurrentSettings()
-                                        }
-                                    }
-
-                                    Text {
-                                        text: I18n.t("до %1 задач", [analyticsMaxParallelJobs])
-                                        color: "#94a3b8"
-                                        Layout.preferredWidth: 120
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 1
-                                color: "#3b4657"
-                            }
-
-                            Text {
-                                text: I18n.t("События аналитики")
-                                color: "white"
-                                font.pixelSize: 18
-                                font.bold: true
-                            }
-
-                            StyledCheckBox {
-                                text: I18n.t("Включить события")
-                                checked: evidenceEnabled
-                                onToggled: { evidenceEnabled = checked; applyCurrentSettings() }
-                            }
-
-                            RowLayout {
-                                spacing: 12
-                                StyledCheckBox {
-                                    text: I18n.t("Снимки")
-                                    checked: evidenceSnapshotsEnabled
-                                    enabled: evidenceEnabled
-                                    onToggled: { evidenceSnapshotsEnabled = checked; applyCurrentSettings() }
-                                }
-                                StyledCheckBox {
-                                    text: I18n.t("Клипы")
-                                    checked: evidenceClipsEnabled
-                                    enabled: evidenceEnabled
-                                    onToggled: { evidenceClipsEnabled = checked; applyCurrentSettings() }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                Text { text: I18n.t("Папка снимков (детекции)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceSnapshotsPath
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Выберите папку")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle {
-                                        color: "#1f2733"
-                                        radius: 4
-                                        border.color: "#4a5568"
-                                        border.width: 1
-                                    }
-                                    onEditingFinished: { evidenceSnapshotsPath = text; applyCurrentSettings() }
-                                }
-                                Button {
-                                    Layout.preferredHeight: 30
-                                    Layout.preferredWidth: 34
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: I18n.t("Выберите папку")
-                                    background: Rectangle { color: "#4a5568"; radius: 4 }
-                                    contentItem: Text {
-                                        text: "folder_open"
-                                        font.family: iconFontFamily
-                                        font.pixelSize: 15
-                                        color: "white"
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    onClicked: evidenceSnapshotsDialog.open()
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
-                                Text { text: I18n.t("Папка клипов (детекции)"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                TextField {
-                                    Layout.fillWidth: true
-                                    text: evidenceClipsPath
-                                    color: "#f8fafc"
-                                    placeholderText: I18n.t("Выберите папку")
-                                    placeholderTextColor: "#94a3b8"
-                                    selectionColor: "#3b82f6"
-                                    selectedTextColor: "white"
-                                    background: Rectangle {
-                                        color: "#1f2733"
-                                        radius: 4
-                                        border.color: "#4a5568"
-                                        border.width: 1
-                                    }
-                                    onEditingFinished: { evidenceClipsPath = text; applyCurrentSettings() }
-                                }
-                                Button {
-                                    Layout.preferredHeight: 30
-                                    Layout.preferredWidth: 34
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: I18n.t("Выберите папку")
-                                    background: Rectangle { color: "#4a5568"; radius: 4 }
-                                    contentItem: Text {
-                                        text: "folder_open"
-                                        font.family: iconFontFamily
-                                        font.pixelSize: 15
-                                        color: "white"
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                    onClicked: evidenceClipsDialog.open()
-                                }
-                            }
-
-                            RowLayout {
-                                spacing: 12
-                                Text { text: I18n.t("До события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
-                                StyledSpinBox {
-                                    from: 0; to: 30
-                                    value: evidencePreSeconds
-                                    Layout.preferredWidth: 110
-                                    onValueModified: { evidencePreSeconds = value; applyCurrentSettings() }
-                                }
-                                Text { text: I18n.t("После события (сек)"); color: "#cbd5e1"; Layout.preferredWidth: 180 }
-                                StyledSpinBox {
-                                    from: 0; to: 30
-                                    value: evidencePostSeconds
-                                    Layout.preferredWidth: 110
-                                    onValueModified: { evidencePostSeconds = value; applyCurrentSettings() }
-                                }
-                            }
-
-                            RowLayout {
-                                spacing: 12
-                                Text { text: I18n.t("Минимальная уверенность"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                Slider {
-                                    id: evidenceMinConfidenceSlider
-                                    Layout.fillWidth: true
-                                    from: 0.1; to: 0.95
-                                    value: evidenceMinConfidence
-                                    onMoved: evidenceMinConfidence = value
-                                    onPressedChanged: if (!pressed) applyCurrentSettings()
-                                    background: Rectangle {
-                                        x: evidenceMinConfidenceSlider.leftPadding
-                                        y: evidenceMinConfidenceSlider.topPadding + evidenceMinConfidenceSlider.availableHeight / 2 - height / 2
-                                        width: evidenceMinConfidenceSlider.availableWidth
-                                        height: 4
-                                        radius: 2
-                                        color: "#334155"
-
-                                        Rectangle {
-                                            width: parent.width * ((evidenceMinConfidenceSlider.value - evidenceMinConfidenceSlider.from) / (evidenceMinConfidenceSlider.to - evidenceMinConfidenceSlider.from))
-                                            height: parent.height
-                                            radius: 2
-                                            color: "#3b82f6"
-                                        }
-                                    }
-                                    handle: Rectangle {
-                                        x: evidenceMinConfidenceSlider.leftPadding + (evidenceMinConfidenceSlider.availableWidth - width) * ((evidenceMinConfidenceSlider.value - evidenceMinConfidenceSlider.from) / (evidenceMinConfidenceSlider.to - evidenceMinConfidenceSlider.from))
-                                        y: evidenceMinConfidenceSlider.topPadding + evidenceMinConfidenceSlider.availableHeight / 2 - height / 2
-                                        width: 14
-                                        height: 14
-                                        radius: 7
-                                        color: evidenceMinConfidenceSlider.pressed ? "#60a5fa" : "#3b82f6"
-                                        border.width: 1
-                                        border.color: "#93c5fd"
-                                    }
-                                }
-                                Text { text: Math.round(evidenceMinConfidence * 100) + "%"; color: "#cbd5e1"; Layout.preferredWidth: 50 }
-                            }
-
-                            RowLayout {
-                                spacing: 12
-                                Text { text: I18n.t("FPS клипа"); color: "#cbd5e1"; Layout.preferredWidth: 220 }
-                                StyledSpinBox {
-                                    from: 5; to: 25
-                                    value: evidenceClipFps
-                                    Layout.preferredWidth: 110
-                                    onValueModified: { evidenceClipFps = value; applyCurrentSettings() }
-                                }
-                            }
-
-                            Item { Layout.fillHeight: true }
                         }
                     }
                 }
-                
+
                 // -------------------------------------------------
                 // About Tab
                 // -------------------------------------------------
-                Item {
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        spacing: 15
-                        
-                        Text { 
-                            text: "OpenIPC Dashboard"
-                            color: "#ffffff"
-                            font.pixelSize: 24
-                            font.bold: true
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-                        
-                        Text { 
-                            text: "Version " + (AppVersion ? AppVersion : "Unknown")
-                            color: "#a0aec0"
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-
-                        Text { 
-                            text: "Author: " + (AppAuthor ? AppAuthor : "Rinat Ibragimov")
-                            color: "#a0aec0"
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-                        
-                        Text { 
-                            text: (AppBuildYear ? AppBuildYear : "2026")
-                            color: "#626974"
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-                        
-                        Rectangle {
-                            Layout.preferredWidth: 200
-                            Layout.preferredHeight: 40
-                            Layout.alignment: Qt.AlignHCenter
-                            color: supportArea.containsMouse ? "#1565c0" : "#1976d2" // Blue color
-                            radius: 4
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                Text {
-                                    text: "favorite" // Heart icon
-                                    font.family: "Material Icons"
-                                    color: "white"
-                                    font.pixelSize: 16
-                                }
-                                Text {
-                                    text: I18n.t("Поддержать проект")
-                                    color: "white"
-                                    font.bold: true
-                                    font.pixelSize: 14
-                                }
-                            }
-
-                            MouseArea {
-                                id: supportArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Qt.openUrlExternally("https://opencollective.com/openipc/projects/openipc-dashboard/donate?interval=oneTime&amount=20&contributeAs=me")
-                            }
-                        }
-                    }
+                SettingsAboutPage {
+                    appVersion: AppVersion ? AppVersion : "Unknown"
+                    appAuthor: AppAuthor ? AppAuthor : "Rinat Ibragimov"
+                    appBuildYear: AppBuildYear ? AppBuildYear : "2026"
                 }
             }
         }
     }
 
-    Dialog {
+    SettingsOAuthDialog {
         id: oauthDialog
-        modal: true
-        dim: true
-        width: parent.width * 0.6
-        height: parent.height * 0.3
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        onRejected: SystemController.analyticsEngine.cancelOAuth()
-
-        background: Rectangle { color: Theme.panelAltBackground; radius: Theme.radiusLg }
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 20
-            spacing: 12
-
-            Text {
-                text: I18n.t("Авторизация открыта в браузере. Завершите вход и вернитесь в приложение.")
-                color: Theme.textPrimary
-                wrapMode: Text.Wrap
-            }
-
-            Text {
-                text: "<a href=\"" + oauthUrl + "\">" + oauthUrl + "</a>"
-                color: Theme.textMuted
-                wrapMode: Text.Wrap
-                font.pixelSize: 12
-                textFormat: Text.RichText
-                onLinkActivated: Qt.openUrlExternally(link)
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: 10
-                Button {
-                    text: I18n.t("Открыть браузер")
-                    onClicked: Qt.openUrlExternally(oauthUrl)
-                }
-                Button {
-                    text: I18n.t("Отмена")
-                    onClicked: { SystemController.analyticsEngine.cancelOAuth(); oauthDialog.close(); }
-                }
-            }
-        }
+        analyticsEngine: SystemController.analyticsEngine
+        oauthUrl: root.oauthUrl
     }
 
-    Rectangle {
+    SettingsFooterBar {
         id: footerBar
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 60
-        color: "transparent"
-        visible: bar.currentIndex !== 3 // Hide on About tab
-        z: 10
-        
-        Rectangle {
-            anchors.top: parent.top
-            width: parent.width
-            height: 1
-            color: Theme.controlBorder
-        }
+        visible: bar.currentIndex !== 3
 
-        Button {
-            id: saveSettingsButton
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.rightMargin: 20
-            width: 120
-            height: 36
-            text: I18n.t("Сохранить")
-            
-            background: Rectangle {
-                color: Theme.accent
-                radius: Theme.radiusSm
-            }
-            contentItem: Text {
-                text: saveSettingsButton.text
-                color: "white"
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                font.bold: true
-                font.pixelSize: 14
-            }
-            
-            onClicked: {
-                applyCurrentSettings()
-                root.close()
-            }
+        onSaveRequested: {
+            applyCurrentSettings()
+            root.close()
         }
     }
     
-    Popup {
+    SettingsSaveNotification {
         id: saveNotification
-        anchors.centerIn: parent
-        width: 240
-        height: 40
-        modal: false
-        focus: false
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        
-        background: Rectangle {
-            color: "#2d3748"
-            radius: Theme.radiusSm
-            border.color: Theme.accent
-            border.width: 1
-        }
-        
-        contentItem: RowLayout {
-            anchors.centerIn: parent
-            spacing: 8
-            Text {
-                text: "✓"
-                color: Theme.accent
-                font.bold: true
-                font.pixelSize: 16
-            }
-            Text {
-                text: I18n.t("Настройки успешно сохранены")
-                color: "white"
-                font.pixelSize: 14
-            }
-        }
-        
-        Timer {
-            interval: 2000
-            running: saveNotification.visible
-            onTriggered: saveNotification.close()
-        }
     }
 }

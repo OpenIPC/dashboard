@@ -14,9 +14,9 @@ Dialog {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     
     background: Rectangle {
-        color: "#252526"
-        radius: 8
-        border.color: "#3c3c3c"
+        color: Theme.metroSidebarBackground
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
     
     header: Rectangle {
@@ -27,23 +27,20 @@ Dialog {
             anchors.leftMargin: 20
             anchors.verticalCenter: parent.verticalCenter
             text: root.title
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 18
             font.bold: true
         }
         
-        Text {
+        MetroWindowButton {
+            kind: "close"
             anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: "×"
-            color: "#aaaaaa"
-            font.pixelSize: 24
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
+            width: 38
+            height: 34
+            onClicked: root.close()
         }
     }
 
@@ -61,9 +58,9 @@ Dialog {
             delegate: Rectangle {
                 width: userList.width
                 height: 60
-                color: "#333333"
-                radius: 4
-                border.color: "#444444"
+                color: Theme.metroTile
+                radius: Theme.metroTileRadius
+                border.color: Theme.metroStroke
                 
                 RowLayout {
                     anchors.fill: parent
@@ -72,14 +69,15 @@ Dialog {
                     
                     Text {
                         text: modelData.username
-                        color: "white"
+                        color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 14
                         font.bold: true
                     }
                     
                     Text {
                         text: "(" + (modelData.role === "admin" ? I18n.t("Администратор") : I18n.t("Оператор")) + ")"
-                        color: "#aaaaaa"
+                        color: Theme.textMuted
                         font.pixelSize: 14
                         Layout.fillWidth: true
                     }
@@ -87,13 +85,15 @@ Dialog {
                     Button {
                         text: I18n.t("Права")
                         visible: modelData.role !== "admin" // Admins have all rights
+                        hoverEnabled: true
                         background: Rectangle {
-                            color: parent.down ? "#555555" : "#444444"
-                            radius: 4
+                            color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                            radius: Theme.metroTileRadius
+                            border.color: Theme.metroStroke
                         }
                         contentItem: Text {
                             text: parent.text
-                            color: "white"
+                            color: Theme.textPrimary
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -106,13 +106,15 @@ Dialog {
 
                     Button {
                         text: I18n.t("Сменить пароль")
+                        hoverEnabled: true
                         background: Rectangle {
-                            color: parent.down ? "#555555" : "#444444"
-                            radius: 4
+                            color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                            radius: Theme.metroTileRadius
+                            border.color: Theme.metroStroke
                         }
                         contentItem: Text {
                             text: parent.text
-                            color: "white"
+                            color: Theme.textPrimary
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -125,13 +127,15 @@ Dialog {
                     Button {
                         text: I18n.t("Удалить пользователя")
                         visible: modelData.username !== "admin" // Cannot delete main admin
+                        hoverEnabled: true
                         background: Rectangle {
-                            color: parent.down ? "#b71c1c" : "#d32f2f"
-                            radius: 4
+                            color: parent.down ? Qt.darker(Theme.metroRed, 1.2) : (parent.hovered ? Qt.lighter(Theme.metroRed, 1.08) : Theme.metroRed)
+                            radius: Theme.metroTileRadius
+                            border.color: Theme.metroRed
                         }
                         contentItem: Text {
                             text: parent.text
-                            color: "white"
+                            color: Theme.textPrimary
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
@@ -148,20 +152,22 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             height: 1
-            color: "#3c3c3c"
+            color: Theme.metroStroke
         }
         
         Button {
             text: I18n.t("Добавить пользователя")
             Layout.preferredWidth: 200
             Layout.preferredHeight: 36
+            hoverEnabled: true
             background: Rectangle {
-                color: parent.down ? "#388e3c" : "#4caf50"
-                radius: 4
+                color: parent.down ? Theme.metroBlueHover : (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                radius: Theme.metroTileRadius
+                border.color: Theme.metroBlue
             }
             contentItem: Text {
                 text: parent.text
-                color: "white"
+                color: Theme.textPrimary
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
@@ -186,9 +192,9 @@ Dialog {
         property int currentPerms: 0
         
         background: Rectangle {
-            color: "#252526"
-            radius: 8
-            border.color: "#444444"
+            color: Theme.metroSidebarBackground
+            radius: Theme.metroTileRadius
+            border.color: Theme.metroStroke
         }
 
         header: Rectangle {
@@ -199,22 +205,18 @@ Dialog {
                 anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
                 text: permDialog.title
-                color: "white"
+                color: Theme.textPrimary
                 font.pixelSize: 16
                 font.bold: true
             }
-            Text {
+            MetroWindowButton {
+                kind: "close"
                 anchors.right: parent.right
-                anchors.rightMargin: 20
+                anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
-                text: "×"
-                color: "#aaaaaa"
-                font.pixelSize: 20
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: permDialog.close()
-                }
+                width: 38
+                height: 34
+                onClicked: permDialog.close()
             }
         }
         
@@ -233,40 +235,12 @@ Dialog {
             
             Text {
                 text: I18n.t("Пользователь: ") + permDialog.username
-                color: "#cccccc"
+                color: Theme.textSecondary
                 font.bold: true
                 Layout.bottomMargin: 10
             }
 
-            component StyledCheckBox: CheckBox {
-                hoverEnabled: false
-                background: Item {}
-                indicator: Rectangle {
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    x: parent.leftPadding
-                    y: parent.height / 2 - height / 2
-                    radius: 3
-                    color: "#252526"
-                    border.color: parent.checked ? "#4caf50" : "#666666"
-                    
-                    Rectangle {
-                        width: 10
-                        height: 10
-                        anchors.centerIn: parent
-                        radius: 2
-                        color: "#4caf50"
-                        visible: parent.parent.checked
-                    }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    font: parent.font
-                    opacity: parent.enabled ? 1.0 : 0.5
-                    color: "white"
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: parent.indicator.width + parent.spacing
-                }
+            component StyledCheckBox: MetroCheckBox {
             }
             
             StyledCheckBox { id: cbLive; text: I18n.t("Просмотр (Live)") }
@@ -285,11 +259,13 @@ Dialog {
                 
                 Button {
                     text: I18n.t("Сохранить")
+                    hoverEnabled: true
                     background: Rectangle { 
-                        color: parent.down ? "#388e3c" : "#4caf50"
-                        radius: 4 
+                        color: parent.down ? Theme.metroBlueHover : (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                        radius: Theme.metroTileRadius
+                        border.color: Theme.metroBlue
                     }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     onClicked: {
                         var p = 0
                         if (cbLive.checked) p |= 0x01
@@ -306,11 +282,13 @@ Dialog {
                 }
                 Button {
                     text: I18n.t("Отмена")
+                    hoverEnabled: true
                     background: Rectangle { 
-                        color: parent.down ? "#555555" : "#666666"
-                        radius: 4 
+                        color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                        radius: Theme.metroTileRadius
+                        border.color: Theme.metroStroke
                     }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     onClicked: permDialog.close()
                 }
             }

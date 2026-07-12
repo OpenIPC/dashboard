@@ -43,12 +43,15 @@ ScrollView {
                     required property var modelData
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 132
+                    Layout.minimumHeight: 132
+                    Layout.preferredHeight: Math.max(Layout.minimumHeight, toolRowContent.implicitHeight + 28)
                     color: Theme.cardBackground
                     border.color: Theme.cardBorder
                     radius: Theme.radiusLg
 
                     ColumnLayout {
+                        id: toolRowContent
+
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 8

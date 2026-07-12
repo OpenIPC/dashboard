@@ -10,7 +10,7 @@ Window {
     width: 1000
     height: 700
     visible: false
-    color: "#1e1e1e"
+    color: Theme.metroBackground
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property string cameraIp: ""
@@ -32,7 +32,7 @@ Window {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        color: "#2d2d30"
+        color: Theme.metroSurface
         z: 100
 
         MouseArea {
@@ -52,43 +52,29 @@ Window {
                 Layout.fillWidth: true
             }
             
-            Button {
-                id: minimizeFileManagerButton
-
-                text: "—"
-                flat: true
+            MetroWindowButton {
+                kind: "minimize"
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.showMinimized()
-                contentItem: Text { text: "—"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: minimizeFileManagerButton.down ? "#444" : (minimizeFileManagerButton.hovered ? "#3e3e40" : "transparent") }
             }
             
-            Button {
-                id: maximizeFileManagerButton
-
-                text: "□"
-                flat: true
+            MetroWindowButton {
+                kind: "maximize"
+                maximized: root.visibility === Window.Maximized
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: {
                     if (root.visibility === Window.Maximized) root.showNormal()
                     else root.showMaximized()
                 }
-                contentItem: Text { text: "□"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: maximizeFileManagerButton.down ? "#444" : (maximizeFileManagerButton.hovered ? "#3e3e40" : "transparent") }
             }
 
-            Button {
-                id: closeFileManagerButton
-
-                text: "✕"
-                flat: true
+            MetroWindowButton {
+                kind: "close"
                 Layout.preferredWidth: 40
                 Layout.fillHeight: true
                 onClicked: root.close()
-                contentItem: Text { text: "✕"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { color: closeFileManagerButton.down ? "#c42b1c" : (closeFileManagerButton.hovered ? "#e81123" : "transparent") }
             }
         }
     }
@@ -165,8 +151,8 @@ Window {
             Rectangle {
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 200
-                color: "#252526"
-                border.color: root.activePane === 0 ? "#007acc" : "#3c3c3c"
+                color: Theme.metroSidebarBackground
+                border.color: root.activePane === 0 ? Theme.metroBlue : Theme.metroStroke
                 border.width: root.activePane === 0 ? 2 : 1
                 
                 ColumnLayout {
@@ -178,14 +164,14 @@ Window {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 30
-                        color: "#333"
+                        color: Theme.metroTile
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 4
                             Button {
                                 id: localNavigateUpButton
                                 text: ".."
-                                background: Rectangle { color: localNavigateUpButton.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: localNavigateUpButton.down ? Theme.metroTilePressed : Theme.metroStroke; radius: 2 }
                                 contentItem: Text { text: ".."; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -207,8 +193,8 @@ Window {
                             TextField {
                                 id: localPathField
                                 text: localModel.folder.toString().replace("file:///", "")
-                                color: "#ddd"
-                                background: Rectangle { color: "#444"; radius: 2 }
+                                color: Theme.textSecondary
+                                background: Rectangle { color: Theme.metroStroke; radius: 2 }
                                 Layout.fillWidth: true
                                 selectByMouse: true
                                 verticalAlignment: Text.AlignVCenter
@@ -245,14 +231,14 @@ Window {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 24
-                        color: "#333"
+                        color: Theme.metroTile
                         z: 2
                         RowLayout {
                             anchors.fill: parent
                             spacing: 5
-                            Text { text: " " + I18n.t("Имя"); color: "#ccc"; font.bold: true; Layout.fillWidth: true; leftPadding: 5 }
-                            Text { text: I18n.t("Размер"); color: "#ccc"; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
-                            Text { text: I18n.t("Дата"); color: "#ccc"; font.bold: true; Layout.preferredWidth: 120; horizontalAlignment: Text.AlignRight; rightPadding: 5 }
+                            Text { text: " " + I18n.t("Имя"); color: Theme.textSecondary; font.bold: true; Layout.fillWidth: true; leftPadding: 5 }
+                            Text { text: I18n.t("Размер"); color: Theme.textSecondary; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
+                            Text { text: I18n.t("Дата"); color: Theme.textSecondary; font.bold: true; Layout.preferredWidth: 120; horizontalAlignment: Text.AlignRight; rightPadding: 5 }
                         }
                     }
 
@@ -266,7 +252,7 @@ Window {
                         focus: true
                         boundsBehavior: Flickable.StopAtBounds
                         
-                        highlight: Rectangle { color: root.activePane === 0 ? "#005a9e" : "#505050" }
+                        highlight: Rectangle { color: root.activePane === 0 ? Theme.metroBlueHover : Theme.metroTilePressed }
                         highlightMoveDuration: 0
                         highlightResizeDuration: 0
                         
@@ -315,7 +301,7 @@ Window {
                             // Hover rect
                             Rectangle {
                                 anchors.fill: parent
-                                color: localMouse.containsMouse && !localDelegate.ListView.isCurrentItem ? "#2a2d2e" : "transparent"
+                                color: localMouse.containsMouse && !localDelegate.ListView.isCurrentItem ? Theme.metroTileHover : "transparent"
                             }
                             
                             RowLayout {
@@ -333,7 +319,7 @@ Window {
                                         
                                         Text {
                                             text: localDelegate.fileIsDir ? "📁" : "📄"
-                                            color: "#ccc"
+                                            color: Theme.textSecondary
                                         }
                                         Text {
                                             text: localDelegate.fileName
@@ -346,7 +332,7 @@ Window {
                                 
                                 Text {
                                     text: localDelegate.fileIsDir ? "<DIR>" : formatSize(localDelegate.fileSize)
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 12
                                     Layout.preferredWidth: 80
                                     horizontalAlignment: Text.AlignRight
@@ -354,7 +340,7 @@ Window {
                                 
                                 Text {
                                     text: Qt.formatDateTime(localDelegate.fileModified, "dd.MM.yy hh:mm")
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 12
                                     Layout.preferredWidth: 120
                                     horizontalAlignment: Text.AlignRight
@@ -364,7 +350,14 @@ Window {
                             
                             Menu {
                                 id: localMenu
-                                MenuItem {
+                                background: Rectangle {
+                                    implicitWidth: 220
+                                    implicitHeight: 40
+                                    color: Theme.metroSurface
+                                    border.color: Theme.metroStroke
+                                    radius: Theme.metroTileRadius
+                                }
+                                MetroMenuItem {
                                     text: I18n.t("Загрузить на камеру")
                                     onTriggered: {
                                         var path = localDelegate.fileUrl.toString();
@@ -389,8 +382,8 @@ Window {
             Rectangle {
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 200
-                color: "#252526"
-                border.color: root.activePane === 1 ? "#007acc" : "#3c3c3c"
+                color: Theme.metroSidebarBackground
+                border.color: root.activePane === 1 ? Theme.metroBlue : Theme.metroStroke
                 border.width: root.activePane === 1 ? 2 : 1
                 
                 ColumnLayout {
@@ -402,14 +395,14 @@ Window {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 30
-                        color: "#333" // Header color
+                        color: Theme.metroTile // Header color
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 4
                             Button {
                                 id: remoteNavigateUpButton
                                 text: ".."
-                                background: Rectangle { color: remoteNavigateUpButton.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: remoteNavigateUpButton.down ? Theme.metroTilePressed : Theme.metroStroke; radius: 2 }
                                 contentItem: Text { text: ".."; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -417,14 +410,14 @@ Window {
                             }
                             Text {
                                 text: remoteModel.currentPath
-                                color: "#ddd"
+                                color: Theme.textSecondary
                                 elide: Text.ElideMiddle
                                 Layout.fillWidth: true
                             }
                             Button {
                                 id: remoteRefreshButton
                                 text: "⟳"
-                                background: Rectangle { color: remoteRefreshButton.down ? "#555" : "#444"; radius: 2 }
+                                background: Rectangle { color: remoteRefreshButton.down ? Theme.metroTilePressed : Theme.metroStroke; radius: 2 }
                                 contentItem: Text { text: "⟳"; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 implicitWidth: 30
                                 implicitHeight: 22
@@ -437,15 +430,15 @@ Window {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 24
-                        color: "#333"
+                        color: Theme.metroTile
                         z: 2
                         RowLayout {
                             anchors.fill: parent
                             spacing: 5
-                            Text { text: " " + I18n.t("Имя"); color: "#ccc"; font.bold: true; Layout.fillWidth: true; leftPadding: 5 }
-                            Text { text: I18n.t("Размер"); color: "#ccc"; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
-                            Text { text: I18n.t("Дата"); color: "#ccc"; font.bold: true; Layout.preferredWidth: 120; horizontalAlignment: Text.AlignRight }
-                            Text { text: I18n.t("Права"); color: "#ccc"; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight; rightPadding: 5 }
+                            Text { text: " " + I18n.t("Имя"); color: Theme.textSecondary; font.bold: true; Layout.fillWidth: true; leftPadding: 5 }
+                            Text { text: I18n.t("Размер"); color: Theme.textSecondary; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
+                            Text { text: I18n.t("Дата"); color: Theme.textSecondary; font.bold: true; Layout.preferredWidth: 120; horizontalAlignment: Text.AlignRight }
+                            Text { text: I18n.t("Права"); color: Theme.textSecondary; font.bold: true; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight; rightPadding: 5 }
                         }
                     }
 
@@ -459,7 +452,7 @@ Window {
                         focus: true
                         boundsBehavior: Flickable.StopAtBounds
                         
-                        highlight: Rectangle { color: root.activePane === 1 ? "#005a9e" : "#505050" }
+                        highlight: Rectangle { color: root.activePane === 1 ? Theme.metroBlueHover : Theme.metroTilePressed }
                         highlightMoveDuration: 0
                         highlightResizeDuration: 0
                         
@@ -500,7 +493,7 @@ Window {
                             // Hover
                             Rectangle {
                                 anchors.fill: parent
-                                color: remoteMouse.containsMouse && !remoteDelegate.ListView.isCurrentItem ? "#2a2d2e" : "transparent"
+                                color: remoteMouse.containsMouse && !remoteDelegate.ListView.isCurrentItem ? Theme.metroTileHover : "transparent"
                             }
                             
                             RowLayout {
@@ -518,7 +511,7 @@ Window {
                                         
                                         Text {
                                             text: remoteDelegate.isDir ? "📁" : "📄"
-                                            color: "#ccc"
+                                            color: Theme.textSecondary
                                         }
                                         Text {
                                             text: remoteDelegate.fileName
@@ -531,7 +524,7 @@ Window {
                                 
                                 Text {
                                     text: remoteDelegate.isDir ? "<DIR>" : formatSize(remoteDelegate.fileSize)
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 12
                                     Layout.preferredWidth: 80
                                     horizontalAlignment: Text.AlignRight
@@ -539,7 +532,7 @@ Window {
                                 
                                 Text {
                                     text: remoteDelegate.fileDate
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 12
                                     Layout.preferredWidth: 120
                                     horizontalAlignment: Text.AlignRight
@@ -547,7 +540,7 @@ Window {
                                 
                                 Text {
                                     text: remoteDelegate.filePermissions
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 12
                                     Layout.preferredWidth: 80
                                     horizontalAlignment: Text.AlignRight
@@ -557,7 +550,14 @@ Window {
                             
                             Menu {
                                 id: remoteMenu
-                                MenuItem {
+                                background: Rectangle {
+                                    implicitWidth: 260
+                                    implicitHeight: 40
+                                    color: Theme.metroSurface
+                                    border.color: Theme.metroStroke
+                                    radius: Theme.metroTileRadius
+                                }
+                                MetroMenuItem {
                                     text: I18n.t("Скачать (в текущую локальную папку)")
                                     onTriggered: {
                                          // Get local path
@@ -570,7 +570,7 @@ Window {
                                         remoteModel.downloadFile(remoteDelegate.fileName, dest)
                                     }
                                 }
-                                MenuItem {
+                                MetroMenuItem {
                                     text: I18n.t("Удалить")
                                     onTriggered: remoteModel.deleteItem(remoteDelegate.fileName)
                                 }
@@ -658,23 +658,23 @@ Window {
         title: I18n.t("Удаление")
         modal: true
         dim: true
-        palette.window: "#252526"
+        palette.window: Theme.metroSidebarBackground
         palette.windowText: "#ffffff"
         palette.button: "#3E3E42"
         palette.buttonText: "#ffffff"
         
         background: Rectangle {
-            color: "#252526"
-            border.color: "#3c3c3c"
+            color: Theme.metroSidebarBackground
+            border.color: Theme.metroStroke
             radius: 2
         }
         
         header: Label {
             text: deleteDialog.title
-            color: "#ddd"
+            color: Theme.textSecondary
             font.bold: true
             padding: 10
-            background: Rectangle { color: "#333"; radius: 2 }
+            background: Rectangle { color: Theme.metroTile; radius: 2 }
         }
 
         standardButtons: Dialog.Yes | Dialog.No
@@ -686,7 +686,7 @@ Window {
             spacing: 15
             Label { 
                 text: I18n.t("Вы уверены, что хотите удалить '%1'?").arg(deleteDialog.fileName)
-                color: "#ccc"
+                color: Theme.textSecondary
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
             }
@@ -705,23 +705,23 @@ Window {
         title: I18n.t("Создание папки")
         modal: true
         dim: true
-        palette.window: "#252526"
+        palette.window: Theme.metroSidebarBackground
         palette.windowText: "#ffffff"
         palette.button: "#3E3E42"
         palette.buttonText: "#ffffff"
 
         background: Rectangle {
-            color: "#252526"
-            border.color: "#3c3c3c"
+            color: Theme.metroSidebarBackground
+            border.color: Theme.metroStroke
             radius: 2
         }
         
         header: Label {
             text: mkdirDialog.title
-            color: "#ddd"
+            color: Theme.textSecondary
             font.bold: true
             padding: 10
-            background: Rectangle { color: "#333"; radius: 2 }
+            background: Rectangle { color: Theme.metroTile; radius: 2 }
         }
 
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -729,11 +729,11 @@ Window {
         
         contentItem: ColumnLayout {
             spacing: 15
-            Label { text: I18n.t("Имя папки:"); color: "#ccc" }
+            Label { text: I18n.t("Имя папки:"); color: Theme.textSecondary }
             TextField { 
                 id: mkdirField
                 color: "white"
-                background: Rectangle { color: "#333"; border.color: "#555" }
+                background: Rectangle { color: Theme.metroTile; border.color: Theme.metroTilePressed }
                 Layout.fillWidth: true
                 onAccepted: mkdirDialog.accept()
             }
@@ -753,23 +753,23 @@ Window {
         title: I18n.t("Переименование")
         modal: true
         dim: true
-        palette.window: "#252526"
+        palette.window: Theme.metroSidebarBackground
         palette.windowText: "#ffffff"
         palette.button: "#3E3E42"
         palette.buttonText: "#ffffff"
 
         background: Rectangle {
-            color: "#252526"
-            border.color: "#3c3c3c"
+            color: Theme.metroSidebarBackground
+            border.color: Theme.metroStroke
             radius: 2
         }
         
         header: Label {
             text: renameDialog.title
-            color: "#ddd"
+            color: Theme.textSecondary
             font.bold: true
             padding: 10
-            background: Rectangle { color: "#333"; radius: 2 }
+            background: Rectangle { color: Theme.metroTile; radius: 2 }
         }
 
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -779,12 +779,12 @@ Window {
 
         contentItem: ColumnLayout {
             spacing: 15
-            Label { text: I18n.t("Новое имя:"); color: "#ccc" }
+            Label { text: I18n.t("Новое имя:"); color: Theme.textSecondary }
             TextField { 
                 id: renameField
                 text: renameDialog.oldName
                 color: "white"
-                background: Rectangle { color: "#333"; border.color: "#555" }
+                background: Rectangle { color: Theme.metroTile; border.color: Theme.metroTilePressed }
                 Layout.fillWidth: true
                 onAccepted: renameDialog.accept()
             }
@@ -805,7 +805,7 @@ Window {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        background: Rectangle { color: "#333" }
+        background: Rectangle { color: Theme.metroTile }
         RowLayout {
             anchors.fill: parent
             spacing: 1
@@ -824,7 +824,7 @@ Window {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     background: Rectangle {
-                        color: functionBarButton.down ? "#007acc" : "#444"
+                        color: functionBarButton.down ? Theme.metroBlue : Theme.metroStroke
                         border.color: "#222"
                     }
                     contentItem: Text {

@@ -15,9 +15,9 @@ Dialog {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     
     background: Rectangle {
-        color: "#252526"
-        radius: 8
-        border.color: "#444444"
+        color: Theme.metroSidebarBackground
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
     
     header: Rectangle {
@@ -28,22 +28,19 @@ Dialog {
             anchors.leftMargin: 20
             anchors.verticalCenter: parent.verticalCenter
             text: root.title
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 16
             font.bold: true
         }
-        Text {
+        MetroWindowButton {
+            kind: "close"
             anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: "×"
-            color: "#aaaaaa"
-            font.pixelSize: 20
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
+            width: 38
+            height: 34
+            onClicked: root.close()
         }
     }
 
@@ -55,20 +52,22 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Старый пароль")
-                color: "white"
+                color: Theme.textSecondary
                 Layout.preferredWidth: 130
             }
             TextField {
                 id: oldPasswordField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Старый пароль")
-                placeholderTextColor: "#aaaaaa"
+                placeholderTextColor: Theme.textMuted
                 echoMode: TextInput.Password
-                color: "white"
+                color: Theme.textPrimary
+                selectionColor: Theme.metroBlue
+                selectedTextColor: Theme.textPrimary
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.metroSurfaceAlt
+                    border.color: oldPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -78,20 +77,22 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Новый пароль")
-                color: "white"
+                color: Theme.textSecondary
                 Layout.preferredWidth: 130
             }
             TextField {
                 id: newPasswordField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Новый пароль")
-                placeholderTextColor: "#aaaaaa"
+                placeholderTextColor: Theme.textMuted
                 echoMode: TextInput.Password
-                color: "white"
+                color: Theme.textPrimary
+                selectionColor: Theme.metroBlue
+                selectedTextColor: Theme.textPrimary
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.metroSurfaceAlt
+                    border.color: newPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -101,20 +102,22 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Подтвердите пароль")
-                color: "white"
+                color: Theme.textSecondary
                 Layout.preferredWidth: 130
             }
             TextField {
                 id: confirmPasswordField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Подтвердите пароль")
-                placeholderTextColor: "#aaaaaa"
+                placeholderTextColor: Theme.textMuted
                 echoMode: TextInput.Password
-                color: "white"
+                color: Theme.textPrimary
+                selectionColor: Theme.metroBlue
+                selectedTextColor: Theme.textPrimary
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.metroSurfaceAlt
+                    border.color: confirmPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -123,7 +126,7 @@ Dialog {
             id: errorText
             Layout.fillWidth: true
             text: ""
-            color: "#f44336"
+            color: Theme.metroRed
             font.pixelSize: 12
             visible: text !== ""
             horizontalAlignment: Text.AlignHCenter
@@ -137,13 +140,15 @@ Dialog {
             
             Button {
                 text: I18n.t("Сохранить")
+                hoverEnabled: true
                 background: Rectangle {
-                    color: parent.down ? "#388e3c" : "#4caf50"
-                    radius: 4
+                    color: parent.down ? Theme.metroBlueHover : (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                    radius: Theme.metroTileRadius
+                    border.color: Theme.metroBlue
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -171,13 +176,15 @@ Dialog {
             
             Button {
                 text: I18n.t("Отмена")
+                hoverEnabled: true
                 background: Rectangle {
-                    color: parent.down ? "#555555" : "#666666"
-                    radius: 4
+                    color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                    radius: Theme.metroTileRadius
+                    border.color: Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }

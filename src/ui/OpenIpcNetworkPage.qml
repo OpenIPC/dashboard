@@ -55,27 +55,31 @@ ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: 16
             Layout.rightMargin: 16
-            Layout.preferredHeight: 250
-            color: Theme.cardBackground
-            border.color: Theme.cardBorder
-            radius: Theme.radiusLg
+            Layout.minimumHeight: 250
+            Layout.preferredHeight: Math.max(Layout.minimumHeight, networkCardContent.implicitHeight + 28)
+            color: Theme.metroSurface
+            border.color: Theme.metroStroke
+            radius: Theme.metroTileRadius
 
             ColumnLayout {
+                id: networkCardContent
+
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 10
 
-                RowLayout {
+                Text {
                     Layout.fillWidth: true
+                    text: I18n.t("Настройки сети OpenIPC")
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
+                    font.bold: true
+                    font.pixelSize: 17
+                }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: I18n.t("Настройки сети OpenIPC")
-                        color: Theme.textPrimary
-                        font.bold: true
-                        font.pixelSize: 17
-                    }
-
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
                     MajesticButton {
                         text: I18n.t("Wi‑Fi scan")
                         enabled: root.controller && !root.controller.firmwareBusy
@@ -120,8 +124,9 @@ ScrollView {
                     text: root.controller && root.controller.firmwareWifiNetworks.length
                           ? I18n.t("Найдено Wi‑Fi сетей: %1", [root.controller.firmwareWifiNetworks.length])
                           : I18n.t("Сохранение сети может изменить IP камеры. Подтвердите действие перед отправкой.")
-                    color: Theme.warning
+                    color: Theme.metroAmber
                     wrapMode: Text.WordWrap
+                    font.family: Theme.metroFontFamily
                     font.pixelSize: 11
                 }
             }
@@ -144,12 +149,15 @@ ScrollView {
                     required property var modelData
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 92
-                    color: Theme.cardBackground
-                    border.color: Theme.cardBorder
-                    radius: Theme.radiusLg
+                    Layout.minimumHeight: 92
+                    Layout.preferredHeight: Math.max(Layout.minimumHeight, serviceRowContent.implicitHeight + 28)
+                    color: Theme.metroSurface
+                    border.color: Theme.metroStroke
+                    radius: Theme.metroTileRadius
 
                     RowLayout {
+                        id: serviceRowContent
+
                         anchors.fill: parent
                         anchors.margins: 14
                         spacing: 12
@@ -157,14 +165,15 @@ ScrollView {
                         Rectangle {
                             Layout.preferredWidth: 82
                             Layout.preferredHeight: 28
-                            radius: 14
-                            color: "#172554"
-                            border.color: Theme.accent
+                            radius: Theme.metroTileRadius
+                            color: Theme.metroDeepBlue
+                            border.color: Theme.metroBlue
 
                             Text {
                                 anchors.centerIn: parent
                                 text: serviceRow.modelData.label
-                                color: Theme.accentHover
+                                color: Theme.textPrimary
+                                font.family: Theme.metroFontFamily
                                 font.bold: true
                                 font.pixelSize: 11
                             }
@@ -187,6 +196,7 @@ ScrollView {
                                 Layout.fillWidth: true
                                 text: serviceRow.modelData.hint
                                 color: Theme.textMuted
+                                font.family: Theme.metroFontFamily
                                 font.pixelSize: 11
                                 elide: Text.ElideRight
                             }

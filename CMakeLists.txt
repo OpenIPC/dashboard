@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.5.2 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.6 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -245,6 +245,10 @@ set(SOURCES
     src/backend/NetworkDiscoveryService.h
     src/backend/CameraStatusPolicy.cpp
     src/backend/CameraStatusPolicy.h
+    src/backend/CameraHealthPolicy.cpp
+    src/backend/CameraHealthPolicy.h
+    src/backend/CameraHealthController.cpp
+    src/backend/CameraHealthController.h
     src/backend/CamexController.cpp
     src/backend/CamexController.h
     src/backend/SystemController.cpp
@@ -293,12 +297,27 @@ set(APP_ICON resources/appicon.rc)
 set(QML_FILES
     src/ui/Theme.qml
     src/ui/Main.qml
+    src/ui/SmokeHarness.qml
     src/ui/SettingsDialog.qml
+    src/ui/SettingsAboutPage.qml
+    src/ui/SettingsAnalyticsPerformancePanel.qml
+    src/ui/SettingsEvidencePanel.qml
+    src/ui/SettingsFooterBar.qml
+    src/ui/SettingsOAuthDialog.qml
+    src/ui/SettingsSaveNotification.qml
+    src/ui/SettingsSpinBox.qml
+    src/ui/SettingsStreamingPage.qml
+    src/ui/SettingsUpdatePanel.qml
     src/ui/AppUpdateDialog.qml
+    src/ui/AppUpdateContent.qml
     src/ui/ModulesSettingsPanel.qml
     src/ui/StyledComboBox.qml
     src/ui/DeviceListItem.qml
     src/ui/GridCell.qml
+    src/ui/GridCellControlsOverlay.qml
+    src/ui/RecordingPulseIndicator.qml
+    src/ui/StreamStatsBadge.qml
+    src/ui/StreamQualityBadge.qml
     src/ui/GroupContextMenu.qml
     src/ui/CameraStatusBadge.qml
     src/ui/DashboardDialogButton.qml
@@ -312,6 +331,11 @@ set(QML_FILES
     src/ui/DashboardTopBar.qml
     src/ui/DashboardWindowControls.qml
     src/ui/EmptyStateButton.qml
+    src/ui/MetroCheckBox.qml
+    src/ui/MetroMenuItem.qml
+    src/ui/MetroMenuSeparator.qml
+    src/ui/MetroSlider.qml
+    src/ui/MetroWindowButton.qml
     src/ui/NoAccessDialog.qml
     src/ui/ConfirmDeleteCameraDialog.qml
     src/ui/RenameGroupDialog.qml
@@ -322,6 +346,9 @@ set(QML_FILES
     src/ui/SidebarSectionHeader.qml
     src/ui/SidebarStatPill.qml
     src/ui/CameraHealthDialog.qml
+    src/ui/HealthProfileBar.qml
+    src/ui/HealthHistoryStrip.qml
+    src/ui/HealthDetailsDialog.qml
     src/ui/CameraSearchDialog.qml
     src/ui/AddCameraDialog.qml
     src/ui/I18n.qml
@@ -350,12 +377,14 @@ set(QML_FILES
     src/ui/MajesticBackupRestorePanel.qml
     src/ui/MajesticCheckBox.qml
     src/ui/MajesticComboBox.qml
+    src/ui/MajesticConfirmDialog.qml
     src/ui/MajesticEndpointProbeCard.qml
     src/ui/MajesticEndpointsPage.qml
     src/ui/MajesticMetricsPage.qml
     src/ui/MajesticOverviewPage.qml
     src/ui/MajesticRawJsonPage.qml
     src/ui/MajesticRollbackBanner.qml
+    src/ui/MajesticRestoreDiffPanel.qml
     src/ui/MajesticSettingFieldEditor.qml
     src/ui/MajesticSettingsPage.qml
     src/ui/MajesticSpinBox.qml
@@ -363,7 +392,9 @@ set(QML_FILES
     src/ui/MajesticTabButton.qml
     src/ui/MajesticTextField.qml
     src/ui/OpenIpcLogsPanel.qml
+    src/ui/OpenIpcSafeActionsPanel.qml
     src/ui/OpenIpcFirmwareBackupPanel.qml
+    src/ui/OpenIpcFirmwareManifestPanel.qml
     src/ui/OpenIpcFirmwareQuickActionsCard.qml
     src/ui/OpenIpcFirmwareStatusGrid.qml
     src/ui/OpenIpcFirmwareStatusCardsGrid.qml
@@ -701,6 +732,61 @@ if(BUILD_TESTING)
 
     add_test(NAME camera_status_policy_tests COMMAND camera_status_policy_tests)
 
+    add_executable(camera_health_policy_tests
+        tests/CameraHealthPolicyTests.cpp
+        src/backend/CameraHealthPolicy.cpp
+        src/backend/CameraHealthPolicy.h
+    )
+    openipc_enable_project_warnings(camera_health_policy_tests)
+
+    target_include_directories(camera_health_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(camera_health_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME camera_health_policy_tests COMMAND camera_health_policy_tests)
+
+    add_executable(camera_health_controller_tests
+        tests/CameraHealthControllerTests.cpp
+        src/backend/CameraHealthController.cpp
+        src/backend/CameraHealthController.h
+        src/backend/CameraHealthPolicy.cpp
+        src/backend/CameraHealthPolicy.h
+        src/backend/CameraModel.cpp
+        src/backend/CameraModel.h
+    )
+    openipc_enable_project_warnings(camera_health_controller_tests)
+
+    target_include_directories(camera_health_controller_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(camera_health_controller_tests
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test
+    )
+
+    add_test(NAME camera_health_controller_tests COMMAND camera_health_controller_tests)
+
+    add_executable(camera_model_tests
+        tests/CameraModelTests.cpp
+        src/backend/CameraModel.cpp
+        src/backend/CameraModel.h
+    )
+    openipc_enable_project_warnings(camera_model_tests)
+
+    target_include_directories(camera_model_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(camera_model_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME camera_model_tests COMMAND camera_model_tests)
+
     add_executable(stream_session_policy_tests
         tests/StreamSessionPolicyTests.cpp
         src/backend/gst/StreamSessionPolicy.cpp
@@ -845,14 +931,38 @@ if(BUILD_TESTING)
 
     add_test(NAME network_discovery_service_tests COMMAND network_discovery_service_tests)
 
-    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    if(WIN32)
+        add_test(NAME qml_smoke
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $env:PATH = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' -WindowStyle Hidden -PassThru; $p.WaitForExit(); exit $p.ExitCode"
+        )
+        add_test(NAME qml_smoke_scaled
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $env:PATH = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '1.5'; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' -WindowStyle Hidden -PassThru; $p.WaitForExit(); exit $p.ExitCode"
+        )
+    else()
+        add_test(NAME qml_smoke COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+        add_test(NAME qml_smoke_scaled COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+    endif()
+
+    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
 
+    set_tests_properties(qml_smoke qml_smoke_scaled PROPERTIES
+        TIMEOUT 20
+        LABELS "smoke"
+    )
+
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
+        )
+    else()
+        set_tests_properties(qml_smoke PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
+        set_tests_properties(qml_smoke_scaled PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1.5"
         )
     endif()
 endif()

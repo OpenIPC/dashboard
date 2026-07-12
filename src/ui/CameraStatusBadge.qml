@@ -13,8 +13,8 @@ Item {
     property int dotSize: 10
     property color onlineColor: Theme.success
     property color offlineColor: Theme.danger
-    property color onlineBackground: "#1f5d35"
-    property color offlineBackground: "#5c1f1f"
+    property color onlineBackground: Qt.rgba(0.09, 0.64, 0.29, 0.25)
+    property color offlineBackground: Qt.rgba(0.86, 0.15, 0.15, 0.25)
 
     implicitWidth: showText ? 92 : dotSize
     implicitHeight: showText ? 26 : dotSize

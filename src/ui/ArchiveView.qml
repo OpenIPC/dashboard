@@ -95,13 +95,13 @@ Dialog {
     }
 
     background: Rectangle {
-        color: "#1e1e1e"
-        border.color: "#333"
+        color: Theme.metroBackground
+        border.color: Theme.metroTile
         radius: 5
     }
 
     header: Rectangle {
-        color: "#2a2a2b"
+        color: Theme.metroTile
         height: isFullScreen ? 0 : 40
         visible: !isFullScreen
         width: parent.width
@@ -112,7 +112,7 @@ Dialog {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 5
-            color: "#2a2a2b"
+            color: Theme.metroTile
         }
 
         RowLayout {
@@ -122,25 +122,17 @@ Dialog {
             
             Text {
                 text: I18n.t("Архив")
-                color: "#cccccc"
+                color: Theme.textSecondary
                 font.bold: true
                 font.pixelSize: 14
             }
             
             Item { Layout.fillWidth: true }
             
-            Button {
+            MetroWindowButton {
+                kind: "close"
                 Layout.preferredWidth: 30
                 Layout.preferredHeight: 30
-                text: "✕"
-                hoverEnabled: false
-                background: Rectangle { color: "transparent" }
-                contentItem: Text { 
-                    text: parent.text
-                    color: "#ccc"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
                 onClicked: root.close()
             }
         }
@@ -154,7 +146,7 @@ Dialog {
         Rectangle {
             Layout.preferredWidth: 300
             Layout.fillHeight: true
-            color: "#2a2a2b"
+            color: Theme.metroTile
             visible: !isFullScreen
             
             ColumnLayout {
@@ -167,7 +159,7 @@ Dialog {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 5
-                    Label { text: I18n.t("Камера"); color: "#ccc"; font.bold: true }
+                    Label { text: I18n.t("Камера"); color: Theme.textSecondary; font.bold: true }
                     StyledComboBox {
                         id: cameraSelector
                         Layout.fillWidth: true
@@ -180,38 +172,38 @@ Dialog {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 5
-                    Label { text: I18n.t("Начало"); color: "#ccc"; font.bold: true }
+                    Label { text: I18n.t("Начало"); color: Theme.textSecondary; font.bold: true }
                     RowLayout {
                         TextField {
                             id: startTimeField
                             Layout.fillWidth: true
                             text: new Date(new Date().setHours(0,0,0,0)).toLocaleString(Qt.locale(), "yyyy-MM-dd HH:mm:ss")
-                            color: "#ccc"
-                            background: Rectangle { color: "#1e1e1e"; border.color: "#444"; radius: 2 }
+                            color: Theme.textSecondary
+                            background: Rectangle { color: Theme.metroBackground; border.color: Theme.metroStroke; radius: 2 }
                         }
                         Button {
                             text: "📅"
                             Layout.preferredWidth: 30
-                            background: Rectangle { color: "#333"; radius: 2 }
-                            contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            background: Rectangle { color: Theme.metroTile; radius: 2 }
+                            contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             onClicked: { calendarPopup.targetField = startTimeField; calendarPopup.open() }
                         }
                     }
 
-                    Label { text: I18n.t("Конец"); color: "#ccc"; font.bold: true }
+                    Label { text: I18n.t("Конец"); color: Theme.textSecondary; font.bold: true }
                     RowLayout {
                         TextField {
                             id: endTimeField
                             Layout.fillWidth: true
                             text: new Date(new Date().setHours(23,59,59,999)).toLocaleString(Qt.locale(), "yyyy-MM-dd HH:mm:ss")
-                            color: "#ccc"
-                            background: Rectangle { color: "#1e1e1e"; border.color: "#444"; radius: 2 }
+                            color: Theme.textSecondary
+                            background: Rectangle { color: Theme.metroBackground; border.color: Theme.metroStroke; radius: 2 }
                         }
                         Button {
                             text: "📅"
                             Layout.preferredWidth: 30
-                            background: Rectangle { color: "#333"; radius: 2 }
-                            contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            background: Rectangle { color: Theme.metroTile; radius: 2 }
+                            contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             onClicked: { calendarPopup.targetField = endTimeField; calendarPopup.open() }
                         }
                     }
@@ -225,13 +217,13 @@ Dialog {
                     enabled: !SystemController.archiveController.isSearching
                     
                     background: Rectangle {
-                        color: parent.down ? "#2b6cb0" : "#3f89d6"
-                        radius: 4
+                        color: parent.down ? Theme.metroBlueHover : Theme.metroBlue
+                        radius: Theme.metroTileRadius
                         opacity: parent.enabled ? 1 : 0.5
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: "#fff"
+                        color: Theme.textPrimary
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -257,8 +249,8 @@ Dialog {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    color: "#1e1e1e"
-                    border.color: "#333"
+                    color: Theme.metroBackground
+                    border.color: Theme.metroTile
                     radius: 2
                     
                     ListView {
@@ -274,7 +266,7 @@ Dialog {
                             highlighted: ListView.isCurrentItem
                             
                             background: Rectangle {
-                                color: highlighted ? "#3f89d6" : (index % 2 == 0 ? "#252526" : "#2a2a2b")
+                                color: highlighted ? Theme.metroBlue : (index % 2 == 0 ? Theme.metroSidebarBackground : Theme.metroTile)
                             }
                             
                             contentItem: RowLayout {
@@ -289,14 +281,14 @@ Dialog {
                                     spacing: 2
                                     Text { 
                                         text: modelData.fileName
-                                        color: "#fff"
+                                        color: Theme.textPrimary
                                         font.pixelSize: 12
                                         elide: Text.ElideMiddle
                                         Layout.fillWidth: true
                                     }
                                     Text { 
                                         text: modelData.startTime.toLocaleString(Qt.locale(), "HH:mm:ss") + " - " + modelData.endTime.toLocaleString(Qt.locale(), "HH:mm:ss")
-                                        color: "#aaa"
+                                        color: Theme.textMuted
                                         font.pixelSize: 10
                                     }
                                 }
@@ -309,7 +301,7 @@ Dialog {
                                         anchors.centerIn: parent
                                         width: 20
                                         height: 20
-                                        color: "#ccc"
+                                        color: Theme.textSecondary
                                         name: "folder_open"
                                         path: "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
                                     }
@@ -378,7 +370,7 @@ Dialog {
                     Text {
                         anchors.centerIn: parent
                         text: currentFile ? currentFile.fileName : I18n.t("Выберите файл")
-                        color: "#666"
+                        color: Theme.textFaint
                         visible: !player.running && !player.url
                         font.pixelSize: 20
                     }
@@ -392,7 +384,7 @@ Dialog {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 120
-                color: isFullScreen ? "#80000000" : "#2a2a2b"
+                color: isFullScreen ? "#80000000" : Theme.metroTile
                 
                 MouseArea { anchors.fill: parent }
 
@@ -414,10 +406,10 @@ Dialog {
                             
                             Text { 
                                 text: formatTime(player.position)
-                                color: "#ccc"
+                                color: Theme.textSecondary
                             }
                             
-                            Slider {
+                            MetroSlider {
                                 Layout.fillWidth: true
                                 from: 0
                                 to: player.duration
@@ -432,11 +424,11 @@ Dialog {
                                     width: parent.availableWidth
                                     height: implicitHeight
                                     radius: 2
-                                    color: "#444"
+                                    color: Theme.metroStroke
                                     Rectangle {
                                         width: parent.visualPosition * parent.width
                                         height: parent.height
-                                        color: "#3f89d6"
+                                        color: Theme.metroBlue
                                         radius: 2
                                     }
                                     // Highlight selected range
@@ -445,7 +437,7 @@ Dialog {
                                         x: (exportStartMs / player.duration) * parent.width
                                         width: ((exportEndMs - exportStartMs) / player.duration) * parent.width
                                         height: parent.height
-                                        color: "white"
+                                        color: Theme.textPrimary
                                         opacity: 0.3
                                     }
 
@@ -543,14 +535,14 @@ Dialog {
                                     implicitWidth: 16
                                     implicitHeight: 16
                                     radius: 8
-                                    color: parent.pressed ? "#f0f0f0" : "#f6f6f6"
-                                    border.color: "#bdbebf"
+                                    color: parent.pressed ? Theme.metroBlueHover : Theme.metroBlue
+                                    border.color: parent.hovered ? Theme.textPrimary : Theme.metroStrokeStrong
                                 }
                             }
                             
                             Text { 
                                 text: formatTime(player.duration)
-                                color: "#ccc"
+                                color: Theme.textSecondary
                             }
                         }
                     }
@@ -572,8 +564,8 @@ Dialog {
                                 Layout.preferredHeight: 40
                                 text: "-10s"
                                 hoverEnabled: false
-                                background: Rectangle { color: "transparent"; border.color: "#666"; radius: 20 }
-                                contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
+                                background: Rectangle { color: "transparent"; border.color: Theme.textFaint; radius: 20 }
+                                contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
                                 onClicked: player.position = Math.max(0, player.position - 10000)
                             }
 
@@ -585,12 +577,12 @@ Dialog {
                                 hoverEnabled: false
                                 
                                 background: Rectangle {
-                                    color: parent.down ? "#2b6cb0" : "#3f89d6"
+                                    color: parent.down ? Theme.metroBlueHover : Theme.metroBlue
                                     radius: 20
                                 }
                                 contentItem: Text {
                                     text: parent.text
-                                    color: "#fff"
+                                    color: Theme.textPrimary
                                     font.pixelSize: 20
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
@@ -614,8 +606,8 @@ Dialog {
                                 Layout.preferredHeight: 40
                                 text: "+10s"
                                 hoverEnabled: false
-                                background: Rectangle { color: "transparent"; border.color: "#666"; radius: 20 }
-                                contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
+                                background: Rectangle { color: "transparent"; border.color: Theme.textFaint; radius: 20 }
+                                contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10 }
                                 onClicked: player.position = Math.min(player.duration, player.position + 10000)
                             }
                             
@@ -625,8 +617,8 @@ Dialog {
                                 Layout.preferredHeight: 40
                                 text: "■"
                                 hoverEnabled: false
-                                background: Rectangle { color: "transparent"; border.color: "#666"; radius: 20 }
-                                contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                background: Rectangle { color: "transparent"; border.color: Theme.textFaint; radius: 20 }
+                                contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: {
                                     player.running = false
                                     player.url = ""
@@ -636,23 +628,23 @@ Dialog {
                             // Volume
                             RowLayout {
                                 spacing: 10
-                                Text { text: "🔊"; color: "#ccc" }
+                                Text { text: "🔊"; color: Theme.textSecondary }
                                 
                                 // Normalization Toggle
                                 Button {
                                     width: 26
                                     height: 26
                                     background: Rectangle { 
-                                        color: player.audioNormalization ? "#2563eb" : "transparent" 
+                                        color: player.audioNormalization ? Theme.metroBlue : "transparent"
                                         radius: 3 
-                                        border.color: "#666"
+                                        border.color: Theme.textFaint
                                         border.width: 1
                                     }
                                     contentItem: Text {
                                         text: "N"
                                         font.bold: true
                                         font.pixelSize: 12
-                                        color: "white"
+                                        color: Theme.textPrimary
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -666,7 +658,7 @@ Dialog {
                                     }
                                 }
 
-                                Slider {
+                                MetroSlider {
                                     from: 0
                                     to: 2.0 // Boost up to 200%
                                     value: player.volume
@@ -681,11 +673,11 @@ Dialog {
                                         width: parent.availableWidth
                                         height: implicitHeight
                                         radius: 2
-                                        color: "#444"
+                                        color: Theme.metroStroke
                                         Rectangle {
                                             width: parent.visualPosition * parent.width
                                             height: parent.height
-                                            color: parent.visualPosition > 0.5 ? "#ff9800" : "#3f89d6"
+                                            color: parent.visualPosition > 0.5 ? Theme.metroAmber : Theme.metroBlue
                                             radius: 2
                                         }
                                         // 100% Mark
@@ -694,7 +686,7 @@ Dialog {
                                             width: 1
                                             height: 8
                                             anchors.verticalCenter: parent.verticalCenter
-                                            color: "#888"
+                                            color: Theme.textMuted
                                         }
                                     }
 
@@ -704,8 +696,8 @@ Dialog {
                                         implicitWidth: 16
                                         implicitHeight: 16
                                         radius: 8
-                                        color: parent.pressed ? "#f0f0f0" : "#f6f6f6"
-                                        border.color: "#bdbebf"
+                                        color: parent.pressed ? Theme.metroBlueHover : Theme.metroBlue
+                                        border.color: parent.hovered ? Theme.textPrimary : Theme.metroStrokeStrong
                                     }
                                 }
                             }
@@ -746,7 +738,7 @@ Dialog {
                                             fileDialog.open()
                                         }
                                     }
-                                    background: Rectangle { color: "#3f89d6"; radius: 4 }
+                                    background: Rectangle { color: Theme.metroBlue; radius: Theme.metroTileRadius }
                                     contentItem: Text { text: parent.text; color: "white" }
                                 }
                                 Button {
@@ -754,7 +746,7 @@ Dialog {
                                     hoverEnabled: false
                                     onClicked: exportMode = false
                                     background: Rectangle { color: "transparent"; radius: 4 }
-                                    contentItem: Text { text: parent.text; color: "#ccc" }
+                                    contentItem: Text { text: parent.text; color: Theme.textSecondary }
                                 }
                             }
 
@@ -770,7 +762,7 @@ Dialog {
                                 }
                                 contentItem: Text { 
                                     text: "✂"
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     font.pixelSize: 24
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
@@ -797,7 +789,7 @@ Dialog {
                                     anchors.centerIn: parent
                                     width: 24
                                     height: 24
-                                    color: "#ccc"
+                                    color: Theme.textSecondary
                                     name: isFullScreen ? "fullscreen_exit" : "fullscreen"
                                     path: isFullScreen 
                                         ? "M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" 
@@ -854,8 +846,8 @@ Dialog {
         property date selectedDate: new Date()
 
         background: Rectangle {
-            color: "#252526"
-            border.color: "#3f89d6"
+            color: Theme.metroSidebarBackground
+            border.color: Theme.metroBlue
             radius: 4
         }
 
@@ -873,8 +865,8 @@ Dialog {
                         d.setMonth(d.getMonth() - 1)
                         calendarPopup.selectedDate = d
                     }
-                    background: Rectangle { color: "#333"; radius: 2 }
-                    contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { color: Theme.metroTile; radius: 2 }
+                    contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
                 Label {
                     text: calendarPopup.selectedDate.toLocaleString(Qt.locale(), "MMMM yyyy")
@@ -891,8 +883,8 @@ Dialog {
                         d.setMonth(d.getMonth() + 1)
                         calendarPopup.selectedDate = d
                     }
-                    background: Rectangle { color: "#333"; radius: 2 }
-                    contentItem: Text { text: parent.text; color: "#ccc"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { color: Theme.metroTile; radius: 2 }
+                    contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
 
@@ -900,7 +892,7 @@ Dialog {
                 Layout.fillWidth: true
                 delegate: Text {
                     text: model.shortName
-                    color: "#aaa"
+                    color: Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: 12
                 }
@@ -937,12 +929,12 @@ Dialog {
                     
                     contentItem: Text {
                         text: parent.text
-                        color: parent.highlighted ? "white" : "#cccccc"
+                        color: parent.highlighted ? "white" : Theme.textSecondary
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
                     background: Rectangle {
-                        color: parent.highlighted ? "#3f89d6" : "transparent"
+                        color: parent.highlighted ? Theme.metroBlue : "transparent"
                         radius: 2
                     }
                 }

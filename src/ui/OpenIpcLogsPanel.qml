@@ -15,26 +15,27 @@ Rectangle {
     Layout.leftMargin: 16
     Layout.rightMargin: 16
     Layout.preferredHeight: 360
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
         spacing: 10
 
-        RowLayout {
+        Text {
             Layout.fillWidth: true
+            text: I18n.t("Логи и обслуживание")
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
+            font.bold: true
+            font.pixelSize: 17
+        }
 
-            Text {
-                Layout.fillWidth: true
-                text: I18n.t("Логи и обслуживание")
-                color: Theme.textPrimary
-                font.bold: true
-                font.pixelSize: 17
-            }
-
+        Flow {
+            Layout.fillWidth: true
+            spacing: 8
             MajesticButton {
                 text: root.controller && root.controller.firmwareLiveLogs ? I18n.t("Stop live") : I18n.t("Live logs")
                 primary: !(root.controller && root.controller.firmwareLiveLogs)
@@ -90,19 +91,20 @@ Rectangle {
 
             Text {
                 text: root.controller && root.controller.firmwareWebSocketsAvailable ? "/ws/logs" : I18n.t("polling")
-                color: root.controller && root.controller.firmwareLiveLogs ? Theme.success : Theme.textMuted
+                color: root.controller && root.controller.firmwareLiveLogs ? Theme.metroGreen : Theme.textMuted
                 font.family: "Consolas"
                 font.pixelSize: 10
             }
         }
 
-        RowLayout {
+        Flow {
             Layout.fillWidth: true
             spacing: 8
 
             Text {
                 text: I18n.t("Источник")
                 color: Theme.textMuted
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 11
             }
 
@@ -128,11 +130,10 @@ Rectangle {
                 onClicked: root.controller.loadFirmwareLogs("kernel")
             }
 
-            Item { Layout.fillWidth: true }
-
             Text {
                 text: I18n.t("Ring buffer")
                 color: Theme.textMuted
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 11
             }
 
@@ -143,12 +144,13 @@ Rectangle {
                 value: 256
                 stepSize: 16
                 editable: true
-                Layout.preferredWidth: 110
+                width: 110
             }
 
             Text {
                 text: "KiB"
                 color: Theme.textMuted
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 11
             }
 
@@ -169,8 +171,8 @@ Rectangle {
                 implicitWidth: logText.implicitWidth + 24
                 implicitHeight: logText.implicitHeight + 24
                 color: Theme.controlBackground
-                border.color: Theme.controlBorder
-                radius: Theme.radiusMd
+                border.color: Theme.metroStroke
+                radius: Theme.metroTileRadius
 
                 Text {
                     id: logText

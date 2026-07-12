@@ -15,9 +15,16 @@ Item {
     property int cameraDataVersion: 0
     property int activeGridIndex: -1
     property bool isSidebarVisible: SystemController.appSettings.sidebarVisible !== false
-    property real sidebarExpandedWidth: 300
+    property bool sidebarToolsExpanded: SystemController.appSettings.sidebarToolsExpanded !== false
+    readonly property real sidebarExpandedWidth: Math.max(264, Math.min(320, width * 0.25))
     property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
     property real sidebarOpenProgress: sidebarExpandedWidth > 0 ? (sidebarWidth / sidebarExpandedWidth) : 0
+    readonly property bool layoutReady: width > 0
+                                        && height > 0
+                                        && dashboardGridPanel.width > 0
+                                        && dashboardGridPanel.height > 0
+                                        && (!isSidebarVisible || dashboardSidebar.width >= 260)
+    readonly property bool sidebarToolsSectionVisible: dashboardSidebar.toolsContentVisible
 
     Behavior on sidebarWidth {
         NumberAnimation {
@@ -271,6 +278,16 @@ Item {
         SystemController.saveAppSettings(settings)
     }
 
+    function setSidebarToolsExpanded(expanded) {
+        if (sidebarToolsExpanded === expanded) {
+            return
+        }
+        sidebarToolsExpanded = expanded
+        var settings = SystemController.getAppSettings()
+        settings.sidebarToolsExpanded = expanded
+        SystemController.saveAppSettings(settings)
+    }
+
     function closeEmptyHint(remember) {
         emptyHintDismissed = true
         if (remember) {
@@ -494,6 +511,10 @@ Item {
             var nextVisible = SystemController.appSettings.sidebarVisible !== false
             if (root.isSidebarVisible !== nextVisible) {
                 root.isSidebarVisible = nextVisible
+            }
+            var nextToolsExpanded = SystemController.appSettings.sidebarToolsExpanded !== false
+            if (root.sidebarToolsExpanded !== nextToolsExpanded) {
+                root.sidebarToolsExpanded = nextToolsExpanded
             }
         }
     }
@@ -792,6 +813,8 @@ Item {
         }
 
         RowLayout {
+            id: dashboardContentRow
+
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 8
@@ -801,8 +824,11 @@ Item {
             spacing: Math.max(0, 8 * root.sidebarOpenProgress)
 
             DashboardGridPanel {
+                id: dashboardGridPanel
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumWidth: 0
                 systemController: SystemController
                 gridRows: root.gridRows
                 gridCols: root.gridCols
@@ -837,6 +863,9 @@ Item {
             }
 
             DashboardSidebar {
+                id: dashboardSidebar
+
+                Layout.minimumWidth: 0
                 dashboard: root
                 systemController: SystemController
                 dragProxyItem: dragProxy
@@ -845,8 +874,10 @@ Item {
                 cameraDataVersion: root.cameraDataVersion
                 deviceFilterText: root.deviceFilterText
                 canSettings: root.canSettings
+                toolsExpanded: root.sidebarToolsExpanded
 
                 onCloseSidebarRequested: root.setSidebarVisible(false)
+                onToolsExpandedToggleRequested: root.setSidebarToolsExpanded(!root.sidebarToolsExpanded)
                 onNoAccessRequested: root.showNoAccess()
                 onSearchRequested: root.openSearchDialog()
                 onHealthRequested: root.openHealthDialog()

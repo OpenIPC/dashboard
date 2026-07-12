@@ -18,36 +18,54 @@ ColumnLayout {
 
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: 76
+        Layout.minimumHeight: 92
+        Layout.preferredHeight: Math.max(Layout.minimumHeight, settingsToolbarContent.implicitHeight + 20)
         Layout.margins: 12
-        color: Theme.panelSoftBackground
-        border.color: Theme.panelBorder
-        radius: Theme.radiusMd
+        color: Theme.metroSurface
+        border.color: Theme.metroStroke
+        radius: Theme.metroTileRadius
 
-        RowLayout {
+        ColumnLayout {
+            id: settingsToolbarContent
+
             anchors.fill: parent
             anchors.margins: 10
-            spacing: 10
+            spacing: 8
 
-            ColumnLayout {
-                Layout.preferredWidth: 260
-                spacing: 2
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
 
-                Text {
-                    text: root.controller ? root.controller.selectedGroupLabel() : ""
-                    color: Theme.textPrimary
-                    font.bold: true
-                    font.pixelSize: 14
-                    elide: Text.ElideRight
+                ColumnLayout {
                     Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.controller ? root.controller.selectedGroupLabel() : ""
+                        color: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
+                        font.bold: true
+                        font.pixelSize: 14
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: I18n.t("%1 параметров · schema этой камеры", [
+                                         root.controller ? root.controller.groupFieldCount(root.controller.selectedGroupId) : 0
+                                     ])
+                        color: Theme.textMuted
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
                 }
 
                 Text {
-                    text: I18n.t("%1 параметров · schema этой камеры", [
-                                     root.controller ? root.controller.groupFieldCount(root.controller.selectedGroupId) : 0
-                                 ])
-                    color: Theme.textMuted
-                    font.pixelSize: 11
+                    text: I18n.t("Изменено: %1", [root.controller ? root.controller.dirtyCount : 0])
+                    color: root.controller && root.controller.dirtyCount ? Theme.metroAmber : Theme.textMuted
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
                 }
             }
 
@@ -57,33 +75,32 @@ ColumnLayout {
                 placeholderText: I18n.t("Поиск по имени, пути или описанию…")
             }
 
-            MajesticCheckBox {
-                id: livePreview
-                text: I18n.t("Live ISP")
-                checked: true
-                enabled: root.controller && root.controller.capabilities.liveImage === true
-            }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
 
-            Text {
-                text: I18n.t("Изменено: %1", [root.controller ? root.controller.dirtyCount : 0])
-                color: root.controller && root.controller.dirtyCount ? Theme.warning : Theme.textMuted
-                font.pixelSize: 12
-            }
+                MajesticCheckBox {
+                    id: livePreview
+                    text: I18n.t("Live ISP")
+                    checked: true
+                    enabled: root.controller && root.controller.capabilities.liveImage === true
+                }
 
-            MajesticButton {
-                text: I18n.t("Отменить")
-                enabled: root.controller && root.controller.dirtyCount > 0
-                onClicked: root.controller.resetDraft()
-            }
+                MajesticButton {
+                    text: I18n.t("Отменить")
+                    enabled: root.controller && root.controller.dirtyCount > 0
+                    onClicked: root.controller.resetDraft()
+                }
 
-            MajesticButton {
-                text: I18n.t("Проверить и применить")
-                primary: true
-                enabled: root.controller
-                         && root.controller.dirtyCount > 0
-                         && root.controller.capabilities.configWrite === true
-                         && !root.controller.loading
-                onClicked: root.controller.prepareApply(root.controller.editedConfig())
+                MajesticButton {
+                    text: I18n.t("Проверить и применить")
+                    primary: true
+                    enabled: root.controller
+                             && root.controller.dirtyCount > 0
+                             && root.controller.capabilities.configWrite === true
+                             && !root.controller.loading
+                    onClicked: root.controller.prepareApply(root.controller.editedConfig())
+                }
             }
         }
     }
@@ -94,9 +111,9 @@ ColumnLayout {
         Layout.leftMargin: 12
         Layout.rightMargin: 12
         Layout.preferredHeight: visible ? 54 : 0
-        color: "#422006"
-        border.color: Theme.warning
-        radius: Theme.radiusSm
+        color: Theme.warningSurface
+        border.color: Theme.metroAmber
+        radius: Theme.metroTileRadius
 
         RowLayout {
             anchors.fill: parent
@@ -106,7 +123,7 @@ ColumnLayout {
             Text {
                 Layout.fillWidth: true
                 text: I18n.t("Сохранено. Структурные изменения вступят в силу после reload pipeline; видеопотоки кратко мигнут.")
-                color: "#fde68a"
+                color: Theme.warningText
                 wrapMode: Text.WordWrap
                 font.pixelSize: 11
             }
@@ -129,15 +146,15 @@ ColumnLayout {
         Layout.leftMargin: 12
         Layout.rightMargin: 12
         Layout.preferredHeight: visible ? 48 : 0
-        color: "#422006"
-        border.color: Theme.warning
-        radius: Theme.radiusSm
+        color: Theme.warningSurface
+        border.color: Theme.metroAmber
+        radius: Theme.metroTileRadius
 
         Text {
             anchors.fill: parent
             anchors.margins: 9
             text: I18n.t("Старая сборка Majestic: чтение доступно, schema-safe запись отключена.")
-            color: "#fde68a"
+            color: Theme.warningText
             wrapMode: Text.WordWrap
         }
     }
@@ -152,9 +169,9 @@ ColumnLayout {
         Rectangle {
             Layout.preferredWidth: 230
             Layout.fillHeight: true
-            color: Theme.panelAltBackground
-            border.color: Theme.panelBorder
-            radius: Theme.radiusLg
+            color: Theme.metroSurface
+            border.color: Theme.metroStroke
+            radius: Theme.metroTileRadius
 
             ColumnLayout {
                 anchors.fill: parent
@@ -164,6 +181,7 @@ ColumnLayout {
                 Text {
                     text: I18n.t("Разделы Majestic")
                     color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.bold: true
                     font.pixelSize: 14
                 }
@@ -202,7 +220,7 @@ ColumnLayout {
                                 Layout.preferredWidth: 42
                                 Layout.preferredHeight: 22
                                 radius: 11
-                                color: root.controller.selectedGroupId === groupButton.modelData.id ? Theme.accent : Theme.controlBackgroundAlt
+                                color: root.controller.selectedGroupId === groupButton.modelData.id ? Theme.metroBlue : Theme.metroSurfaceAlt
 
                                 Text {
                                     anchors.centerIn: parent
@@ -215,11 +233,11 @@ ColumnLayout {
                         }
 
                         background: Rectangle {
-                            radius: Theme.radiusMd
+                            radius: Theme.metroTileRadius
                             color: root.controller.selectedGroupId === groupButton.modelData.id
                                    ? "#1e3a8a"
-                                   : (groupButton.hovered ? Theme.cardHover : Theme.controlBackground)
-                            border.color: root.controller.selectedGroupId === groupButton.modelData.id ? Theme.accent : Theme.controlBorder
+                                   : (groupButton.hovered ? Theme.metroTileHover : Theme.controlBackground)
+                            border.color: root.controller.selectedGroupId === groupButton.modelData.id ? Theme.metroBlue : Theme.metroStroke
                         }
                     }
                 }
@@ -254,9 +272,9 @@ ColumnLayout {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 292
-                        color: Theme.cardBackground
-                        border.color: Theme.cardBorder
-                        radius: Theme.radiusLg
+                        color: Theme.metroSurface
+                        border.color: Theme.metroStroke
+                        radius: Theme.metroTileRadius
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -273,8 +291,8 @@ ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 color: "#000000"
-                                border.color: Theme.accent
-                                radius: Theme.radiusMd
+                                border.color: Theme.metroBlue
+                                radius: Theme.metroTileRadius
 
                                 Text {
                                     anchors.centerIn: parent
@@ -290,9 +308,9 @@ ColumnLayout {
                     Rectangle {
                         Layout.preferredWidth: 390
                         Layout.preferredHeight: 292
-                        color: Theme.cardBackground
-                        border.color: Theme.cardBorder
-                        radius: Theme.radiusLg
+                        color: Theme.metroSurface
+                        border.color: Theme.metroStroke
+                        radius: Theme.metroTileRadius
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -359,9 +377,9 @@ ColumnLayout {
 
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.controller.cardHeight(sectionCard.modelData)
-                            color: Theme.cardBackground
-                            border.color: Theme.cardBorder
-                            radius: Theme.radiusLg
+                            color: Theme.metroSurface
+                            border.color: Theme.metroStroke
+                            radius: Theme.metroTileRadius
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -383,8 +401,8 @@ ColumnLayout {
                                     Rectangle {
                                         Layout.preferredWidth: 44
                                         Layout.preferredHeight: 22
-                                        radius: 11
-                                        color: Theme.controlBackgroundAlt
+                                        radius: Theme.metroTileRadius
+                                        color: Theme.metroSurfaceAlt
 
                                         Text {
                                             anchors.centerIn: parent
@@ -419,9 +437,9 @@ ColumnLayout {
                              && root.controller.liveFieldsForGroup(root.controller.selectedGroupId).length === 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 120 : 0
-                    color: Theme.cardBackground
-                    border.color: Theme.cardBorder
-                    radius: Theme.radiusLg
+                    color: Theme.metroSurface
+                    border.color: Theme.metroStroke
+                    radius: Theme.metroTileRadius
 
                     Text {
                         anchors.centerIn: parent

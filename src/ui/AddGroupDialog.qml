@@ -14,9 +14,9 @@ Dialog {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     
     background: Rectangle {
-        color: "#333333"
-        radius: 8
-        border.color: "#444444"
+        color: Theme.metroSurface
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
     
     header: Rectangle {
@@ -27,22 +27,19 @@ Dialog {
             anchors.leftMargin: 20
             anchors.verticalCenter: parent.verticalCenter
             text: root.title
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 16
             font.bold: true
         }
-        Text {
+        MetroWindowButton {
+            kind: "close"
             anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: "×"
-            color: "#aaaaaa"
-            font.pixelSize: 20
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
+            width: 38
+            height: 34
+            onClicked: root.close()
         }
     }
 
@@ -54,19 +51,22 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Название группы")
-                color: "white"
+                color: Theme.textSecondary
+                font.family: Theme.metroFontFamily
                 Layout.preferredWidth: 120
             }
             TextField {
                 id: groupNameField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Название")
-                placeholderTextColor: "#aaaaaa"
-                color: "white"
+                placeholderTextColor: Theme.textFaint
+                color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.controlBackground
+                    border.color: groupNameField.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                    border.width: groupNameField.activeFocus ? 2 : 1
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -80,12 +80,15 @@ Dialog {
             Button {
                 text: I18n.t("Создать")
                 background: Rectangle {
-                    color: parent.down ? "#388e3c" : "#4caf50"
-                    radius: 4
+                    color: parent.down ? Theme.metroBlueHover : (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                    radius: Theme.metroTileRadius
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
+                    font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -102,12 +105,15 @@ Dialog {
             Button {
                 text: I18n.t("Отмена")
                 background: Rectangle {
-                    color: parent.down ? "#555555" : "#666666"
-                    radius: 4
+                    color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                    radius: Theme.metroTileRadius
+                    border.color: parent.hovered ? Theme.metroStrokeStrong : Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }

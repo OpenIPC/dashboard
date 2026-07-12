@@ -15,12 +15,15 @@ Rectangle {
     property alias snapshotGray: snapshotGray.checked
 
     Layout.fillWidth: true
-    Layout.preferredHeight: 218
-    color: Theme.cardBackground
-    border.color: Theme.cardBorder
-    radius: Theme.radiusLg
+    Layout.minimumHeight: 218
+    Layout.preferredHeight: Math.max(Layout.minimumHeight, content.implicitHeight + 28)
+    color: Theme.metroSurface
+    border.color: Theme.metroStroke
+    radius: Theme.metroTileRadius
 
     ColumnLayout {
+        id: content
+
         anchors.fill: parent
         anchors.margins: 14
         spacing: 8
@@ -28,6 +31,7 @@ Rectangle {
         Text {
             text: I18n.t("Majestic snapshot / config backup / audio")
             color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.bold: true
             font.pixelSize: 15
         }
@@ -37,6 +41,7 @@ Rectangle {
             text: I18n.t("Это backup только конфигурации Majestic. Полный OpenIPC firmware/overlay backup находится во вкладке Tools.")
             color: Theme.textMuted
             wrapMode: Text.WordWrap
+            font.family: Theme.metroFontFamily
             font.pixelSize: 11
         }
 
@@ -120,15 +125,23 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.panelBorder
+            color: Theme.metroStroke
         }
 
         Text {
             Layout.fillWidth: true
             text: root.controller ? root.controller.backupRestoreSummary() : ""
-            color: root.controller && root.controller.backupRestorePath.length ? Theme.accentHover : Theme.textMuted
+            color: root.controller && root.controller.backupRestorePath.length ? Theme.metroBlue : Theme.textMuted
             elide: Text.ElideRight
+            font.family: Theme.metroFontFamily
             font.pixelSize: 11
+        }
+
+        MajesticRestoreDiffPanel {
+            visible: root.controller && root.controller.backupRestorePath.length > 0
+            rows: root.controller ? root.controller.backupRestoreRiskRows() : []
+            changes: root.controller ? root.controller.backupRestoreChanges : []
+            summary: root.controller ? root.controller.backupRestoreRiskSummary() : ""
         }
 
         Flow {

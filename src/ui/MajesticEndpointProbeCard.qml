@@ -14,9 +14,9 @@ Rectangle {
 
     Layout.fillWidth: true
     Layout.preferredHeight: 92
-    color: Theme.cardBackground
+    color: Theme.metroSurface
     border.color: probeCard.controller.probeStateColor(probeCard.state)
-    radius: Theme.radiusLg
+    radius: Theme.metroTileRadius
 
     RowLayout {
         anchors.fill: parent
@@ -32,17 +32,19 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 3
             Text {
-                text: probeCard.title
-                color: Theme.textPrimary
-                font.bold: true
+            text: probeCard.title
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
+            font.bold: true
                 font.pixelSize: 13
                 elide: Text.ElideRight
             }
             Text {
                 Layout.fillWidth: true
-                text: probeCard.controller.probeStateText(probeCard.state, probeCard.message, probeCard.elapsedMs)
-                color: Theme.textMuted
-                font.pixelSize: 11
+            text: probeCard.controller.probeStateText(probeCard.state, probeCard.message, probeCard.elapsedMs)
+            color: Theme.textMuted
+            font.family: Theme.metroFontFamily
+            font.pixelSize: 11
                 elide: Text.ElideRight
             }
         }

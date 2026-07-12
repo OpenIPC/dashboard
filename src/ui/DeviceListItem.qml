@@ -8,11 +8,13 @@ import OpenIPC
 Rectangle {
     id: root
 
-    property string cameraName: ""
-    property string cameraIp: ""
+    required property string cameraName
+    required property string cameraIp
+    required property int cameraPort
     property string effectiveStatus: "Offline"
     property string effectiveDetail: ""
     property int cameraIndex: -1
+    property int cameraDataVersion: 0
     property bool online: false
     property bool canSettings: false
     property Item dashboard: null
@@ -26,16 +28,38 @@ Rectangle {
     signal healthRequested(string cameraIp)
     signal removeRequested(int cameraIndex)
 
-    implicitHeight: root.effectiveDetail !== "" ? 72 : 58
-    radius: Theme.radiusLg
-    color: deviceHover.hovered ? Theme.cardHover : Theme.panelSoftBackground
-    border.color: deviceHover.hovered ? (root.online ? Theme.success : Theme.warning) : Theme.panelBorder
-    border.width: 1
+    implicitHeight: root.effectiveDetail !== "" ? 92 : 76
+    radius: Theme.metroTileRadius
+    color: deviceHover.hovered ? Theme.metroTileHover : Theme.metroSurfaceAlt
+    border.color: deviceHover.hovered ? Theme.metroStrokeStrong : Theme.metroStroke
+    border.width: deviceHover.hovered ? 2 : 1
     clip: true
 
     readonly property string displayName: (root.cameraName && root.cameraName.trim() !== "")
                                           ? root.cameraName
                                           : I18n.t("Камера") + " " + root.cameraIp
+    readonly property var healthResult: {
+        var version = root.cameraDataVersion
+        if (!root.systemController || !root.systemController.cameraHealthController
+                || root.cameraIp === "")
+            return ({})
+        return root.systemController.cameraHealthController.resultForCamera(root.cameraIp)
+    }
+    readonly property real temperatureC: Number(root.healthResult.temperatureC)
+    readonly property bool hasTemperature: root.healthResult.temperatureC !== undefined
+                                           && root.healthResult.temperatureC !== null
+                                           && Number.isFinite(root.temperatureC)
+    readonly property string temperatureText: root.hasTemperature
+                                              ? Math.round(root.temperatureC) + " °C"
+                                              : "— °C"
+    readonly property string healthStatus: String(root.healthResult.status || "")
+    readonly property color healthColor: root.healthStatus === "error" ? Theme.metroRed
+                                         : (root.healthStatus === "warning" ? Theme.warning
+                                            : (root.healthStatus === "ok" ? Theme.metroGreen
+                                               : (root.online ? Theme.metroGreen : Theme.metroRed)))
+    readonly property bool layoutReady: root.implicitHeight >= 76
+                                        && cameraIpText.width > 40
+                                        && temperatureValue.width > 20
 
     HoverHandler {
         id: deviceHover
@@ -44,6 +68,14 @@ Rectangle {
     ToolTip.visible: deviceHover.hovered && root.effectiveDetail !== ""
     ToolTip.text: I18n.t(root.effectiveDetail)
     ToolTip.delay: 500
+
+    Rectangle {
+        width: 4
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        color: root.healthColor
+    }
 
     MouseArea {
         id: dragArea
@@ -97,10 +129,14 @@ Rectangle {
     }
 
     RowLayout {
+        id: mainLayout
+
         anchors.fill: parent
-        anchors.leftMargin: 10
+        anchors.leftMargin: 12
         anchors.rightMargin: 8
-        spacing: 10
+        anchors.topMargin: 7
+        anchors.bottomMargin: 7
+        spacing: 8
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -120,42 +156,85 @@ Rectangle {
                 }
 
                 Text {
+                    id: cameraIpText
+
                     Layout.fillWidth: true
                     text: root.displayName
                     color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.pixelSize: 12
                     font.bold: true
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    id: statusText
+
+                    text: I18n.t(root.effectiveStatus
+                                 || (root.online ? "Online" : "Offline"))
+                    color: root.online ? Theme.metroGreen : Theme.metroRed
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 10
+                    font.bold: true
+                    horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: 8
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.cameraIp
+                    text: "IP " + root.cameraIp
                     color: Theme.textMuted
-                    font.pixelSize: 11
-                    font.family: "Consolas"
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 10
                     elide: Text.ElideRight
                 }
 
-                Rectangle {
-                    Layout.preferredWidth: statusText.implicitWidth + 16
-                    Layout.preferredHeight: 20
-                    radius: 10
-                    color: root.online ? "#0f3f27" : "#3f1212"
-                    border.color: root.online ? Theme.success : Theme.danger
+                Text {
+                    visible: root.width >= 280
+                    text: "RTSP " + (root.cameraPort > 0 ? root.cameraPort : 554)
+                    color: Theme.textMuted
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 10
+                }
 
+                RowLayout {
+                    spacing: 3
+
+                    SidebarIcon {
+                        Layout.preferredWidth: 13
+                        Layout.preferredHeight: 13
+                        name: "device_thermostat"
+                        fallbackText: "T"
+                        color: root.hasTemperature && root.temperatureC >= 75
+                               ? Theme.warning : Theme.textMuted
+                        pixelSize: 12
+                    }
                     Text {
-                        id: statusText
-                        anchors.centerIn: parent
-                        text: I18n.t(root.effectiveStatus || (root.online ? "Online" : "Offline"))
-                        color: root.online ? Theme.success : Theme.danger
+                        id: temperatureValue
+
+                        text: root.temperatureText
+                        color: root.hasTemperature && root.temperatureC >= 75
+                               ? Theme.warning
+                               : (root.hasTemperature ? Theme.textSecondary
+                                                      : Theme.textMuted)
+                        font.family: Theme.metroFontFamily
                         font.pixelSize: 10
-                        font.bold: true
+                        font.bold: root.hasTemperature
+
+                        ToolTip.visible: temperatureHover.hovered
+                        ToolTip.delay: 450
+                        ToolTip.text: root.hasTemperature
+                                      ? I18n.t("Температура SoC")
+                                      : (I18n.language === "ru"
+                                         ? "Температура появится после профиля OpenIPC или Глубокий"
+                                         : "Temperature appears after an OpenIPC or Deep health run")
+
+                        HoverHandler { id: temperatureHover }
                     }
                 }
             }
@@ -165,13 +244,16 @@ Rectangle {
                 visible: root.effectiveDetail !== ""
                 text: I18n.t(root.effectiveDetail)
                 color: root.online ? Theme.textMuted : Theme.warning
+                font.family: Theme.metroFontFamily
                 font.pixelSize: 10
                 elide: Text.ElideRight
             }
         }
 
         RowLayout {
-            Layout.preferredWidth: root.canSettings ? 92 : 0
+            Layout.preferredWidth: root.canSettings && deviceHover.hovered ? 92 : 0
+            Layout.minimumWidth: 0
+            Layout.maximumWidth: root.canSettings && deviceHover.hovered ? 92 : 0
             Layout.alignment: Qt.AlignVCenter
             visible: root.canSettings
             opacity: deviceHover.hovered ? 1.0 : 0.0
@@ -183,9 +265,9 @@ Rectangle {
 
             Repeater {
                 model: [
-                    { text: "+", tooltip: I18n.t("Добавить в раскладку"), action: "grid" },
-                    { text: "O", tooltip: I18n.t("OpenIPC Control Center"), action: "majestic" },
-                    { text: "↻", tooltip: I18n.t("Проверить здоровье"), action: "health" }
+                    { icon: "add", fallback: "+", tooltip: I18n.t("Добавить в раскладку"), action: "grid" },
+                    { icon: "settings_input_antenna", fallback: "O", tooltip: I18n.t("OpenIPC Control Center"), action: "majestic" },
+                    { icon: "refresh", fallback: "R", tooltip: I18n.t("Проверить здоровье"), action: "health" }
                 ]
 
                 delegate: Rectangle {
@@ -195,21 +277,23 @@ Rectangle {
 
                     Layout.preferredWidth: 26
                     Layout.preferredHeight: 24
-                    radius: Theme.radiusMd
-                    color: quickActionMouse.containsMouse ? Theme.accent : Theme.controlBackground
-                    border.color: quickActionMouse.containsMouse ? Theme.accentHover : Theme.controlBorder
+                    radius: Theme.metroTileRadius
+                    color: quickActionMouse.containsMouse ? Theme.metroBlue : Theme.controlBackground
+                    border.color: quickActionMouse.containsMouse ? Theme.metroBlue : Theme.metroStroke
                     z: 3
 
                     ToolTip.visible: quickActionMouse.containsMouse
                     ToolTip.text: quickActionButton.modelData.tooltip
                     ToolTip.delay: 350
 
-                    Text {
+                    SidebarIcon {
                         anchors.centerIn: parent
-                        text: quickActionButton.modelData.text
+                        width: 17
+                        height: 17
+                        name: quickActionButton.modelData.icon
+                        fallbackText: quickActionButton.modelData.fallback
                         color: Theme.textPrimary
-                        font.bold: true
-                        font.pixelSize: quickActionButton.modelData.action === "majestic" ? 12 : 15
+                        pixelSize: 15
                     }
 
                     MouseArea {
@@ -235,10 +319,13 @@ Rectangle {
         }
 
         Text {
-            Layout.preferredWidth: root.canSettings ? 18 : 0
-            visible: root.canSettings
+            Layout.preferredWidth: root.canSettings && deviceHover.hovered ? 18 : 0
+            Layout.minimumWidth: 0
+            Layout.maximumWidth: root.canSettings && deviceHover.hovered ? 18 : 0
+            visible: root.canSettings && deviceHover.hovered
             text: "×"
             color: removeMouse.containsMouse ? Theme.danger : Theme.textMuted
+            font.family: Theme.metroFontFamily
             font.pixelSize: 18
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter

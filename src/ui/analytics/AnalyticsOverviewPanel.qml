@@ -8,14 +8,49 @@ Item {
 
     property var diagnostics: ({})
     property var settings: ({})
+    property var recommendations: []
+    property var evidenceSummary: ({})
     property int refreshToken: 0
+    readonly property bool layoutReady: width > 0
+                                        && height > 0
+                                        && overviewScroll.availableWidth > 0
+                                        && overviewScroll.contentWidth <= overviewScroll.availableWidth + 1
 
-    function refresh() {
+    function refresh(includeEvidenceSummary) {
         refreshToken += 1
         if (SystemController.analyticsEngine && SystemController.analyticsEngine.getSettings) {
             settings = SystemController.analyticsEngine.getSettings()
         } else {
             settings = ({})
+        }
+
+        if (SystemController.analyticsEngine && SystemController.analyticsEngine.analyticsRecommendations) {
+            recommendations = SystemController.analyticsEngine.analyticsRecommendations()
+        } else {
+            recommendations = []
+        }
+
+        if (includeEvidenceSummary !== false)
+            refreshEvidenceSummary()
+    }
+
+    function refreshEvidenceSummary() {
+        if (SystemController.analyticsEngine && SystemController.analyticsEngine.analyticsEvidenceSummary) {
+            evidenceSummary = SystemController.analyticsEngine.analyticsEvidenceSummary()
+        } else {
+            evidenceSummary = ({})
+        }
+    }
+
+    function scheduleEvidenceSummaryRefresh() {
+        if (!evidenceSummaryTimer.running)
+            evidenceSummaryTimer.start()
+    }
+
+    function enableEvidenceCapture() {
+        if (SystemController.analyticsEngine && SystemController.analyticsEngine.enableAnalyticsEvidenceDefaults) {
+            SystemController.analyticsEngine.enableAnalyticsEvidenceDefaults(true, true)
+            refresh(true)
         }
     }
 
@@ -139,25 +174,49 @@ Item {
         return I18n.t("Аналитика готова к работе.")
     }
 
-    Component.onCompleted: refresh()
+    function severityColor(level) {
+        if (level === "success") return Theme.success
+        if (level === "danger") return Theme.danger
+        if (level === "warning") return Theme.warning
+        return Theme.accent
+    }
+
+    function sizeText(bytes) {
+        var value = Number(bytes || 0)
+        if (value <= 0) return "0 B"
+        if (value < 1024 * 1024) return Math.round(value / 1024) + " KB"
+        return (value / (1024 * 1024)).toFixed(1) + " MB"
+    }
+
+    Timer {
+        id: evidenceSummaryTimer
+        interval: 1800
+        repeat: false
+        onTriggered: root.refreshEvidenceSummary()
+    }
+
+    Component.onCompleted: refresh(true)
 
     Connections {
         target: SystemController.analyticsEngine
         ignoreUnknownSignals: true
-        function onSettingsChanged() { root.refresh() }
-        function onModuleStatusChanged(type, status, progress, error) { root.refresh() }
-        function onModuleConfigChanged(type) { root.refresh() }
-        function onAnalyticsTelemetryChanged() { root.refresh() }
-        function onAnalyticsEventsChanged() { root.refresh() }
+        function onSettingsChanged() { root.refresh(true) }
+        function onModuleStatusChanged(type, status, progress, error) { root.refresh(false) }
+        function onModuleConfigChanged(type) { root.refresh(true) }
+        function onAnalyticsTelemetryChanged() { root.refresh(false) }
+        function onAnalyticsEventsChanged() {
+            root.refresh(false)
+            root.scheduleEvidenceSummaryRefresh()
+        }
     }
 
     Connections {
         target: SystemController.cameraModel
         ignoreUnknownSignals: true
-        function onRowsInserted(parent, first, last) { root.refresh() }
-        function onRowsRemoved(parent, first, last) { root.refresh() }
-        function onModelReset() { root.refresh() }
-        function onDataChanged(topLeft, bottomRight, roles) { root.refresh() }
+        function onRowsInserted(parent, first, last) { root.refresh(false) }
+        function onRowsRemoved(parent, first, last) { root.refresh(false) }
+        function onModelReset() { root.refresh(false) }
+        function onDataChanged(topLeft, bottomRight, roles) { root.refresh(false) }
     }
 
     component StatCard: Rectangle {
@@ -257,11 +316,37 @@ Item {
         }
     }
 
+    component SmallActionButton: Button {
+        implicitHeight: 30
+        leftPadding: 12
+        rightPadding: 12
+
+        background: Rectangle {
+            color: parent.enabled
+                   ? (parent.hovered ? Theme.metroBlueHover : Theme.accent)
+                   : Theme.controlBackgroundAlt
+            radius: Theme.radiusSm
+            border.color: parent.visualFocus ? Theme.textPrimary : Theme.accent
+            border.width: parent.visualFocus ? 2 : 1
+        }
+
+        contentItem: Text {
+            text: parent.text
+            color: "white"
+            font.pixelSize: 12
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+    }
+
     ScrollView {
         id: overviewScroll
         anchors.fill: parent
         clip: true
         contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         ColumnLayout {
             width: overviewScroll.availableWidth
@@ -280,12 +365,24 @@ Item {
                     anchors.margins: 12
                     spacing: 6
 
-                    Text {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: I18n.t("Центр управления аналитикой")
-                        color: Theme.textPrimary
-                        font.pixelSize: 18
-                        font.bold: true
+                        spacing: 10
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: I18n.t("Центр управления аналитикой")
+                            color: Theme.textPrimary
+                            font.pixelSize: 18
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+
+                        SmallActionButton {
+                            visible: !root.evidenceEnabled()
+                            text: I18n.t("Включить события")
+                            onClicked: root.enableEvidenceCapture()
+                        }
                     }
 
                     Text {
@@ -393,6 +490,136 @@ Item {
                           : I18n.t("Без правил будут общие детекции.")
                     ok: root.configuredRulesCount() > 0
                     warning: root.configuredRulesCount() === 0
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: p7SummaryContent.implicitHeight + 24
+                radius: Theme.radiusLg
+                color: Theme.cardBackground
+                border.color: Theme.cardBorder
+
+                ColumnLayout {
+                    id: p7SummaryContent
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: I18n.t("Analytics evolution")
+                            color: Theme.textPrimary
+                            font.pixelSize: 14
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            text: root.evidenceSummary.enabled ? I18n.t("Evidence включен") : I18n.t("Evidence выключен")
+                            color: root.evidenceSummary.enabled ? Theme.success : Theme.warning
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+
+                        SmallActionButton {
+                            visible: !root.evidenceSummary.enabled
+                            text: I18n.t("Включить снимки")
+                            onClicked: root.enableEvidenceCapture()
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 1000 ? 4 : width >= 640 ? 2 : 1
+                        columnSpacing: 16
+                        rowSpacing: 8
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: I18n.t("Артефакты"); color: Theme.textMuted; font.pixelSize: 10 }
+                            Text { text: I18n.t("%1 файлов", [root.evidenceSummary.totalFiles || 0]); color: Theme.textPrimary; font.pixelSize: 14; font.bold: true }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: I18n.t("Снимки"); color: Theme.textMuted; font.pixelSize: 10 }
+                            Text { text: String(root.evidenceSummary.totalImageFiles || 0); color: Theme.textPrimary; font.pixelSize: 14; font.bold: true }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: I18n.t("Клипы"); color: Theme.textMuted; font.pixelSize: 10 }
+                            Text { text: String(root.evidenceSummary.totalVideoFiles || 0); color: Theme.textPrimary; font.pixelSize: 14; font.bold: true }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text { text: I18n.t("Занято"); color: Theme.textMuted; font.pixelSize: 10 }
+                            Text { text: root.sizeText(root.evidenceSummary.totalBytes); color: Theme.textPrimary; font.pixelSize: 14; font.bold: true }
+                        }
+                    }
+
+                    Repeater {
+                        model: root.recommendations
+
+                        delegate: Rectangle {
+                            required property var modelData
+
+                            Layout.fillWidth: true
+                            implicitHeight: recommendationRow.implicitHeight + 14
+                            radius: Theme.radiusMd
+                            color: Theme.panelSoftBackground
+                            border.color: Theme.controlBorder
+
+                            RowLayout {
+                                id: recommendationRow
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 8
+                                spacing: 8
+
+                                Rectangle {
+                                    Layout.preferredWidth: 10
+                                    Layout.preferredHeight: 10
+                                    radius: 5
+                                    color: root.severityColor(modelData.level)
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.title || I18n.t("Рекомендация")
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.message || ""
+                                        color: Theme.textMuted
+                                        font.pixelSize: 10
+                                        wrapMode: Text.WordWrap
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

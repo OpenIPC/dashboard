@@ -92,6 +92,33 @@ void removeLegacyPasswords(QJsonObject &state)
     state[QStringLiteral("grid")] = grid;
 }
 
+QStringList splitDiscoveryList(const QString &value)
+{
+    return value.split(QStringLiteral(", "), Qt::SkipEmptyParts);
+}
+
+void appendUniqueDiscoveryValue(QString *target, const QString &value)
+{
+    if (!target) return;
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty()) return;
+    QStringList parts = splitDiscoveryList(*target);
+    for (const QString &part : std::as_const(parts)) {
+        if (part.compare(trimmed, Qt::CaseInsensitive) == 0) return;
+    }
+    parts.append(trimmed);
+    *target = parts.join(QStringLiteral(", "));
+}
+
+QString normalizedOnboardingProfile(const QString &profile)
+{
+    const QString normalized = profile.trimmed().toLower();
+    if (normalized == QStringLiteral("onvif")) return QStringLiteral("onvif");
+    if (normalized == QStringLiteral("rtsp") || normalized == QStringLiteral("rtsp-manual"))
+        return QStringLiteral("rtsp");
+    return QStringLiteral("openipc");
+}
+
 #ifdef Q_OS_LINUX
 bool readLinuxSystemCpuTotal(quint64 &total)
 {
@@ -172,6 +199,7 @@ SystemController::SystemController(QObject *parent)
     , m_firmwareClient(new OpenIpcFirmwareClient(this))
     , m_networkDiscovery(new NetworkDiscoveryService(this))
     , m_appUpdateChecker(new AppUpdateChecker(this))
+    , m_cameraHealthController(new CameraHealthController(m_cameraModel, m_gridModel, this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
     , m_networkManager(new QNetworkAccessManager(this))
 {
@@ -180,6 +208,11 @@ SystemController::SystemController(QObject *parent)
     connect(m_saveTimer, &QTimer::timeout, this, &SystemController::performSave);
     
     connect(m_networkManager, &QNetworkAccessManager::authenticationRequired, this, &SystemController::onAuthenticationRequired);
+    connect(this, &SystemController::cameraEndpointProbeFinished, this,
+            [this](const QString &requestId, const QString &, const QString &, int,
+                   bool success, const QString &message, int httpStatus, int elapsedMs) {
+        handleDiscoveryValidationProbe(requestId, success, message, httpStatus, elapsedMs);
+    });
     connect(m_statusChecker, &StatusChecker::cameraStatusResolved,
             this, &SystemController::updateCameraStatus);
     connect(m_statusChecker, &StatusChecker::cameraStatusDetailResolved,
@@ -187,75 +220,60 @@ SystemController::SystemController(QObject *parent)
     
     // Connect Dahua discovery to main discovery model
     connect(m_dahuaDiscovery, &DiscoveryController::deviceFound, this, [this](const DiscoveredDevice& dev){
-        const int existingIndex = m_discoveryModel->findIndexByIp(dev.ip);
-        Camera cam = existingIndex >= 0 ? m_discoveryModel->getCamera(existingIndex) : Camera{};
-        if (cam.id.isEmpty()) cam.id = QUuid::createUuid().toString();
+        Camera cam;
+        cam.id = QUuid::createUuid().toString();
         cam.ip = dev.ip;
         cam.port = 554; // RTSP port assumption
         cam.onvifPort = 80;
-        if (cam.name.isEmpty()) cam.name = dev.type.isEmpty() ? "Dahua Camera" : dev.type;
-        if (cam.login.isEmpty()) cam.login = "admin";
+        cam.name = dev.type.isEmpty() ? "Dahua Camera" : dev.type;
+        cam.login = "admin";
         cam.status = "Discovered";
-        if (cam.serialNumber.isEmpty()) cam.serialNumber = dev.serial;
-        if (cam.manufacturer.isEmpty()) cam.manufacturer = dev.manufacturer;
-        if (!cam.discoveryMethods.contains(QStringLiteral("Dahua SDK"))) {
-            if (!cam.discoveryMethods.isEmpty()) cam.discoveryMethods.append(QStringLiteral(", "));
-            cam.discoveryMethods.append(QStringLiteral("Dahua SDK"));
-        }
-        if (!cam.discoveryEvidence.contains(QStringLiteral("Dahua device search response"))) {
-            if (!cam.discoveryEvidence.isEmpty()) cam.discoveryEvidence.append(QStringLiteral(", "));
-            cam.discoveryEvidence.append(QStringLiteral("Dahua device search response"));
-        }
-        cam.discoveryConfidence = std::max(cam.discoveryConfidence, 90);
-
-        if (existingIndex >= 0) m_discoveryModel->setCamera(existingIndex, cam);
-        else m_discoveryModel->addCamera(cam);
+        cam.serialNumber = dev.serial;
+        cam.manufacturer = dev.manufacturer;
+        cam.discoveryMethods = QStringLiteral("Dahua SDK");
+        cam.discoveryEvidence = QStringLiteral("Dahua device search response");
+        cam.discoveryConfidence = 90;
+        cam.onboardingProfile = QStringLiteral("rtsp");
+        mergeDiscoveryCamera(cam);
     });
 
     connect(m_networkDiscovery, &NetworkDiscoveryService::candidateFound, this,
             [this](const NetworkDiscoveryCandidate &candidate) {
-        const int existingIndex = m_discoveryModel->findIndexByIp(candidate.ip);
-        Camera cam = existingIndex >= 0 ? m_discoveryModel->getCamera(existingIndex) : Camera{};
-        if (cam.id.isEmpty()) cam.id = QUuid::createUuid().toString();
+        Camera cam;
+        cam.id = QUuid::createUuid().toString();
         cam.ip = candidate.ip;
-        cam.port = candidate.rtspPort > 0 ? candidate.rtspPort : (cam.port > 0 ? cam.port : 554);
+        cam.port = candidate.rtspPort > 0 ? candidate.rtspPort : 554;
         cam.onvifPort = candidate.onvifPort > 0 ? candidate.onvifPort
                                                 : (candidate.httpPort > 0 ? candidate.httpPort : 80);
-        if (cam.hdStreamUrl.isEmpty())
-            cam.hdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=0").arg(cam.ip).arg(cam.port);
-        if (cam.sdStreamUrl.isEmpty())
-            cam.sdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=1").arg(cam.ip).arg(cam.port);
+        cam.hdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=0").arg(cam.ip).arg(cam.port);
+        cam.sdStreamUrl = QStringLiteral("rtsp://%1:%2/stream=1").arg(cam.ip).arg(cam.port);
         cam.streamUrl = cam.hdStreamUrl;
         cam.status = QStringLiteral("Discovered");
-        cam.discoveryConfidence = std::max(cam.discoveryConfidence, candidate.confidence);
-        cam.isOpenIpc = cam.isOpenIpc || candidate.openIpc;
+        cam.discoveryConfidence = candidate.confidence;
+        cam.isOpenIpc = candidate.openIpc;
         if (candidate.openIpc) {
             cam.manufacturer = QStringLiteral("OpenIPC");
             cam.login = QStringLiteral("root");
-            if (cam.name.isEmpty() || cam.name == QStringLiteral("RTSP Camera")
-                || cam.name == QStringLiteral("ONVIF Camera")) {
-                cam.name = candidate.name.isEmpty() ? QStringLiteral("OpenIPC Camera") : candidate.name;
-            }
+            cam.name = candidate.name.isEmpty() ? QStringLiteral("OpenIPC Camera") : candidate.name;
+            cam.onboardingProfile = QStringLiteral("openipc");
         } else {
-            if (cam.manufacturer.isEmpty()) cam.manufacturer = candidate.manufacturer;
-            if (cam.name.isEmpty()) cam.name = candidate.name;
+            cam.manufacturer = candidate.manufacturer;
+            cam.name = candidate.name.isEmpty() ? QStringLiteral("Network Camera") : candidate.name;
+            cam.onboardingProfile = candidate.onvif ? QStringLiteral("onvif") : QStringLiteral("rtsp");
         }
-        if (cam.name.isEmpty()) cam.name = QStringLiteral("Network Camera");
-        if (cam.serialNumber.isEmpty()) cam.serialNumber = candidate.serial;
+        cam.serialNumber = candidate.serial;
+        cam.discoveryMethods = candidate.method;
+        cam.discoveryEvidence = candidate.evidence;
+        mergeDiscoveryCamera(cam);
+    });
 
-        auto appendUnique = [](QString *target, const QString &value) {
-            if (!target || value.isEmpty()) return;
-            const QStringList parts = target->split(QStringLiteral(", "), Qt::SkipEmptyParts);
-            if (!parts.contains(value)) {
-                if (!target->isEmpty()) target->append(QStringLiteral(", "));
-                target->append(value);
-            }
-        };
-        appendUnique(&cam.discoveryMethods, candidate.method);
-        appendUnique(&cam.discoveryEvidence, candidate.evidence);
-
-        if (existingIndex >= 0) m_discoveryModel->setCamera(existingIndex, cam);
-        else m_discoveryModel->addCamera(cam);
+    connect(m_networkDiscovery, &NetworkDiscoveryService::finished, this,
+            [this](bool cancelled) {
+        if (!cancelled) {
+            m_discoveryLastUpdated = QDateTime::currentDateTime().toString(Qt::ISODate);
+            emit discoverySessionChanged();
+            saveState();
+        }
     });
 
     m_analyticsEngine->initialize();
@@ -273,6 +291,7 @@ SystemController::SystemController(QObject *parent)
     m_appSettings["showStatsOverlay"] = true;
     m_appSettings["defaultAutoplay"] = true;
     m_appSettings["sidebarVisible"] = true;
+    m_appSettings["sidebarToolsExpanded"] = true;
     // Disable analytics by default to avoid crashes from heavy ONNX inference on low GPUs
     m_appSettings["analyticsEnabled"] = false;
     // Sane grid defaults; avoid spawning hundreds of cells when state.json is absent
@@ -288,8 +307,13 @@ SystemController::SystemController(QObject *parent)
 
     loadState();
     
-    // Start camera monitoring after loading state
-    m_statusChecker->start();
+    // QML smoke tests instantiate the real controller to verify bindings, but
+    // they should not probe saved cameras or touch the LAN.
+    if (qEnvironmentVariable("OPENIPC_SMOKE_QML") == QStringLiteral("1")) {
+        qInfo() << "QML smoke mode: camera status monitoring disabled";
+    } else {
+        m_statusChecker->start();
+    }
 
     // If no saved state, ensure default 2x2 grid placeholders
     if (m_gridModel->rowCount() == 0) {
@@ -303,10 +327,19 @@ SystemController::SystemController(QObject *parent)
     connect(m_cameraModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
     // Use lambda to swallow arguments for dataChanged
     connect(m_cameraModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
+    connect(m_cameraModel, &QAbstractListModel::rowsInserted, this, [this]() { markDiscoveryAddedFlags(); });
+    connect(m_cameraModel, &QAbstractListModel::rowsRemoved, this, [this]() { markDiscoveryAddedFlags(); });
+    connect(m_cameraModel, &QAbstractListModel::dataChanged, this, [this]() { markDiscoveryAddedFlags(); });
+
+    connect(m_discoveryModel, &QAbstractListModel::rowsInserted, this, &SystemController::saveState);
+    connect(m_discoveryModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
+    connect(m_discoveryModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
 
     connect(m_gridModel, &QAbstractListModel::rowsInserted, this, &SystemController::saveState);
     connect(m_gridModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
     connect(m_gridModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
+    connect(m_cameraHealthController, &CameraHealthController::historyChanged,
+            this, &SystemController::saveState);
 }
 
 void SystemController::setIsArchiveOpen(bool open)
@@ -328,9 +361,11 @@ QVariantList SystemController::getNetworkInterfaces()
             
             QList<QNetworkAddressEntry> entries = iface.addressEntries();
             QString ip;
+            int prefixLength = -1;
             for (const QNetworkAddressEntry &entry : entries) {
                 if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                     ip = entry.ip().toString();
+                    prefixLength = entry.prefixLength();
                     break;
                 }
             }
@@ -340,11 +375,429 @@ QVariantList SystemController::getNetworkInterfaces()
                 map["name"] = iface.humanReadableName(); // Display name
                 map["id"] = iface.name(); // Internal name (e.g., eth0, {UUID})
                 map["ip"] = ip;
+                map["prefixLength"] = prefixLength;
                 list.append(map);
             }
         }
     }
     return list;
+}
+
+QString SystemController::discoverySessionSummary() const
+{
+    if (m_discoveryModel->rowCount() == 0) {
+        return QStringLiteral("Результатов поиска пока нет");
+    }
+    QString summary = QStringLiteral("Сохранено результатов: %1").arg(m_discoveryModel->rowCount());
+    if (!m_discoveryLastUpdated.isEmpty()) {
+        summary += QStringLiteral(" · последний поиск: %1").arg(m_discoveryLastUpdated);
+    }
+    if (!m_discoveryLastInterface.isEmpty()) {
+        summary += QStringLiteral(" · интерфейс: %1").arg(m_discoveryLastInterface);
+    } else {
+        summary += QStringLiteral(" · все интерфейсы");
+    }
+    if (m_discoveryLastDeepScan) {
+        summary += QStringLiteral(" · глубокий режим");
+    }
+    return summary;
+}
+
+void SystemController::clearDiscoveryResults()
+{
+    m_discoveryValidationProbes.clear();
+    m_discoveryValidationRemaining.clear();
+    m_discoveryValidationFailed.clear();
+    m_discoveryValidationMessages.clear();
+    m_discoveryValidationCompleted = 0;
+    m_discoveryValidationTotal = 0;
+    m_discoveryLastUpdated.clear();
+    m_discoveryLastInterface.clear();
+    m_discoveryLastDeepScan = false;
+    m_discoveryModel->clear();
+    emit discoverySessionChanged();
+    saveState();
+}
+
+void SystemController::refreshDiscoveryAddedFlags()
+{
+    markDiscoveryAddedFlags();
+}
+
+int SystemController::findDiscoveryMergeIndex(const Camera &candidate) const
+{
+    const QString ip = candidate.ip.trimmed();
+    if (!ip.isEmpty()) {
+        const int ipIndex = m_discoveryModel->findIndexByIp(ip);
+        if (ipIndex >= 0) return ipIndex;
+    }
+
+    const QString serial = candidate.serialNumber.trimmed();
+    if (!serial.isEmpty()) {
+        for (int i = 0; i < m_discoveryModel->rowCount(); ++i) {
+            const Camera existing = m_discoveryModel->getCamera(i);
+            if (!existing.serialNumber.trimmed().isEmpty()
+                && existing.serialNumber.compare(serial, Qt::CaseInsensitive) == 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
+void SystemController::mergeDiscoveryCamera(const Camera &incoming)
+{
+    if (incoming.ip.trimmed().isEmpty()) return;
+
+    const int existingIndex = findDiscoveryMergeIndex(incoming);
+    Camera cam = existingIndex >= 0 ? m_discoveryModel->getCamera(existingIndex) : Camera{};
+    if (cam.id.isEmpty()) cam.id = incoming.id.isEmpty() ? QUuid::createUuid().toString() : incoming.id;
+
+    cam.ip = incoming.ip.trimmed();
+    if (incoming.port > 0) cam.port = incoming.port;
+    if (incoming.onvifPort > 0) cam.onvifPort = incoming.onvifPort;
+    if (!incoming.hdStreamUrl.isEmpty()) cam.hdStreamUrl = incoming.hdStreamUrl;
+    if (!incoming.sdStreamUrl.isEmpty()) cam.sdStreamUrl = incoming.sdStreamUrl;
+    if (cam.streamUrl.isEmpty()) cam.streamUrl = cam.hdStreamUrl;
+    if (cam.streamUrl.isEmpty() && !cam.ip.isEmpty()) {
+        cam.streamUrl = QStringLiteral("rtsp://%1:%2/stream=0").arg(cam.ip).arg(cam.port > 0 ? cam.port : 554);
+    }
+
+    const bool incomingIsBetterName = cam.name.isEmpty()
+        || cam.name == QStringLiteral("Network Camera")
+        || cam.name == QStringLiteral("RTSP Camera")
+        || cam.name == QStringLiteral("ONVIF Camera")
+        || incoming.isOpenIpc;
+    if (!incoming.name.trimmed().isEmpty() && incomingIsBetterName) cam.name = incoming.name.trimmed();
+    if (cam.name.isEmpty()) cam.name = QStringLiteral("Network Camera");
+
+    if (!incoming.manufacturer.trimmed().isEmpty()
+        && (cam.manufacturer.isEmpty() || incoming.isOpenIpc)) {
+        cam.manufacturer = incoming.manufacturer.trimmed();
+    }
+    if (!incoming.serialNumber.trimmed().isEmpty()) cam.serialNumber = incoming.serialNumber.trimmed();
+    if (!incoming.login.trimmed().isEmpty() && cam.login.isEmpty()) cam.login = incoming.login.trimmed();
+
+    cam.isOpenIpc = cam.isOpenIpc || incoming.isOpenIpc;
+    cam.discoveryConfidence = std::max(cam.discoveryConfidence, incoming.discoveryConfidence);
+    appendUniqueDiscoveryValue(&cam.discoveryMethods, incoming.discoveryMethods);
+    appendUniqueDiscoveryValue(&cam.discoveryEvidence, incoming.discoveryEvidence);
+    if (cam.discoveryEvidence.isEmpty()) {
+        cam.discoveryEvidence = QStringLiteral("Discovered on local network");
+    }
+
+    const QString incomingProfile = normalizedOnboardingProfile(incoming.onboardingProfile);
+    if (cam.onboardingProfile.isEmpty()
+        || (incomingProfile == QStringLiteral("openipc") && cam.onboardingProfile != QStringLiteral("openipc"))) {
+        cam.onboardingProfile = incomingProfile;
+    }
+
+    cam.alreadyAdded = m_cameraModel->contains(cam.ip);
+    cam.status = cam.alreadyAdded ? QStringLiteral("Already added") : QStringLiteral("Discovered");
+    if (cam.alreadyAdded && cam.validationStatus != QStringLiteral("running")) {
+        cam.validationStatus = QStringLiteral("added");
+        cam.validationMessage = QStringLiteral("Камера уже есть в списке устройств");
+    } else if (cam.validationStatus.isEmpty()) {
+        cam.validationStatus = QStringLiteral("idle");
+        cam.validationMessage = QStringLiteral("Готово к проверке перед добавлением");
+    }
+
+    if (existingIndex >= 0) m_discoveryModel->setCamera(existingIndex, cam);
+    else m_discoveryModel->addCamera(cam);
+
+    m_discoveryLastUpdated = QDateTime::currentDateTime().toString(Qt::ISODate);
+    emit discoverySessionChanged();
+}
+
+void SystemController::markDiscoveryAddedFlags()
+{
+    for (int i = 0; i < m_discoveryModel->rowCount(); ++i) {
+        Camera cam = m_discoveryModel->getCamera(i);
+        const bool added = !cam.ip.isEmpty() && m_cameraModel->contains(cam.ip);
+        if (cam.alreadyAdded == added
+            && ((added && cam.validationStatus == QStringLiteral("added"))
+                || (!added && cam.validationStatus != QStringLiteral("added")))) {
+            continue;
+        }
+        cam.alreadyAdded = added;
+        cam.status = added ? QStringLiteral("Already added") : QStringLiteral("Discovered");
+        if (added) {
+            cam.validationStatus = QStringLiteral("added");
+            cam.validationMessage = QStringLiteral("Камера уже есть в списке устройств");
+        } else if (cam.validationStatus == QStringLiteral("added")) {
+            cam.validationStatus = QStringLiteral("idle");
+            cam.validationMessage = QStringLiteral("Готово к проверке перед добавлением");
+        }
+        m_discoveryModel->setCamera(i, cam);
+    }
+}
+
+void SystemController::setDiscoveryValidationState(int index, const QString &status,
+                                                   const QString &message)
+{
+    if (index < 0 || index >= m_discoveryModel->rowCount()) return;
+    Camera cam = m_discoveryModel->getCamera(index);
+    cam.validationStatus = status;
+    cam.validationMessage = message;
+    m_discoveryModel->setCamera(index, cam);
+}
+
+QString SystemController::discoveryProfileForCamera(const Camera &camera,
+                                                    const QString &requestedProfile) const
+{
+    const QString profile = normalizedOnboardingProfile(requestedProfile);
+    if (!requestedProfile.trimmed().isEmpty()) return profile;
+    if (!camera.onboardingProfile.trimmed().isEmpty()) {
+        return normalizedOnboardingProfile(camera.onboardingProfile);
+    }
+    if (camera.isOpenIpc) return QStringLiteral("openipc");
+    if (camera.discoveryMethods.contains(QStringLiteral("ONVIF"), Qt::CaseInsensitive)) {
+        return QStringLiteral("onvif");
+    }
+    return QStringLiteral("rtsp");
+}
+
+QString SystemController::rtspPathForProfile(const Camera &camera, const QString &profile,
+                                             bool subStream) const
+{
+    const QString url = subStream ? camera.sdStreamUrl : camera.hdStreamUrl;
+    const QUrl parsed(url);
+    if (parsed.isValid() && parsed.scheme().startsWith(QStringLiteral("rtsp"))
+        && !parsed.path().isEmpty()) {
+        QString path = parsed.path();
+        if (parsed.hasQuery()) path += QLatin1Char('?') + parsed.query();
+        return path;
+    }
+
+    const QString normalized = normalizedOnboardingProfile(profile);
+    if (normalized == QStringLiteral("openipc")) {
+        return subStream ? QStringLiteral("/stream=1") : QStringLiteral("/stream=0");
+    }
+    return subStream ? QStringLiteral("/stream=1") : QStringLiteral("/stream=0");
+}
+
+QString SystemController::buildSanitizedRtspUrl(const Camera &camera, const QString &profile,
+                                                bool subStream) const
+{
+    const int port = camera.port > 0 ? camera.port : 554;
+    QString path = rtspPathForProfile(camera, profile, subStream);
+    if (!path.startsWith(QLatin1Char('/'))) path.prepend(QLatin1Char('/'));
+    return QStringLiteral("rtsp://%1:%2%3").arg(camera.ip).arg(port).arg(path);
+}
+
+Camera SystemController::cameraFromDiscoveryForAdd(const Camera &source,
+                                                   const QString &profile,
+                                                   const QString &login,
+                                                   const QString &password) const
+{
+    Camera cam = source;
+    cam.id = QUuid::createUuid().toString();
+    cam.name = source.name.trimmed().isEmpty() ? source.ip : source.name.trimmed();
+    cam.ip = source.ip.trimmed();
+    cam.port = source.port > 0 ? source.port : 554;
+    cam.onvifPort = source.onvifPort > 0 ? source.onvifPort : 80;
+    cam.login = login.trimmed();
+    cam.password = password;
+    cam.onboardingProfile = discoveryProfileForCamera(source, profile);
+    cam.hdStreamUrl = buildSanitizedRtspUrl(source, cam.onboardingProfile, false);
+    cam.sdStreamUrl = buildSanitizedRtspUrl(source, cam.onboardingProfile, true);
+    cam.streamUrl = cam.hdStreamUrl;
+    cam.status = QStringLiteral("Online");
+    cam.alreadyAdded = false;
+    cam.validationStatus.clear();
+    cam.validationMessage.clear();
+    return cam;
+}
+
+void SystemController::validateDiscoverySelection(const QVariantList &indexes,
+                                                  const QString &login,
+                                                  const QString &password,
+                                                  const QString &profile)
+{
+    m_discoveryValidationProbes.clear();
+    m_discoveryValidationRemaining.clear();
+    m_discoveryValidationFailed.clear();
+    m_discoveryValidationMessages.clear();
+    m_discoveryValidationCompleted = 0;
+    m_discoveryValidationTotal = 0;
+
+    QSet<int> uniqueIndexes;
+    for (const QVariant &value : indexes) {
+        bool ok = false;
+        const int index = value.toInt(&ok);
+        if (ok && index >= 0 && index < m_discoveryModel->rowCount()) uniqueIndexes.insert(index);
+    }
+
+    int immediateOk = 0;
+    int immediateFail = 0;
+    for (int index : std::as_const(uniqueIndexes)) {
+        Camera cam = m_discoveryModel->getCamera(index);
+        cam.onboardingProfile = discoveryProfileForCamera(cam, profile);
+        m_discoveryModel->setCamera(index, cam);
+
+        if (cam.alreadyAdded || m_cameraModel->contains(cam.ip)) {
+            setDiscoveryValidationState(index, QStringLiteral("added"),
+                                        QStringLiteral("Камера уже есть в списке устройств"));
+            ++immediateOk;
+            continue;
+        }
+
+        setDiscoveryValidationState(index, QStringLiteral("running"),
+                                    QStringLiteral("Проверка endpoints и credentials…"));
+
+        struct ProbeSpec {
+            QString kind;
+            int port = 0;
+            QString path;
+            QString label;
+        };
+
+        QList<ProbeSpec> probes;
+        const QString selectedProfile = discoveryProfileForCamera(cam, profile);
+        if (selectedProfile == QStringLiteral("openipc")) {
+            probes.append({QStringLiteral("majestic"), cam.onvifPort > 0 ? cam.onvifPort : 80,
+                           QStringLiteral("/api/v1/config.json"), QStringLiteral("Majestic")});
+            probes.append({QStringLiteral("rtsp"), cam.port > 0 ? cam.port : 554,
+                           rtspPathForProfile(cam, selectedProfile, false), QStringLiteral("RTSP")});
+        } else if (selectedProfile == QStringLiteral("onvif")) {
+            probes.append({QStringLiteral("http"), cam.onvifPort > 0 ? cam.onvifPort : 80,
+                           QStringLiteral("/onvif/device_service"), QStringLiteral("ONVIF")});
+            probes.append({QStringLiteral("rtsp"), cam.port > 0 ? cam.port : 554,
+                           rtspPathForProfile(cam, selectedProfile, false), QStringLiteral("RTSP")});
+        } else {
+            probes.append({QStringLiteral("rtsp"), cam.port > 0 ? cam.port : 554,
+                           rtspPathForProfile(cam, selectedProfile, false), QStringLiteral("RTSP")});
+        }
+
+        m_discoveryValidationRemaining.insert(index, probes.size());
+        m_discoveryValidationFailed.insert(index, false);
+        m_discoveryValidationMessages.insert(index, QStringList());
+        m_discoveryValidationTotal += probes.size();
+
+        for (const ProbeSpec &probe : std::as_const(probes)) {
+            const QString requestId = probeCameraEndpoint(probe.kind, cam.ip, probe.port,
+                                                          probe.path, login.trimmed(), password);
+            m_discoveryValidationProbes.insert(requestId, {index, probe.label});
+        }
+    }
+
+    if (m_discoveryValidationTotal == 0) {
+        emit discoveryValidationProgress(0, 0);
+        emit discoveryValidationFinished(immediateOk, immediateFail);
+    } else {
+        emit discoveryValidationProgress(0, m_discoveryValidationTotal);
+    }
+}
+
+void SystemController::handleDiscoveryValidationProbe(const QString &requestId, bool success,
+                                                      const QString &message, int httpStatus,
+                                                      int elapsedMs)
+{
+    if (!m_discoveryValidationProbes.contains(requestId)) return;
+
+    const DiscoveryValidationProbe probe = m_discoveryValidationProbes.take(requestId);
+    if (probe.index < 0 || probe.index >= m_discoveryModel->rowCount()) return;
+
+    m_discoveryValidationCompleted += 1;
+    QStringList messages = m_discoveryValidationMessages.value(probe.index);
+    QString line = QStringLiteral("%1: %2").arg(probe.label, success ? QStringLiteral("OK") : message);
+    if (httpStatus == 401 || httpStatus == 403) {
+        line = QStringLiteral("%1: credentials не приняты").arg(probe.label);
+    }
+    if (elapsedMs > 0) line += QStringLiteral(" (%1 ms)").arg(elapsedMs);
+    messages.append(line);
+    m_discoveryValidationMessages.insert(probe.index, messages);
+    if (!success) m_discoveryValidationFailed.insert(probe.index, true);
+
+    int remaining = m_discoveryValidationRemaining.value(probe.index, 0);
+    remaining = std::max(0, remaining - 1);
+    m_discoveryValidationRemaining.insert(probe.index, remaining);
+
+    if (remaining == 0) {
+        const bool failed = m_discoveryValidationFailed.value(probe.index, false);
+        setDiscoveryValidationState(probe.index,
+                                    failed ? QStringLiteral("fail") : QStringLiteral("ok"),
+                                    messages.join(QStringLiteral(" · ")));
+    } else {
+        setDiscoveryValidationState(probe.index, QStringLiteral("running"),
+                                    messages.join(QStringLiteral(" · ")));
+    }
+
+    emit discoveryValidationProgress(m_discoveryValidationCompleted, m_discoveryValidationTotal);
+
+    if (m_discoveryValidationCompleted >= m_discoveryValidationTotal) {
+        int okCount = 0;
+        int failCount = 0;
+        for (auto it = m_discoveryValidationRemaining.constBegin();
+             it != m_discoveryValidationRemaining.constEnd(); ++it) {
+            if (m_discoveryValidationFailed.value(it.key(), false)) ++failCount;
+            else ++okCount;
+        }
+        m_discoveryValidationRemaining.clear();
+        m_discoveryValidationFailed.clear();
+        m_discoveryValidationMessages.clear();
+        m_discoveryValidationTotal = 0;
+        m_discoveryValidationCompleted = 0;
+        emit discoveryValidationFinished(okCount, failCount);
+    }
+}
+
+int SystemController::addDiscoveredCameras(const QVariantList &indexes,
+                                           const QString &login,
+                                           const QString &password,
+                                           const QString &profile)
+{
+    QSet<int> uniqueIndexes;
+    for (const QVariant &value : indexes) {
+        bool ok = false;
+        const int index = value.toInt(&ok);
+        if (ok && index >= 0 && index < m_discoveryModel->rowCount()) uniqueIndexes.insert(index);
+    }
+
+    int added = 0;
+    int skipped = 0;
+    QList<int> sorted = uniqueIndexes.values();
+    std::sort(sorted.begin(), sorted.end());
+
+    for (int index : std::as_const(sorted)) {
+        Camera source = m_discoveryModel->getCamera(index);
+        if (source.ip.trimmed().isEmpty() || m_cameraModel->contains(source.ip)) {
+            setDiscoveryValidationState(index, QStringLiteral("added"),
+                                        QStringLiteral("Камера уже есть в списке устройств"));
+            ++skipped;
+            continue;
+        }
+
+        Camera cam = cameraFromDiscoveryForAdd(source, profile, login, password);
+        if (cam.ip.isEmpty()) {
+            setDiscoveryValidationState(index, QStringLiteral("fail"),
+                                        QStringLiteral("Не удалось подготовить параметры камеры"));
+            ++skipped;
+            continue;
+        }
+
+        m_cameraModel->addCamera(cam);
+        if (!cam.password.isEmpty()) {
+            auto job = new QKeychain::WritePasswordJob("OpenIPC");
+            job->setAutoDelete(true);
+            job->setKey(cam.ip);
+            job->setTextData(cam.password);
+            job->start();
+        }
+
+        source.alreadyAdded = true;
+        source.status = QStringLiteral("Already added");
+        source.validationStatus = QStringLiteral("added");
+        source.validationMessage = QStringLiteral("Добавлена в список устройств");
+        source.onboardingProfile = cam.onboardingProfile;
+        m_discoveryModel->setCamera(index, source);
+        ++added;
+    }
+
+    saveState();
+    emit discoveryBatchAddFinished(added, skipped);
+    return added;
 }
 
 QString SystemController::serviceStatus() const
@@ -669,7 +1122,10 @@ void SystemController::stopService()
 void SystemController::scanNetwork(const QString &interfaceName, bool deepScan)
 {
     qDebug() << "Starting network scan. Interface:" << (interfaceName.isEmpty() ? "All" : interfaceName);
-    m_discoveryModel->clear();
+    m_discoveryLastInterface = interfaceName;
+    m_discoveryLastDeepScan = deepScan;
+    markDiscoveryAddedFlags();
+    emit discoverySessionChanged();
     
     // Start Dahua SDK Search
     if (m_dahuaDiscovery) {
@@ -690,8 +1146,10 @@ void SystemController::addDevice(int index)
     Camera cam = m_discoveryModel->getCamera(index);
     if (!cam.id.isEmpty()) {
         if (!m_cameraModel->contains(cam.ip)) {
-             m_cameraModel->addCamera(cam);
-             saveState();
+            Camera prepared = cameraFromDiscoveryForAdd(cam, cam.onboardingProfile, cam.login, QString());
+            m_cameraModel->addCamera(prepared);
+            markDiscoveryAddedFlags();
+            saveState();
         }
     }
 }
@@ -1180,6 +1638,16 @@ QJsonObject SystemController::cameraToJson(const Camera &cam)
     // Do not save password in plain text JSON anymore
     // obj["password"] = cam.password;
     obj["group"] = cam.group;
+    obj["serialNumber"] = cam.serialNumber;
+    obj["manufacturer"] = cam.manufacturer;
+    obj["discoveryMethods"] = cam.discoveryMethods;
+    obj["discoveryEvidence"] = cam.discoveryEvidence;
+    obj["discoveryConfidence"] = cam.discoveryConfidence;
+    obj["isOpenIpc"] = cam.isOpenIpc;
+    obj["onboardingProfile"] = cam.onboardingProfile;
+    obj["validationStatus"] = cam.validationStatus;
+    obj["validationMessage"] = cam.validationMessage;
+    obj["alreadyAdded"] = cam.alreadyAdded;
     return obj;
 }
 
@@ -1197,6 +1665,16 @@ Camera SystemController::cameraFromJson(const QJsonObject &obj)
     cam.onvifPort = obj.value("onvifPort").toInt(80);
     cam.login = obj.value("login").toString();
     cam.group = obj.value("group").toString();
+    cam.serialNumber = obj.value("serialNumber").toString();
+    cam.manufacturer = obj.value("manufacturer").toString();
+    cam.discoveryMethods = obj.value("discoveryMethods").toString();
+    cam.discoveryEvidence = obj.value("discoveryEvidence").toString();
+    cam.discoveryConfidence = obj.value("discoveryConfidence").toInt(0);
+    cam.isOpenIpc = obj.value("isOpenIpc").toBool(false);
+    cam.onboardingProfile = obj.value("onboardingProfile").toString();
+    cam.validationStatus = obj.value("validationStatus").toString();
+    cam.validationMessage = obj.value("validationMessage").toString();
+    cam.alreadyAdded = obj.value("alreadyAdded").toBool(false);
 
     QString passwordFromLegacyUrl;
     auto stripLegacyCredentials = [&cam, &passwordFromLegacyUrl](QString &value) {
@@ -1260,6 +1738,15 @@ void SystemController::performSave()
     for (int i = 0; i < m_cameraModel->rowCount(); ++i) {
         cameras.append(cameraToJson(m_cameraModel->getCamera(i)));
     }
+    QJsonArray discoveryCameras;
+    for (int i = 0; i < m_discoveryModel->rowCount(); ++i) {
+        Camera cam = m_discoveryModel->getCamera(i);
+        if (cam.validationStatus == QStringLiteral("running")) {
+            cam.validationStatus = QStringLiteral("idle");
+            cam.validationMessage = QStringLiteral("Проверка была прервана");
+        }
+        discoveryCameras.append(cameraToJson(cam));
+    }
     QJsonArray groups;
     for (const auto &g : m_cameraGroups) {
         groups.append(g);
@@ -1275,11 +1762,18 @@ void SystemController::performSave()
         grid.append(slot);
     }
     root["cameras"] = cameras;
+    QJsonObject discovery;
+    discovery["updatedAt"] = m_discoveryLastUpdated;
+    discovery["interface"] = m_discoveryLastInterface;
+    discovery["deepScan"] = m_discoveryLastDeepScan;
+    discovery["cameras"] = discoveryCameras;
+    root["lastDiscovery"] = discovery;
     root["grid"] = grid;
     root["analytics"] = QJsonObject::fromVariantMap(m_analyticsEngine->getPersistedSettings());
     root["appSettings"] = QJsonObject::fromVariantMap(m_appSettings);
     root["cameraGroups"] = groups;
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
+    root["cameraHealthHistory"] = m_cameraHealthController->historyJson();
 
     QString errorMessage;
     StateStore store(stateDatabasePath());
@@ -1368,6 +1862,9 @@ void SystemController::loadState()
 
     if (root.contains("analytics")) {
         m_analyticsEngine->setSettings(root.value("analytics").toObject().toVariantMap());
+    }
+    if (root.contains("cameraHealthHistory")) {
+        m_cameraHealthController->restoreHistory(root.value("cameraHealthHistory").toArray());
     }
 
     if (root.contains("appSettings")) {
@@ -1469,6 +1966,7 @@ void SystemController::loadState()
     }
 
     m_cameraModel->clear();
+    m_discoveryModel->clear();
     m_gridModel->clear();
 
     const QJsonArray cameras = root.value("cameras").toArray();
@@ -1507,6 +2005,35 @@ void SystemController::loadState()
         if (!groupName.isEmpty() && !m_cameraGroups.contains(groupName, Qt::CaseInsensitive)) {
             m_cameraGroups.append(groupName);
         }
+    }
+
+    const QJsonObject discovery = root.value(QStringLiteral("lastDiscovery")).toObject();
+    if (!discovery.isEmpty()) {
+        const QString restoredUpdatedAt = discovery.value(QStringLiteral("updatedAt")).toString();
+        const QString restoredInterface = discovery.value(QStringLiteral("interface")).toString();
+        const bool restoredDeepScan = discovery.value(QStringLiteral("deepScan")).toBool(false);
+        m_discoveryLastUpdated = restoredUpdatedAt;
+        m_discoveryLastInterface = restoredInterface;
+        m_discoveryLastDeepScan = restoredDeepScan;
+        const QJsonArray discoveryCameras = discovery.value(QStringLiteral("cameras")).toArray();
+        for (const QJsonValue &value : discoveryCameras) {
+            Camera cam = cameraFromJson(value.toObject());
+            cam.password.clear();
+            if (cam.ip.isEmpty()) continue;
+            if (cam.onboardingProfile.isEmpty()) {
+                cam.onboardingProfile = discoveryProfileForCamera(cam, QString());
+            }
+            if (cam.validationStatus == QStringLiteral("running")) {
+                cam.validationStatus = QStringLiteral("idle");
+                cam.validationMessage = QStringLiteral("Проверка была прервана");
+            }
+            mergeDiscoveryCamera(cam);
+        }
+        m_discoveryLastUpdated = restoredUpdatedAt;
+        m_discoveryLastInterface = restoredInterface;
+        m_discoveryLastDeepScan = restoredDeepScan;
+        markDiscoveryAddedFlags();
+        emit discoverySessionChanged();
     }
 
     QJsonArray grid = root.value("grid").toArray();
@@ -2391,6 +2918,120 @@ QVariantMap SystemController::getFileInfo(const QString &fileUrl) const
     }
 
     return info;
+}
+
+QVariantMap SystemController::inspectFirmwareArchive(const QString &fileUrl,
+                                                     const QString &expectedSha256) const
+{
+    QVariantMap result = getFileInfo(fileUrl);
+    QStringList issues;
+    QStringList sidecarCandidates;
+    QStringList signatureCandidates;
+
+    const QString targetPath = result.value(QStringLiteral("filePath")).toString();
+    QFileInfo fi(targetPath);
+    result.insert(QStringLiteral("sha256"), QString());
+    result.insert(QStringLiteral("sidecarSha256"), QString());
+    result.insert(QStringLiteral("sidecarPath"), QString());
+    result.insert(QStringLiteral("signaturePath"), QString());
+    result.insert(QStringLiteral("signatureSize"), 0);
+    result.insert(QStringLiteral("checksumStatus"), QStringLiteral("warn"));
+
+    if (!fi.exists() || !fi.isFile()) {
+        result.insert(QStringLiteral("checksumStatus"), QStringLiteral("block"));
+        issues << QStringLiteral("файл не найден");
+        result.insert(QStringLiteral("issues"), issues);
+        return result;
+    }
+
+    const QString path = fi.absoluteFilePath();
+    sidecarCandidates << path + QStringLiteral(".sha256")
+                      << path + QStringLiteral(".sha256sum")
+                      << path + QStringLiteral(".sha256.txt")
+                      << fi.absolutePath() + QDir::separator() + fi.completeBaseName() + QStringLiteral(".sha256")
+                      << fi.absolutePath() + QDir::separator() + fi.completeBaseName() + QStringLiteral(".sha256sum");
+    signatureCandidates << path + QStringLiteral(".sig")
+                        << path + QStringLiteral(".asc")
+                        << path + QStringLiteral(".minisig");
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        result.insert(QStringLiteral("checksumStatus"), QStringLiteral("block"));
+        issues << file.errorString();
+        result.insert(QStringLiteral("issues"), issues);
+        return result;
+    }
+
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    QByteArray buffer;
+    buffer.resize(1024 * 1024);
+    while (!file.atEnd()) {
+        const qint64 bytes = file.read(buffer.data(), buffer.size());
+        if (bytes < 0) {
+            result.insert(QStringLiteral("checksumStatus"), QStringLiteral("block"));
+            issues << file.errorString();
+            result.insert(QStringLiteral("issues"), issues);
+            return result;
+        }
+        hash.addData(QByteArrayView(buffer.constData(), bytes));
+    }
+    const QString sha256 = QString::fromLatin1(hash.result().toHex());
+    result.insert(QStringLiteral("sha256"), sha256);
+    result.insert(QStringLiteral("sha256Short"), sha256.left(12));
+
+    QRegularExpression shaRegex(QStringLiteral("\\b([A-Fa-f0-9]{64})\\b"));
+    QString sidecarSha;
+    QString sidecarPath;
+    for (const QString &candidate : std::as_const(sidecarCandidates)) {
+        QFile sidecar(candidate);
+        if (!sidecar.exists() || !sidecar.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+        const QString text = QString::fromUtf8(sidecar.read(16 * 1024));
+        const QRegularExpressionMatch match = shaRegex.match(text);
+        if (match.hasMatch()) {
+            sidecarSha = match.captured(1).toLower();
+            sidecarPath = QFileInfo(candidate).absoluteFilePath();
+            break;
+        }
+    }
+    if (!sidecarSha.isEmpty()) {
+        result.insert(QStringLiteral("sidecarSha256"), sidecarSha);
+        result.insert(QStringLiteral("sidecarPath"), sidecarPath);
+        result.insert(QStringLiteral("sidecarMatches"), sidecarSha == sha256);
+        if (sidecarSha != sha256) issues << QStringLiteral("sidecar checksum не совпадает с SHA-256 файла");
+    }
+
+    for (const QString &candidate : std::as_const(signatureCandidates)) {
+        QFileInfo sig(candidate);
+        if (sig.exists() && sig.isFile()) {
+            result.insert(QStringLiteral("signaturePath"), sig.absoluteFilePath());
+            result.insert(QStringLiteral("signatureSize"), sig.size());
+            break;
+        }
+    }
+
+    QString expected = expectedSha256.trimmed().toLower();
+    const QRegularExpressionMatch expectedMatch = shaRegex.match(expected);
+    if (expectedMatch.hasMatch()) {
+        expected = expectedMatch.captured(1).toLower();
+    }
+    if (!expected.isEmpty() && shaRegex.match(expected).hasMatch()) {
+        result.insert(QStringLiteral("expectedSha256"), expected);
+        result.insert(QStringLiteral("expectedMatches"), expected == sha256);
+        if (expected != sha256) issues << QStringLiteral("ожидаемый checksum update page не совпадает с SHA-256 файла");
+    } else if (!expectedSha256.trimmed().isEmpty()) {
+        result.insert(QStringLiteral("expectedSha256"), expectedSha256.trimmed());
+        result.insert(QStringLiteral("expectedMatches"), QVariant());
+    }
+
+    QString status = QStringLiteral("warn");
+    if (!issues.isEmpty()) {
+        status = QStringLiteral("block");
+    } else if (!expected.isEmpty() || !sidecarSha.isEmpty()) {
+        status = QStringLiteral("ok");
+    }
+    result.insert(QStringLiteral("checksumStatus"), status);
+    result.insert(QStringLiteral("issues"), issues);
+    return result;
 }
 
 bool SystemController::copyImageToClipboard(const QString &fileUrl)

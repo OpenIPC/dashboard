@@ -14,9 +14,9 @@ Dialog {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     
     background: Rectangle {
-        color: "#252526"
-        radius: 8
-        border.color: "#444444"
+        color: Theme.metroSurface
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
     
     header: Rectangle {
@@ -27,22 +27,19 @@ Dialog {
             anchors.leftMargin: 20
             anchors.verticalCenter: parent.verticalCenter
             text: root.title
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 16
             font.bold: true
         }
-        Text {
+        MetroWindowButton {
+            kind: "close"
             anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: "×"
-            color: "#aaaaaa"
-            font.pixelSize: 20
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.close()
-            }
+            width: 38
+            height: 34
+            onClicked: root.close()
         }
     }
 
@@ -54,19 +51,22 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Логин")
-                color: "white"
+                color: Theme.textSecondary
+                font.family: Theme.metroFontFamily
                 Layout.preferredWidth: 80
             }
             TextField {
                 id: loginField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Логин")
-                placeholderTextColor: "#aaaaaa"
-                color: "white"
+                placeholderTextColor: Theme.textFaint
+                color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.controlBackground
+                    border.color: loginField.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                    border.width: loginField.activeFocus ? 2 : 1
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -76,20 +76,23 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Пароль")
-                color: "white"
+                color: Theme.textSecondary
+                font.family: Theme.metroFontFamily
                 Layout.preferredWidth: 80
             }
             TextField {
                 id: passwordField
                 Layout.fillWidth: true
                 placeholderText: I18n.t("Пароль")
-                placeholderTextColor: "#aaaaaa"
+                placeholderTextColor: Theme.textFaint
                 echoMode: TextInput.Password
-                color: "white"
+                color: Theme.textPrimary
+                font.family: Theme.metroFontFamily
                 background: Rectangle {
-                    color: "#252526"
-                    border.color: "#444444"
-                    radius: 4
+                    color: Theme.controlBackground
+                    border.color: passwordField.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                    border.width: passwordField.activeFocus ? 2 : 1
+                    radius: Theme.metroTileRadius
                 }
             }
         }
@@ -99,7 +102,8 @@ Dialog {
             Layout.fillWidth: true
             Text {
                 text: I18n.t("Роль")
-                color: "white"
+                color: Theme.textSecondary
+                font.family: Theme.metroFontFamily
                 Layout.preferredWidth: 80
             }
             StyledComboBox {
@@ -117,7 +121,8 @@ Dialog {
         // Permissions
         Label {
             text: I18n.t("Права доступа")
-            color: "white"
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.bold: true
         }
 
@@ -129,35 +134,7 @@ Dialog {
 
             property bool isAdmin: roleBox.currentValue === "admin" || roleBox.currentIndex === 0
 
-            component StyledCheckBox: CheckBox {
-                hoverEnabled: false
-                background: Item {} // Remove default background/ripple
-                indicator: Rectangle {
-                    implicitWidth: 18
-                    implicitHeight: 18
-                    x: parent.leftPadding
-                    y: parent.height / 2 - height / 2
-                    radius: 3
-                    color: "#252526"
-                    border.color: parent.checked ? "#4caf50" : "#666666"
-                    
-                    Rectangle {
-                        width: 10
-                        height: 10
-                        anchors.centerIn: parent
-                        radius: 2
-                        color: "#4caf50"
-                        visible: parent.parent.checked
-                    }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    font: parent.font
-                    opacity: parent.enabled ? 1.0 : 0.5
-                    color: "white"
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: parent.indicator.width + parent.spacing
-                }
+            component StyledCheckBox: MetroCheckBox {
             }
 
             StyledCheckBox { 
@@ -213,12 +190,15 @@ Dialog {
             Button {
                 text: I18n.t("Сохранить")
                 background: Rectangle {
-                    color: parent.down ? "#388e3c" : "#4caf50"
-                    radius: 4
+                    color: parent.down ? Theme.metroBlueHover : (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue)
+                    radius: Theme.metroTileRadius
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
+                    font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -251,12 +231,15 @@ Dialog {
             Button {
                 text: I18n.t("Отмена")
                 background: Rectangle {
-                    color: parent.down ? "#555555" : "#666666"
-                    radius: 4
+                    color: parent.down ? Theme.metroTilePressed : (parent.hovered ? Theme.metroTileHover : Theme.metroTile)
+                    radius: Theme.metroTileRadius
+                    border.color: parent.hovered ? Theme.metroStrokeStrong : Theme.metroStroke
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }

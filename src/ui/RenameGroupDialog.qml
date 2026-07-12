@@ -20,9 +20,9 @@ Dialog {
     signal renameAccepted(string oldName, string newName)
 
     background: Rectangle {
-        color: Theme.panelAltBackground
-        radius: Theme.radiusMd
-        border.color: Theme.panelBorderStrong
+        color: Theme.metroSurface
+        radius: Theme.metroTileRadius
+        border.color: Theme.metroStroke
     }
 
     contentItem: ColumnLayout {
@@ -46,8 +46,9 @@ Dialog {
             selectByMouse: true
             background: Rectangle {
                 color: Theme.controlBackground
-                radius: Theme.radiusSm
-                border.color: Theme.controlBorder
+                radius: Theme.metroTileRadius
+                border.color: parent.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+                border.width: parent.activeFocus ? 2 : 1
             }
             onTextChanged: root.newName = text
             Component.onCompleted: selectAll()
@@ -68,9 +69,9 @@ Dialog {
             DashboardDialogButton {
                 text: I18n.t("Сохранить")
                 Layout.fillWidth: true
-                buttonColor: Theme.accent
-                buttonHoverColor: Theme.accentHover
-                buttonBorderColor: Theme.accent
+                buttonColor: Theme.metroBlue
+                buttonHoverColor: Theme.metroBlueHover
+                buttonBorderColor: Theme.metroBlue
                 buttonTextBold: true
                 onClicked: {
                     var trimmed = root.newName.trim()

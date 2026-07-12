@@ -1226,157 +1226,59 @@ Item {
             }
 
             // Live stats for fullscreen stream
-            Rectangle {
+            StreamStatsBadge {
+                id: hdStatsBadge
+
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.margins: 12
-                color: "#e0000000"
+                streamPlayer: hdPlayer
+                statsEnabled: SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay
                 radius: 6
-                visible: (SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay) && hdStatsText() !== ""
-                height: 26
-                width: Math.max(120, hdStatsLabel.implicitWidth + 16)
+                minWidth: 120
+                horizontalPadding: 16
+                labelPixelSize: 12
+                badgeHeight: 26
                 border.color: "#44ffffff"
-                border.width: 1
-
-                Text {
-                    id: hdStatsLabel
-                    anchors.centerIn: parent
-                    text: hdStatsText()
-                    color: "white"
-                    font.pixelSize: 12
-                    font.family: "monospace"
-                    font.bold: true
-                }
             }
 
-            // Preview vs fullscreen quality indicator so user sees which stream is where
-            Rectangle {
+            StreamQualityBadge {
                 anchors.bottom: parent.bottom
                 anchors.right: parent.right
                 anchors.margins: 12
-                color: "#e0000000"
-                radius: 6
-                height: 26
-                width: qualityLabel.implicitWidth + 20
-                border.color: "#44ffffff"
-                border.width: 1
-
-                Text {
-                    id: qualityLabel
-                    anchors.centerIn: parent
-                    text: "Preview: " + root.previewQualityLabel(player.fallbackToSd) + "  |  Fullscreen: " + (root.useHdFullscreen && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD")
-                    color: "white"
-                    font.pixelSize: 12
-                    font.bold: true
-                }
+                previewQuality: root.previewQualityLabel(player.fallbackToSd)
+                fullscreenQuality: root.useHdFullscreen && root.hdStreamUrl !== "" && root.hdStreamUrl !== root.sdStreamUrl ? "HD" : "SD"
             }
         // Keys.onEscapePressed: hdWindow.close()
     }
 
-    // Recording Indicator
-    Rectangle {
-        width: 12
-        height: 12
-        radius: 6
-        color: "red"
+    RecordingPulseIndicator {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.margins: 8
-        visible: root.isRecording
-        
-        SequentialAnimation on opacity {
-            loops: Animation.Infinite
-            running: root.isRecording
-            PropertyAnimation { to: 0.2; duration: 800 }
-            PropertyAnimation { to: 1.0; duration: 800 }
-        }
+        active: root.isRecording
     }
 
-    // Stream stats (codec / resolution / bitrate / fps)
-    Rectangle {
+    StreamStatsBadge {
+        id: previewStatsBadge
+
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 8
         scale: root.uiScale
         transformOrigin: Item.BottomLeft
-        color: "#e0000000" // darker for readability
-        radius: Theme.radiusMd
-        visible: (SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay) && statsText() !== ""
-        height: 30
-        // Limit width to 45% of cell width (accounting for scale) to prevent overlap
-        width: Math.min(Math.max(110, statsLabel.implicitWidth + 18), (root.width * 0.45) / root.uiScale)
-        border.color: Theme.overlayBorder
-        border.width: 1
-        clip: true
-
-        Text {
-            id: statsLabel
-            anchors.centerIn: parent
-            text: statsText()
-            color: "white"
-            font.pixelSize: 10
-            font.family: "monospace"
-            font.bold: true
-            elide: Text.ElideRight
-            width: parent.width - 18
-            horizontalAlignment: Text.AlignHCenter
-        }
-    }
-
-    // Helper functions for stats
-    function normalizedStatsCodec(codecValue) {
-        var codec = String(codecValue || "").trim()
-        var lower = codec.toLowerCase()
-        if (codec === ""
-                || lower.indexOf("metadata") >= 0
-                || lower.indexOf("onvif") >= 0
-                || lower.indexOf("application/") >= 0) {
-            codec = "H264"
-            lower = codec.toLowerCase()
-        }
-
-        if (lower.indexOf("265") >= 0 || lower.indexOf("hevc") >= 0 || lower.indexOf("hvc1") >= 0)
-            return "H265"
-        if (lower.indexOf("264") >= 0 || lower.indexOf("avc") >= 0)
-            return "H264"
-        if (lower.indexOf("mjpeg") >= 0 || lower.indexOf("motion jpeg") >= 0)
-            return "MJPEG"
-        if (lower.indexOf("jpeg") >= 0)
-            return "JPEG"
-
-        return codec.toUpperCase()
-    }
-
-    function streamStatsTextFor(streamPlayer) {
-        if (!streamPlayer || !streamPlayer.running)
-            return ""
-
-        var w = streamPlayer.videoWidth || 0
-        var h = streamPlayer.videoHeight || 0
-        if (w === 0 || h === 0)
-            return ""
-
-        var parts = [
-            normalizedStatsCodec(streamPlayer.videoCodec),
-            w + "x" + h
-        ]
-        var bitrate = streamPlayer.videoBitrate || 0
-        var fps = streamPlayer.videoFps || 0
-
-        if (bitrate > 0)
-            parts.push(bitrate + " kbps")
-        if (fps > 0)
-            parts.push(fps + " FPS")
-
-        return parts.join(", ")
+        streamPlayer: player
+        cellWidth: root.width
+        uiScale: root.uiScale
+        statsEnabled: SystemController.appSettings.showStatsOverlay === undefined || SystemController.appSettings.showStatsOverlay
     }
 
     function statsText() {
-        return streamStatsTextFor(player)
+        return previewStatsBadge.statsText()
     }
     
     function hdStatsText() {
-        return streamStatsTextFor(hdPlayer)
+        return hdStatsBadge.statsText()
     }
 
     // Periodic stats refresh to keep bitrate/fps live
@@ -1456,392 +1358,97 @@ Item {
         }
     }
 
-    // Top Right Controls (Visible on Hover, mirrors previous app layout)
-    Rectangle {
+    GridCellControlsOverlay {
         id: controlsPanel
+
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 8
-        height: 40
-        width: controlsRow.implicitWidth + 12
-        color: "#cc000000" // Semi-transparent black
-        radius: Theme.radiusMd
-        // Keep visible while hovering the panel itself to avoid flicker
-        visible: root.effectiveCanLive && (hoverArea.containsMouse || controlsHover.hovered || volumeGroup.sliderShowing)
-        border.color: Theme.overlayBorder
-        border.width: 1
 
-        HoverHandler {
-            id: controlsHover
+        effectiveCanLive: root.effectiveCanLive
+        hoverActive: hoverArea.containsMouse
+        fullscreenVisible: hdWindow.visible
+        ptzVisible: ptzOverlay.visible
+        canPtz: root.canPtz
+        iconFontFamily: root.iconFontFamily
+        previewQualityText: root.previewQualityLabel(player.fallbackToSd).toLowerCase()
+        muted: root.isMuted
+        volume: root.volume
+        audioNormalization: root.audioNormalization
+        recording: root.isRecording
+        manualRecordingPending: root.manualRecordingPending
+        analyticsFaceAvailable: SystemController.analyticsEngine.isModuleEnabled(0)
+        analyticsObjectAvailable: SystemController.analyticsEngine.isModuleEnabled(1)
+        analyticsPlateAvailable: SystemController.analyticsEngine.isModuleEnabled(2)
+        analyticsFaceEnabled: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 0)
+        analyticsObjectEnabled: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 1)
+        analyticsPlateEnabled: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 2)
+
+        onPermissionDenied: root.permissionDenied()
+        onPtzToggleRequested: {
+            ptzOverlay.ptzVisible = !ptzOverlay.ptzVisible
         }
-        
-        Row {
-            id: controlsRow
-            anchors.right: parent.right
-            anchors.rightMargin: 6
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 6
-            property bool volumeHovered: false
-            
-            // PTZ Toggle
-            Button {
-                width: 32
-                height: 26
-                background: Rectangle { color: ptzOverlay.visible ? "#44ffffff" : "transparent"; radius: 3 }
-                contentItem: Text {
-                    text: "control_camera"
-                    font.family: root.iconFontFamily
-                    font.pixelSize: 18
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: {
-                    if (!root.canPtz) { root.permissionDenied(); return }
-                    ptzOverlay.ptzVisible = !ptzOverlay.ptzVisible
-                }
+        onPreviewQualityToggleRequested: {
+            root.restartPreviewStream()
+            if (root.previewQualityOverride === "hd") {
+                root.previewQualityOverride = "sd"
+            } else if (root.previewQualityOverride === "sd") {
+                root.previewQualityOverride = ""
+            } else {
+                root.previewQualityOverride = root.previewQualityLabel(player.fallbackToSd) === "HD" ? "sd" : "hd"
             }
-
-            // Quality toggle SD/HD for preview
-            Button {
-                width: 32
-                height: 26
-                background: Rectangle { color: "transparent"; radius: 3 }
-                contentItem: Text {
-                            text: root.previewQualityLabel(player.fallbackToSd).toLowerCase()
-                            font.family: root.iconFontFamily
-                            font.pixelSize: 18
-                            color: "white"
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: {
-                    root.restartPreviewStream()
-                    if (root.previewQualityOverride === "hd") {
-                        root.previewQualityOverride = "sd"
-                    } else if (root.previewQualityOverride === "sd") {
-                        root.previewQualityOverride = ""
-                    } else {
-                        root.previewQualityOverride = root.previewQualityLabel(player.fallbackToSd) === "HD" ? "sd" : "hd"
-                    }
-                    root.useHdPreview = root.previewQualityOverride === "hd"
-                    player.fallbackToSd = false
-                }
+            root.useHdPreview = root.previewQualityOverride === "hd"
+            player.fallbackToSd = false
+        }
+        onVolumeEdited: function(value) {
+            root.volume = value
+        }
+        onAudioNormalizationToggled: {
+            root.audioNormalization = !root.audioNormalization
+        }
+        onMuteToggled: {
+            root.isMuted = !root.isMuted
+            root.audioClicked()
+        }
+        onRecordToggleRequested: {
+            if (root.isRecording) {
+                stopManualRecording()
+            } else if (root.manualRecordingPending) {
+                root.manualRecordingPending = false
+                console.info("Pending recording cancelled", root.cameraIp)
+            } else {
+                beginManualRecording()
             }
+            root.recordClicked()
+        }
+        onSnapshotRequested: {
+            if (root.manufacturer === "Dahua") {
+                SystemController.takeDahuaSnapshot(root.cameraIp, root.cameraPort, root.cameraLogin, SystemController.getCameraPassword(root.cameraIp))
+            } else {
+                var safeIp = root.cameraIp && root.cameraIp !== "" ? root.cameraIp.replace(/\./g, "_") : "camera"
+                var fileName = "snapshot_" + safeIp + "_" + Qt.formatDateTime(new Date(), "yyyyMMdd_HHmmss_zzz") + ".png"
+                var fullPath = SystemController.getSnapshotPath(fileName)
 
-            // Audio toggle + hover-preserved slider area
-            Item {
-                id: volumeGroup
-                
-                // Use HoverHandler to capture hover state even if buttons are stealing mouse events
-                HoverHandler {
-                    id: volHover
-                }
-                
-                // Show controls if mouse is over the group or slider is being manipulated
-                property bool sliderShowing: volHover.hovered || volumeSlider.pressed || volumeSlider.hovered || normalizeBtn.hovered || audioButton.hovered
-                
-                // Base width is audio button (26). 
-                // Expanded adds: Spacing(6) + N_Button(26) + Spacing(6) + Slider(110) = 148
-                // We expand by growing width. Content aligns to the LEFT (AudioButton)
-                width: 26 + (sliderShowing ? 148 : 0)
-                height: 26
-
-                Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: volumeGroup.sliderShowing ? 6 : 0
-
-                    Slider {
-                        id: volumeSlider
-                        visible: volumeGroup.sliderShowing
-                        width: 110
-                        height: 20
-                        from: 0.0
-                        to: 2.0 // Allow up to 200% amplification
-                        stepSize: 0.05
-                        value: root.volume
-                        onValueChanged: root.volume = value
-                        
-                        // Custom slider style
-                        background: Rectangle {
-                            x: parent.leftPadding
-                            y: parent.topPadding + parent.availableHeight / 2 - height / 2
-                            implicitWidth: 200
-                            implicitHeight: 4
-                            width: parent.availableWidth
-                            height: implicitHeight
-                            radius: 2
-                            color: "#444"
-                            
-                            Rectangle {
-                                width: parent.visualPosition * parent.width
-                                height: parent.height
-                                color: parent.visualPosition > 0.5 ? "#ff9800" : "#2196f3" 
-                                radius: 2
-                            }
-                            
-                            // 100% Marker
-                            Rectangle {
-                                x: parent.width * 0.5
-                                width: 2
-                                height: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                color: "#888"
-                            }
-                        }
-                        
-                        handle: Rectangle {
-                            x: parent.leftPadding + parent.visualPosition * (parent.availableWidth - width)
-                            y: parent.topPadding + parent.availableHeight / 2 - height / 2
-                            implicitWidth: 16
-                            implicitHeight: 16
-                            radius: 8
-                            color: parent.pressed ? "#f0f0f0" : "#f6f6f6"
-                            border.color: "#bdbebf"
-                        }
-                    }
-
-                    // Normalization Toggle (N)
-                    Button {
-                        id: normalizeBtn
-                        visible: volumeGroup.sliderShowing
-                        width: 26
-                        height: 26
-                        background: Rectangle { 
-                            color: root.audioNormalization ? "#2563eb" : "transparent" 
-                            radius: 3 
-                            border.color: "#999"
-                            border.width: 1
-                        }
-                        contentItem: Text {
-                            text: "N"
-                            font.bold: true
-                            font.pixelSize: 12
-                            color: "white"
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        
-                        // Simple tooltip using standard QtQuick Controls ToolTip
-                        ToolTip.visible: normalizeBtn.hovered
-                        ToolTip.text: I18n.t("Нормализация")
-                        
-                        onClicked: {
-                            root.audioNormalization = !root.audioNormalization
-                        }
-                    }
-
-                    Button {
-                        id: audioButton
-                        width: 26
-                        height: 26
-                        background: Rectangle { color: "transparent"; radius: 3 }
-                        contentItem: Text {
-                            text: root.isMuted ? "volume_off" : "volume_up"
-                            font.family: root.iconFontFamily
-                            font.pixelSize: 18
-                            color: "white"
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        onClicked: {
-                            root.isMuted = !root.isMuted
-                            root.audioClicked()
-                        }
-                    }
-                }
-            }
-
-            // Record
-            Button {
-                id: recordBtn
-                width: 26
-                height: 26
-                background: Rectangle { color: "transparent"; radius: 3 }
-                contentItem: Text {
-                    id: recordIcon
-                    text: "fiber_manual_record"
-                    font.family: root.iconFontFamily
-                    font.pixelSize: 18
-                    color: root.isRecording ? "#f44336" : (root.manualRecordingPending ? "#ffb300" : "white")
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    
-                    SequentialAnimation {
-                        running: root.isRecording
-                        loops: Animation.Infinite
-                        NumberAnimation { target: recordIcon; property: "opacity"; from: 1.0; to: 0.3; duration: 800; easing.type: Easing.InOutQuad }
-                        NumberAnimation { target: recordIcon; property: "opacity"; from: 0.3; to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
-                    }
-                }
-                onClicked: {
-                    if (root.isRecording) {
-                        stopManualRecording()
-                    } else if (root.manualRecordingPending) {
-                        root.manualRecordingPending = false
-                        console.info("Pending recording cancelled", root.cameraIp)
-                    } else {
-                        beginManualRecording()
-                    }
-                    root.recordClicked()
-                }
-            }
-
-            // Snapshot
-            Button {
-                width: 26
-                height: 26
-                background: Rectangle { color: "transparent"; radius: 3 }
-                contentItem: Text {
-                            text: "photo_camera"
-                            font.family: root.iconFontFamily
-                            font.pixelSize: 18
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: {
-                    if (root.manufacturer === "Dahua") {
-                        SystemController.takeDahuaSnapshot(root.cameraIp, root.cameraPort, root.cameraLogin, SystemController.getCameraPassword(root.cameraIp))
-                    } else {
-                        var fileName = "snapshot_" + root.cameraIp.replace(/\./g, "_") + "_" + Qt.formatDateTime(new Date(), "yyyyMMdd_HHmmss_zzz") + ".png"
-                        var fullPath = SystemController.getSnapshotPath(fileName)
-                        
-                        // Try native player snapshot first (full resolution)
-                        // Note: player.saveSnapshot is synchronous and uses the current frame buffer
-                        if (player.saveSnapshot(fullPath)) {
+                if (player.saveSnapshot(fullPath)) {
+                    SystemController.notifySnapshotSaved(fullPath)
+                } else {
+                    videoHolder.grabToImage(function(result) {
+                        if (result.saveToFile(fullPath)) {
+                            console.log("Snapshot saved to " + fullPath)
                             SystemController.notifySnapshotSaved(fullPath)
                         } else {
-                            // Fallback to grabToImage (screen resolution)
-                            videoHolder.grabToImage(function(result) {
-                                if (result.saveToFile(fullPath)) {
-                                    console.log("Snapshot saved to " + fullPath)
-                                    SystemController.notifySnapshotSaved(fullPath)
-                                } else {
-                                    console.warn("Failed to save QML snapshot")
-                                }
-                            })
+                            console.warn("Failed to save QML snapshot")
                         }
-                    }
-                    root.snapshotClicked()
+                    })
                 }
             }
-
-            // Close / Remove (hide in fullscreen)
-            Button {
-                width: 26
-                height: 26
-                visible: !hdWindow.visible
-                background: Rectangle { color: "transparent"; radius: 3 }
-                contentItem: Text {
-                            text: "close"
-                            font.family: root.iconFontFamily
-                            font.pixelSize: 18
-                    color: "white"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                onClicked: root.closeClicked()
-            }
-
-            // Separator
-            Rectangle {
-                width: 1
-                height: 20
-                color: "#55ffffff"
-                anchors.verticalCenter: parent.verticalCenter
-                visible: analyticsRow.visible
-            }
-
-            // Analytics Controls (Merged into main row)
-            Row {
-                id: analyticsRow
-                spacing: 6
-                visible: SystemController.analyticsEngine.isModuleEnabled(0) || SystemController.analyticsEngine.isModuleEnabled(1) || SystemController.analyticsEngine.isModuleEnabled(2)
-                
-                // Face Detector
-                Button {
-                    width: 26
-                    height: 26
-                    visible: SystemController.analyticsEngine.isModuleEnabled(0) // FaceDetector
-                    background: Rectangle { 
-                        color: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 0) ? "#4299e1" : "transparent"
-                        radius: 3 
-                        border.color: "#55ffffff"
-                        border.width: 1
-                    }
-                    contentItem: Text {
-                        text: "face"
-                        font.family: root.iconFontFamily
-                        font.pixelSize: 18
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 0)
-                        SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 0, !current)
-                        // Force update binding
-                        background.color = !current ? "#4299e1" : "transparent"
-                        refreshAnalyticsActive()
-                    }
-                }
-
-                // Object Counter
-                Button {
-                    width: 26
-                    height: 26
-                    visible: SystemController.analyticsEngine.isModuleEnabled(1) // ObjectCounter
-                    background: Rectangle { 
-                        color: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 1) ? "#4299e1" : "transparent"
-                        radius: 3 
-                        border.color: "#55ffffff"
-                        border.width: 1
-                    }
-                    contentItem: Text {
-                        text: "category"
-                        font.family: root.iconFontFamily
-                        font.pixelSize: 18
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 1)
-                        SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 1, !current)
-                        background.color = !current ? "#4299e1" : "transparent"
-                        refreshAnalyticsActive()
-                    }
-                }
-
-                // License Plate
-                Button {
-                    width: 26
-                    height: 26
-                    visible: SystemController.analyticsEngine.isModuleEnabled(2) // LicensePlate
-                    background: Rectangle { 
-                        color: SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 2) ? "#4299e1" : "transparent"
-                        radius: 3 
-                        border.color: "#55ffffff"
-                        border.width: 1
-                    }
-                    contentItem: Text {
-                        text: "directions_car"
-                        font.family: root.iconFontFamily
-                        font.pixelSize: 18
-                        color: "white"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, 2)
-                        SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, 2, !current)
-                        background.color = !current ? "#4299e1" : "transparent"
-                        refreshAnalyticsActive()
-                    }
-                }
-            }
+            root.snapshotClicked()
+        }
+        onCloseClicked: root.closeClicked()
+        onAnalyticsModuleToggleRequested: function(moduleIndex) {
+            var current = SystemController.analyticsEngine.isCameraModuleEnabled(root.cameraIp, moduleIndex)
+            SystemController.analyticsEngine.setCameraModuleEnabled(root.cameraIp, moduleIndex, !current)
+            root.refreshAnalyticsActive()
         }
     }
 

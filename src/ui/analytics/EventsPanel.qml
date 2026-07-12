@@ -22,6 +22,7 @@ Item {
     property int selectedIndex: -1
     property string searchText: ""
     property string cameraFilter: ""
+    property string exportStatus: ""
     property int eventTypeFilterIndex: 0
     readonly property int telemetryColumns: width >= 1350 ? 5 : width >= 900 ? 3 : 2
     readonly property real listPaneWidth: Math.max(320, Math.min(400, width * 0.38))
@@ -86,6 +87,23 @@ Item {
         if (!path || path === "")
             return ""
         return "file:///" + String(path).replace(/\\/g, "/")
+    }
+
+    function exportEvents(format) {
+        if (!root.model || !root.model.exportAnalyticsEvents)
+            return
+
+        var result = root.model.exportAnalyticsEvents(
+            "",
+            root.moduleType,
+            root.cameraFilter.trim(),
+            root.searchText.trim(),
+            format,
+            5000
+        )
+        exportStatus = result.ok
+            ? I18n.t("Экспортировано %1 событий: %2", [result.count || 0, result.path || ""])
+            : I18n.t("Экспорт не выполнен: %1", [result.message || I18n.t("нет деталей")])
     }
 
     function cameraIdFromModel(camera) {
@@ -209,17 +227,36 @@ Item {
         eventList.currentIndex = root.selectedIndex
     }
 
+    function scheduleRefreshData() {
+        if (!refreshTimer.running)
+            refreshTimer.start()
+    }
+
+    function enableEvidenceCapture() {
+        if (root.model && root.model.enableAnalyticsEvidenceDefaults) {
+            root.model.enableAnalyticsEvidenceDefaults(true, true)
+            root.refreshData()
+        }
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 250
+        repeat: false
+        onTriggered: root.refreshData()
+    }
+
     Component.onCompleted: refreshData()
     onSelectedIndexChanged: eventList.currentIndex = selectedIndex
 
     Connections {
         target: root.model
         ignoreUnknownSignals: true
-        function onAnalyticsEventsChanged() { root.refreshData() }
-        function onAnalyticsTelemetryChanged() { root.refreshData() }
-        function onSettingsChanged() { root.refreshData() }
+        function onAnalyticsEventsChanged() { root.scheduleRefreshData() }
+        function onAnalyticsTelemetryChanged() { root.scheduleRefreshData() }
+        function onSettingsChanged() { root.scheduleRefreshData() }
         function onModuleConfigChanged(type) { root.refreshPipelineStatus() }
-        function onModuleStatusChanged(type, status, progress, error) { root.refreshData() }
+        function onModuleStatusChanged(type, status, progress, error) { root.scheduleRefreshData() }
     }
 
     Connections {
@@ -395,6 +432,18 @@ Item {
             Item { Layout.fillWidth: true }
 
             PanelButton {
+                text: I18n.t("JSON")
+                enabled: root.model && root.eventItems.length > 0
+                onClicked: root.exportEvents("json")
+            }
+
+            PanelButton {
+                text: I18n.t("CSV")
+                enabled: root.model && root.eventItems.length > 0
+                onClicked: root.exportEvents("csv")
+            }
+
+            PanelButton {
                 text: I18n.t("Очистить список")
                 enabled: root.model && root.eventItems.length > 0
                 onClicked: root.model.clearAnalyticsEvents(root.moduleType)
@@ -405,6 +454,15 @@ Item {
             Layout.fillWidth: true
             text: I18n.t("Runtime-события, правила, трекинг и живая телеметрия модуля.")
             color: Theme.textMuted
+            wrapMode: Text.WordWrap
+            font.pixelSize: 11
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: root.exportStatus !== ""
+            text: root.exportStatus
+            color: root.exportStatus.indexOf(I18n.t("не")) >= 0 ? Theme.warning : Theme.success
             wrapMode: Text.WordWrap
             font.pixelSize: 11
         }
@@ -498,14 +556,25 @@ Item {
                     }
                 }
 
-                Text {
+                RowLayout {
                     Layout.fillWidth: true
-                    text: root.pipelineHintText()
-                    color: root.eventStoreReady && root.evidenceEnabled && root.enabledModulesCount > 0 && root.camerasWithAnalyticsCount > 0
-                           ? Theme.success
-                           : Theme.warning
-                    font.pixelSize: 11
-                    wrapMode: Text.WordWrap
+                    spacing: 8
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.pipelineHintText()
+                        color: root.eventStoreReady && root.evidenceEnabled && root.enabledModulesCount > 0 && root.camerasWithAnalyticsCount > 0
+                               ? Theme.success
+                               : Theme.warning
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+
+                    PanelButton {
+                        visible: !root.evidenceEnabled
+                        text: I18n.t("Включить события")
+                        onClicked: root.enableEvidenceCapture()
+                    }
                 }
             }
         }
@@ -893,6 +962,8 @@ Item {
                                     fillMode: Image.PreserveAspectFit
                                     asynchronous: true
                                     cache: false
+                                    smooth: true
+                                    mipmap: true
                                     source: root.selectedEvent
                                         ? root.localUrl(root.selectedEvent.snapshotPath, root.selectedEvent.snapshotUrl)
                                         : ""

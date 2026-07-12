@@ -20,6 +20,10 @@ struct Camera {
     Q_PROPERTY(QString discoveryEvidence MEMBER discoveryEvidence)
     Q_PROPERTY(int discoveryConfidence MEMBER discoveryConfidence)
     Q_PROPERTY(bool isOpenIpc MEMBER isOpenIpc)
+    Q_PROPERTY(QString onboardingProfile MEMBER onboardingProfile)
+    Q_PROPERTY(QString validationStatus MEMBER validationStatus)
+    Q_PROPERTY(QString validationMessage MEMBER validationMessage)
+    Q_PROPERTY(bool alreadyAdded MEMBER alreadyAdded)
 
 public:
     QString id;
@@ -43,6 +47,10 @@ public:
     QString discoveryEvidence;
     int discoveryConfidence = 0;
     bool isOpenIpc = false;
+    QString onboardingProfile;
+    QString validationStatus;
+    QString validationMessage;
+    bool alreadyAdded = false;
 };
 
 class CameraModel : public QAbstractListModel
@@ -69,7 +77,11 @@ public:
         DiscoveryMethodsRole,
         DiscoveryEvidenceRole,
         DiscoveryConfidenceRole,
-        IsOpenIpcRole
+        IsOpenIpcRole,
+        OnboardingProfileRole,
+        ValidationStatusRole,
+        ValidationMessageRole,
+        AlreadyAddedRole
     };
 
     explicit CameraModel(QObject *parent = nullptr);

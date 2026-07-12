@@ -83,6 +83,12 @@ ScrollView {
             onDangerOptionsToggled: checked => root.controller.firmwareDangerOptionsConfirmed = checked
         }
 
+        OpenIpcFirmwareManifestPanel {
+            rows: root.controller ? root.controller.firmwareArchiveManifestRows() : []
+            summary: root.controller ? root.controller.firmwareArchiveManifestSummary() : ""
+            state: root.controller ? root.controller.firmwareArchiveManifestState() : "warn"
+        }
+
         OpenIpcUpgradeProgressPanel {
             progressText: root.controller ? root.controller.firmwareUpgradeText : ""
             upgradeRebooting: root.controller && root.controller.firmwareUpgradeRebooting

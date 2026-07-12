@@ -41,9 +41,11 @@ cmake --build .
 cmake -S . -B build -DBUILD_TESTING=ON -DOPENIPC_WARNINGS_AS_ERRORS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
+ctest --test-dir build -L unit --output-on-failure
+ctest --test-dir build -R qml_smoke --output-on-failure
 ```
 
-Pull requests are built and tested on Linux and Windows. Linux CI also publishes a generated H.264 stream through a pinned MediaMTX container and consumes it with GStreamer as an RTSP smoke test.
+Pull requests are built and tested on Linux and Windows. CI runs C++ unit tests and the `qml_smoke` UI bootstrap as separate gates. Linux CI also publishes a generated H.264 stream through a pinned MediaMTX container and consumes it with GStreamer as an RTSP smoke test.
 
 ## Features
 

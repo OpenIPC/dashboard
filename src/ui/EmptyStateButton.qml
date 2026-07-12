@@ -5,8 +5,8 @@ import OpenIPC
 Button {
     id: root
 
-    property color buttonColor: Theme.controlBackground
-    property color buttonHoverColor: Theme.cardHover
+    property color buttonColor: Theme.metroTile
+    property color buttonHoverColor: Theme.metroTileHover
     property color buttonTextColor: Theme.textPrimary
 
     implicitHeight: 36
@@ -15,15 +15,16 @@ Button {
 
     background: Rectangle {
         color: root.enabled ? (root.hovered ? root.buttonHoverColor : root.buttonColor) : Theme.controlBackgroundAlt
-        radius: Theme.radiusMd
-        border.color: root.enabled ? Theme.controlBorderStrong : Theme.controlBorder
-        border.width: 1
+        radius: Theme.metroTileRadius
+        border.color: root.enabled && (root.hovered || root.visualFocus) ? Theme.metroStrokeStrong : Theme.metroStroke
+        border.width: root.hovered || root.visualFocus ? 2 : 1
     }
 
     contentItem: Text {
         text: root.text
         color: root.enabled ? root.buttonTextColor : Theme.textMuted
-        font.pixelSize: 13
+        font.family: Theme.metroFontFamily
+        font.pixelSize: 12
         font.bold: true
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

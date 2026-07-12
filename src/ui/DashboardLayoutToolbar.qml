@@ -10,20 +10,43 @@ RowLayout {
 
     property var layoutsModel: null
     property int currentLayoutIndex: -1
+    readonly property bool layoutReady: width > 0
+                                        && layoutsFlick.width >= 0
+                                        && addButton.x >= 0
+                                        && editButton.x + editButton.width <= width + 1
+                                        && (layoutsFlick.contentWidth > layoutsFlick.width
+                                            || addButton.x <= layoutsFlick.x + layoutsFlick.contentWidth + 16)
     signal applyRequested(int index)
     signal closeRequested(int index)
     signal addRequested()
     signal editRequested()
 
-    spacing: 8
+    spacing: 6
 
-    RowLayout {
-        spacing: 6
+    Flickable {
+        id: layoutsFlick
 
-        Repeater {
-            model: layoutToolbar.layoutsModel
+        Layout.fillWidth: false
+        Layout.minimumWidth: 0
+        Layout.preferredWidth: Math.min(layoutsRow.implicitWidth, Math.max(0, layoutToolbar.width - 96))
+        Layout.maximumWidth: Math.max(0, layoutToolbar.width - 96)
+        Layout.preferredHeight: 32
+        clip: true
+        contentWidth: layoutsRow.implicitWidth
+        contentHeight: height
+        flickableDirection: Flickable.HorizontalFlick
+        boundsBehavior: Flickable.StopAtBounds
 
-            delegate: Rectangle {
+        RowLayout {
+            id: layoutsRow
+
+            height: layoutsFlick.height
+            spacing: 6
+
+            Repeater {
+                model: layoutToolbar.layoutsModel
+
+                delegate: Rectangle {
                 id: layoutButton
 
                 required property int index
@@ -31,11 +54,26 @@ RowLayout {
                 required property bool isDefault
 
                 height: 32
-                radius: Theme.radiusMd
-                color: layoutButton.index === layoutToolbar.currentLayoutIndex ? "#11151f" : "#2d3442"
-                border.color: layoutButton.index === layoutToolbar.currentLayoutIndex ? Theme.accent : "#3c4353"
-                border.width: 1
-                width: Math.max(96, nameText.implicitWidth + 30)
+                activeFocusOnTab: true
+                radius: Theme.metroTileRadius
+                color: layoutButton.index === layoutToolbar.currentLayoutIndex ? Theme.metroTilePressed : Theme.metroTile
+                border.color: layoutButton.activeFocus || layoutButton.index === layoutToolbar.currentLayoutIndex
+                              ? Theme.metroStrokeStrong
+                              : Theme.metroStroke
+                border.width: layoutButton.activeFocus || layoutButton.index === layoutToolbar.currentLayoutIndex ? 2 : 1
+                width: Math.min(180, Math.max(88, nameText.implicitWidth + 30))
+
+                Keys.onReturnPressed: layoutToolbar.applyRequested(layoutButton.index)
+                Keys.onSpacePressed: layoutToolbar.applyRequested(layoutButton.index)
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 4
+                    visible: layoutButton.index === layoutToolbar.currentLayoutIndex
+                    color: Theme.metroBlue
+                }
 
                 Text {
                     id: nameText
@@ -46,6 +84,7 @@ RowLayout {
                     anchors.rightMargin: 28
                     text: layoutButton.isDefault ? I18n.t(layoutButton.name) : layoutButton.name
                     color: Theme.textPrimary
+                    font.family: Theme.metroFontFamily
                     font.pixelSize: 12
                     elide: Text.ElideRight
                     horizontalAlignment: Text.AlignLeft
@@ -56,13 +95,13 @@ RowLayout {
                     visible: layoutToolbar.layoutsModel && layoutToolbar.layoutsModel.count > 1
                     width: 20
                     height: 20
-                    radius: 10
+                    radius: Theme.metroTileRadius
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.topMargin: 3
                     anchors.rightMargin: 4
-                    color: "#3c4353"
-                    border.color: "#4b556a"
+                    color: Theme.metroSurface
+                    border.color: Theme.metroStroke
                     z: 2
 
                     Text {
@@ -73,6 +112,8 @@ RowLayout {
                     }
 
                     MouseArea {
+                        id: closeMouse
+
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
@@ -82,14 +123,25 @@ RowLayout {
                         }
                         onPressed: (mouse) => mouse.accepted = true
                     }
+
+                    ToolTip.visible: closeMouse.containsMouse
+                    ToolTip.text: I18n.t("Удалить раскладку")
+                    ToolTip.delay: 450
                 }
 
                 MouseArea {
+                    id: layoutMouse
+
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: layoutToolbar.applyRequested(layoutButton.index)
                     onDoubleClicked: layoutToolbar.editRequested()
+                }
+
+                ToolTip.visible: layoutMouse.containsMouse || layoutButton.activeFocus
+                ToolTip.text: layoutButton.isDefault ? I18n.t(layoutButton.name) : layoutButton.name
+                ToolTip.delay: 500
                 }
             }
         }
@@ -103,20 +155,28 @@ RowLayout {
     }
 
     Rectangle {
+        id: addButton
+
         Layout.preferredWidth: 36
         Layout.preferredHeight: 32
-        radius: Theme.radiusMd
-        color: addMouse.containsMouse ? "#3e4654" : "#2d3442"
-        border.color: "#3c4353"
+        activeFocusOnTab: true
+        radius: Theme.metroTileRadius
+        color: addMouse.containsMouse || addButton.activeFocus ? Theme.metroBlue : Theme.metroTile
+        border.color: addMouse.containsMouse || addButton.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+        border.width: addButton.activeFocus ? 2 : 1
+
+        Keys.onReturnPressed: layoutToolbar.addRequested()
+        Keys.onSpacePressed: layoutToolbar.addRequested()
 
         Text {
             anchors.centerIn: parent
             text: "+"
             color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
             font.pixelSize: 16
         }
 
-        ToolTip.visible: addMouse.containsMouse
+        ToolTip.visible: addMouse.containsMouse || addButton.activeFocus
         ToolTip.text: I18n.t("Новая раскладка")
 
         MouseArea {
@@ -129,11 +189,18 @@ RowLayout {
     }
 
     Rectangle {
+        id: editButton
+
         Layout.preferredWidth: 36
         Layout.preferredHeight: 32
-        radius: Theme.radiusMd
-        color: editMouse.containsMouse ? "#3e4654" : "#2d3442"
-        border.color: "#3c4353"
+        activeFocusOnTab: true
+        radius: Theme.metroTileRadius
+        color: editMouse.containsMouse || editButton.activeFocus ? Theme.metroBlue : Theme.metroTile
+        border.color: editMouse.containsMouse || editButton.activeFocus ? Theme.metroStrokeStrong : Theme.metroStroke
+        border.width: editButton.activeFocus ? 2 : 1
+
+        Keys.onReturnPressed: layoutToolbar.editRequested()
+        Keys.onSpacePressed: layoutToolbar.editRequested()
 
         Canvas {
             anchors.centerIn: parent
@@ -158,7 +225,7 @@ RowLayout {
             }
         }
 
-        ToolTip.visible: editMouse.containsMouse
+        ToolTip.visible: editMouse.containsMouse || editButton.activeFocus
         ToolTip.text: I18n.t("Редактор шаблонов")
 
         MouseArea {

@@ -22,9 +22,9 @@ Rectangle {
 
     Layout.fillWidth: true
     Layout.preferredHeight: editor.rowHeight
-    color: editor.dirty ? "#172033" : "transparent"
-    border.color: editor.dirty ? Theme.accent : "transparent"
-    radius: Theme.radiusMd
+    color: editor.dirty ? Theme.metroTilePressed : "transparent"
+    border.color: editor.dirty ? Theme.metroBlue : "transparent"
+    radius: Theme.metroTileRadius
 
     RowLayout {
         anchors.fill: parent
@@ -50,23 +50,23 @@ Rectangle {
                     visible: editor.field.live === true
                     Layout.preferredWidth: 38
                     Layout.preferredHeight: 18
-                    radius: 9
-                    color: "#164e63"
-                    Text { anchors.centerIn: parent; text: "LIVE"; color: "#67e8f9"; font.pixelSize: 8; font.bold: true }
+                    radius: Theme.metroTileRadius
+                    color: Theme.infoSurface
+                    Text { anchors.centerIn: parent; text: "LIVE"; color: Theme.infoText; font.pixelSize: 8; font.bold: true }
                 }
                 Rectangle {
                     visible: editor.dirty
                     Layout.preferredWidth: 70
                     Layout.preferredHeight: 18
-                    radius: 9
-                    color: "#78350f"
-                    Text { anchors.centerIn: parent; text: I18n.t("изменено"); color: "#fde68a"; font.pixelSize: 9; font.bold: true }
+                    radius: Theme.metroTileRadius
+                    color: Theme.changedSurface
+                    Text { anchors.centerIn: parent; text: I18n.t("изменено"); color: Theme.warningText; font.pixelSize: 9; font.bold: true }
                 }
             }
             Text {
                 visible: !editor.compact
                 text: editor.field.path
-                color: Theme.accentHover
+                color: Theme.metroBlue
                 font.family: "Consolas"
                 font.pixelSize: 10
                 elide: Text.ElideRight
@@ -86,7 +86,7 @@ Rectangle {
                 spacing: 6
                 Text { text: editor.field.type; color: Theme.textFaint; font.pixelSize: 10 }
                 Text { visible: editor.field.minimum !== undefined && editor.field.maximum !== undefined; text: editor.field.minimum + " … " + editor.field.maximum; color: Theme.textFaint; font.pixelSize: 10 }
-                Text { visible: editor.field.live !== true; text: I18n.t("требует reload"); color: Theme.warning; font.pixelSize: 10 }
+                Text { visible: editor.field.live !== true; text: I18n.t("требует reload"); color: Theme.metroAmber; font.family: Theme.metroFontFamily; font.pixelSize: 10 }
             }
         }
 
@@ -101,7 +101,7 @@ Rectangle {
         RowLayout {
             visible: editor.controller.isRangeField(editor.field)
             Layout.preferredWidth: visible ? (editor.compact ? 290 : 360) : 0
-            Slider {
+            MetroSlider {
                 id: rangeSlider
                 Layout.fillWidth: true
                 from: Number(editor.field.minimum)
