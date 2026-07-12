@@ -31,11 +31,75 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           modules: 'qtmultimedia qtwebsockets'
-          tools: 'tools_openssl_x64'
 
       - name: Install OpenSSL 1.1 runtime for Qt TLS
         shell: pwsh
-        run: choco install openssl --version=1.1.1.2100 --allow-downgrade --no-progress -y
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          function Install-ChocoPackage([string] $package, [string] $version) {
+            Write-Host "Installing $package $version"
+            choco install $package --version=$version --allow-downgrade --no-progress -y
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "$package $version failed with exit code $LASTEXITCODE"
+              return $false
+            }
+            return $true
+          }
+
+          function Find-OpenSsl11Bin {
+            $directDirs = @(
+              "C:\Program Files\OpenSSL-Win64\bin",
+              "C:\Program Files\OpenSSL\bin",
+              "C:\OpenSSL-Win64\bin",
+              "C:\OpenSSL\bin"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+
+            foreach ($dir in $directDirs) {
+              if ((Test-Path (Join-Path $dir "libssl-1_1-x64.dll")) -and
+                  (Test-Path (Join-Path $dir "libcrypto-1_1-x64.dll"))) {
+                return $dir
+              }
+            }
+
+            $roots = @(
+              "C:\Program Files",
+              "C:\ProgramData\chocolatey",
+              "C:\tools"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+
+            foreach ($root in $roots) {
+              $sslCandidates = Get-ChildItem -Path $root -Recurse -Filter "libssl-1_1-x64.dll" -ErrorAction SilentlyContinue
+              foreach ($sslCandidate in $sslCandidates) {
+                $dir = $sslCandidate.DirectoryName
+                if (Test-Path (Join-Path $dir "libcrypto-1_1-x64.dll")) {
+                  return $dir
+                }
+              }
+            }
+
+            return $null
+          }
+
+          [void](Install-ChocoPackage "openssl" "1.1.1.2000")
+          $opensslBin = Find-OpenSsl11Bin
+
+          if (-not $opensslBin) {
+            [void](Install-ChocoPackage "openssl.light" "1.1.1")
+            $opensslBin = Find-OpenSsl11Bin
+          }
+
+          if (-not $opensslBin) {
+            Write-Error "OpenSSL 1.1 runtime DLL pair was not found after Chocolatey install."
+            Get-ChildItem -Path "C:\Program Files", "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "libssl*.dll" -ErrorAction SilentlyContinue |
+              Select-Object FullName -First 80 |
+              Out-String |
+              Write-Host
+            exit 1
+          }
+
+          Write-Host "OpenSSL 1.1 runtime found at: $opensslBin"
+          "OPENIPC_OPENSSL11_BIN=$opensslBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Download GStreamer (MinGW) from GitHub Release
         env:
@@ -373,12 +437,16 @@ jobs:
               Select-Object -ExpandProperty FullName
           }
           $opensslSearchDirs = (@(
+            $env:OPENIPC_OPENSSL11_BIN,
             $qtBin,
             (Join-Path $qtRoot "bin"),
             (Join-Path $env:OPENSSL_ROOT_DIR "bin"),
             (Join-Path $gstRoot "bin"),
             "C:\Program Files\OpenSSL-Win64\bin",
+            "C:\Program Files\OpenSSL\bin",
             "C:\Program Files\OpenSSL-Win64\bin\VC\x64\MD",
+            "C:\OpenSSL-Win64\bin",
+            "C:\OpenSSL\bin",
             "C:\Windows\System32",
             "C:\Program Files\Git\mingw64\bin",
             "C:\msys64\mingw64\bin"
@@ -386,6 +454,7 @@ jobs:
 
           function Find-OpenSslPairByName([string[]] $pair) {
             $roots = @(
+              $env:OPENIPC_OPENSSL11_BIN,
               $env:IQTA_TOOLS,
               $env:QT_ROOT_DIR,
               $env:RUNNER_TOOL_CACHE,
