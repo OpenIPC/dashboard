@@ -31,6 +31,7 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           modules: 'qtmultimedia qtwebsockets'
+          tools: 'tools_openssl_x64'
 
       - name: Install OpenSSL 1.1 runtime for Qt TLS
         shell: pwsh
@@ -363,7 +364,15 @@ jobs:
             @("libssl-1_1-x64.dll", "libcrypto-1_1-x64.dll"),
             @("libssl-3-x64.dll", "libcrypto-3-x64.dll")
           )
-          $opensslSearchDirs = @(
+          $pathSearchDirs = ($env:PATH -split [System.IO.Path]::PathSeparator) |
+            Where-Object { $_ -and (Test-Path $_) }
+          $qtToolSearchDirs = @()
+          if ($env:IQTA_TOOLS -and (Test-Path $env:IQTA_TOOLS)) {
+            $qtToolSearchDirs = Get-ChildItem -Path $env:IQTA_TOOLS -Directory -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -ieq "bin" } |
+              Select-Object -ExpandProperty FullName
+          }
+          $opensslSearchDirs = (@(
             $qtBin,
             (Join-Path $qtRoot "bin"),
             (Join-Path $env:OPENSSL_ROOT_DIR "bin"),
@@ -373,7 +382,30 @@ jobs:
             "C:\Windows\System32",
             "C:\Program Files\Git\mingw64\bin",
             "C:\msys64\mingw64\bin"
-          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          ) + $pathSearchDirs + $qtToolSearchDirs) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          function Find-OpenSslPairByName([string[]] $pair) {
+            $roots = @(
+              $env:IQTA_TOOLS,
+              $env:QT_ROOT_DIR,
+              $env:RUNNER_TOOL_CACHE,
+              "C:\Program Files",
+              "C:\ProgramData\chocolatey",
+              "C:\Qt",
+              $gstRoot
+            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+            foreach ($root in $roots) {
+              $sslCandidates = Get-ChildItem -Path $root -Recurse -Filter $pair[0] -ErrorAction SilentlyContinue
+              foreach ($sslCandidate in $sslCandidates) {
+                $dir = $sslCandidate.DirectoryName
+                $cryptoPath = Join-Path $dir $pair[1]
+                if (Test-Path $cryptoPath) {
+                  return $dir
+                }
+              }
+            }
+            return $null
+          }
 
           function Copy-OpenSslPair([string[]] $pair) {
             foreach ($dir in $opensslSearchDirs) {
@@ -385,6 +417,13 @@ jobs:
                 Write-Host "Copied OpenSSL runtime pair from ${dir}: $($pair -join ', ')"
                 return $true
               }
+            }
+            $fallbackDir = Find-OpenSslPairByName $pair
+            if ($fallbackDir) {
+              Copy-Item (Join-Path $fallbackDir $pair[0]) -Destination dist/ -Force
+              Copy-Item (Join-Path $fallbackDir $pair[1]) -Destination dist/ -Force
+              Write-Host "Copied OpenSSL runtime pair from ${fallbackDir}: $($pair -join ', ')"
+              return $true
             }
             return $false
           }
