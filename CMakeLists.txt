@@ -374,6 +374,7 @@ set(QML_FILES
     src/ui/CameraContextMenu.qml
     src/ui/MajesticControlDialog.qml
     src/ui/MajesticButton.qml
+    src/ui/MajesticApplyConfirmDialog.qml
     src/ui/MajesticBackupRestorePanel.qml
     src/ui/MajesticCheckBox.qml
     src/ui/MajesticComboBox.qml
@@ -664,6 +665,23 @@ if(BUILD_TESTING)
 
     add_test(NAME path_utils_tests COMMAND path_utils_tests)
 
+    add_executable(log_model_tests
+        tests/LogModelTests.cpp
+        src/backend/LogModel.cpp
+        src/backend/LogModel.h
+    )
+    openipc_enable_project_warnings(log_model_tests)
+
+    target_include_directories(log_model_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(log_model_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME log_model_tests COMMAND log_model_tests)
+
     add_executable(reconnect_policy_tests
         tests/ReconnectPolicyTests.cpp
         src/backend/gst/ReconnectPolicy.cpp
@@ -943,7 +961,7 @@ if(BUILD_TESTING)
         add_test(NAME qml_smoke_scaled COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
     endif()
 
-    set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -954,7 +972,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     else()

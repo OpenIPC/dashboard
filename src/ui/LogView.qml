@@ -25,6 +25,11 @@ Dialog {
     property bool showError: true // Critical and Fatal
     property bool showDebug: false
 
+    onOpened: {
+        SystemController.logModel.reloadFromFile()
+        Qt.callLater(function() { logListView.positionViewAtEnd() })
+    }
+
     component StyledCheckBox: MetroCheckBox {
     }
 
@@ -48,7 +53,8 @@ Dialog {
             Item { Layout.fillWidth: true }
             
             Button {
-                text: I18n.t("Скачать")
+                text: I18n.t("Экспорт")
+                enabled: SystemController.logModel.count > 0
                 onClicked: saveDialog.open()
                 background: Rectangle {
                     color: parent.down ? Theme.metroTileHover : Theme.metroSurface
@@ -64,7 +70,27 @@ Dialog {
             }
 
             Button {
+                text: I18n.t("Обновить")
+                onClicked: {
+                    SystemController.logModel.reloadFromFile()
+                    Qt.callLater(function() { logListView.positionViewAtEnd() })
+                }
+                background: Rectangle {
+                    color: parent.down ? Theme.metroTileHover : Theme.metroSurface
+                    radius: 4
+                    border.color: Theme.metroStroke
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Button {
                 text: I18n.t("Очистить")
+                enabled: SystemController.logModel.count > 0
                 onClicked: SystemController.logModel.clear()
                 background: Rectangle {
                     color: parent.down ? Theme.metroTileHover : Theme.metroSurface
@@ -115,12 +141,12 @@ Dialog {
                 onCheckedChanged: root.showInfo = checked
             }
             StyledCheckBox {
-                text: I18n.t("Предупреждение")
+                text: I18n.t("Предупреждения")
                 checked: root.showWarning
                 onCheckedChanged: root.showWarning = checked
             }
             StyledCheckBox {
-                text: I18n.t("Ошибка")
+                text: I18n.t("Ошибки")
                 checked: root.showError
                 onCheckedChanged: root.showError = checked
             }
@@ -208,6 +234,23 @@ Dialog {
                 }
                 
                 ScrollBar.vertical: ScrollBar { }
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: SystemController.logModel.count === 0
+                text: I18n.t("Логи пока пусты")
+                color: Theme.textMuted
+                font.pixelSize: 15
+            }
+
+            Connections {
+                target: SystemController.logModel
+                function onCountChanged() {
+                    if (root.visible) {
+                        Qt.callLater(function() { logListView.positionViewAtEnd() })
+                    }
+                }
             }
         }
     }

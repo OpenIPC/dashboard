@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-11.
+Последнее обновление: 2026-07-12.
 
-Текущий стабильный релиз: `v0.2.5.2`.
+Текущий стабильный релиз: `v0.2.6`.
 
-Текущий фокус разработки: `Post-P7 analytics hardening / release prep`.
+Текущий фокус разработки: `P8 Polish / Refactor / Observability`.
 
 ## Обозначения
 
@@ -16,7 +16,7 @@
 
 ## Краткое состояние проекта
 
-OpenIPC Dashboard после `v0.2.5.2` уже умеет не только смотреть камеры, но и управлять OpenIPC/Majestic-устройствами как единый control center:
+OpenIPC Dashboard после `v0.2.6` уже умеет не только смотреть камеры, но и управлять OpenIPC/Majestic-устройствами как единый control center:
 
 - поиск OpenIPC/ONVIF/RTSP камер в сети;
 - live preview с HD/SD режимами;
@@ -49,6 +49,25 @@ OpenIPC Dashboard после `v0.2.5.2` уже умеет не только см
 - аккуратную публичную документацию первого запуска, диагностики и troubleshooting.
 
 Главный ближайший риск: backend уже достаточно крепкий, но QML runtime пока проверяется слабее, чем C++ policy-слой. Поэтому P2.2 выполняется до Health Center v2 и Discovery v2.
+
+## ✅ Release `v0.2.6`
+
+Статус: опубликован 2026-07-12 как stable release.
+
+В релиз вошли накопленные этапы P3/P4/P5/P7 и стабилизация сборок:
+
+- Health Center v2 с профилями проверки, историей запусков и рекомендациями.
+- Discovery/onboarding v2 с сохранением результатов поиска, профилями добавления и проверкой credentials.
+- Majestic/OpenIPC advanced v3: firmware/control center, safer update flow, capabilities/action gates, manifest/checksum inspection.
+- Analytics/Modules evolution: модули, evidence-снимки/клипы, архив, event feed и экспорт.
+- Dashboard polish: sidebar, карточки камер, сворачивание блока действий, исправления модальных окон.
+- Release pipeline: Windows installer и Linux AppImage успешно собираются и публикуются через GitHub Actions.
+
+Открытый долг после релиза:
+
+- приложение должно иметь работающий application log viewer, а не только firmware/live logs камеры;
+- крупные QML/C++ файлы нужно дробить дальше без изменения поведения;
+- CI workflow на `main` требует отдельной стабилизации после релизного workflow.
 
 ## ✅ Hotfix `v0.2.5.2`
 
@@ -523,6 +542,74 @@ Smoke-run покрывает:
 - `ctest --test-dir build_release -R "qml_smoke|model_artifact_verifier_tests|camera_model_tests" --output-on-failure`;
 - `git diff --check`.
 
+## 🟡 P8 — Polish / Refactor / Observability
+
+Цель: снизить технический долг после быстрого роста P3-P7, сделать приложение проще сопровождать и стабильнее диагностировать без больших продуктовых рисков.
+
+Принцип этапа: дробим только там, где есть понятная граница ответственности, и каждый шаг закрываем сборкой/тестами. Поведение приложения должно оставаться прежним или становиться очевидно надежнее.
+
+### P8.1 Application logging
+
+Статус: ✅ закрыто в текущей ветке 2026-07-12.
+
+Задачи:
+
+- включить application log handler по умолчанию;
+- писать события в `app.log` и одновременно отдавать их в `LogModel`;
+- загружать хвост существующего `app.log` при старте и при открытии окна логов;
+- добавить пустое состояние, обновление, экспорт и фильтры в `LogView`;
+- покрыть `LogModel` unit-тестами.
+
+Что это даст:
+
+- кнопка “Логи” станет реально полезной для диагностики;
+- можно будет отличать проблемы QML/backend/network без запуска из терминала;
+- будущие crash/bug reports будут проще воспроизводить.
+
+### P8.2 Refactor map: крупные файлы
+
+Статус: 🟡 начато.
+
+Уже сделано в текущей ветке:
+
+- `MajesticApplyConfirmDialog.qml` вынесен из `MajesticControlDialog.qml` без изменения поведения apply-flow.
+
+Приоритет разбиения:
+
+1. `src/ui/MajesticControlDialog.qml` — вынести state/actions/connectors в меньшие панели и helper-компоненты.
+2. `src/backend/analytics/AnalyticsEngine.cpp` — разделить runtime, evidence store, module inventory, export/OAuth/cloud-интеграции.
+3. `src/ui/I18n.qml` — почистить дубли и legacy mojibake-ключи, перейти к более управляемым словарям.
+4. `src/backend/SystemController.cpp` — выделить settings/state IO, camera group operations, recording/archive utilities.
+5. `src/ui/analytics/EventsPanel.qml` и `SnapshotBrowser.qml` — отделить фильтры, список, детали и actions.
+
+Что это даст:
+
+- меньше риска ломать соседние функции при точечных правках;
+- быстрее review и тестирование;
+- проще добавлять новые этапы вроде Archive/Recording v2.
+
+### P8.3 QML/runtime hardening
+
+Статус: 🔜 следующая очередь.
+
+Задачи:
+
+- расширить smoke matrix на LogView, Analytics tabs, Majestic Control Center и Settings;
+- добавить targeted `qmllint` для измененных QML;
+- убрать известные layout-overlap точки из крупных диалогов;
+- унифицировать empty/loading/error states.
+
+### P8.4 CI cleanup
+
+Статус: 🔜 следующая очередь.
+
+Задачи:
+
+- отдельно стабилизировать CI на `main`;
+- синхронизировать CI dependency install с release workflow;
+- убрать Node/action deprecation warnings;
+- оставить release workflow как главный production gate.
+
 ## ⛔ Решения, которые пока не делаем автоматически
 
 - Автоматический full restore OpenIPC backup через непроверенный endpoint.
@@ -550,7 +637,8 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Post-P7: полный `ctest`, затем ручная smoke-проверка Analytics Overview/Modules/Events на реальной камере.
-2. Post-P5/P7: ручная проверка Control Center на реальной OpenIPC-камере: endpoints, checksum upload, restore preview и action gates.
-3. Release-candidate notes для накопленных P3/P4/P5/P7 изменений.
-4. Следующее продуктовое решение: P8 Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
+1. Закрыть P8.1: application logs должны отображаться в окне “Логи”, экспортироваться и иметь unit/smoke coverage.
+2. Начать P8.2 с самого безопасного split: вынести из `MajesticControlDialog.qml` уже готовые визуальные блоки без изменения backend-контрактов.
+3. После каждого split запускать `cmake --build build_release --target appOpenIPC-Dashboard -j 2` и targeted smoke/unit-тесты.
+4. Стабилизировать CI на `main`, синхронизировав dependency install с успешным release workflow.
+5. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.

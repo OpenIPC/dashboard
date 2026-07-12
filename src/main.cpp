@@ -205,23 +205,18 @@ int main(int argc, char *argv[])
     LogState &state = logState();
     state.logFile.setFileName(logPath + "/app.log");
     
-    const bool useCustomLogger = (qEnvironmentVariable("OPENIPC_USE_CUSTOM_LOGGER") == "1");
+    const bool useCustomLogger = (qEnvironmentVariable("OPENIPC_DISABLE_CUSTOM_LOGGER") != "1");
 
     if (state.logFile.open(QIODevice::Append | QIODevice::Text)) {
         QTextStream ts(&state.logFile);
         ts << QDateTime::currentDateTime().toString(Qt::ISODate) << " [INF] app start" << '\n';
         ts.flush();
-        if (useCustomLogger) {
-            qInstallMessageHandler(logMessageHandler);
-        }
     } else {
-        // Fallback to temp if AppData fails
-        // gLogFile.setFileName(QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/appOpenIPC-Dashboard.log");
-        // if (gLogFile.open(QIODevice::Append | QIODevice::Text)) {
-        //      qInstallMessageHandler(logMessageHandler);
-        // }
-        // Simplify fallback logging to stderr if file fails
         fprintf(stderr, "Failed to open log file, logging to stderr only.\n");
+    }
+
+    if (useCustomLogger) {
+        qInstallMessageHandler(logMessageHandler);
     }
 
     qInfo().noquote() << "Platform" << QGuiApplication::platformName()
@@ -238,6 +233,10 @@ int main(int argc, char *argv[])
     // Register the C++ backend controller FIRST to ensure it outlives the engine
     SystemController systemController;    
     QPointer<SystemController> systemControllerPtr(&systemController);
+    if (LogModel *model = systemController.logModel()) {
+        model->setSourcePath(state.logFile.fileName());
+        model->reloadFromFile();
+    }
     // Hook up logging to SystemController
     state.logCallback = [systemControllerPtr](QtMsgType type, const QString &msg) {
         if (systemControllerPtr) {

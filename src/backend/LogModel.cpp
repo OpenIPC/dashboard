@@ -1,7 +1,61 @@
 #include "LogModel.h"
 #include <QFile>
+#include <QRegularExpression>
 #include <QTextStream>
 #include <QUrl>
+#include <utility>
+
+namespace {
+constexpr int kMaxInMemoryLogs = 2000;
+
+QString localPathFromInput(const QString &pathOrUrl)
+{
+    const QUrl url(pathOrUrl);
+    return url.isLocalFile() ? url.toLocalFile() : pathOrUrl;
+}
+
+QString levelForType(QtMsgType type)
+{
+    switch (type) {
+    case QtDebugMsg: return QStringLiteral("DBG");
+    case QtInfoMsg: return QStringLiteral("INF");
+    case QtWarningMsg: return QStringLiteral("WRN");
+    case QtCriticalMsg: return QStringLiteral("CRT");
+    case QtFatalMsg: return QStringLiteral("FTL");
+    }
+    return QStringLiteral("UNK");
+}
+
+QtMsgType typeForLevel(const QString &level)
+{
+    if (level == QStringLiteral("DBG")) return QtDebugMsg;
+    if (level == QStringLiteral("WRN")) return QtWarningMsg;
+    if (level == QStringLiteral("CRT")) return QtCriticalMsg;
+    if (level == QStringLiteral("FTL")) return QtFatalMsg;
+    return QtInfoMsg;
+}
+
+LogEntry parseLogLine(const QString &line)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral(R"(^(\S+)\s+\[([A-Z]{3})\]\s?(.*)$)"));
+
+    const QRegularExpressionMatch match = pattern.match(line);
+    if (!match.hasMatch()) {
+        return {QDateTime::currentDateTime(), QtInfoMsg, line};
+    }
+
+    QDateTime timestamp = QDateTime::fromString(match.captured(1), Qt::ISODateWithMs);
+    if (!timestamp.isValid()) {
+        timestamp = QDateTime::fromString(match.captured(1), Qt::ISODate);
+    }
+    if (!timestamp.isValid()) {
+        timestamp = QDateTime::currentDateTime();
+    }
+
+    return {timestamp, typeForLevel(match.captured(2)), match.captured(3)};
+}
+} // namespace
 
 LogModel::LogModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -13,6 +67,26 @@ int LogModel::rowCount(const QModelIndex &parent) const
     if (parent.isValid())
         return 0;
     return m_logs.count();
+}
+
+int LogModel::count() const
+{
+    return m_logs.count();
+}
+
+QString LogModel::sourcePath() const
+{
+    return m_sourcePath;
+}
+
+void LogModel::setSourcePath(const QString &path)
+{
+    const QString normalized = localPathFromInput(path);
+    if (m_sourcePath == normalized)
+        return;
+
+    m_sourcePath = normalized;
+    emit sourcePathChanged();
 }
 
 QVariant LogModel::data(const QModelIndex &index, int role) const
@@ -32,14 +106,7 @@ QVariant LogModel::data(const QModelIndex &index, int role) const
     case FormattedTimeRole:
         return entry.timestamp.toString("HH:mm:ss.zzz");
     case LevelStringRole:
-        switch (entry.type) {
-        case QtDebugMsg: return "DBG";
-        case QtInfoMsg: return "INF";
-        case QtWarningMsg: return "WRN";
-        case QtCriticalMsg: return "CRT";
-        case QtFatalMsg: return "FTL";
-        default: return "UNK";
-        }
+        return levelForType(entry.type);
     }
 
     return QVariant();
@@ -58,45 +125,89 @@ QHash<int, QByteArray> LogModel::roleNames() const
 
 void LogModel::addLog(QtMsgType type, const QString &message)
 {
+    appendEntry(QDateTime::currentDateTime(), type, message);
+}
+
+void LogModel::appendEntry(const QDateTime &timestamp, QtMsgType type, const QString &message)
+{
     beginInsertRows(QModelIndex(), m_logs.count(), m_logs.count());
-    m_logs.append({QDateTime::currentDateTime(), type, message});
+    m_logs.append({timestamp, type, message});
     endInsertRows();
 
-    // Limit log size to prevent memory leaks
-    if (m_logs.count() > 2000) {
-        beginRemoveRows(QModelIndex(), 0, 0);
-        m_logs.removeFirst();
+    trimToLimit();
+    emit countChanged();
+}
+
+void LogModel::trimToLimit()
+{
+    const int overflow = m_logs.count() - kMaxInMemoryLogs;
+    if (overflow > 0) {
+        beginRemoveRows(QModelIndex(), 0, overflow - 1);
+        m_logs.remove(0, overflow);
         endRemoveRows();
     }
 }
 
 void LogModel::clear()
 {
+    if (m_logs.isEmpty())
+        return;
+
     beginResetModel();
     m_logs.clear();
     endResetModel();
+    emit countChanged();
 }
 
 void LogModel::saveLog(const QString &fileUrl)
 {
-    QUrl url(fileUrl);
-    QString localPath = url.isLocalFile() ? url.toLocalFile() : fileUrl;
+    const QString localPath = localPathFromInput(fileUrl);
     
     QFile file(localPath);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&file);
         for (const auto &entry : m_logs) {
-             QString level;
-             switch (entry.type) {
-                 case QtDebugMsg: level = "DBG"; break;
-                 case QtInfoMsg: level = "INF"; break;
-                 case QtWarningMsg: level = "WRN"; break;
-                 case QtCriticalMsg: level = "CRT"; break;
-                 case QtFatalMsg: level = "FTL"; break;
-                 default: level = "UNK"; break;
-             }
-             out << entry.timestamp.toString(Qt::ISODate) << " [" << level << "] " << entry.message << "\n";
+             out << entry.timestamp.toString(Qt::ISODateWithMs)
+                 << " [" << levelForType(entry.type) << "] "
+                 << entry.message << "\n";
         }
         file.close();
     }
+}
+
+bool LogModel::loadFromFile(const QString &fileUrl)
+{
+    const QString localPath = localPathFromInput(fileUrl);
+    if (localPath.trimmed().isEmpty()) {
+        return false;
+    }
+
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return false;
+    }
+
+    QVector<LogEntry> loaded;
+    loaded.reserve(kMaxInMemoryLogs);
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        const QString line = in.readLine();
+        loaded.append(parseLogLine(line));
+        if (loaded.count() > kMaxInMemoryLogs) {
+            loaded.remove(0, loaded.count() - kMaxInMemoryLogs);
+        }
+    }
+
+    setSourcePath(localPath);
+
+    beginResetModel();
+    m_logs = std::move(loaded);
+    endResetModel();
+    emit countChanged();
+    return true;
+}
+
+bool LogModel::reloadFromFile()
+{
+    return loadFromFile(m_sourcePath);
 }

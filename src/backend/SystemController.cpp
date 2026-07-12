@@ -1045,7 +1045,11 @@ CamexController* SystemController::camexController() const
 void SystemController::addLog(QtMsgType type, const QString &msg)
 {
     if (m_logModel) {
-        // Ensure we are on the main thread for UI updates
+        if (m_logModel->thread() == QThread::currentThread()) {
+            m_logModel->addLog(type, msg);
+            return;
+        }
+
         QMetaObject::invokeMethod(m_logModel, [this, type, msg]() {
             m_logModel->addLog(type, msg);
         }, Qt::QueuedConnection);
