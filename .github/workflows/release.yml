@@ -24,7 +24,7 @@ jobs:
           version: 12.2.0
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v3
+        uses: jurplel/install-qt-action@v4
         with:
           version: '6.4.2'
           host: 'windows'
@@ -470,7 +470,7 @@ jobs:
           gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl
 
       - name: Install Qt
-        uses: jurplel/install-qt-action@v3
+        uses: jurplel/install-qt-action@v4
         with:
           version: '6.4.2'
           host: 'linux'
