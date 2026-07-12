@@ -16,7 +16,7 @@ jobs:
       GSTREAMER_RELEASE_TAG: deps-gstreamer-1.22.8
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up MinGW
         uses: egor-tensin/setup-mingw@v2
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload CMake logs (Windows)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-cmake-logs
           path: |
@@ -382,7 +382,7 @@ jobs:
               if ((Test-Path $sslPath) -and (Test-Path $cryptoPath)) {
                 Copy-Item $sslPath -Destination dist/ -Force
                 Copy-Item $cryptoPath -Destination dist/ -Force
-                Write-Host "Copied OpenSSL runtime pair from $dir: $($pair -join ', ')"
+                Write-Host "Copied OpenSSL runtime pair from ${dir}: $($pair -join ', ')"
                 return $true
               }
             }
@@ -450,7 +450,7 @@ jobs:
         run: iscc setup.iss
 
       - name: Upload Installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: OpenIPC-Dashboard-Installer.exe
@@ -459,7 +459,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Dependencies
         run: |
@@ -488,7 +488,7 @@ jobs:
 
       - name: Upload CMake logs (Linux)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-cmake-logs
           path: |
@@ -728,7 +728,7 @@ jobs:
 
       - name: Upload AppImage logs (Linux)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-appimage-logs
           path: |
@@ -754,7 +754,7 @@ jobs:
           fi
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-appimage
           path: OpenIPC-Dashboard-Linux.AppImage
@@ -765,15 +765,15 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Windows Installer
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-installer
       
       - name: Download Linux AppImage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-appimage
 
