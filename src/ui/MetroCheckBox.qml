@@ -10,23 +10,24 @@ AbstractButton {
     focusPolicy: Qt.StrongFocus
     font.family: Theme.metroFontFamily
     font.pixelSize: 12
-    implicitWidth: contentItem.implicitWidth
-    implicitHeight: Math.max(28, contentItem.implicitHeight + 8)
+    readonly property int boxSize: 18
+    readonly property real labelImplicitWidth: text.length > 0 ? label.implicitWidth : 0
+    readonly property real labelImplicitHeight: text.length > 0 ? label.implicitHeight : 0
+
+    implicitWidth: boxSize + (text.length > 0 ? spacing + labelImplicitWidth : 0)
+    implicitHeight: Math.max(28, Math.max(boxSize, labelImplicitHeight) + 8)
     padding: 0
 
     background: Item {}
 
     contentItem: Item {
-        implicitWidth: box.width + (label.visible ? check.spacing + label.implicitWidth : 0)
-        implicitHeight: Math.max(box.height, label.visible ? label.implicitHeight : 0)
-
         Rectangle {
             id: box
 
-            width: 18
-            height: 18
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+            width: check.boxSize
+            height: check.boxSize
+            x: 0
+            y: Math.round((parent.height - height) / 2)
             radius: Theme.metroTileRadius
             color: check.checked ? Theme.metroBlue : Theme.controlBackground
             border.color: check.checked
@@ -61,10 +62,11 @@ AbstractButton {
             id: label
 
             visible: check.text.length > 0
-            anchors.left: box.right
-            anchors.leftMargin: check.spacing
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            x: box.width + check.spacing
+            y: Math.round((parent.height - height) / 2)
+            width: check.width > check.implicitWidth
+                   ? Math.max(0, check.width - box.width - check.spacing)
+                   : implicitWidth
             text: check.text
             color: check.enabled ? Theme.textSecondary : Theme.textFaint
             font: check.font

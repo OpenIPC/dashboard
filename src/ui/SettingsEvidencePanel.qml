@@ -15,6 +15,53 @@ ColumnLayout {
     signal snapshotsFolderRequested()
     signal clipsFolderRequested()
 
+    component EvidenceToggle: RowLayout {
+        id: option
+
+        property string title: ""
+        property string description: ""
+        property bool optionChecked: false
+        property bool optionEnabled: true
+
+        signal optionToggled(bool checked)
+
+        Layout.fillWidth: true
+        spacing: 10
+
+        MetroCheckBox {
+            id: toggle
+
+            text: ""
+            checked: option.optionChecked
+            enabled: option.optionEnabled
+            ToolTip.visible: hovered || visualFocus
+            ToolTip.text: option.description
+            onToggled: option.optionToggled(checked)
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+
+            Text {
+                Layout.fillWidth: true
+                text: option.title
+                color: option.optionEnabled ? Theme.textPrimary : Theme.textFaint
+                font.pixelSize: 13
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: option.description
+                color: option.optionEnabled ? Theme.textSecondary : Theme.textFaint
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
     Layout.fillWidth: true
     spacing: 16
 
@@ -25,35 +72,39 @@ ColumnLayout {
         font.bold: true
     }
 
-    MetroCheckBox {
-        text: I18n.t("Включить события")
-        checked: panel.settings ? panel.settings.evidenceEnabled : false
-        onToggled: {
+    EvidenceToggle {
+        title: I18n.t("Записывать события аналитики")
+        description: I18n.t("Включает постоянную ленту событий: детекции проходят через правила и сохраняются в журнале и архиве.")
+        optionChecked: panel.settings ? panel.settings.evidenceEnabled : false
+        onOptionToggled: function(checked) {
             if (!panel.settings) return
             panel.settings.evidenceEnabled = checked
             panel.settings.applyCurrentSettings()
         }
     }
 
-    RowLayout {
-        spacing: 12
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 8
 
-        MetroCheckBox {
-            text: I18n.t("Снимки")
-            checked: panel.settings ? panel.settings.evidenceSnapshotsEnabled : true
-            enabled: panel.settings ? panel.settings.evidenceEnabled : false
-            onToggled: {
+        EvidenceToggle {
+            title: I18n.t("Сохранять снимки детекций")
+            description: I18n.t("Сохраняет кадр PNG при срабатывании правила или общей детекции.")
+            optionChecked: panel.settings ? panel.settings.evidenceSnapshotsEnabled : true
+            optionEnabled: panel.settings ? panel.settings.evidenceEnabled : false
+            onOptionToggled: function(checked) {
                 if (!panel.settings) return
                 panel.settings.evidenceSnapshotsEnabled = checked
                 panel.settings.applyCurrentSettings()
             }
         }
 
-        MetroCheckBox {
-            text: I18n.t("Клипы")
-            checked: panel.settings ? panel.settings.evidenceClipsEnabled : true
-            enabled: panel.settings ? panel.settings.evidenceEnabled : false
-            onToggled: {
+        EvidenceToggle {
+            title: I18n.t("Сохранять клипы детекций")
+            description: I18n.t("Сохраняет короткий MP4-фрагмент вокруг события с учетом времени до и после события.")
+            optionChecked: panel.settings ? panel.settings.evidenceClipsEnabled : true
+            optionEnabled: panel.settings ? panel.settings.evidenceEnabled : false
+            onOptionToggled: function(checked) {
                 if (!panel.settings) return
                 panel.settings.evidenceClipsEnabled = checked
                 panel.settings.applyCurrentSettings()
