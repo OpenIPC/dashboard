@@ -51,6 +51,11 @@
 
 namespace {
 
+constexpr int kRecordingSegmentMinMinutes = 5;
+constexpr int kRecordingSegmentMaxMinutes = 60;
+constexpr int kRecordingSegmentStepMinutes = 5;
+constexpr int kRecordingSegmentDefaultMinutes = 15;
+
 QString normalizedLocalPath(const QString &pathOrUrl)
 {
     return PathUtils::localPathFromUserInput(pathOrUrl);
@@ -68,6 +73,49 @@ void normalizeAppSettingPaths(QVariantMap &settings)
         if (!value.trimmed().isEmpty()) {
             settings[key] = normalizedLocalPath(value);
         }
+    }
+}
+
+int normalizedImportedPlayerFillMode(const QVariant &value)
+{
+    bool ok = false;
+    const int mode = value.toInt(&ok);
+    if (!ok) {
+        return 0;
+    }
+    if (mode < 0) {
+        return -1;
+    }
+    if (mode > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+int normalizedImportedRecordingSegmentDuration(const QVariant &value)
+{
+    bool ok = false;
+    int minutes = value.toInt(&ok);
+    if (!ok) {
+        minutes = kRecordingSegmentDefaultMinutes;
+    }
+
+    minutes = std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+    minutes = ((minutes + kRecordingSegmentStepMinutes / 2) / kRecordingSegmentStepMinutes)
+        * kRecordingSegmentStepMinutes;
+    return std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+}
+
+void normalizeImportedAppSettings(QVariantMap &settings)
+{
+    normalizeAppSettingPaths(settings);
+    if (settings.contains(QStringLiteral("playerFillMode"))) {
+        settings[QStringLiteral("playerFillMode")] =
+            normalizedImportedPlayerFillMode(settings.value(QStringLiteral("playerFillMode")));
+    }
+    if (settings.contains(QStringLiteral("recordingSegmentDuration"))) {
+        settings[QStringLiteral("recordingSegmentDuration")] =
+            normalizedImportedRecordingSegmentDuration(settings.value(QStringLiteral("recordingSegmentDuration")));
     }
 }
 
@@ -297,7 +345,7 @@ SystemController::SystemController(QObject *parent)
     m_appSettings["notificationsEnabled"] = true;
     m_appSettings["preferredStream"] = "auto";
     // 0 = fit (letterbox), -1 = crop; default to fit for correct aspect
-    m_appSettings["playerFillMode"] = 0.0;
+    m_appSettings["playerFillMode"] = 0;
     m_appSettings["showStatsOverlay"] = true;
     m_appSettings["defaultAutoplay"] = true;
     m_appSettings["sidebarVisible"] = true;
@@ -2414,7 +2462,7 @@ bool SystemController::importConfiguration(const QString &path)
     // 1. App Settings
     if (root.contains("appSettings")) {
         QVariantMap savedSettings = root.value("appSettings").toObject().toVariantMap();
-        normalizeAppSettingPaths(savedSettings);
+        normalizeImportedAppSettings(savedSettings);
         for (auto it = savedSettings.begin(); it != savedSettings.end(); ++it) {
             m_appSettings[it.key()] = it.value();
         }

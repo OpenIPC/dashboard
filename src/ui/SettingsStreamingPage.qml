@@ -159,6 +159,28 @@ Item {
                 }
 
                 FieldLabel {
+                    text: I18n.t("Режим кадра")
+                }
+
+                StyledComboBox {
+                    id: fillModeCombo
+
+                    model: [
+                        I18n.t("Сохранять пропорции"),
+                        I18n.t("Обрезать по краям"),
+                        I18n.t("Растянуть")
+                    ]
+                    currentIndex: page.settings.playerFillMode < 0
+                                  ? 1
+                                  : page.settings.playerFillMode > 0 ? 2 : 0
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    onUserSelected: function(index) {
+                        page.settings.playerFillMode = index === 1 ? -1 : index === 2 ? 1 : 0
+                    }
+                }
+
+                FieldLabel {
                     text: I18n.t("Отображать статистику")
                 }
 

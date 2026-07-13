@@ -1084,6 +1084,7 @@ Item {
     Connections {
         target: SystemController
         function onSnapshotSaved(path) {
+            if (SystemController.appSettings.notificationsEnabled === false) return
             toast.show(I18n.t("Скриншот сохранен: ") + path, path)
         }
     }

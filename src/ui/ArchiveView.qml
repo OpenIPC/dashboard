@@ -203,6 +203,7 @@ Dialog {
                         transform: Scale { origin.x: player.width / 2; origin.y: player.height / 2; xScale: 1 }
                         
                         // Settings bindings
+                        fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 0
                         hwDecoding: (SystemController.appSettings.playerHwDecoding !== undefined) ? SystemController.appSettings.playerHwDecoding : "auto"
                         brightness: (SystemController.appSettings.playerBrightness !== undefined) ? SystemController.appSettings.playerBrightness : 1.0
                         contrast: (SystemController.appSettings.playerContrast !== undefined) ? SystemController.appSettings.playerContrast : 1.0

@@ -115,9 +115,9 @@ Window {
     property string updateError: ""
     property bool updateInstallAfterDownload: false
 
-    // Streaming tab state (UI-only for now)
+    // Streaming tab state persisted through SystemController.appSettings
     property string preferredStream: "auto" // auto | hd | sd
-    property real playerFillMode: -1.0 // -1 crop/fill, 1 fit, 0 stretch
+    property int playerFillMode: 0 // -1 crop/fill, 0 fit, 1 stretch
     property bool showStatsOverlay: true
     property bool defaultAutoplay: true
     property bool smartStreamBudget: true
@@ -220,9 +220,18 @@ Window {
         return Math.max(5, Math.min(60, minutes))
     }
 
+    function normalizePlayerFillMode(value) {
+        var mode = Number(value)
+        if (!isFinite(mode)) return 0
+        if (mode < 0) return -1
+        if (mode > 0) return 1
+        return 0
+    }
+
     // Helper to apply current settings
     function applyCurrentSettings() {
         recordingSegmentDuration = normalizeRecordingSegmentDuration(recordingSegmentDuration)
+        playerFillMode = normalizePlayerFillMode(playerFillMode)
         var settings = {
             "language": language,
             "recordingsPath": recordingsPath,
@@ -295,7 +304,7 @@ Window {
             if (settings.hwAccel) hwAccel = settings.hwAccel
             if (settings.notificationsEnabled !== undefined) notificationsEnabled = settings.notificationsEnabled
             if (settings.preferredStream) preferredStream = settings.preferredStream
-            if (settings.playerFillMode !== undefined) playerFillMode = settings.playerFillMode
+            if (settings.playerFillMode !== undefined) playerFillMode = normalizePlayerFillMode(settings.playerFillMode)
             if (settings.showStatsOverlay !== undefined) showStatsOverlay = settings.showStatsOverlay
             if (settings.defaultAutoplay !== undefined) defaultAutoplay = settings.defaultAutoplay
             if (settings.smartStreamBudget !== undefined) smartStreamBudget = settings.smartStreamBudget

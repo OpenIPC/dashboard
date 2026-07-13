@@ -26,6 +26,7 @@ Item {
         property bool smartStreamBudget: true
         property int maxPreviewStreams: 16
         property int playerBufferMode: 1
+        property int playerFillMode: 0
         property string playerRtspTransport: "tcp"
         property string playerHwDecoding: "auto"
         property real playerBrightness: 1.0

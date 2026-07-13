@@ -490,7 +490,7 @@ Item {
             visible: root.streamUrl !== "" && !hdWindow.visible && root.previewSessionAllowed
 
             // Respect app setting (Crop/Fit/Stretch)
-            fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
+            fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 0
             
             // Orientation
             orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0
@@ -1045,7 +1045,7 @@ Item {
                 id: hdPlayer
                 anchors.fill: parent
                 // Respect app setting (Crop/Fit/Stretch)
-                fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 1.0
+                fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 0
                 
                 // Use app settings for orientation
                 orientation: (SystemController.appSettings.playerOrientation !== undefined) ? SystemController.appSettings.playerOrientation : 0

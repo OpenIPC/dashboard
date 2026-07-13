@@ -68,6 +68,7 @@ GstPlayer::GstPlayer(QQuickItem *parent) : QQuickItem(parent)
 {
     ensureGstInit();
     setFlag(ItemHasContents, true);
+    setClip(true);
 
     m_statsTimer = new QTimer(this);
     m_statsTimer->setInterval(1000);
@@ -158,6 +159,18 @@ void GstPlayer::setBufferMode(int mode)
         emit bufferModeChanged();
         if (m_running) restartPipeline();
     }
+}
+
+void GstPlayer::setFillMode(int mode)
+{
+    const int normalized = mode < 0 ? -1 : (mode > 0 ? 1 : 0);
+    if (m_fillMode == normalized) {
+        return;
+    }
+
+    m_fillMode = normalized;
+    emit fillModeChanged();
+    update();
 }
 
 void GstPlayer::setVolume(double volume)
@@ -1420,7 +1433,23 @@ QSGNode *GstPlayer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
             delete node->texture();
         }
         node->setTexture(texture);
-        node->setRect(boundingRect());
+
+        const QRectF bounds = boundingRect();
+        QRectF targetRect = bounds;
+        const QSizeF frameSize(img.size());
+        if (frameSize.width() > 0 && frameSize.height() > 0
+            && bounds.width() > 0 && bounds.height() > 0
+            && m_fillMode != 1) {
+            const qreal sx = bounds.width() / frameSize.width();
+            const qreal sy = bounds.height() / frameSize.height();
+            const qreal scale = m_fillMode < 0 ? qMax(sx, sy) : qMin(sx, sy);
+            const QSizeF scaled(frameSize.width() * scale, frameSize.height() * scale);
+            targetRect = QRectF(bounds.x() + (bounds.width() - scaled.width()) / 2.0,
+                                bounds.y() + (bounds.height() - scaled.height()) / 2.0,
+                                scaled.width(),
+                                scaled.height());
+        }
+        node->setRect(targetRect);
     }
 
     return node;

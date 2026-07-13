@@ -32,6 +32,22 @@ int normalizedRecordingSegmentDuration(const QVariant &value)
     return std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
 }
 
+int normalizedPlayerFillMode(const QVariant &value)
+{
+    bool ok = false;
+    const int mode = value.toInt(&ok);
+    if (!ok) {
+        return 0;
+    }
+    if (mode < 0) {
+        return -1;
+    }
+    if (mode > 0) {
+        return 1;
+    }
+    return 0;
+}
+
 void normalizeAppSettings(QVariantMap &settings)
 {
     const QStringList pathKeys{
@@ -49,6 +65,11 @@ void normalizeAppSettings(QVariantMap &settings)
     if (settings.contains(QStringLiteral("recordingSegmentDuration"))) {
         settings[QStringLiteral("recordingSegmentDuration")] =
             normalizedRecordingSegmentDuration(settings.value(QStringLiteral("recordingSegmentDuration")));
+    }
+
+    if (settings.contains(QStringLiteral("playerFillMode"))) {
+        settings[QStringLiteral("playerFillMode")] =
+            normalizedPlayerFillMode(settings.value(QStringLiteral("playerFillMode")));
     }
 }
 

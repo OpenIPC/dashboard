@@ -124,8 +124,8 @@ public:
     bool audioNormalization() const { return false; }
     void setAudioNormalization(bool) {}
 
-    int fillMode() const { return 1; }
-    void setFillMode(int) {}
+    int fillMode() const { return m_fillMode; }
+    void setFillMode(int mode);
 
     QString recordingPath() const { return m_recordingPath; }
     void setRecordingPath(const QString &path) {
@@ -252,6 +252,7 @@ private:
     float m_gamma = 1.0f;
     int m_orientation = 0; 
     bool m_mirror = false;
+    int m_fillMode = 0;
 
     QMutex m_frameMutex;
     QImage m_currentFrame;
