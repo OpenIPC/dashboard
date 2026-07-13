@@ -11,6 +11,14 @@ Rectangle {
     property string currentCameraIp: ""
     property string defaultDownloadPath: ""
     property bool searchStarted: false
+    property string sourceFilter: "all"
+    property string sortMode: "newest"
+    property var visibleResults: []
+
+    readonly property int totalCount: {
+        var results = SystemController.archiveController.searchResults
+        return results && results.length !== undefined ? results.length : 0
+    }
 
     signal fileSelected(var file, int index)
     signal folderRequested(var file)
@@ -44,6 +52,37 @@ Rectangle {
         endTimeField.text = dateTimeText(end)
     }
 
+    function sourceMatches(file) {
+        if (sourceFilter === "all") return true
+        var source = file && file.source ? String(file.source) : "manual"
+        return sourceFilter === source
+    }
+
+    function fileTimeMs(file) {
+        if (!file || !file.startTime) return 0
+        return new Date(file.startTime).getTime()
+    }
+
+    function refreshVisibleResults(clearSelection) {
+        var source = SystemController.archiveController.searchResults || []
+        var list = []
+
+        for (var i = 0; i < source.length; i++) {
+            var file = source[i]
+            if (sourceMatches(file)) list.push(file)
+        }
+
+        list.sort(function(a, b) {
+            return sortMode === "oldest" ? fileTimeMs(a) - fileTimeMs(b) : fileTimeMs(b) - fileTimeMs(a)
+        })
+
+        visibleResults = list
+        if (clearSelection) {
+            root.currentIndex = -1
+            root.selectedFile = null
+        }
+    }
+
     function runSearch() {
         var camIndex = cameraSelector.currentIndex
         if (camIndex < 0) return
@@ -60,8 +99,22 @@ Rectangle {
 
         searchStarted = true
         root.currentIndex = -1
+        root.selectedFile = null
+        visibleResults = []
         SystemController.archiveController.search(start, end, cam.cameraIp, recPath)
     }
+
+    onSourceFilterChanged: refreshVisibleResults(true)
+    onSortModeChanged: refreshVisibleResults(true)
+
+    Connections {
+        target: SystemController.archiveController
+        function onSearchResultsChanged() {
+            root.refreshVisibleResults(true)
+        }
+    }
+
+    Component.onCompleted: refreshVisibleResults(false)
 
     ColumnLayout {
         anchors.fill: parent
@@ -223,6 +276,54 @@ Rectangle {
             onClicked: runSearch()
         }
 
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Label {
+                text: I18n.t("Тип записи")
+                color: Theme.textMuted
+                font.pixelSize: 11
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 5
+
+                EmptyStateButton {
+                    Layout.fillWidth: true
+                    text: I18n.t("Все")
+                    buttonColor: root.sourceFilter === "all" ? Theme.metroBlue : Theme.metroTile
+                    buttonHoverColor: root.sourceFilter === "all" ? Theme.metroBlueHover : Theme.metroTileHover
+                    onClicked: root.sourceFilter = "all"
+                }
+
+                EmptyStateButton {
+                    Layout.fillWidth: true
+                    text: I18n.t("Ручные")
+                    buttonColor: root.sourceFilter === "manual" ? Theme.metroBlue : Theme.metroTile
+                    buttonHoverColor: root.sourceFilter === "manual" ? Theme.metroBlueHover : Theme.metroTileHover
+                    onClicked: root.sourceFilter = "manual"
+                }
+
+                EmptyStateButton {
+                    Layout.fillWidth: true
+                    text: I18n.t("События")
+                    buttonColor: root.sourceFilter === "event" ? Theme.metroBlue : Theme.metroTile
+                    buttonHoverColor: root.sourceFilter === "event" ? Theme.metroBlueHover : Theme.metroTileHover
+                    onClicked: root.sourceFilter = "event"
+                }
+            }
+
+            StyledComboBox {
+                id: sortCombo
+                Layout.fillWidth: true
+                model: [I18n.t("Сначала новые"), I18n.t("Сначала старые")]
+                currentIndex: root.sortMode === "newest" ? 0 : 1
+                onCurrentIndexChanged: root.sortMode = currentIndex === 0 ? "newest" : "oldest"
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
@@ -230,7 +331,7 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: searchStarted
-                      ? I18n.t("Найдено: %1", [SystemController.archiveController.searchResults.length])
+                      ? I18n.t("Показано: %1 / %2", [root.visibleResults.length, root.totalCount])
                       : I18n.t("Архив записей")
                 color: Theme.textMuted
                 font.pixelSize: 11
@@ -248,7 +349,7 @@ Rectangle {
             id: resultsList
             Layout.fillWidth: true
             Layout.fillHeight: true
-            results: SystemController.archiveController.searchResults
+            results: root.visibleResults
             isSearching: SystemController.archiveController.isSearching
             searchStarted: root.searchStarted
             onFileSelected: (file, index) => root.fileSelected(file, index)
