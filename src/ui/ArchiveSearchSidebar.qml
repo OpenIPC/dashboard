@@ -11,6 +11,7 @@ Rectangle {
     property string currentCameraIp: ""
     property string defaultDownloadPath: ""
     property bool searchStarted: false
+    property bool exactRangeExpanded: false
     property string sourceFilter: "all"
     property string sortMode: "newest"
     property var visibleResults: []
@@ -118,9 +119,9 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        anchors.topMargin: 40
-        spacing: 12
+        anchors.margins: 8
+        anchors.topMargin: 30
+        spacing: 8
 
         ColumnLayout {
             Layout.fillWidth: true
@@ -144,10 +145,37 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 5
 
-            Label {
-                text: I18n.t("Период")
-                color: Theme.textSecondary
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Label {
+                    Layout.fillWidth: true
+                    text: I18n.t("Период")
+                    color: Theme.textSecondary
+                    font.bold: true
+                }
+
+                Button {
+                    id: exactRangeButton
+                    Layout.preferredWidth: 82
+                    Layout.preferredHeight: 26
+                    text: root.exactRangeExpanded ? I18n.t("Скрыть") : I18n.t("Точно")
+                    onClicked: root.exactRangeExpanded = !root.exactRangeExpanded
+                    background: Rectangle {
+                        color: exactRangeButton.down ? Theme.metroTilePressed : Theme.metroTile
+                        border.color: root.exactRangeExpanded ? Theme.metroBlue : Theme.metroStroke
+                        radius: Theme.metroTileRadius
+                    }
+                    contentItem: Text {
+                        text: exactRangeButton.text
+                        color: Theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+                }
             }
 
             RowLayout {
@@ -177,10 +205,12 @@ Rectangle {
                 text: I18n.t("Начало")
                 color: Theme.textMuted
                 font.pixelSize: 11
+                visible: root.exactRangeExpanded
             }
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: root.exactRangeExpanded
 
                 TextField {
                     id: startTimeField
@@ -216,10 +246,12 @@ Rectangle {
                 text: I18n.t("Конец")
                 color: Theme.textMuted
                 font.pixelSize: 11
+                visible: root.exactRangeExpanded
             }
 
             RowLayout {
                 Layout.fillWidth: true
+                visible: root.exactRangeExpanded
 
                 TextField {
                     id: endTimeField
@@ -255,7 +287,7 @@ Rectangle {
         Button {
             id: archiveSearchButton
             Layout.fillWidth: true
-            Layout.preferredHeight: 40
+            Layout.preferredHeight: 36
             text: SystemController.archiveController.isSearching ? I18n.t("Поиск") + "..." : I18n.t("Найти")
             enabled: !SystemController.archiveController.isSearching
 
@@ -325,8 +357,9 @@ Rectangle {
         }
 
         ArchiveStoragePanel {
+            id: storagePanel
             Layout.fillWidth: true
-            Layout.preferredHeight: 188
+            Layout.preferredHeight: storagePanel.implicitHeight
             recordingsPath: root.defaultDownloadPath
         }
 

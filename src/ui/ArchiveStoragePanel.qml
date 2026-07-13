@@ -9,11 +9,13 @@ Rectangle {
     property string recordingsPath: ""
     property var summary: ({})
     property var cleanupPreview: ({})
+    property bool expanded: false
 
     color: Theme.metroSurfaceAlt
     border.color: Theme.metroStroke
     radius: Theme.metroTileRadius
-    implicitHeight: 188
+    implicitHeight: expanded ? 188 : 58
+    clip: true
 
     function bytesLimit() {
         if (maxSizeSpin.value <= 0) return 0
@@ -70,26 +72,59 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
-        spacing: 8
+        spacing: root.expanded ? 8 : 4
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
 
-            Text {
+            ColumnLayout {
                 Layout.fillWidth: true
-                text: I18n.t("Хранилище")
-                color: Theme.textPrimary
-                font.bold: true
-                font.pixelSize: 13
-                elide: Text.ElideRight
+                spacing: 1
+
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("Хранилище")
+                    color: Theme.textPrimary
+                    font.bold: true
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: valueText("totalSizeText", "0 B") + I18n.t(" · файлов ") + valueText("fileCount", "0")
+                    color: Theme.textMuted
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+            }
+
+            Button {
+                id: expandButton
+                Layout.preferredWidth: 30
+                Layout.preferredHeight: 26
+                text: root.expanded ? "^" : "v"
+                onClicked: root.expanded = !root.expanded
+                background: Rectangle {
+                    color: expandButton.down ? Theme.metroTilePressed : Theme.metroTile
+                    border.color: Theme.metroStroke
+                    radius: Theme.metroTileRadius
+                }
+                contentItem: Text {
+                    text: expandButton.text
+                    color: Theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.bold: true
+                }
             }
 
             Button {
                 id: refreshButton
-                Layout.preferredWidth: 74
+                Layout.preferredWidth: root.expanded ? 74 : 30
                 Layout.preferredHeight: 26
-                text: I18n.t("Обновить")
+                text: root.expanded ? I18n.t("Обновить") : "R"
                 onClicked: root.refreshSummary()
                 background: Rectangle {
                     color: refreshButton.down ? Theme.metroTilePressed : Theme.metroTile
@@ -109,6 +144,7 @@ Rectangle {
 
         GridLayout {
             Layout.fillWidth: true
+            visible: root.expanded
             columns: 2
             columnSpacing: 8
             rowSpacing: 5
@@ -155,6 +191,7 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: root.expanded
             spacing: 6
 
             Text {
@@ -192,6 +229,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
+            visible: root.expanded
             text: previewText()
             color: cleanupPreview && cleanupPreview.error ? Theme.warningText : Theme.textMuted
             font.pixelSize: 10
@@ -200,6 +238,7 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: root.expanded
             spacing: 6
 
             Button {
