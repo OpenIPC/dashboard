@@ -981,6 +981,7 @@ Item {
 
     LogView {
         id: logView
+        logModel: SystemController.logModel
     }
 
     NoAccessDialog {

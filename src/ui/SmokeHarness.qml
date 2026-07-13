@@ -469,6 +469,7 @@ Item {
         id: logViewComponent
 
         LogView {
+            logModel: SystemController.logModel
         }
     }
 }

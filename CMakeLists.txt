@@ -252,7 +252,10 @@ set(SOURCES
     src/backend/CamexController.cpp
     src/backend/CamexController.h
     src/backend/SystemController.cpp
+    src/backend/SystemControllerGroups.cpp
     src/backend/SystemController.h
+    src/backend/SystemControllerRecording.cpp
+    src/backend/SystemControllerSettings.cpp
     src/backend/DiscoveryController.cpp
     src/backend/DiscoveryController.h
     src/backend/ArchiveController.cpp
@@ -276,6 +279,8 @@ set(SOURCES
     src/backend/analytics/AnalyticsEvidenceImageProcessor.cpp
     src/backend/analytics/AnalyticsEvidenceImageProcessor.h
     src/backend/analytics/AnalyticsEngine.cpp
+    src/backend/analytics/AnalyticsEngineDiagnostics.cpp
+    src/backend/analytics/AnalyticsEngineEvents.cpp
     src/backend/analytics/AnalyticsEngine.h
     src/backend/analytics/InferenceBackend.h
     src/backend/analytics/YoloDetector.cpp
@@ -980,6 +985,23 @@ if(BUILD_TESTING)
     else()
         add_test(NAME qml_smoke COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
         add_test(NAME qml_smoke_scaled COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+    endif()
+
+    if(TARGET Qt6::qmllint)
+        add_test(NAME qml_lint_targeted
+            COMMAND $<TARGET_FILE:Qt6::qmllint>
+                --unqualified disable
+                --deferred-property-id disable
+                -I ${CMAKE_CURRENT_BINARY_DIR}
+                -I ${CMAKE_CURRENT_BINARY_DIR}/OpenIPC
+                -I ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/LogView.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/MajesticFileDialogs.qml
+        )
+        set_tests_properties(qml_lint_targeted PROPERTIES
+            TIMEOUT 30
+            LABELS "lint"
+        )
     endif()
 
     set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES

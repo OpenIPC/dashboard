@@ -39,7 +39,7 @@ Item {
             root.cameraPort,
             root.cameraUser,
             root.cameraPassword,
-            selectedFile.toString(),
+            String(selectedFile),
             root.snapshotWidth,
             root.snapshotHeight,
             root.snapshotQuality,
@@ -53,7 +53,7 @@ Item {
         defaultSuffix: "json"
         nameFilters: [I18n.t("JSON (*.json)"), I18n.t("Все файлы (*)")]
         onAccepted: root.requestCreated(root.majesticClient.saveConfigurationBackup(
-            root.originalConfig, root.currentSchema, selectedFile.toString()))
+            root.originalConfig, root.currentSchema, String(selectedFile)))
     }
 
     FileDialog {
@@ -62,7 +62,7 @@ Item {
         fileMode: FileDialog.OpenFile
         nameFilters: [I18n.t("JSON (*.json)"), I18n.t("Все файлы (*)")]
         onAccepted: root.requestCreated(root.majesticClient.loadConfigurationBackup(
-            selectedFile.toString()))
+            String(selectedFile)))
     }
 
     FileDialog {
@@ -75,7 +75,7 @@ Item {
             root.cameraPort,
             root.cameraUser,
             root.cameraPassword,
-            selectedFile.toString()))
+            String(selectedFile)))
     }
 
     FileDialog {

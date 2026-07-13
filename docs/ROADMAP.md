@@ -568,7 +568,7 @@ Smoke-run покрывает:
 
 ### P8.2 Refactor map: крупные файлы
 
-Статус: 🟡 начато.
+Статус: 🟡 существенно продвинуто.
 
 Уже сделано в текущей ветке:
 
@@ -576,6 +576,9 @@ Smoke-run покрывает:
 - `MajesticFileDialogs.qml` отделяет snapshot/config/PCM/firmware file pickers от Control Center и сохраняет прежние backend-вызовы.
 - обработка crop/upscale/enhance для аналитических evidence вынесена из `AnalyticsEngine.cpp` в `AnalyticsEvidenceImageProcessor`.
 - для алгоритма evidence image processing добавлены отдельные unit-тесты границ детекции, валидации и улучшения малых снимков.
+- `AnalyticsEngineEvents.cpp` теперь отвечает за in-memory/SQLite event store, запросы, очистку и JSON/CSV export.
+- `AnalyticsEngineDiagnostics.cpp` содержит module inventory, artifact health, evidence summary и рекомендации; основной `AnalyticsEngine.cpp` уменьшен примерно на 900 строк.
+- из `SystemController.cpp` вынесены camera groups, recording/export utilities и app settings/path handling; публичный QML API не изменён.
 
 Приоритет разбиения:
 
@@ -601,6 +604,8 @@ Smoke-run покрывает:
 - smoke запускается в обычном режиме и при `QT_SCALE_FACTOR=1.5`;
 - `LogView` получил адаптивные размеры, явные model roles и безопасные ссылки на кнопки/модель;
 - новый `MajesticFileDialogs.qml` проходит QML cache compilation, а весь набор компонентов — оба smoke-теста.
+- добавлен воспроизводимый `qml_lint_targeted` test для изменяемых критичных компонентов;
+- полный legacy `qmllint` baseline измерен и оставлен отдельной очередью, чтобы не смешивать массовые QML-правки с безопасным refactor.
 
 Задачи:
 
@@ -617,6 +622,7 @@ Smoke-run покрывает:
 
 - production workflows переведены на Node 24-compatible поколения официальных `actions/*`;
 - CI и release используют одинаковые Qt `6.4.2` modules и GStreamer `1.26.10` для Windows.
+- Linux и Windows CI теперь запускают targeted QML lint после build/smoke.
 
 Задачи:
 
@@ -652,9 +658,10 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Продолжить P8.2: вынести из `AnalyticsEngine.cpp` event/evidence storage и module inventory, сохраняя публичный QML API.
-2. Разделить `MajesticControlDialog.qml` на state/actions/connectors; визуальные страницы и file/confirm dialogs уже отделены.
-3. Начать безопасное выделение settings/state IO из `SystemController.cpp` и закреплять контракты unit-тестами.
-4. Завершить P8.3: привести targeted `qmllint` к чистому запуску и унифицировать loading/empty/error states аналитики.
-5. Завершить P8.4: проверить чистый CI-run на `main` без Node deprecation warnings и убрать оставшиеся расхождения workflows.
-6. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
+1. Разделить `MajesticControlDialog.qml` на state/actions/connectors; визуальные страницы и file/confirm dialogs уже отделены.
+2. Продолжить `AnalyticsEngine`: отделить runtime/inference и OAuth/upload; events/storage/diagnostics уже вынесены.
+3. Вынести state serialization/migration из `SystemController.cpp`; settings/groups/recording уже отделены.
+4. Разобрать legacy `qmllint` baseline небольшими тематическими пакетами, начиная с Analytics и Settings.
+5. Почистить `I18n.qml`: дубли и legacy mojibake-ключи, затем перейти к управляемым словарям.
+6. Проверить чистый CI-run на `main` без Node/action deprecation warnings.
+7. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.

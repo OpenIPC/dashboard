@@ -56,6 +56,9 @@ jobs:
       - name: QML smoke
         run: ctest --test-dir build-ci -R qml_smoke --output-on-failure --timeout 60
 
+      - name: Targeted QML lint
+        run: ctest --test-dir build-ci -L lint --output-on-failure --timeout 60
+
       - name: RTSP smoke test with MediaMTX
         run: bash tests/rtsp_smoke.sh
 
@@ -120,3 +123,6 @@ jobs:
 
       - name: QML smoke
         run: ctest --test-dir build-ci -R qml_smoke --output-on-failure --timeout 60
+
+      - name: Targeted QML lint
+        run: ctest --test-dir build-ci -L lint --output-on-failure --timeout 60

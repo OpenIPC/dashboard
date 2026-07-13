@@ -28,11 +28,19 @@ Dialog {
     property bool showWarning: true
     property bool showError: true // Critical and Fatal
     property bool showDebug: false
-    property var logModel: SystemController.logModel
+    required property var logModel
+
+    function scrollToEnd() { scrollTimer.restart() }
 
     onOpened: {
         root.logModel.reloadFromFile()
-        Qt.callLater(function() { logListView.positionViewAtEnd() })
+        root.scrollToEnd()
+    }
+
+    Timer {
+        id: scrollTimer
+        interval: 0
+        onTriggered: logListView.positionViewAtEnd()
     }
 
     component StyledCheckBox: MetroCheckBox {
@@ -81,7 +89,7 @@ Dialog {
                 text: I18n.t("Обновить")
                 onClicked: {
                     root.logModel.reloadFromFile()
-                    Qt.callLater(function() { logListView.positionViewAtEnd() })
+                    root.scrollToEnd()
                 }
                 background: Rectangle {
                     color: refreshButton.down ? Theme.metroTileHover : Theme.metroSurface
@@ -263,7 +271,7 @@ Dialog {
                 target: root.logModel
                 function onCountChanged() {
                     if (root.visible) {
-                        Qt.callLater(function() { logListView.positionViewAtEnd() })
+                        root.scrollToEnd()
                     }
                 }
             }
