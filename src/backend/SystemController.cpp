@@ -255,6 +255,37 @@ SystemController::SystemController(QObject *parent)
         }
     });
 
+    connect(m_archiveController, &ArchiveController::exportStarted, this,
+            [this](const QString &outputFile) {
+        addLog(QtInfoMsg, QStringLiteral("Archive export started: %1").arg(outputFile));
+    });
+    connect(m_archiveController, &ArchiveController::exportFinished, this,
+            [this]() {
+        addLog(QtInfoMsg,
+               QStringLiteral("Archive export finished: %1").arg(m_archiveController->exportOutputFile()));
+    });
+    connect(m_archiveController, &ArchiveController::exportError, this,
+            [this](const QString &error) {
+        addLog(QtWarningMsg, QStringLiteral("Archive export failed: %1").arg(error.left(500)));
+    });
+    connect(m_archiveController, &ArchiveController::cleanupFinished, this,
+            [this](const QVariantMap &result) {
+        const bool dryRun = result.value(QStringLiteral("dryRun")).toBool();
+        const int count = dryRun
+            ? result.value(QStringLiteral("wouldDeleteCount")).toInt()
+            : result.value(QStringLiteral("deletedCount")).toInt();
+        const QString sizeText = dryRun
+            ? result.value(QStringLiteral("wouldDeleteSizeText")).toString()
+            : result.value(QStringLiteral("deletedSizeText")).toString();
+        const QString action = dryRun ? QStringLiteral("Archive cleanup preview")
+                                      : QStringLiteral("Archive cleanup completed");
+        addLog(QtInfoMsg, QStringLiteral("%1: %2 files, %3, %4")
+                            .arg(action,
+                                 QString::number(count),
+                                 sizeText,
+                                 result.value(QStringLiteral("rootPath")).toString()));
+    });
+
     m_analyticsEngine->initialize();
     connect(m_analyticsEngine, &AnalyticsEngine::settingsChanged, this, &SystemController::saveState);
     

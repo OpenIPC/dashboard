@@ -324,6 +324,12 @@ Rectangle {
             }
         }
 
+        ArchiveStoragePanel {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 188
+            recordingsPath: root.defaultDownloadPath
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 6

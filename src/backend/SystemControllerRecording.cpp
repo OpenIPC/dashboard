@@ -103,6 +103,42 @@ void SystemController::toggleRecording(int gridIndex)
     qWarning() << "SystemController::toggleRecording is deprecated. Use the client-side player recording API instead.";
 }
 
+void SystemController::notifyRecordingStarted(const QString &cameraIp, const QString &path, const QString &source)
+{
+    addLog(QtInfoMsg,
+           QStringLiteral("Recording started [%1]: %2 -> %3")
+               .arg(source.trimmed().isEmpty() ? QStringLiteral("manual") : source.trimmed(),
+                    cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
+                    PathUtils::localPathFromUserInput(path)));
+}
+
+void SystemController::notifyRecordingStopped(const QString &cameraIp, const QString &path, const QString &source)
+{
+    addLog(QtInfoMsg,
+           QStringLiteral("Recording stopped [%1]: %2 -> %3")
+               .arg(source.trimmed().isEmpty() ? QStringLiteral("manual") : source.trimmed(),
+                    cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
+                    PathUtils::localPathFromUserInput(path)));
+}
+
+void SystemController::notifyRecordingSegment(const QString &cameraIp, const QString &oldPath, const QString &newPath)
+{
+    addLog(QtInfoMsg,
+           QStringLiteral("Recording segment rotated: %1, %2 -> %3")
+               .arg(cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
+                    PathUtils::localPathFromUserInput(oldPath),
+                    PathUtils::localPathFromUserInput(newPath)));
+}
+
+void SystemController::notifyRecordingError(const QString &cameraIp, const QString &path, const QString &message)
+{
+    addLog(QtWarningMsg,
+           QStringLiteral("Recording warning: %1, %2, %3")
+               .arg(cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
+                    PathUtils::localPathFromUserInput(path),
+                    message.trimmed().isEmpty() ? QStringLiteral("unknown error") : message.trimmed()));
+}
+
 void SystemController::exportRecording(const QString &inputFile, const QString &outputFile, int startMs, int endMs)
 {
     QProcess *proc = new QProcess(this);

@@ -428,6 +428,8 @@ set(QML_FILES
     src/ui/ArchiveResultsList.qml
     src/ui/ArchivePlaybackControls.qml
     src/ui/ArchiveExportDialog.qml
+    src/ui/ArchiveExportStatus.qml
+    src/ui/ArchiveStoragePanel.qml
     src/ui/PtzControlPanel.qml
     src/ui/StyledScrollBar.qml
     src/ui/FileManagerDialog.qml
@@ -1065,6 +1067,8 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveResultsList.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchivePlaybackControls.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveExportDialog.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveExportStatus.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveStoragePanel.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30

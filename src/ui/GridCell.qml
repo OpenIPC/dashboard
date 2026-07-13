@@ -222,6 +222,7 @@ Item {
         if (recordingOwner === "manual") {
             if (!SystemController.analyticsEngine.requestBufferedClipFallback(root.cameraIp, path)) {
                 console.warn("Unable to switch event clip to buffered recording", root.cameraIp)
+                SystemController.notifyRecordingError(root.cameraIp, path, "Unable to switch event clip to buffered recording")
             }
             return
         }
@@ -239,6 +240,7 @@ Item {
         recordingOwner = "event"
         activeEventClipPath = path
         recorder.recordingPath = path
+        SystemController.notifyRecordingStarted(root.cameraIp, path, "event")
         eventClipTimer.interval = durationMs > 0 ? durationMs : 60000
         eventClipTimer.restart()
     }
@@ -248,9 +250,11 @@ Item {
         if (path && path !== "" && path !== activeEventClipPath) return
 
         eventClipTimer.stop()
+        var stoppedPath = activeEventClipPath
         recorder.recordingPath = ""
         recordingOwner = ""
         activeEventClipPath = ""
+        SystemController.notifyRecordingStopped(root.cameraIp, stoppedPath, "event")
 
         if (manualRecordingPending) {
             Qt.callLater(beginManualRecording)
@@ -267,6 +271,7 @@ Item {
         manualRecordingPending = false
         recordingOwner = "manual"
         recorder.recordingPath = SystemController.generateRecordingPath(root.cameraIp)
+        SystemController.notifyRecordingStarted(root.cameraIp, recorder.recordingPath, "manual")
         if (root.recordingSegmentDuration > 0) {
             segmentTimer.restart()
         }
@@ -278,8 +283,10 @@ Item {
         if (recordingOwner !== "manual") return
 
         segmentTimer.stop()
+        var stoppedPath = recorder.recordingPath
         recorder.recordingPath = ""
         recordingOwner = ""
+        SystemController.notifyRecordingStopped(root.cameraIp, stoppedPath, "manual")
         console.info("Recording stopped", root.cameraIp)
     }
 
@@ -1303,11 +1310,13 @@ Item {
         onTriggered: {
             if (recordingOwner === "manual" && recorder.recordingPath !== "") {
                 console.info("Segment limit reached. Splitting recording...")
+                var oldPath = recorder.recordingPath
                 // Stop (Internal flush)
                 recorder.recordingPath = ""
                 // Start new segment
                 var path = SystemController.generateRecordingPath(root.cameraIp)
                 recorder.recordingPath = path
+                SystemController.notifyRecordingSegment(root.cameraIp, oldPath, path)
                 console.info("New segment started to", path)
             } else {
                 running = false

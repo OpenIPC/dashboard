@@ -252,6 +252,24 @@ Dialog {
                 onExportEndRequested: (ms) => root.exportEndMs = ms
                 onFullscreenToggled: root.isFullScreen = !root.isFullScreen
             }
+
+            ArchiveExportStatus {
+                id: exportStatus
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: playbackControls.top
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.bottomMargin: 12
+                visible: !root.isFullScreen && hasMessage
+                isExporting: SystemController.archiveController.isExporting
+                progress: SystemController.archiveController.exportProgress
+                status: SystemController.archiveController.exportStatus
+                errorText: SystemController.archiveController.exportErrorText
+                outputFile: SystemController.archiveController.exportOutputFile
+                onOpenFolderRequested: (path) => SystemController.openFolder(path)
+                onCloseRequested: SystemController.archiveController.clearExportStatus()
+            }
         }
     }
 

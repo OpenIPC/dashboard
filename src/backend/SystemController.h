@@ -162,6 +162,10 @@ public slots:
 
     // Recording
     Q_INVOKABLE void toggleRecording(int gridIndex);
+    Q_INVOKABLE void notifyRecordingStarted(const QString &cameraIp, const QString &path, const QString &source);
+    Q_INVOKABLE void notifyRecordingStopped(const QString &cameraIp, const QString &path, const QString &source);
+    Q_INVOKABLE void notifyRecordingSegment(const QString &cameraIp, const QString &oldPath, const QString &newPath);
+    Q_INVOKABLE void notifyRecordingError(const QString &cameraIp, const QString &path, const QString &message);
     Q_INVOKABLE void applyLayoutPreset(int rows, int cols);
     Q_INVOKABLE void applyLayoutTemplate(const QVariantMap &layout);
     Q_INVOKABLE QString getCameraPassword(const QString &cameraIp) const;
