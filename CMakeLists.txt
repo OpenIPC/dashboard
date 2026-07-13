@@ -261,6 +261,8 @@ set(SOURCES
     src/backend/DiscoveryController.h
     src/backend/ArchiveController.cpp
     src/backend/ArchiveController.h
+    src/backend/RecordingFileCatalog.cpp
+    src/backend/RecordingFileCatalog.h
     src/backend/CameraModel.cpp
     src/backend/CameraModel.h
     src/backend/StatusChecker.cpp
@@ -675,6 +677,46 @@ if(BUILD_TESTING)
 
     add_test(NAME path_utils_tests COMMAND path_utils_tests)
 
+    add_executable(recording_file_catalog_tests
+        tests/RecordingFileCatalogTests.cpp
+        src/backend/RecordingFileCatalog.cpp
+        src/backend/RecordingFileCatalog.h
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+    )
+    openipc_enable_project_warnings(recording_file_catalog_tests)
+
+    target_include_directories(recording_file_catalog_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(recording_file_catalog_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME recording_file_catalog_tests COMMAND recording_file_catalog_tests)
+
+    add_executable(archive_controller_tests
+        tests/ArchiveControllerTests.cpp
+        src/backend/ArchiveController.cpp
+        src/backend/ArchiveController.h
+        src/backend/RecordingFileCatalog.cpp
+        src/backend/RecordingFileCatalog.h
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+    )
+    openipc_enable_project_warnings(archive_controller_tests)
+
+    target_include_directories(archive_controller_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+
+    target_link_libraries(archive_controller_tests
+        PRIVATE Qt6::Core Qt6::Concurrent Qt6::Test
+    )
+
+    add_test(NAME archive_controller_tests COMMAND archive_controller_tests)
+
     add_executable(log_model_tests
         tests/LogModelTests.cpp
         src/backend/LogModel.cpp
@@ -1027,6 +1069,11 @@ if(BUILD_TESTING)
         LABELS "unit"
     )
 
+    set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES
+        TIMEOUT 30
+        LABELS "unit"
+    )
+
     set_tests_properties(qml_smoke qml_smoke_scaled PROPERTIES
         TIMEOUT 20
         LABELS "smoke"
@@ -1034,6 +1081,9 @@ if(BUILD_TESTING)
 
     if(WIN32)
         set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
+        )
+        set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     else()

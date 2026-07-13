@@ -20,6 +20,65 @@ Dialog {
     property bool isFullScreen: false
     property string currentCameraIp: ""
 
+    function archivePlaybackUrl(file) {
+        if (!file) return ""
+        if (file.fileUrl !== undefined && String(file.fileUrl).length > 0) {
+            return String(file.fileUrl)
+        }
+        if (file.filePath !== undefined && String(file.filePath).length > 0) {
+            var localPath = SystemController.normalizeLocalPath(String(file.filePath)).replace(/\\/g, "/")
+            if (localPath.length === 0) return ""
+            if (Qt.platform.os === "windows") {
+                return localPath.startsWith("/") ? "file://" + localPath : "file:///" + localPath
+            }
+            return localPath.startsWith("/") ? "file://" + localPath : "file:///" + localPath
+        }
+        return ""
+    }
+
+    function playArchiveFile(file) {
+        var url = archivePlaybackUrl(file)
+        if (url.length === 0) return
+        currentFile = file
+        player.url = url
+        player.running = true
+    }
+
+    function archiveFileSizeText(bytes) {
+        var value = Number(bytes || 0)
+        var units = ["B", "KB", "MB", "GB", "TB"]
+        var index = 0
+        while (value >= 1024 && index < units.length - 1) {
+            value = value / 1024
+            index++
+        }
+        return value.toFixed(value >= 10 || index === 0 ? 0 : 1) + " " + units[index]
+    }
+
+    function archiveDurationText(ms) {
+        var value = Number(ms || 0)
+        if (value <= 0) return ""
+        return formatTime(value)
+    }
+
+    function archiveMetaText(file) {
+        var parts = []
+        if (file && file.startTime && file.endTime) {
+            parts.push(file.startTime.toLocaleString(Qt.locale(), "HH:mm:ss")
+                       + " - " + file.endTime.toLocaleString(Qt.locale(), "HH:mm:ss"))
+        }
+        if (file && (file.sizeBytes || file.size)) {
+            parts.push(archiveFileSizeText(file.sizeBytes || file.size))
+        }
+        if (file && file.durationMs) {
+            parts.push(archiveDurationText(file.durationMs))
+        }
+        if (file && file.source) {
+            parts.push(file.source)
+        }
+        return parts.join(" · ")
+    }
+
     onCurrentCameraIpChanged: {
         if (currentCameraIp === "") return
         for (var i = 0; i < cameraSelector.count; i++) {
@@ -262,7 +321,7 @@ Dialog {
                         
                         delegate: ItemDelegate {
                             width: ListView.view.width
-                            height: 50
+                            height: 58
                             highlighted: ListView.isCurrentItem
                             
                             background: Rectangle {
@@ -287,9 +346,11 @@ Dialog {
                                         Layout.fillWidth: true
                                     }
                                     Text { 
-                                        text: modelData.startTime.toLocaleString(Qt.locale(), "HH:mm:ss") + " - " + modelData.endTime.toLocaleString(Qt.locale(), "HH:mm:ss")
+                                        text: archiveMetaText(modelData)
                                         color: Theme.textMuted
                                         font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
                                     }
                                 }
                                 Button {
@@ -312,11 +373,7 @@ Dialog {
                             }
                             onClicked: {
                                 resultsList.currentIndex = index
-                                currentFile = modelData
-                                // Auto-play
-                                var path = defaultDownloadPath + "/" + modelData.fileName
-                                player.url = "file:///" + path
-                                player.running = true
+                                playArchiveFile(modelData)
                             }
                         }
                         
@@ -592,9 +649,7 @@ Dialog {
                                         player.running = false
                                     } else {
                                         if (currentFile) {
-                                            var path = defaultDownloadPath + "/" + currentFile.fileName
-                                            player.url = "file:///" + path
-                                            player.running = true
+                                            playArchiveFile(currentFile)
                                         }
                                     }
                                 }

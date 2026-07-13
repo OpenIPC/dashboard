@@ -1,4 +1,6 @@
 #include "ArchiveController.h"
+#include "PathUtils.h"
+
 #include <QDebug>
 #include <QtConcurrent/QtConcurrent>
 #include <QDir>
@@ -6,8 +8,9 @@
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QCoreApplication>
+
+#include <algorithm>
 
 ArchiveController::ArchiveController(QObject *parent) : QObject(parent)
 {
@@ -62,69 +65,51 @@ void ArchiveController::search(const QDateTime &startTime, const QDateTime &endT
     QPointer<ArchiveController> controller(this);
     (void)QtConcurrent::run([controller, requestId, startTime, endTime, cameraIp, recordingsPath]() {
         QList<RecordedFile> foundFiles;
-        int nFileCount = 0;
-        
-        QDir dir(recordingsPath);
+        QString rootPath = PathUtils::localPathFromUserInput(recordingsPath);
+        if (rootPath.isEmpty()) {
+            rootPath = RecordingFileCatalog::defaultRecordingRoot();
+        }
+        rootPath = QDir::cleanPath(rootPath);
+
+        QDir dir(rootPath);
         if (!dir.exists()) {
-            qWarning() << "Recordings path does not exist:" << recordingsPath;
+            qWarning() << "Recordings path does not exist:" << rootPath;
         } else {
-            QString sanitizedIp = cameraIp;
-            sanitizedIp.replace(".", "_");
-            
-            // Filter for .mp4 files
-            QStringList filters;
-            filters << "*.mp4";
-            
-            QDirIterator it(recordingsPath, filters, QDir::Files, QDirIterator::Subdirectories);
+            const QStringList filters{QStringLiteral("*.mp4"),
+                                      QStringLiteral("*.mkv"),
+                                      QStringLiteral("*.avi"),
+                                      QStringLiteral("*.mov")};
+
+            QDirIterator it(rootPath, filters, QDir::Files, QDirIterator::Subdirectories);
             while (it.hasNext()) {
-                QString filePath = it.next();
-                QFileInfo fi(filePath);
-                QString fileName = fi.fileName();
-                
-                // Check if file belongs to this camera
-                if (!fileName.startsWith(sanitizedIp) && !fileName.startsWith(cameraIp)) {
+                const QFileInfo fi(it.next());
+                const auto file = RecordingFileCatalog::inspectFile(fi, cameraIp);
+                if (!file.has_value()) {
                     continue;
                 }
 
-                // Parse timestamp from filename (supports optional milliseconds)
-                QRegularExpression re("(\\d{4}-\\d{2}-\\d{2}[_-]\\d{2}-\\d{2}-\\d{2})(?:-(\\d{3}))?");
-                QRegularExpressionMatch match = re.match(fileName);
-                if (!match.hasMatch()) continue;
-                QString base = match.captured(1);
-                QString ms = match.captured(2);
-                base.replace("-", "-");
-                base.replace("_", "_");
-                QDateTime fileTime;
-                if (!ms.isEmpty()) {
-                    fileTime = QDateTime::fromString(base + "-" + ms, "yyyy-MM-dd_HH-mm-ss-zzz");
-                } else {
-                    fileTime = QDateTime::fromString(base, "yyyy-MM-dd_HH-mm-ss");
-                }
-                
-                if (!fileTime.isValid()) {
-                    continue;
-                }
-                
-                if (fileTime >= startTime && fileTime <= endTime) {
-                    RecordedFile rf;
-                    rf.startTime = fileTime;
-                    rf.endTime = fileTime.addSecs(fi.size() / 1024 / 1024 * 10); // Rough estimate or 0
-                    rf.size = fi.size();
-                    rf.fileName = fileName;
-                    rf.filePath = filePath;
-                    rf.type = 0;
-
-                    foundFiles.append(rf);
-                    nFileCount++;
+                const bool afterStart = !startTime.isValid() || file->startTime >= startTime;
+                const bool beforeEnd = !endTime.isValid() || file->startTime <= endTime;
+                if (afterStart && beforeEnd) {
+                    foundFiles.append(*file);
                 }
             }
         }
+
+        std::sort(foundFiles.begin(), foundFiles.end(), [](const RecordedFile &a, const RecordedFile &b) {
+            if (a.startTime == b.startTime) {
+                return a.fileName < b.fileName;
+            }
+            return a.startTime > b.startTime;
+        });
+
+        const int fileCount = foundFiles.size();
 
         if (!controller) {
             return;
         }
 
-        QMetaObject::invokeMethod(controller, [controller, requestId, foundFiles, nFileCount]() {
+        QMetaObject::invokeMethod(controller, [controller, requestId, foundFiles, fileCount]() {
             if (!controller || controller->m_searchRequestId != requestId) {
                 return;
             }
@@ -137,7 +122,7 @@ void ArchiveController::search(const QDateTime &startTime, const QDateTime &endT
             controller->m_isSearching = false;
             emit controller->isSearchingChanged();
             emit controller->searchResultsChanged();
-            emit controller->searchFinished(nFileCount);
+            emit controller->searchFinished(fileCount);
         }, Qt::QueuedConnection);
     });
 }
@@ -247,13 +232,7 @@ QVariantList ArchiveController::searchResults() const
     QMutexLocker locker(&m_mutex);
     
     for (const auto &f : m_files) {
-        QVariantMap map;
-        map["startTime"] = f.startTime;
-        map["endTime"] = f.endTime;
-        map["size"] = f.size;
-        map["fileName"] = f.fileName;
-        map["filePath"] = f.filePath;
-        list.append(map);
+        list.append(RecordingFileCatalog::toVariantMap(f));
     }
     return list;
 }

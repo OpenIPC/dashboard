@@ -7,15 +7,9 @@
 #include <QVariantList>
 #include <QMutex>
 
-struct RecordedFile {
-    QDateTime startTime;
-    QDateTime endTime;
-    int size;
-    int channel;
-    QString fileName;
-    QString filePath;
-    int type; // 0: All, 1: Alarm, 2: Motion, etc.
-};
+#include "RecordingFileCatalog.h"
+
+using RecordedFile = RecordingFileCatalog::RecordingFile;
 
 class ArchiveController : public QObject
 {
