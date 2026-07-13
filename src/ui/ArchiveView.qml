@@ -44,52 +44,6 @@ Dialog {
         player.running = true
     }
 
-    function archiveFileSizeText(bytes) {
-        var value = Number(bytes || 0)
-        var units = ["B", "KB", "MB", "GB", "TB"]
-        var index = 0
-        while (value >= 1024 && index < units.length - 1) {
-            value = value / 1024
-            index++
-        }
-        return value.toFixed(value >= 10 || index === 0 ? 0 : 1) + " " + units[index]
-    }
-
-    function archiveDurationText(ms) {
-        var value = Number(ms || 0)
-        if (value <= 0) return ""
-        return formatTime(value)
-    }
-
-    function archiveMetaText(file) {
-        var parts = []
-        if (file && file.startTime && file.endTime) {
-            parts.push(file.startTime.toLocaleString(Qt.locale(), "HH:mm:ss")
-                       + " - " + file.endTime.toLocaleString(Qt.locale(), "HH:mm:ss"))
-        }
-        if (file && (file.sizeBytes || file.size)) {
-            parts.push(archiveFileSizeText(file.sizeBytes || file.size))
-        }
-        if (file && file.durationMs) {
-            parts.push(archiveDurationText(file.durationMs))
-        }
-        if (file && file.source) {
-            parts.push(file.source)
-        }
-        return parts.join(" · ")
-    }
-
-    onCurrentCameraIpChanged: {
-        if (currentCameraIp === "") return
-        for (var i = 0; i < cameraSelector.count; i++) {
-            var cam = SystemController.cameraModel.getCamera(i)
-            if (cam && cam.cameraIp === currentCameraIp) {
-                cameraSelector.currentIndex = i
-                break
-            }
-        }
-    }
-    
     onIsFullScreenChanged: {
         if (Window.window) {
             Window.window.visibility = isFullScreen ? Window.FullScreen : Window.Windowed
@@ -127,22 +81,12 @@ Dialog {
         }
         function onSearchFinished(count) {
             console.log("Search finished. Found " + count + " files.")
-            if (count === 0) {
-                infoDialog.text = I18n.t("Записи не найдены за выбранный период.")
-                infoDialog.open()
-            }
         }
     }
 
     MessageDialog {
         id: errorDialog
         title: I18n.t("Ошибка")
-        buttons: MessageDialog.Ok
-    }
-
-    MessageDialog {
-        id: infoDialog
-        title: I18n.t("Информация")
         buttons: MessageDialog.Ok
     }
 
@@ -201,188 +145,16 @@ Dialog {
         anchors.fill: parent
         spacing: 0
 
-        // LEFT SIDEBAR
-        Rectangle {
+        ArchiveSearchSidebar {
+            id: archiveSidebar
             Layout.preferredWidth: 300
             Layout.fillHeight: true
-            color: Theme.metroTile
             visible: !isFullScreen
-            
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 10
-                anchors.topMargin: 40 // Increased top margin for better visibility
-                spacing: 15
-
-                // Camera Selection
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 5
-                    Label { text: I18n.t("Камера"); color: Theme.textSecondary; font.bold: true }
-                    StyledComboBox {
-                        id: cameraSelector
-                        Layout.fillWidth: true
-                        textRole: "cameraName"
-                        model: SystemController.cameraModel
-                    }
-                }
-
-                // Date Selection
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 5
-                    Label { text: I18n.t("Начало"); color: Theme.textSecondary; font.bold: true }
-                    RowLayout {
-                        TextField {
-                            id: startTimeField
-                            Layout.fillWidth: true
-                            text: new Date(new Date().setHours(0,0,0,0)).toLocaleString(Qt.locale(), "yyyy-MM-dd HH:mm:ss")
-                            color: Theme.textSecondary
-                            background: Rectangle { color: Theme.metroBackground; border.color: Theme.metroStroke; radius: 2 }
-                        }
-                        Button {
-                            text: "📅"
-                            Layout.preferredWidth: 30
-                            background: Rectangle { color: Theme.metroTile; radius: 2 }
-                            contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onClicked: { calendarPopup.targetField = startTimeField; calendarPopup.open() }
-                        }
-                    }
-
-                    Label { text: I18n.t("Конец"); color: Theme.textSecondary; font.bold: true }
-                    RowLayout {
-                        TextField {
-                            id: endTimeField
-                            Layout.fillWidth: true
-                            text: new Date(new Date().setHours(23,59,59,999)).toLocaleString(Qt.locale(), "yyyy-MM-dd HH:mm:ss")
-                            color: Theme.textSecondary
-                            background: Rectangle { color: Theme.metroBackground; border.color: Theme.metroStroke; radius: 2 }
-                        }
-                        Button {
-                            text: "📅"
-                            Layout.preferredWidth: 30
-                            background: Rectangle { color: Theme.metroTile; radius: 2 }
-                            contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onClicked: { calendarPopup.targetField = endTimeField; calendarPopup.open() }
-                        }
-                    }
-                }
-
-                // Search Button
-                Button {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    text: SystemController.archiveController.isSearching ? I18n.t("Поиск") + "..." : I18n.t("Найти")
-                    enabled: !SystemController.archiveController.isSearching
-                    
-                    background: Rectangle {
-                        color: parent.down ? Theme.metroBlueHover : Theme.metroBlue
-                        radius: Theme.metroTileRadius
-                        opacity: parent.enabled ? 1 : 0.5
-                    }
-                    contentItem: Text {
-                        text: parent.text
-                        color: Theme.textPrimary
-                        font.bold: true
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        var camIndex = cameraSelector.currentIndex
-                        if (camIndex >= 0) {
-                            var cam = SystemController.cameraModel.getCamera(camIndex)
-                            SystemController.archiveController.login(cam.cameraIp, cam.cameraPort, cam.cameraLogin, "")
-                            
-                            var start = Date.fromLocaleString(Qt.locale(), startTimeField.text, "yyyy-MM-dd HH:mm:ss")
-                            var end = Date.fromLocaleString(Qt.locale(), endTimeField.text, "yyyy-MM-dd HH:mm:ss")
-                            
-                            var settings = SystemController.getAppSettings()
-                            var recPath = (settings && settings.recordingsPath) ? settings.recordingsPath : ""
-                            
-                            SystemController.archiveController.search(start, end, cam.cameraIp, recPath)
-                        }
-                    }
-                }
-
-                // Results List
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    color: Theme.metroBackground
-                    border.color: Theme.metroTile
-                    radius: 2
-                    
-                    ListView {
-                        id: resultsList
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        clip: true
-                        model: SystemController.archiveController.searchResults
-                        
-                        delegate: ItemDelegate {
-                            width: ListView.view.width
-                            height: 58
-                            highlighted: ListView.isCurrentItem
-                            
-                            background: Rectangle {
-                                color: highlighted ? Theme.metroBlue : (index % 2 == 0 ? Theme.metroSidebarBackground : Theme.metroTile)
-                            }
-                            
-                            contentItem: RowLayout {
-                                spacing: 10
-                                Image { 
-                                    source: "qrc:/OpenIPC/src/ui/SidebarIcon.qml" // Placeholder icon
-                                    sourceSize.width: 24; sourceSize.height: 24
-                                    visible: false
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Text { 
-                                        text: modelData.fileName
-                                        color: Theme.textPrimary
-                                        font.pixelSize: 12
-                                        elide: Text.ElideMiddle
-                                        Layout.fillWidth: true
-                                    }
-                                    Text { 
-                                        text: archiveMetaText(modelData)
-                                        color: Theme.textMuted
-                                        font.pixelSize: 10
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
-                                }
-                                Button {
-                                    Layout.preferredWidth: 30
-                                    Layout.preferredHeight: 30
-                                    hoverEnabled: false
-                                    background: Rectangle { color: "transparent" }
-                                    contentItem: SidebarIcon {
-                                        anchors.centerIn: parent
-                                        width: 20
-                                        height: 20
-                                        color: Theme.textSecondary
-                                        name: "folder_open"
-                                        path: "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
-                                    }
-                                    onClicked: {
-                                        SystemController.openFolder(modelData.filePath)
-                                    }
-                                }
-                            }
-                            onClicked: {
-                                resultsList.currentIndex = index
-                                playArchiveFile(modelData)
-                            }
-                        }
-                        
-                        ScrollBar.vertical: ScrollBar { }
-                    }
-                }
-            }
+            currentCameraIp: root.currentCameraIp
+            defaultDownloadPath: root.defaultDownloadPath
+            onFileSelected: (file, index) => playArchiveFile(file)
+            onFolderRequested: (file) => SystemController.openFolder(file.filePath)
         }
-
         // RIGHT CONTENT (Video & Controls)
         Rectangle {
             Layout.fillWidth: true
@@ -879,7 +651,8 @@ Dialog {
         onAccepted: {
             var path = SystemController.normalizeLocalPath(selectedFile)
             
-            var index = resultsList.currentIndex
+            var index = archiveSidebar.currentIndex
+            if (index < 0) return
             var sourcePath = SystemController.archiveController.searchResults[index].filePath
             
             SystemController.archiveController.exportVideo(sourcePath, path, exportStartMs, exportEndMs)
@@ -887,114 +660,4 @@ Dialog {
         }
     }
 
-    Popup {
-        id: calendarPopup
-        width: 300
-        height: 320
-        modal: true
-        focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
-        
-        property var targetField: null
-        property date selectedDate: new Date()
-
-        background: Rectangle {
-            color: Theme.metroSidebarBackground
-            border.color: Theme.metroBlue
-            radius: 4
-        }
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 10
-            
-            RowLayout {
-                Layout.fillWidth: true
-                Button {
-                    text: "<"
-                    Layout.preferredWidth: 30
-                    onClicked: {
-                        var d = new Date(calendarPopup.selectedDate)
-                        d.setMonth(d.getMonth() - 1)
-                        calendarPopup.selectedDate = d
-                    }
-                    background: Rectangle { color: Theme.metroTile; radius: 2 }
-                    contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                }
-                Label {
-                    text: calendarPopup.selectedDate.toLocaleString(Qt.locale(), "MMMM yyyy")
-                    color: "white"
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    font.bold: true
-                }
-                Button {
-                    text: ">"
-                    Layout.preferredWidth: 30
-                    onClicked: {
-                        var d = new Date(calendarPopup.selectedDate)
-                        d.setMonth(d.getMonth() + 1)
-                        calendarPopup.selectedDate = d
-                    }
-                    background: Rectangle { color: Theme.metroTile; radius: 2 }
-                    contentItem: Text { text: parent.text; color: Theme.textSecondary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                }
-            }
-
-            DayOfWeekRow {
-                Layout.fillWidth: true
-                delegate: Text {
-                    text: model.shortName
-                    color: Theme.textMuted
-                    horizontalAlignment: Text.AlignHCenter
-                    font.pixelSize: 12
-                }
-            }
-
-            MonthGrid {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                month: calendarPopup.selectedDate.getMonth()
-                year: calendarPopup.selectedDate.getFullYear()
-                
-                delegate: ItemDelegate {
-                    text: model.day
-                    
-                    highlighted: {
-                        var d = model.date
-                        return d.getDate() === calendarPopup.selectedDate.getDate() && 
-                               d.getMonth() === calendarPopup.selectedDate.getMonth() &&
-                               d.getFullYear() === calendarPopup.selectedDate.getFullYear()
-                    }
-                    onClicked: {
-                        calendarPopup.selectedDate = model.date
-                        
-                        var currentText = calendarPopup.targetField.text
-                        var timePart = "00:00:00"
-                        if (currentText.includes(" ")) {
-                            timePart = currentText.split(" ")[1]
-                        }
-                        
-                        var newDateStr = model.date.toLocaleString(Qt.locale(), "yyyy-MM-dd")
-                        calendarPopup.targetField.text = newDateStr + " " + timePart
-                        calendarPopup.close()
-                    }
-                    
-                    contentItem: Text {
-                        text: parent.text
-                        color: parent.highlighted ? "white" : Theme.textSecondary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    background: Rectangle {
-                        color: parent.highlighted ? Theme.metroBlue : "transparent"
-                        radius: 2
-                    }
-                }
-            }
-        }
-    }
 }
-

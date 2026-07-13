@@ -424,6 +424,8 @@ set(QML_FILES
     src/ui/OpenIpcUpgradeProgressPanel.qml
     src/ui/SshTerminalDialog.qml
     src/ui/ArchiveView.qml
+    src/ui/ArchiveSearchSidebar.qml
+    src/ui/ArchiveResultsList.qml
     src/ui/PtzControlPanel.qml
     src/ui/StyledScrollBar.qml
     src/ui/FileManagerDialog.qml
@@ -1057,6 +1059,8 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/I18n.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/LogView.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/MajesticFileDialogs.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveSearchSidebar.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveResultsList.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30
