@@ -124,6 +124,9 @@ Item {
             showNoAccess()
             return
         }
+        if (camexDialog.visible) {
+            return
+        }
         camexDialog.open()
     }
 

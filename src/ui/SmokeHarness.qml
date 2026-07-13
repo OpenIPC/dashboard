@@ -184,6 +184,16 @@ Item {
                     return object.layoutReady ? "" : "log dialog exceeds its host"
                 }
             },
+            { name: "Camex", component: camexComponent, parentObject: host, showForLayout: true },
+            {
+                name: "Dashboard Camex Open",
+                component: dashboardCamexOpenComponent,
+                parentObject: null,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.camexOpened ? "" : "Camex dialog was not opened from Dashboard"
+                }
+            },
             { name: "Majestic/OpenIPC Control Center", component: majesticComponent, parentObject: host }
         ]
     }
@@ -471,6 +481,41 @@ Item {
 
         LogView {
             logModel: SystemController.logModel
+        }
+    }
+
+    Component {
+        id: camexComponent
+
+        CamexView {
+        }
+    }
+
+    Component {
+        id: dashboardCamexOpenComponent
+
+        Window {
+            id: camexOpenWindow
+
+            width: 1280
+            height: 720
+            visible: false
+            property bool camexOpened: false
+
+            onVisibleChanged: {
+                if (visible) {
+                    Qt.callLater(function() {
+                        dashboard.openCamexDialog()
+                        camexOpened = true
+                    })
+                }
+            }
+
+            DashboardView {
+                id: dashboard
+
+                anchors.fill: parent
+            }
         }
     }
 }

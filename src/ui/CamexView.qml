@@ -6,14 +6,19 @@ import OpenIPC
 
 Dialog {
     id: root
+    parent: Overlay.overlay
     modal: true
     dim: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-    x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
-    width: parent.width * 0.9
-    height: parent.height * 0.9
+    readonly property real hostWidth: parent && parent.width > 0 ? parent.width : 1280
+    readonly property real hostHeight: parent && parent.height > 0 ? parent.height : 720
+    readonly property real dialogMargin: hostWidth < 760 || hostHeight < 560 ? 24 : 48
+
+    x: Math.max(0, (hostWidth - width) / 2)
+    y: Math.max(0, (hostHeight - height) / 2)
+    width: Math.max(320, Math.min(1320, hostWidth - dialogMargin))
+    height: Math.max(360, Math.min(880, hostHeight - dialogMargin))
 
     property string binaryName: "camex"
     property string serverHost: "vpn.example.org"
