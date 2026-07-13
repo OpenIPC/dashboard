@@ -102,22 +102,26 @@ Rectangle {
 
             Button {
                 id: expandButton
-                Layout.preferredWidth: 30
-                Layout.preferredHeight: 26
-                text: root.expanded ? "^" : "v"
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 28
+                padding: 0
+                hoverEnabled: true
                 onClicked: root.expanded = !root.expanded
                 background: Rectangle {
-                    color: expandButton.down ? Theme.metroTilePressed : Theme.metroTile
-                    border.color: Theme.metroStroke
+                    color: expandButton.down ? Theme.metroTilePressed
+                           : (expandButton.hovered ? Theme.metroTileHover : Theme.metroTile)
+                    border.color: root.expanded ? Theme.metroBlue : Theme.metroStroke
                     radius: Theme.metroTileRadius
                 }
-                contentItem: Text {
-                    text: expandButton.text
-                    color: Theme.textSecondary
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    font.bold: true
+                contentItem: SidebarIcon {
+                    name: "menu"
+                    fallbackText: "\u2261"
+                    color: root.expanded || expandButton.hovered ? Theme.textPrimary : Theme.textSecondary
+                    pixelSize: 20
                 }
+                ToolTip.visible: hovered
+                ToolTip.delay: 350
+                ToolTip.text: I18n.t(root.expanded ? "Свернуть хранилище" : "Развернуть хранилище")
             }
 
             Button {

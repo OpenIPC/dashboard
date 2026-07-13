@@ -158,23 +158,26 @@ Rectangle {
 
                 Button {
                     id: exactRangeButton
-                    Layout.preferredWidth: 82
-                    Layout.preferredHeight: 26
-                    text: root.exactRangeExpanded ? I18n.t("Скрыть") : I18n.t("Точно")
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 28
+                    padding: 0
+                    hoverEnabled: true
                     onClicked: root.exactRangeExpanded = !root.exactRangeExpanded
                     background: Rectangle {
-                        color: exactRangeButton.down ? Theme.metroTilePressed : Theme.metroTile
+                        color: exactRangeButton.down ? Theme.metroTilePressed
+                               : (exactRangeButton.hovered ? Theme.metroTileHover : Theme.metroTile)
                         border.color: root.exactRangeExpanded ? Theme.metroBlue : Theme.metroStroke
                         radius: Theme.metroTileRadius
                     }
-                    contentItem: Text {
-                        text: exactRangeButton.text
-                        color: Theme.textSecondary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
+                    contentItem: SidebarIcon {
+                        path: "M7 2v2H5c-1.1 0-2 .9-2 2v13c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-2V2h-2v2H9V2H7zm12 17H5V9h14v10zM7 11h5v5H7v-5z"
+                        fallbackText: "C"
+                        color: root.exactRangeExpanded || exactRangeButton.hovered ? Theme.textPrimary : Theme.textSecondary
+                        pixelSize: 20
                     }
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 350
+                    ToolTip.text: I18n.t(root.exactRangeExpanded ? "Скрыть точный период" : "Выбрать точный период")
                 }
             }
 
