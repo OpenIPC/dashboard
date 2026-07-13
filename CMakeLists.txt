@@ -256,6 +256,7 @@ set(SOURCES
     src/backend/SystemController.h
     src/backend/SystemControllerRecording.cpp
     src/backend/SystemControllerSettings.cpp
+    src/backend/SystemControllerState.cpp
     src/backend/DiscoveryController.cpp
     src/backend/DiscoveryController.h
     src/backend/ArchiveController.cpp
@@ -281,6 +282,7 @@ set(SOURCES
     src/backend/analytics/AnalyticsEngine.cpp
     src/backend/analytics/AnalyticsEngineDiagnostics.cpp
     src/backend/analytics/AnalyticsEngineEvents.cpp
+    src/backend/analytics/AnalyticsEngineUploads.cpp
     src/backend/analytics/AnalyticsEngine.h
     src/backend/analytics/InferenceBackend.h
     src/backend/analytics/YoloDetector.cpp
@@ -690,6 +692,21 @@ if(BUILD_TESTING)
 
     add_test(NAME log_model_tests COMMAND log_model_tests)
 
+    add_executable(i18n_catalog_tests
+        tests/I18nCatalogTests.cpp
+    )
+    openipc_enable_project_warnings(i18n_catalog_tests)
+
+    target_compile_definitions(i18n_catalog_tests PRIVATE
+        I18N_QML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/ui/I18n.qml"
+    )
+
+    target_link_libraries(i18n_catalog_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME i18n_catalog_tests COMMAND i18n_catalog_tests)
+
     add_executable(reconnect_policy_tests
         tests/ReconnectPolicyTests.cpp
         src/backend/gst/ReconnectPolicy.cpp
@@ -995,6 +1012,7 @@ if(BUILD_TESTING)
                 -I ${CMAKE_CURRENT_BINARY_DIR}
                 -I ${CMAKE_CURRENT_BINARY_DIR}/OpenIPC
                 -I ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/I18n.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/LogView.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/MajesticFileDialogs.qml
         )
@@ -1004,7 +1022,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1015,7 +1033,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests log_model_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     else()

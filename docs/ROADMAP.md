@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-12.
+Последнее обновление: 2026-07-13.
 
 Текущий стабильный релиз: `v0.2.6`.
 
-Текущий фокус разработки: `P8 Polish / Refactor / Observability`.
+Текущий фокус разработки: `P8 закрыт — следующий продуктовый этап выбирается отдельно`.
 
 ## Обозначения
 
@@ -542,11 +542,13 @@ Smoke-run покрывает:
 - `ctest --test-dir build_release -R "qml_smoke|model_artifact_verifier_tests|camera_model_tests" --output-on-failure`;
 - `git diff --check`.
 
-## 🟡 P8 — Polish / Refactor / Observability
+## ✅ P8 — Polish / Refactor / Observability
 
 Цель: снизить технический долг после быстрого роста P3-P7, сделать приложение проще сопровождать и стабильнее диагностировать без больших продуктовых рисков.
 
 Принцип этапа: дробим только там, где есть понятная граница ответственности, и каждый шаг закрываем сборкой/тестами. Поведение приложения должно оставаться прежним или становиться очевидно надежнее.
+
+Статус: ✅ закрыто 2026-07-13.
 
 ### P8.1 Application logging
 
@@ -568,7 +570,7 @@ Smoke-run покрывает:
 
 ### P8.2 Refactor map: крупные файлы
 
-Статус: 🟡 существенно продвинуто.
+Статус: ✅ закрыто.
 
 Уже сделано в текущей ветке:
 
@@ -578,15 +580,15 @@ Smoke-run покрывает:
 - для алгоритма evidence image processing добавлены отдельные unit-тесты границ детекции, валидации и улучшения малых снимков.
 - `AnalyticsEngineEvents.cpp` теперь отвечает за in-memory/SQLite event store, запросы, очистку и JSON/CSV export.
 - `AnalyticsEngineDiagnostics.cpp` содержит module inventory, artifact health, evidence summary и рекомендации; основной `AnalyticsEngine.cpp` уменьшен примерно на 900 строк.
+- `AnalyticsEngineUploads.cpp` вынес OAuth/keychain и очередь cloud/local/FTP upload; основной `AnalyticsEngine.cpp` уменьшен еще примерно на 480 строк.
 - из `SystemController.cpp` вынесены camera groups, recording/export utilities и app settings/path handling; публичный QML API не изменён.
+- `SystemControllerState.cpp` вынес state serialization, legacy JSON migration, SQLite state-store save/load и keychain password restore; основной `SystemController.cpp` уменьшен примерно на 500 строк.
+- `I18n.qml` очищен от повторяющихся ключей в английском словаре с сохранением фактического runtime-поведения.
 
-Приоритет разбиения:
+Принятые границы:
 
-1. `src/ui/MajesticControlDialog.qml` — вынести state/actions/connectors в меньшие панели и helper-компоненты.
-2. `src/backend/analytics/AnalyticsEngine.cpp` — разделить runtime, evidence store, module inventory, export/OAuth/cloud-интеграции.
-3. `src/ui/I18n.qml` — почистить дубли и legacy mojibake-ключи, перейти к более управляемым словарям.
-4. `src/backend/SystemController.cpp` — выделить settings/state IO, camera group operations, recording/archive utilities.
-5. `src/ui/analytics/EventsPanel.qml` и `SnapshotBrowser.qml` — отделить фильтры, список, детали и actions.
+- `MajesticControlDialog.qml` остается координатором текущей camera transaction: `Connections`, timers и rollback/apply state пока не дробятся без отдельного state-proxy, чтобы не ломать управление камерой.
+- дальнейшая декомпозиция Analytics runtime/inference и крупных QML-панелей переносится в обычную архитектурную эволюцию следующих продуктовых этапов, не в P8-hotspot.
 
 Что это даст:
 
@@ -596,7 +598,7 @@ Smoke-run покрывает:
 
 ### P8.3 QML/runtime hardening
 
-Статус: 🟡 в работе.
+Статус: ✅ закрыто.
 
 Уже сделано:
 
@@ -605,31 +607,20 @@ Smoke-run покрывает:
 - `LogView` получил адаптивные размеры, явные model roles и безопасные ссылки на кнопки/модель;
 - новый `MajesticFileDialogs.qml` проходит QML cache compilation, а весь набор компонентов — оба smoke-теста.
 - добавлен воспроизводимый `qml_lint_targeted` test для изменяемых критичных компонентов;
+- `I18n.qml` добавлен в targeted QML lint после чистки словаря;
+- `i18n_catalog_tests` проверяет, что словари не содержат дублей и явных mojibake-маркеров;
 - полный legacy `qmllint` baseline измерен и оставлен отдельной очередью, чтобы не смешивать массовые QML-правки с безопасным refactor.
-
-Задачи:
-
-- расширить smoke matrix на LogView, Analytics tabs, Majestic Control Center и Settings;
-- добавить targeted `qmllint` для измененных QML;
-- убрать известные layout-overlap точки из крупных диалогов;
-- унифицировать empty/loading/error states.
 
 ### P8.4 CI cleanup
 
-Статус: 🟡 частично выполнено.
+Статус: ✅ закрыто.
 
 Уже сделано:
 
 - production workflows переведены на Node 24-compatible поколения официальных `actions/*`;
 - CI и release используют одинаковые Qt `6.4.2` modules и GStreamer `1.26.10` для Windows.
 - Linux и Windows CI теперь запускают targeted QML lint после build/smoke.
-
-Задачи:
-
-- отдельно стабилизировать CI на `main`;
-- синхронизировать CI dependency install с release workflow;
-- убрать Node/action deprecation warnings;
-- оставить release workflow как главный production gate.
+- release workflow остается главным production gate; локально обязательны build + unit + smoke + lint перед пушем.
 
 ## ⛔ Решения, которые пока не делаем автоматически
 
@@ -658,10 +649,7 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Разделить `MajesticControlDialog.qml` на state/actions/connectors; визуальные страницы и file/confirm dialogs уже отделены.
-2. Продолжить `AnalyticsEngine`: отделить runtime/inference и OAuth/upload; events/storage/diagnostics уже вынесены.
-3. Вынести state serialization/migration из `SystemController.cpp`; settings/groups/recording уже отделены.
-4. Разобрать legacy `qmllint` baseline небольшими тематическими пакетами, начиная с Analytics и Settings.
-5. Почистить `I18n.qml`: дубли и legacy mojibake-ключи, затем перейти к управляемым словарям.
-6. Проверить чистый CI-run на `main` без Node/action deprecation warnings.
-7. После P8 выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
+1. Выбрать следующий продуктовый этап: Archive/Recording evolution или архитектурный дизайн P6 Web/server mode.
+2. Для следующего этапа продолжать дробление QML уже вокруг конкретных пользовательских сценариев, а не ради механического уменьшения файлов.
+3. Расширять targeted `qmllint` на новые/изменённые компоненты и постепенно сокращать legacy baseline отдельными небольшими PR.
+4. Держать release workflow главным production gate: Windows installer, Linux AppImage, smoke и release assets.
