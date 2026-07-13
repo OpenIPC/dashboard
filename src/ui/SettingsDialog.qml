@@ -213,8 +213,16 @@ Window {
         return index === 1 ? "ru" : "en"
     }
 
+    function normalizeRecordingSegmentDuration(value) {
+        var minutes = Number(value)
+        if (!isFinite(minutes)) minutes = 15
+        minutes = Math.round(minutes / 5) * 5
+        return Math.max(5, Math.min(60, minutes))
+    }
+
     // Helper to apply current settings
     function applyCurrentSettings() {
+        recordingSegmentDuration = normalizeRecordingSegmentDuration(recordingSegmentDuration)
         var settings = {
             "language": language,
             "recordingsPath": recordingsPath,
@@ -295,7 +303,9 @@ Window {
             if (settings.playerBufferMode !== undefined) playerBufferMode = settings.playerBufferMode
             if (settings.playerRtspTransport) playerRtspTransport = settings.playerRtspTransport
             if (settings.playerHwDecoding) playerHwDecoding = settings.playerHwDecoding
-            if (settings.recordingSegmentDuration !== undefined) recordingSegmentDuration = settings.recordingSegmentDuration
+            if (settings.recordingSegmentDuration !== undefined) {
+                recordingSegmentDuration = normalizeRecordingSegmentDuration(settings.recordingSegmentDuration)
+            }
             
             if (settings.playerBrightness !== undefined) playerBrightness = settings.playerBrightness
             if (settings.playerContrast !== undefined) playerContrast = settings.playerContrast
@@ -885,54 +895,15 @@ Window {
                                 Layout.fillWidth: true
                                 spacing: 10
                                 
-                                SpinBox {
+                                StyledSpinBox {
                                     id: segmentSpin
                                     from: 5
                                     to: 60
                                     stepSize: 5
-                                    value: recordingSegmentDuration
-                                    onValueModified: recordingSegmentDuration = value
-                                    editable: true
+                                    value: normalizeRecordingSegmentDuration(recordingSegmentDuration)
+                                    onValueModified: recordingSegmentDuration = normalizeRecordingSegmentDuration(value)
                                     Layout.preferredHeight: 32
                                     Layout.preferredWidth: 120
-                                    
-                                    // Make room for indicators
-                                    leftPadding: 30
-                                    rightPadding: 30
-                                    
-                                    contentItem: TextInput {
-                                        text: segmentSpin.textFromValue(segmentSpin.value, segmentSpin.locale)
-                                        font: segmentSpin.font
-                                        color: "white"
-                                        selectionColor: Theme.metroBlue
-                                        selectedTextColor: Theme.textPrimary
-                                        horizontalAlignment: Qt.AlignHCenter
-                                        verticalAlignment: Qt.AlignVCenter
-                                        readOnly: !segmentSpin.editable
-                                        validator: segmentSpin.validator
-                                        inputMethodHints: Qt.ImhDigitsOnly
-                                    }
-
-                                    background: Rectangle { 
-                                        color: Theme.metroSurfaceAlt
-                                        border.color: Theme.metroStroke
-                                        radius: 4 
-                                    }
-                                    
-                                    up.indicator: Rectangle {
-                                        x: segmentSpin.width - width
-                                        height: segmentSpin.height
-                                        width: 30
-                                        color: segmentSpin.up.pressed ? Theme.metroTileHover : "transparent"
-                                        Text { text: "+"; color: Theme.textMuted; font.pixelSize: 18; anchors.centerIn: parent }
-                                    }
-                                    down.indicator: Rectangle {
-                                        x: 0
-                                        height: segmentSpin.height
-                                        width: 30
-                                        color: segmentSpin.down.pressed ? Theme.metroTileHover : "transparent"
-                                        Text { text: "-"; color: Theme.textMuted; font.pixelSize: 18; anchors.centerIn: parent }
-                                    }
                                 }
                                 
                                 Text {

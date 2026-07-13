@@ -15,12 +15,31 @@
 
 namespace {
 
+constexpr int kRecordingSegmentMinMinutes = 5;
+constexpr int kRecordingSegmentMaxMinutes = 60;
+constexpr int kRecordingSegmentStepMinutes = 5;
+constexpr int kRecordingSegmentDefaultMinutes = 15;
+
 QString normalizedLocalPathForState(const QString &pathOrUrl)
 {
     return PathUtils::localPathFromUserInput(pathOrUrl);
 }
 
-void normalizeAppSettingPathsForState(QVariantMap &settings)
+int normalizedRecordingSegmentDurationForState(const QVariant &value)
+{
+    bool ok = false;
+    int minutes = value.toInt(&ok);
+    if (!ok) {
+        minutes = kRecordingSegmentDefaultMinutes;
+    }
+
+    minutes = std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+    minutes = ((minutes + kRecordingSegmentStepMinutes / 2) / kRecordingSegmentStepMinutes)
+        * kRecordingSegmentStepMinutes;
+    return std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+}
+
+void normalizeAppSettingsForState(QVariantMap &settings)
 {
     const QStringList pathKeys{
         QStringLiteral("recordingsPath"),
@@ -32,6 +51,11 @@ void normalizeAppSettingPathsForState(QVariantMap &settings)
         if (!value.trimmed().isEmpty()) {
             settings[key] = normalizedLocalPathForState(value);
         }
+    }
+
+    if (settings.contains(QStringLiteral("recordingSegmentDuration"))) {
+        settings[QStringLiteral("recordingSegmentDuration")] =
+            normalizedRecordingSegmentDurationForState(settings.value(QStringLiteral("recordingSegmentDuration")));
     }
 }
 
@@ -319,7 +343,7 @@ void SystemController::loadState()
 
     if (root.contains("appSettings")) {
         QVariantMap savedSettings = root.value("appSettings").toObject().toVariantMap();
-        normalizeAppSettingPathsForState(savedSettings);
+        normalizeAppSettingsForState(savedSettings);
         // Merge with defaults
         for (auto it = savedSettings.begin(); it != savedSettings.end(); ++it) {
             m_appSettings[it.key()] = it.value();

@@ -4,15 +4,35 @@
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QUrl>
+#include <algorithm>
 
 namespace {
+
+constexpr int kRecordingSegmentMinMinutes = 5;
+constexpr int kRecordingSegmentMaxMinutes = 60;
+constexpr int kRecordingSegmentStepMinutes = 5;
+constexpr int kRecordingSegmentDefaultMinutes = 15;
 
 QString normalizedLocalPath(const QString &pathOrUrl)
 {
     return PathUtils::localPathFromUserInput(pathOrUrl);
 }
 
-void normalizeAppSettingPaths(QVariantMap &settings)
+int normalizedRecordingSegmentDuration(const QVariant &value)
+{
+    bool ok = false;
+    int minutes = value.toInt(&ok);
+    if (!ok) {
+        minutes = kRecordingSegmentDefaultMinutes;
+    }
+
+    minutes = std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+    minutes = ((minutes + kRecordingSegmentStepMinutes / 2) / kRecordingSegmentStepMinutes)
+        * kRecordingSegmentStepMinutes;
+    return std::clamp(minutes, kRecordingSegmentMinMinutes, kRecordingSegmentMaxMinutes);
+}
+
+void normalizeAppSettings(QVariantMap &settings)
 {
     const QStringList pathKeys{
         QStringLiteral("recordingsPath"),
@@ -24,6 +44,11 @@ void normalizeAppSettingPaths(QVariantMap &settings)
         if (!value.trimmed().isEmpty()) {
             settings[key] = normalizedLocalPath(value);
         }
+    }
+
+    if (settings.contains(QStringLiteral("recordingSegmentDuration"))) {
+        settings[QStringLiteral("recordingSegmentDuration")] =
+            normalizedRecordingSegmentDuration(settings.value(QStringLiteral("recordingSegmentDuration")));
     }
 }
 
@@ -50,7 +75,7 @@ QString SystemController::normalizeLocalPath(const QString &pathOrUrl) const
 void SystemController::saveAppSettings(const QVariantMap &settings)
 {
     QVariantMap normalizedSettings = settings;
-    normalizeAppSettingPaths(normalizedSettings);
+    normalizeAppSettings(normalizedSettings);
 
     // Merge new settings with existing ones to prevent data loss (e.g. grid state, hidden flags)
     for (auto it = normalizedSettings.begin(); it != normalizedSettings.end(); ++it) {

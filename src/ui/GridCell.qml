@@ -28,7 +28,12 @@ Item {
     property bool previewRestartHold: false
     property int previewRestartSerial: 0
     property string manufacturer: ""
-    property int recordingSegmentDuration: (SystemController.appSettings.recordingSegmentDuration !== undefined) ? SystemController.appSettings.recordingSegmentDuration : 15
+    property int recordingSegmentDuration: {
+        var minutes = Number(SystemController.appSettings.recordingSegmentDuration)
+        if (!isFinite(minutes)) minutes = 15
+        minutes = Math.round(minutes / 5) * 5
+        return Math.max(5, Math.min(60, minutes))
+    }
     property bool analyticsActive: false
     readonly property bool eventRecordingActive: recordingOwner === "event"
     property string recordingOwner: ""

@@ -311,6 +311,7 @@ SystemController::SystemController(QObject *parent)
     // Player settings
     m_appSettings["playerBufferMode"] = 1; // Balanced
     m_appSettings["playerRtspTransport"] = "tcp";
+    m_appSettings["recordingSegmentDuration"] = 15;
 
     m_gridRows = 2;
     m_gridCols = 2; 
