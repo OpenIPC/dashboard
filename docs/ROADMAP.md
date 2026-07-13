@@ -2,9 +2,9 @@
 
 Последнее обновление: 2026-07-13.
 
-Текущий стабильный релиз: `v0.2.6`.
+Текущий стабильный релиз: `v0.2.6.1`.
 
-Текущий фокус разработки: `P9 Archive/Recording evolution`.
+Текущий фокус разработки: подготовка `P10 Reliability / Analytics completion / Architecture`.
 
 ## Обозначения
 
@@ -622,7 +622,7 @@ Smoke-run покрывает:
 - Linux и Windows CI теперь запускают targeted QML lint после build/smoke.
 - release workflow остается главным production gate; локально обязательны build + unit + smoke + lint перед пушем.
 
-## 🟡 P9 — Archive / Recording evolution
+## ✅ P9 — Archive / Recording evolution
 
 Цель: превратить локальный архив из базового списка файлов в надежный слой записей, который одинаково понимают ручная запись, архив, экспорт и будущие события.
 
@@ -748,7 +748,7 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Перейти к P9.2: дробление `ArchiveView.qml` вокруг реальных сценариев архива.
-2. После стабилизации UI закрыть P9.3 export/clipping workflow.
+1. Выпустить maintenance-релиз `v0.2.6.1` с закрытыми P8/P9 и последними исправлениями UI/runtime.
+2. Оформить и начать P10: надежность записи, завершение analytics workflow и дальнейшая декомпозиция крупных компонентов.
 3. Расширять targeted `qmllint` на новые/изменённые компоненты и постепенно сокращать legacy baseline отдельными небольшими PR.
 4. Держать release workflow главным production gate: Windows installer, Linux AppImage, smoke и release assets.

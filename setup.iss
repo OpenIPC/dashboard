@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Dashboard for OpenIPC"
-#define MyAppVersion "0.2.6"
+#define MyAppVersion "0.2.6.1"
 #define MyAppPublisher "OpenIPC"
 #define MyAppURL "https://openipc.org/"
 #define MyAppExeName "appOpenIPC-Dashboard.exe"

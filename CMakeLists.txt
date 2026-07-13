@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.6 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.6.1 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor

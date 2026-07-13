@@ -195,7 +195,7 @@ Dialog {
                     required property string formattedTime
                     required property string message
 
-                    width: ListView.view ? ListView.view.width : logListView.width
+                    width: logListView.width
                     height: visible ? 20 : 0
                     visible: {
                         if (!root) return false;
