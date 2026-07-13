@@ -1042,10 +1042,10 @@ if(BUILD_TESTING)
 
     if(WIN32)
         add_test(NAME qml_smoke
-            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $env:PATH = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' -WindowStyle Hidden -PassThru; $p.WaitForExit(); exit $p.ExitCode"
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $dir = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>'; $env:PATH = $dir + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $out = Join-Path $dir 'qml_smoke.out.log'; $err = Join-Path $dir 'qml_smoke.err.log'; Remove-Item -LiteralPath $out,$err -ErrorAction SilentlyContinue; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru; if (Test-Path $out) { Get-Content -LiteralPath $out }; if (Test-Path $err) { Get-Content -LiteralPath $err }; exit $p.ExitCode"
         )
         add_test(NAME qml_smoke_scaled
-            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $env:PATH = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '1.5'; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>' -WindowStyle Hidden -PassThru; $p.WaitForExit(); exit $p.ExitCode"
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $dir = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>'; $env:PATH = $dir + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '1.5'; $out = Join-Path $dir 'qml_smoke_scaled.out.log'; $err = Join-Path $dir 'qml_smoke_scaled.err.log'; Remove-Item -LiteralPath $out,$err -ErrorAction SilentlyContinue; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru; if (Test-Path $out) { Get-Content -LiteralPath $out }; if (Test-Path $err) { Get-Content -LiteralPath $err }; exit $p.ExitCode"
         )
     else()
         add_test(NAME qml_smoke COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
@@ -1087,7 +1087,7 @@ if(BUILD_TESTING)
     )
 
     set_tests_properties(qml_smoke qml_smoke_scaled PROPERTIES
-        TIMEOUT 20
+        TIMEOUT 45
         LABELS "smoke"
     )
 

@@ -9,6 +9,11 @@ Rectangle {
 
     property bool authenticating: false
     property string errorMessage: ""
+    readonly property bool keyboardNavigationReady: usernameInput.activeFocusOnTab
+                                                    && passwordInput.activeFocusOnTab
+                                                    && confirmPasswordInput.activeFocusOnTab
+                                                    && rememberMeCheck.focusPolicy === Qt.StrongFocus
+                                                    && loginButton.focusPolicy === Qt.StrongFocus
 
     function submitLogin() {
         root.errorMessage = ""
@@ -37,6 +42,18 @@ Rectangle {
         }
     }
 
+    function focusInitialField() {
+        if (SystemController.userManager.hasUsers && usernameInput.text !== "" && passwordInput.text === "") {
+            passwordInput.forceActiveFocus()
+            return
+        }
+        if (SystemController.userManager.hasUsers && usernameInput.text !== "" && passwordInput.text !== "") {
+            loginButton.forceActiveFocus()
+            return
+        }
+        usernameInput.forceActiveFocus()
+    }
+
     function syncFormState() {
         usernameInput.text = SystemController.userManager.rememberedUsername
         passwordInput.text = SystemController.userManager.rememberedPassword
@@ -44,6 +61,7 @@ Rectangle {
         rememberMeCheck.checked = SystemController.userManager.rememberedUsername !== ""
                                   || SystemController.userManager.rememberedPassword !== ""
         root.errorMessage = ""
+        Qt.callLater(root.focusInitialField)
     }
 
     Component.onCompleted: syncFormState()
@@ -127,6 +145,10 @@ Rectangle {
                         font.pixelSize: 14
                         verticalAlignment: Text.AlignVCenter
                         activeFocusOnPress: true
+                        activeFocusOnTab: true
+                        KeyNavigation.tab: passwordInput
+                        KeyNavigation.backtab: loginButton
+                        onAccepted: passwordInput.forceActiveFocus()
                         
                         // Placeholder behavior
                         Text {
@@ -167,7 +189,16 @@ Rectangle {
                         font.pixelSize: 14
                         verticalAlignment: Text.AlignVCenter
                         activeFocusOnPress: true
-                        onAccepted: root.submitLogin()
+                        activeFocusOnTab: true
+                        KeyNavigation.tab: SystemController.userManager.hasUsers ? rememberMeCheck : confirmPasswordInput
+                        KeyNavigation.backtab: usernameInput
+                        onAccepted: {
+                            if (SystemController.userManager.hasUsers) {
+                                root.submitLogin()
+                            } else {
+                                confirmPasswordInput.forceActiveFocus()
+                            }
+                        }
                     }
                 }
             }
@@ -201,6 +232,9 @@ Rectangle {
                         font.pixelSize: 14
                         verticalAlignment: Text.AlignVCenter
                         activeFocusOnPress: true
+                        activeFocusOnTab: true
+                        KeyNavigation.tab: rememberMeCheck
+                        KeyNavigation.backtab: passwordInput
                         onAccepted: root.submitLogin()
                     }
                 }
@@ -213,6 +247,9 @@ Rectangle {
                 
                 MetroCheckBox {
                     id: rememberMeCheck
+                    focusPolicy: Qt.StrongFocus
+                    KeyNavigation.tab: loginButton
+                    KeyNavigation.backtab: SystemController.userManager.hasUsers ? passwordInput : confirmPasswordInput
                     text: I18n.t("Запомнить меня")
                 }
             }
@@ -256,6 +293,9 @@ Rectangle {
                 id: loginButton
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
+                focusPolicy: Qt.StrongFocus
+                KeyNavigation.tab: usernameInput
+                KeyNavigation.backtab: rememberMeCheck
                 
                 background: Rectangle {
                     color: parent.down ? Theme.metroBlue : Theme.metroBlue

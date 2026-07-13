@@ -72,7 +72,16 @@ Item {
 
     function cases() {
         return [
-            { name: "Login", component: loginComponent, parentObject: host },
+            {
+                name: "Login",
+                component: loginComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.keyboardNavigationReady
+                        ? ""
+                        : "login keyboard navigation is not configured"
+                }
+            },
             {
                 name: "Dashboard",
                 component: dashboardComponent,

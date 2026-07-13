@@ -195,9 +195,10 @@ Dialog {
                     required property string formattedTime
                     required property string message
 
-                    width: ListView.view.width
+                    width: ListView.view ? ListView.view.width : logListView.width
                     height: visible ? 20 : 0
                     visible: {
+                        if (!root) return false;
                         if (logDelegate.type === 0 && !root.showDebug) return false; // Debug
                         if (logDelegate.type === 1 && !root.showWarning) return false; // Warning
                         if (logDelegate.type === 2 && !root.showError) return false; // Critical
@@ -270,7 +271,7 @@ Dialog {
             Connections {
                 target: root.logModel
                 function onCountChanged() {
-                    if (root.visible) {
+                    if (root && root.visible) {
                         root.scrollToEnd()
                     }
                 }
