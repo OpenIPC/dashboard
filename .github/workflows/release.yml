@@ -522,17 +522,40 @@ jobs:
           # Remove debug symbols to reduce size
           Get-ChildItem dist -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
-      - name: Install UPX
-        run: choco install upx
+      - name: Install UPX (optional)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          choco install upx --no-progress -y
+
+          $upx = (Get-Command upx.exe -ErrorAction SilentlyContinue).Source
+          if (-not $upx) {
+            $upx = Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter "upx.exe" -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName -First 1
+          }
+
+          if (-not $upx -or -not (Test-Path $upx)) {
+            Write-Warning "UPX is unavailable; release packaging will continue without optional compression."
+            "OPENIPC_UPX=" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            exit 0
+          }
+
+          Write-Host "UPX found at: $upx"
+          "OPENIPC_UPX=$upx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Compress binaries with UPX
         shell: pwsh
         run: |
-          $upx = (Get-Command upx.exe -ErrorAction SilentlyContinue).Source
-          if (-not $upx) { Write-Error "upx not found"; exit 1 }
+          $upx = $env:OPENIPC_UPX
+          if (-not $upx -or -not (Test-Path $upx)) {
+            Write-Warning "UPX is unavailable; skipping optional binary compression."
+            exit 0
+          }
 
           # Compress EXE and DLLs in dist
           # Avoid compressing Qt plugins/modules and QML imports, which can break Qt's plugin metadata loader.
+          $compressed = 0
+          $skipped = 0
           Get-ChildItem dist -Recurse -Include *.exe,*.dll |
             Where-Object {
               $_.FullName -notmatch '\\qt_plugins\\' -and
@@ -543,7 +566,14 @@ jobs:
             } |
             ForEach-Object {
               & $upx -9 --lzma --force $_.FullName
+              if ($LASTEXITCODE -eq 0) {
+                $compressed++
+              } else {
+                $skipped++
+                Write-Warning "UPX skipped $($_.FullName) with exit code $LASTEXITCODE"
+              }
             }
+          Write-Host "UPX compression complete: $compressed compressed, $skipped skipped."
 
       - name: Install Inno Setup
         run: choco install innosetup

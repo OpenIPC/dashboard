@@ -29,6 +29,30 @@ Item {
         return labels.length > 0 ? labels[0] : "person"
     }
 
+    function defaultPolygonJson() {
+        return JSON.stringify([
+            { "x": 0.18, "y": 0.18 },
+            { "x": 0.82, "y": 0.18 },
+            { "x": 0.82, "y": 0.82 },
+            { "x": 0.18, "y": 0.82 }
+        ])
+    }
+
+    function polygonJson(value) {
+        if (!value || !Array.isArray(value) || value.length < 3)
+            return defaultPolygonJson()
+        return JSON.stringify(value)
+    }
+
+    function polygonFromJson(value) {
+        try {
+            var parsed = JSON.parse(value || "")
+            return Array.isArray(parsed) && parsed.length >= 3 ? parsed : []
+        } catch (error) {
+            return []
+        }
+    }
+
     function loadRules() {
         selectedRuleIndex = -1
         rulesModel.clear()
@@ -47,6 +71,7 @@ Item {
                 cooldownMs: (r.cooldownMs !== undefined ? Number(r.cooldownMs) : 5000),
                 enabled: (r.enabled !== undefined ? !!r.enabled : true),
                 zonePreset: r.zonePreset || "full",
+                zonePolygonJson: polygonJson(r.zonePolygon),
                 actionSnapshot: (r.actionSnapshot !== undefined ? !!r.actionSnapshot : true),
                 actionClip: (r.actionClip !== undefined ? !!r.actionClip : true),
                 actionNotify: (r.actionNotify !== undefined ? !!r.actionNotify : false)
@@ -69,6 +94,7 @@ Item {
             cooldownMs: Math.max(1000, Number(r.cooldownMs !== undefined ? r.cooldownMs : 5000)),
             enabled: r.enabled !== false,
             zonePreset: String(r.zonePreset || "full"),
+            zonePolygon: polygonFromJson(String(r.zonePolygonJson || "")),
             actionSnapshot: r.actionSnapshot !== false,
             actionClip: r.actionClip !== false,
             actionNotify: r.actionNotify === true
@@ -112,6 +138,7 @@ Item {
             cooldownMs: 5000,
             enabled: true,
             zonePreset: "full",
+            zonePolygonJson: defaultPolygonJson(),
             actionSnapshot: true,
             actionClip: true,
             actionNotify: false
@@ -150,13 +177,15 @@ Item {
     ListModel { id: rulesModel }
 
     component PanelButton: Button {
+        id: panelButton
+
         implicitHeight: 30
         leftPadding: 12
         rightPadding: 12
 
         background: Rectangle {
-            color: parent.enabled
-                   ? (parent.hovered ? Theme.cardHover : Theme.controlBackground)
+            color: panelButton.enabled
+                   ? (panelButton.hovered ? Theme.cardHover : Theme.controlBackground)
                    : Theme.controlBackgroundAlt
             radius: Theme.radiusSm
             border.color: parent.enabled ? Theme.controlBorder : Theme.panelBorder
@@ -164,8 +193,8 @@ Item {
         }
 
         contentItem: Text {
-            text: parent.text
-            color: parent.enabled ? Theme.textSecondary : Theme.textMuted
+            text: panelButton.text
+            color: panelButton.enabled ? Theme.textSecondary : Theme.textMuted
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -175,6 +204,8 @@ Item {
 
     component CompactSpinBox: SpinBox {
         id: spin
+        property string valueSuffix: ""
+
         implicitHeight: 34
         editable: true
 
@@ -186,7 +217,7 @@ Item {
         }
 
         contentItem: TextInput {
-            text: spin.textFromValue(spin.value, spin.locale)
+            text: String(spin.value) + spin.valueSuffix
             color: spin.enabled ? Theme.textSecondary : Theme.textMuted
             font: spin.font
             selectionColor: Theme.accent
@@ -394,6 +425,7 @@ Item {
 
                                 CompactSpinBox {
                                     id: confSpin
+                                    valueSuffix: "%"
                                     enabled: root.hasSelection
                                     from: 10
                                     to: 99
@@ -410,6 +442,7 @@ Item {
 
                                 CompactSpinBox {
                                     id: cooldownSpin
+                                    valueSuffix: "s"
                                     enabled: root.hasSelection
                                     from: 1
                                     to: 60
@@ -452,7 +485,7 @@ Item {
                                 id: zoneBox
                                 Layout.fillWidth: true
                                 enabled: root.hasSelection
-                                model: ["full", "center", "left", "right", "top", "bottom"]
+                                model: ["full", "center", "left", "right", "top", "bottom", "custom"]
                                 currentIndex: {
                                     if (!root.hasSelection)
                                         return 0
@@ -463,8 +496,18 @@ Item {
                                 onUserSelected: root.updateField("zonePreset", currentText)
                             }
 
+                            AnalyticsZoneEditor {
+                                Layout.fillWidth: true
+                                visible: root.selectedValue("zonePreset", "full") === "custom"
+                                polygonJson: String(root.selectedValue("zonePolygonJson", root.defaultPolygonJson()))
+                                onPolygonEdited: function(json) {
+                                    root.updateField("zonePolygonJson", json)
+                                }
+                            }
+
                             Text {
-                                text: I18n.t("Скоро вернём полигональные зоны; пока пресеты зоны уже сохраняются в правиле.")
+                                visible: root.selectedValue("zonePreset", "full") !== "custom"
+                                text: I18n.t("Пресет проверяет центр найденного объекта. Выберите custom для собственной полигональной зоны.")
                                 color: Theme.textMuted
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true

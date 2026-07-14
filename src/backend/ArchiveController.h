@@ -39,6 +39,9 @@ public:
                                               int keepDays,
                                               qint64 maxBytes,
                                               bool dryRun = true);
+    Q_INVOKABLE QVariantMap recoverIncompleteRecordings(const QString &recordingsPath,
+                                                        bool removeStale = false,
+                                                        int staleMinutes = 15);
 
     bool isSearching() const { return m_isSearching; }
     bool isExporting() const { return m_isExporting; }
@@ -63,6 +66,7 @@ signals:
     void exportError(const QString &error);
     void exportStateChanged();
     void cleanupFinished(const QVariantMap &result);
+    void recoveryFinished(const QVariantMap &result);
 
 private:
     bool m_isSearching = false;

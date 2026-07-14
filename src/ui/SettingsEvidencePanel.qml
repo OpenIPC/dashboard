@@ -325,5 +325,9 @@ ColumnLayout {
         }
     }
 
+    SettingsEvidenceUploadPanel {
+        settings: panel.settings
+    }
+
     Item { Layout.fillHeight: true }
 }

@@ -1,6 +1,6 @@
 # OpenIPC Dashboard v0.2.6.1
 
-OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that completes the P8 polish/observability work, delivers the P9 archive and recording evolution, and fixes the latest startup and navigation regressions reported after v0.2.6.
+OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that completes P8 polish/observability, P9 archive and recording evolution, and P10 analytics/reliability work while fixing the latest startup and navigation regressions reported after v0.2.6.
 
 ## Русский
 
@@ -8,6 +8,7 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 
 - Полностью завершён P8: рабочее логирование приложения, дальнейшая декомпозиция backend/QML, QML runtime hardening и очистка CI.
 - Полностью завершён P9: единый каталог записей, обновлённый архив, экспорт клипов, контроль хранилища и телеметрия записи.
+- Полностью завершён P10: пользовательские зоны аналитики, надёжная доставка evidence, безопасное завершение и восстановление записей, дальнейшая декомпозиция крупных компонентов.
 - Исправлены критические ошибки запуска приложения и открытия Camex.
 - Улучшена навигация с клавиатуры в окне входа: `Tab`, `Shift+Tab` и `Enter` позволяют пройти форму без мыши.
 
@@ -34,6 +35,15 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 - В архиве текстовые переключатели заменены компактными иконками календаря и меню.
 - Исправлены размеры и null-safe bindings окна логов, обнаруженные расширенными smoke-тестами.
 
+### Аналитика и надёжность
+
+- Редактор правил поддерживает пользовательские полигональные зоны из 3-8 точек и сохраняет их вместе с правилом.
+- Совпадение детекций с зонами вынесено в отдельный тестируемый модуль с поддержкой старых пресетов зон.
+- Доставка снимков и клипов получила повторные попытки с увеличивающейся задержкой, таймауты, счётчики и видимый последний статус.
+- Локальные и NAS-копии сначала пишутся во временный `.part`-файл и публикуются атомарным переименованием.
+- Экспорт и запись защищены от незавершённых файлов; архив находит и безопасно очищает устаревшие `.part`, `.tmp` и `.previous` артефакты.
+- Удалён неиспользуемый legacy `AnalyticsModel`; панели зон и загрузки evidence вынесены в самостоятельные QML-компоненты.
+
 ### Исправления стабильности
 
 - Исправлен crash при запуске приложения после обновления настроек аналитики.
@@ -45,10 +55,10 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 ### Проверка релиза
 
 - Полная Release-сборка приложения.
-- 22 C++ unit-теста.
+- 24 C++ unit-теста.
 - QML smoke-тесты в обычном режиме и при `QT_SCALE_FACTOR=1.5`.
 - Targeted QML lint и проверка каталога локализации.
-- Всего: 25 из 25 локальных тестов проходят.
+- Всего: 27 из 27 локальных тестов проходят.
 - GitHub Actions собирает Windows installer и Linux AppImage перед публикацией релиза.
 
 ### Ограничения
@@ -63,6 +73,7 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 
 - Completed P8: application logging, further backend/QML decomposition, QML runtime hardening, and CI cleanup.
 - Completed P9: unified recording catalog, Archive UI v2, clip export, storage management, and recording telemetry.
+- Completed P10: custom analytics zones, reliable evidence delivery, safe recording finalization and recovery, and further component decomposition.
 - Fixed critical application startup and Camex dialog crashes.
 - Added complete keyboard navigation to the login form with `Tab`, `Shift+Tab`, and `Enter`.
 
@@ -89,6 +100,15 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 - Replaced text archive toggles with compact calendar and menu icons.
 - Fixed LogView sizing and null-safe bindings exposed by expanded smoke coverage.
 
+### Analytics And Reliability
+
+- Rules now support persisted custom polygon zones with 3-8 draggable points.
+- Detection-to-zone matching is isolated in a tested component while retaining legacy zone presets.
+- Snapshot and clip delivery now has bounded exponential retries, timeouts, counters, and a visible last status.
+- Local and NAS uploads write to temporary `.part` files before atomic publication.
+- Export and recording finalization protect completed targets; Archive can find and safely clean stale `.part`, `.tmp`, and `.previous` artifacts.
+- Removed the unused legacy `AnalyticsModel` and extracted the zone editor and evidence upload settings into focused QML components.
+
 ### Stability Fixes
 
 - Fixed an application startup crash introduced around analytics settings.
@@ -100,10 +120,10 @@ OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that complet
 ### Release Validation
 
 - Full Release build.
-- 22 C++ unit tests.
+- 24 C++ unit tests.
 - QML smoke tests at the default scale and `QT_SCALE_FACTOR=1.5`.
 - Targeted QML lint and localization catalog validation.
-- All 25 local tests pass.
+- All 27 local tests pass.
 - GitHub Actions must complete the Windows installer and Linux AppImage jobs before publishing the release.
 
 ### Scope

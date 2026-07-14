@@ -36,6 +36,42 @@ QStringList supportedRecordingFilters()
             QStringLiteral("*.mov")};
 }
 
+QStringList incompleteRecordingFilters()
+{
+    return {QStringLiteral("*.part"),
+            QStringLiteral("*.part.*"),
+            QStringLiteral("*.tmp"),
+            QStringLiteral("*.previous")};
+}
+
+QList<QFileInfo> collectIncompleteRecordings(const QString &rootPath)
+{
+    QList<QFileInfo> files;
+    if (!QDir(rootPath).exists()) {
+        return files;
+    }
+
+    QDirIterator iterator(rootPath,
+                          incompleteRecordingFilters(),
+                          QDir::Files,
+                          QDirIterator::Subdirectories);
+    while (iterator.hasNext()) {
+        files.append(QFileInfo(iterator.next()));
+    }
+    return files;
+}
+
+QString exportPartialPath(const QString &targetPath)
+{
+    const QFileInfo targetInfo(targetPath);
+    const QString suffix = targetInfo.completeSuffix();
+    const QString baseName = targetInfo.completeBaseName();
+    const QString partialName = suffix.isEmpty()
+        ? targetInfo.fileName() + QStringLiteral(".part")
+        : QStringLiteral("%1.part.%2").arg(baseName, suffix);
+    return targetInfo.absoluteDir().filePath(partialName);
+}
+
 QList<RecordedFile> collectRecordings(const QString &rootPath, const QString &cameraIp = QString())
 {
     QList<RecordedFile> files;
@@ -363,6 +399,9 @@ void ArchiveController::exportVideo(const QString &inputFile, const QString &out
         return;
     }
 
+    const QString partialPath = exportPartialPath(targetPath);
+    QFile::remove(partialPath);
+
     const quint64 requestId = ++m_exportRequestId;
     m_isExporting = true;
     m_exportProgress = 0;
@@ -374,7 +413,7 @@ void ArchiveController::exportVideo(const QString &inputFile, const QString &out
     emit exportProgress(0);
 
     QPointer<ArchiveController> controller(this);
-    (void)QtConcurrent::run([controller, requestId, sourcePath, targetPath, startMs, durationMs]() {
+    (void)QtConcurrent::run([controller, requestId, sourcePath, targetPath, partialPath, startMs, durationMs]() {
         QString errorText;
         QByteArray stderrTail;
         int lastProgress = 0;
@@ -416,7 +455,7 @@ void ArchiveController::exportVideo(const QString &inputFile, const QString &out
              << QStringLiteral("-c") << QStringLiteral("copy")
              << QStringLiteral("-progress") << QStringLiteral("pipe:1")
              << QStringLiteral("-nostats")
-             << targetPath;
+             << partialPath;
         
         process.setArguments(args);
         process.start();
@@ -444,6 +483,29 @@ void ArchiveController::exportVideo(const QString &inputFile, const QString &out
             if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
                 errorText = QStringLiteral("ffmpeg returned error: ") + QString::fromUtf8(stderrTail).trimmed();
             }
+        }
+
+        if (errorText.isEmpty()) {
+            const QFileInfo partialInfo(partialPath);
+            if (!partialInfo.exists() || partialInfo.size() <= 0) {
+                errorText = QStringLiteral("ffmpeg did not create a valid export file.");
+            } else {
+                const QString previousPath = targetPath + QStringLiteral(".previous");
+                QFile::remove(previousPath);
+                const bool hadPreviousTarget = QFile::exists(targetPath);
+                if (hadPreviousTarget && !QFile::rename(targetPath, previousPath)) {
+                    errorText = QStringLiteral("Failed to preserve the previous export before replacement.");
+                } else if (!QFile::rename(partialPath, targetPath)) {
+                    errorText = QStringLiteral("Failed to finalize the exported clip.");
+                    if (hadPreviousTarget) {
+                        QFile::rename(previousPath, targetPath);
+                    }
+                } else {
+                    QFile::remove(previousPath);
+                }
+            }
+        } else {
+            QFile::remove(partialPath);
         }
 
         if (!controller) {
@@ -526,6 +588,92 @@ QVariantMap ArchiveController::storageSummary(const QString &recordingsPath) con
     result.insert(QStringLiteral("totalSizeText"), formatBytes(totalBytes));
     result.insert(QStringLiteral("oldest"), oldest);
     result.insert(QStringLiteral("newest"), newest);
+
+    qint64 incompleteBytes = 0;
+    int staleIncompleteCount = 0;
+    const QDateTime staleCutoff = QDateTime::currentDateTime().addSecs(-15 * 60);
+    const QList<QFileInfo> incompleteFiles = collectIncompleteRecordings(rootPath);
+    for (const QFileInfo &file : incompleteFiles) {
+        incompleteBytes += file.size();
+        if (file.size() == 0 || file.lastModified() <= staleCutoff) {
+            ++staleIncompleteCount;
+        }
+    }
+    result.insert(QStringLiteral("incompleteCount"), incompleteFiles.size());
+    result.insert(QStringLiteral("staleIncompleteCount"), staleIncompleteCount);
+    result.insert(QStringLiteral("incompleteBytes"), incompleteBytes);
+    result.insert(QStringLiteral("incompleteSizeText"), formatBytes(incompleteBytes));
+    return result;
+}
+
+QVariantMap ArchiveController::recoverIncompleteRecordings(const QString &recordingsPath,
+                                                            bool removeStale,
+                                                            int staleMinutes)
+{
+    const QString rootPath = recordingsRootPath(recordingsPath);
+    const bool safe = cleanupRootIsSafe(rootPath);
+    const int safeStaleMinutes = qBound(1, staleMinutes, 24 * 60);
+    const QDateTime staleCutoff = QDateTime::currentDateTime().addSecs(-safeStaleMinutes * 60);
+
+    QVariantMap result;
+    result.insert(QStringLiteral("rootPath"), rootPath);
+    result.insert(QStringLiteral("safe"), safe);
+    result.insert(QStringLiteral("removeRequested"), removeStale);
+    result.insert(QStringLiteral("staleMinutes"), safeStaleMinutes);
+
+    if (removeStale && !safe) {
+        result.insert(QStringLiteral("error"), QStringLiteral("Recording directory is not safe for recovery cleanup."));
+        emit recoveryFinished(result);
+        return result;
+    }
+
+    int staleCount = 0;
+    int removedCount = 0;
+    qint64 totalBytes = 0;
+    qint64 staleBytes = 0;
+    qint64 removedBytes = 0;
+    QVariantList files;
+
+    const QList<QFileInfo> incompleteFiles = collectIncompleteRecordings(rootPath);
+    for (const QFileInfo &file : incompleteFiles) {
+        const bool stale = file.size() == 0 || file.lastModified() <= staleCutoff;
+        const qint64 size = file.size();
+        totalBytes += size;
+        if (stale) {
+            ++staleCount;
+            staleBytes += size;
+        }
+
+        bool removed = false;
+        if (removeStale && stale && fileIsInsideRoot(rootPath, file.absoluteFilePath())) {
+            removed = QFile::remove(file.absoluteFilePath());
+            if (removed) {
+                ++removedCount;
+                removedBytes += size;
+            }
+        }
+
+        files.append(QVariantMap{
+            {QStringLiteral("filePath"), file.absoluteFilePath()},
+            {QStringLiteral("fileName"), file.fileName()},
+            {QStringLiteral("sizeBytes"), size},
+            {QStringLiteral("lastModified"), file.lastModified()},
+            {QStringLiteral("stale"), stale},
+            {QStringLiteral("removed"), removed}
+        });
+    }
+
+    result.insert(QStringLiteral("files"), files);
+    result.insert(QStringLiteral("totalCount"), incompleteFiles.size());
+    result.insert(QStringLiteral("staleCount"), staleCount);
+    result.insert(QStringLiteral("removedCount"), removedCount);
+    result.insert(QStringLiteral("totalBytes"), totalBytes);
+    result.insert(QStringLiteral("staleBytes"), staleBytes);
+    result.insert(QStringLiteral("removedBytes"), removedBytes);
+    result.insert(QStringLiteral("totalSizeText"), formatBytes(totalBytes));
+    result.insert(QStringLiteral("staleSizeText"), formatBytes(staleBytes));
+    result.insert(QStringLiteral("removedSizeText"), formatBytes(removedBytes));
+    emit recoveryFinished(result);
     return result;
 }
 

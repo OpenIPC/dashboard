@@ -277,10 +277,12 @@ set(SOURCES
     src/backend/gst/StreamQualityPolicy.h
     src/backend/gst/StreamSessionPolicy.cpp
     src/backend/gst/StreamSessionPolicy.h
-    src/backend/AnalyticsModel.cpp
-    src/backend/AnalyticsModel.h
     src/backend/analytics/AnalyticsEvidenceImageProcessor.cpp
     src/backend/analytics/AnalyticsEvidenceImageProcessor.h
+    src/backend/analytics/AnalyticsRuleZoneMatcher.cpp
+    src/backend/analytics/AnalyticsRuleZoneMatcher.h
+    src/backend/analytics/AnalyticsUploadRetryPolicy.cpp
+    src/backend/analytics/AnalyticsUploadRetryPolicy.h
     src/backend/analytics/AnalyticsEngine.cpp
     src/backend/analytics/AnalyticsEngineDiagnostics.cpp
     src/backend/analytics/AnalyticsEngineEvents.cpp
@@ -313,6 +315,7 @@ set(QML_FILES
     src/ui/SettingsAboutPage.qml
     src/ui/SettingsAnalyticsPerformancePanel.qml
     src/ui/SettingsEvidencePanel.qml
+    src/ui/SettingsEvidenceUploadPanel.qml
     src/ui/SettingsFooterBar.qml
     src/ui/SettingsOAuthDialog.qml
     src/ui/SettingsSaveNotification.qml
@@ -373,6 +376,7 @@ set(QML_FILES
     src/ui/analytics/AnalyticsModulesPanel.qml
     src/ui/analytics/EventsPanel.qml
     src/ui/analytics/RulesPanel.qml
+    src/ui/analytics/AnalyticsZoneEditor.qml
     src/ui/analytics/SnapshotBrowser.qml
     src/ui/analytics/ImageViewerWindow.qml
     src/ui/UserManagementDialog.qml
@@ -947,6 +951,42 @@ if(BUILD_TESTING)
     add_test(NAME analytics_evidence_image_processor_tests
         COMMAND analytics_evidence_image_processor_tests)
 
+    add_executable(analytics_rule_zone_matcher_tests
+        tests/AnalyticsRuleZoneMatcherTests.cpp
+        src/backend/analytics/AnalyticsRuleZoneMatcher.cpp
+        src/backend/analytics/AnalyticsRuleZoneMatcher.h
+    )
+    openipc_enable_project_warnings(analytics_rule_zone_matcher_tests)
+
+    target_include_directories(analytics_rule_zone_matcher_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
+    )
+
+    target_link_libraries(analytics_rule_zone_matcher_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME analytics_rule_zone_matcher_tests
+        COMMAND analytics_rule_zone_matcher_tests)
+
+    add_executable(analytics_upload_retry_policy_tests
+        tests/AnalyticsUploadRetryPolicyTests.cpp
+        src/backend/analytics/AnalyticsUploadRetryPolicy.cpp
+        src/backend/analytics/AnalyticsUploadRetryPolicy.h
+    )
+    openipc_enable_project_warnings(analytics_upload_retry_policy_tests)
+
+    target_include_directories(analytics_upload_retry_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
+    )
+
+    target_link_libraries(analytics_upload_retry_policy_tests
+        PRIVATE Qt6::Core Qt6::Test
+    )
+
+    add_test(NAME analytics_upload_retry_policy_tests
+        COMMAND analytics_upload_retry_policy_tests)
+
     add_executable(camera_onboarding_parser_tests
         tests/CameraOnboardingParserTests.cpp
         src/backend/CameraOnboardingParser.cpp
@@ -1069,6 +1109,9 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveExportDialog.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveExportStatus.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ArchiveStoragePanel.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/analytics/AnalyticsZoneEditor.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/analytics/RulesPanel.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsEvidenceUploadPanel.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30
@@ -1076,7 +1119,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1092,7 +1135,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
         set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES

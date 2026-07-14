@@ -25,6 +25,7 @@ class AnalyticsEngine : public QObject {
     QML_ELEMENT
     Q_PROPERTY(QVariantList analyticsEvents READ analyticsEvents NOTIFY analyticsEventsChanged)
     Q_PROPERTY(QVariantMap analyticsDiagnostics READ analyticsDiagnostics NOTIFY analyticsTelemetryChanged)
+    Q_PROPERTY(QVariantMap uploadStatus READ uploadStatus NOTIFY uploadStatusChanged)
 public:
     enum ModuleType {
         FaceDetector,
@@ -64,6 +65,7 @@ public:
     Q_INVOKABLE QVariantMap getModuleConfig(int type) const;
     Q_INVOKABLE QVariantList analyticsEvents() const;
     Q_INVOKABLE QVariantMap analyticsDiagnostics() const;
+    Q_INVOKABLE QVariantMap uploadStatus() const;
     Q_INVOKABLE QVariantMap getModuleTelemetry(int type) const;
     Q_INVOKABLE QVariantList getObjectCounterSummary() const;
     Q_INVOKABLE QVariantList moduleInventory() const;
@@ -103,6 +105,7 @@ signals:
     void clipStopRequested(const QString &cameraId, const QString &path);
     void analyticsEventsChanged();
     void analyticsTelemetryChanged();
+    void uploadStatusChanged();
     void analyticsNotificationRaised(const QVariantMap &event);
 
 private:
@@ -252,17 +255,27 @@ private:
         QString filePath;
         QString provider;
         QString target;
+        int attempt = 1;
+        int maximumAttempts = 3;
     };
     QQueue<UploadTask> m_uploadQueue;
     mutable QMutex m_uploadMutex;
     bool m_uploadActive = false;
+    QString m_uploadState = QStringLiteral("idle");
+    QString m_uploadCurrentFile;
+    QString m_uploadCurrentProvider;
+    QString m_uploadLastError;
+    qint64 m_uploadLastUpdatedMs = 0;
+    int m_uploadCurrentAttempt = 0;
+    quint64 m_uploadCompletedCount = 0;
+    quint64 m_uploadFailedCount = 0;
+    quint64 m_uploadRetryCount = 0;
 
     void setupModules();
     int analyticsFrameIntervalMs() const;
     QVariantMap buildEvidenceSettings(bool includeSensitiveData) const;
     QVariantMap telemetryStateToVariant(const TelemetryState &state) const;
     QVariantMap detectionToVariant(const DetectionBox &box, const QString &moduleId, ModuleType moduleType) const;
-    bool zoneMatches(const QVariantMap &detection, const QString &zonePreset) const;
     QString countsToText(const QMap<QString, int> &counts) const;
     QString analyticsSecretKey(const QString &name) const;
     QString readSecretFromKeychain(const QString &name) const;

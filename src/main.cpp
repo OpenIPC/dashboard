@@ -17,7 +17,6 @@
 #include <QSslSocket>
 #include "backend/SystemController.h"
 #include "backend/gst/GstPlayer.h"
-#include "backend/AnalyticsModel.h"
 #include "backend/analytics/AnalyticsEngine.h"
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
@@ -276,7 +275,6 @@ int main(int argc, char *argv[])
     // qt_add_qml_module(), and missing VideoPlayer/RemoteFsModel/SshClient types
     // make the application fail to start before the first window appears.
     qmlRegisterType<GstPlayer>("OpenIPC", 1, 0, "VideoPlayer");
-    qmlRegisterType<AnalyticsModel>("OpenIPC", 1, 0, "AnalyticsModel");
     qmlRegisterType<AnalyticsEngine>("OpenIPC", 1, 0, "AnalyticsEngine");
     qmlRegisterType<SshClient>("OpenIPC", 1, 0, "SshClient");
     qmlRegisterType<RemoteFsModel>("OpenIPC", 1, 0, "RemoteFsModel");

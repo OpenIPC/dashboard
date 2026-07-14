@@ -1,7 +1,9 @@
 #include "AnalyticsEngine.h"
+#include "AnalyticsUploadRetryPolicy.h"
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QDateTime>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -20,6 +22,7 @@
 #include <QRandomGenerator>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QtConcurrent>
@@ -274,12 +277,46 @@ void AnalyticsEngine::enqueueUpload(const QString &filePath)
     if (filePath.isEmpty()) return;
     if (!m_uploadEnabled || m_uploadTarget.isEmpty()) return;
 
-    QMutexLocker locker(&m_uploadMutex);
-    m_uploadQueue.enqueue({filePath, m_uploadProvider, m_uploadTarget});
-    if (!m_uploadActive) {
-        m_uploadActive = true;
+    bool startQueue = false;
+    {
+        QMutexLocker locker(&m_uploadMutex);
+        m_uploadQueue.enqueue({filePath,
+                               m_uploadProvider,
+                               m_uploadTarget,
+                               1,
+                               AnalyticsUploadRetryPolicy::defaultMaximumAttempts()});
+        m_uploadState = QStringLiteral("queued");
+        m_uploadLastUpdatedMs = QDateTime::currentMSecsSinceEpoch();
+        if (!m_uploadActive) {
+            m_uploadActive = true;
+            startQueue = true;
+        }
+    }
+
+    emit uploadStatusChanged();
+    emit analyticsTelemetryChanged();
+    if (startQueue) {
         QMetaObject::invokeMethod(this, [this]() { processNextUpload(); }, Qt::QueuedConnection);
     }
+}
+
+QVariantMap AnalyticsEngine::uploadStatus() const
+{
+    QMutexLocker locker(&m_uploadMutex);
+    return {
+        {QStringLiteral("enabled"), m_uploadEnabled},
+        {QStringLiteral("active"), m_uploadActive},
+        {QStringLiteral("state"), m_uploadState},
+        {QStringLiteral("queueDepth"), m_uploadQueue.size() + (m_uploadActive ? 1 : 0)},
+        {QStringLiteral("filePath"), m_uploadCurrentFile},
+        {QStringLiteral("provider"), m_uploadCurrentProvider},
+        {QStringLiteral("attempt"), m_uploadCurrentAttempt},
+        {QStringLiteral("lastError"), m_uploadLastError},
+        {QStringLiteral("lastUpdatedMs"), m_uploadLastUpdatedMs},
+        {QStringLiteral("completed"), static_cast<qulonglong>(m_uploadCompletedCount)},
+        {QStringLiteral("failed"), static_cast<qulonglong>(m_uploadFailedCount)},
+        {QStringLiteral("retried"), static_cast<qulonglong>(m_uploadRetryCount)}
+    };
 }
 
 void AnalyticsEngine::processNextUpload()
@@ -289,10 +326,21 @@ void AnalyticsEngine::processNextUpload()
         QMutexLocker locker(&m_uploadMutex);
         if (m_uploadQueue.isEmpty()) {
             m_uploadActive = false;
+            locker.unlock();
+            emit uploadStatusChanged();
+            emit analyticsTelemetryChanged();
             return;
         }
         task = m_uploadQueue.dequeue();
+        m_uploadState = QStringLiteral("uploading");
+        m_uploadCurrentFile = task.filePath;
+        m_uploadCurrentProvider = task.provider;
+        m_uploadCurrentAttempt = task.attempt;
+        m_uploadLastError.clear();
+        m_uploadLastUpdatedMs = QDateTime::currentMSecsSinceEpoch();
     }
+    emit uploadStatusChanged();
+    emit analyticsTelemetryChanged();
 
     (void)QtConcurrent::run([this, task]() {
         auto parseParams = [](const QString &s) {
@@ -323,42 +371,74 @@ void AnalyticsEngine::processNextUpload()
             }
 
             QStringList args;
-            args << "-s" << "-S" << "--fail" << "--ftp-create-dirs" << "-T" << filePath << url.toString();
+            args << "-s" << "-S" << "--fail"
+                 << "--connect-timeout" << "15"
+                 << "--max-time" << "60"
+                 << "--ftp-create-dirs" << "-T" << filePath << url.toString();
 
             QProcess proc;
             proc.start("curl", args);
-            if (!proc.waitForFinished(120000)) {
+            if (!proc.waitForStarted(5000)) {
+                return false;
+            }
+            if (!proc.waitForFinished(65000)) {
                 proc.kill();
+                proc.waitForFinished(2000);
                 return false;
             }
             return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
         };
 
-        auto httpUpload = [](QNetworkReply *reply) {
+        auto waitForReply = [](QNetworkReply *reply, QByteArray *payload) {
             QEventLoop loop;
+            QTimer timeout;
+            timeout.setSingleShot(true);
+            bool timedOut = false;
             QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+                timedOut = true;
+                reply->abort();
+            });
+            timeout.start(45000);
             loop.exec();
-            bool ok = reply->error() == QNetworkReply::NoError;
+            timeout.stop();
+            if (payload) {
+                *payload = reply->readAll();
+            }
+            const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const bool ok = !timedOut && reply->error() == QNetworkReply::NoError
+                && (statusCode == 0 || statusCode < 400);
             reply->deleteLater();
             return ok;
         };
 
-        auto httpFetch = [](QNetworkReply *reply, QByteArray &out) {
-            QEventLoop loop;
-            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-            loop.exec();
-            bool ok = reply->error() == QNetworkReply::NoError;
-            out = reply->readAll();
-            reply->deleteLater();
-            return ok;
+        auto httpUpload = [&](QNetworkReply *reply) {
+            return waitForReply(reply, nullptr);
+        };
+
+        auto httpFetch = [&](QNetworkReply *reply, QByteArray &out) {
+            return waitForReply(reply, &out);
         };
 
         bool ok = false;
         if (task.provider == "local") {
             QDir dir(task.target);
             if (!dir.exists()) dir.mkpath(".");
-            QString dest = dir.filePath(QFileInfo(task.filePath).fileName());
-            ok = QFile::copy(task.filePath, dest);
+            const QString source = QFileInfo(task.filePath).absoluteFilePath();
+            const QString dest = QFileInfo(dir.filePath(QFileInfo(task.filePath).fileName())).absoluteFilePath();
+            const QString partial = dest + QStringLiteral(".part");
+            if (source == dest) {
+                ok = true;
+            } else {
+                QFile::remove(partial);
+                if (QFile::copy(source, partial)) {
+                    QFile::remove(dest);
+                    ok = QFile::rename(partial, dest);
+                    if (!ok) {
+                        QFile::remove(partial);
+                    }
+                }
+            }
         } else if (task.provider == "ftp") {
             ok = ftpUpload(task.filePath, task.target);
         } else if (task.provider == "gdrive") {
@@ -503,8 +583,72 @@ void AnalyticsEngine::processNextUpload()
             qWarning() << "Upload provider not implemented:" << task.provider;
         }
 
-        QMetaObject::invokeMethod(this, [this, ok]() {
-            Q_UNUSED(ok)
+        QMetaObject::invokeMethod(this, [this, task, ok]() mutable {
+            if (ok) {
+                {
+                    QMutexLocker locker(&m_uploadMutex);
+                    m_uploadCompletedCount += 1;
+                    m_uploadState = QStringLiteral("success");
+                    m_uploadLastError.clear();
+                    m_uploadLastUpdatedMs = QDateTime::currentMSecsSinceEpoch();
+                }
+                qInfo() << "Analytics evidence upload completed"
+                        << QFileInfo(task.filePath).fileName() << task.provider;
+                emit uploadStatusChanged();
+                emit analyticsTelemetryChanged();
+                processNextUpload();
+                return;
+            }
+
+            const QString errorText = QStringLiteral("Upload to %1 failed.").arg(task.provider);
+            if (AnalyticsUploadRetryPolicy::shouldRetry(task.attempt, true, task.maximumAttempts)) {
+                const int delayMs = AnalyticsUploadRetryPolicy::retryDelayMs(task.attempt);
+                UploadTask retryTask = task;
+                retryTask.attempt += 1;
+                {
+                    QMutexLocker locker(&m_uploadMutex);
+                    m_uploadRetryCount += 1;
+                    m_uploadState = QStringLiteral("retry_wait");
+                    m_uploadLastError = errorText;
+                    m_uploadLastUpdatedMs = QDateTime::currentMSecsSinceEpoch();
+                }
+                qWarning() << "Analytics evidence upload retry scheduled"
+                           << QFileInfo(task.filePath).fileName()
+                           << "attempt" << retryTask.attempt << "in" << delayMs << "ms";
+                emit uploadStatusChanged();
+                emit analyticsTelemetryChanged();
+
+                QTimer::singleShot(delayMs, this, [this, retryTask]() {
+                    bool startQueue = false;
+                    {
+                        QMutexLocker locker(&m_uploadMutex);
+                        m_uploadQueue.enqueue(retryTask);
+                        if (!m_uploadActive) {
+                            m_uploadActive = true;
+                            startQueue = true;
+                        }
+                    }
+                    emit uploadStatusChanged();
+                    emit analyticsTelemetryChanged();
+                    if (startQueue) {
+                        processNextUpload();
+                    }
+                });
+                processNextUpload();
+                return;
+            }
+
+            {
+                QMutexLocker locker(&m_uploadMutex);
+                m_uploadFailedCount += 1;
+                m_uploadState = QStringLiteral("failed");
+                m_uploadLastError = errorText;
+                m_uploadLastUpdatedMs = QDateTime::currentMSecsSinceEpoch();
+            }
+            qWarning() << "Analytics evidence upload failed"
+                       << QFileInfo(task.filePath).fileName() << task.provider;
+            emit uploadStatusChanged();
+            emit analyticsTelemetryChanged();
             processNextUpload();
         }, Qt::QueuedConnection);
     });

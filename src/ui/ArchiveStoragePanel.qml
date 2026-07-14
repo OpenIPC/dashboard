@@ -14,7 +14,7 @@ Rectangle {
     color: Theme.metroSurfaceAlt
     border.color: Theme.metroStroke
     radius: Theme.metroTileRadius
-    implicitHeight: expanded ? 188 : 58
+    implicitHeight: expanded ? 224 : 58
     clip: true
 
     function bytesLimit() {
@@ -34,6 +34,12 @@ Rectangle {
     function applyCleanup() {
         cleanupPreview = SystemController.archiveController.cleanupRecordings(
                     recordingsPath, keepDaysSpin.value, bytesLimit(), false)
+        refreshSummary()
+    }
+
+    function cleanupIncomplete() {
+        SystemController.archiveController.recoverIncompleteRecordings(
+                    recordingsPath, true, 15)
         refreshSummary()
     }
 
@@ -67,6 +73,9 @@ Rectangle {
             root.cleanupPreview = result
             root.refreshSummary()
         }
+        function onRecoveryFinished(result) {
+            root.refreshSummary()
+        }
     }
 
     ColumnLayout {
@@ -94,6 +103,8 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     text: valueText("totalSizeText", "0 B") + I18n.t(" · файлов ") + valueText("fileCount", "0")
+                          + (Number(valueText("incompleteCount", "0")) > 0
+                             ? I18n.t(" · незавершённых %1", [valueText("incompleteCount", "0")]) : "")
                     color: Theme.textMuted
                     font.pixelSize: 10
                     elide: Text.ElideRight
@@ -191,6 +202,19 @@ Rectangle {
                 font.pixelSize: 10
                 elide: Text.ElideMiddle
             }
+
+            Text {
+                text: I18n.t("Незавершённые")
+                color: Theme.textMuted
+                font.pixelSize: 10
+            }
+            Text {
+                Layout.fillWidth: true
+                text: valueText("incompleteCount", "0") + " / " + valueText("incompleteSizeText", "0 B")
+                color: Number(valueText("staleIncompleteCount", "0")) > 0 ? Theme.warningText : Theme.textSecondary
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
         }
 
         RowLayout {
@@ -287,6 +311,33 @@ Rectangle {
                     font.pixelSize: 11
                     elide: Text.ElideRight
                 }
+            }
+
+
+            Button {
+                id: recoveryButton
+                Layout.fillWidth: true
+                Layout.preferredHeight: 30
+                text: I18n.t("Очистить хвосты")
+                enabled: summary && summary.safe && Number(summary.staleIncompleteCount || 0) > 0
+                onClicked: root.cleanupIncomplete()
+                background: Rectangle {
+                    color: recoveryButton.enabled
+                           ? (recoveryButton.down ? Theme.warningSurfaceSoft : Theme.warningSurface)
+                           : Theme.metroTileDisabled
+                    border.color: recoveryButton.enabled ? Theme.warning : Theme.metroStroke
+                    radius: Theme.metroTileRadius
+                }
+                contentItem: Text {
+                    text: recoveryButton.text
+                    color: recoveryButton.enabled ? Theme.textPrimary : Theme.textFaint
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: I18n.t("Удалить зависшие временные файлы старше 15 минут")
             }
         }
     }

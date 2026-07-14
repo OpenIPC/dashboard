@@ -15,6 +15,7 @@ class ArchiveControllerTests : public QObject
 private slots:
     void searchReturnsRealPathsAndNewestFirst();
     void storageSummaryAndCleanupRespectDryRun();
+    void recoveryFindsAndRemovesOnlyStaleTemporaryFiles();
 };
 
 namespace {
@@ -122,6 +123,43 @@ void ArchiveControllerTests::storageSummaryAndCleanupRespectDryRun()
     QVERIFY(!QFile::exists(oldPath));
     QVERIFY(QFile::exists(recentPath));
     QVERIFY(cleanupFinished.count() >= 2);
+}
+
+void ArchiveControllerTests::recoveryFindsAndRemovesOnlyStaleTemporaryFiles()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString stalePartial = createRecording(dir.path(), QStringLiteral("clip.part.mp4"), 12);
+    const QString stalePrevious = createRecording(dir.path(), QStringLiteral("clip.mp4.previous"), 8);
+    const QString validRecording = createRecording(
+        dir.path(), QStringLiteral("192_168_0_219_2026-07-14_10-00-00_manual.mp4"), 20);
+    QVERIFY(!stalePartial.isEmpty());
+    QVERIFY(!stalePrevious.isEmpty());
+    QVERIFY(!validRecording.isEmpty());
+
+    const QDateTime oldTime = QDateTime::currentDateTime().addSecs(-60 * 60);
+    for (const QString &path : {stalePartial, stalePrevious}) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        QVERIFY(file.setFileTime(oldTime, QFileDevice::FileModificationTime));
+    }
+
+    ArchiveController controller;
+    const QVariantMap summary = controller.storageSummary(dir.path());
+    QCOMPARE(summary.value(QStringLiteral("incompleteCount")).toInt(), 2);
+    QCOMPARE(summary.value(QStringLiteral("staleIncompleteCount")).toInt(), 2);
+
+    const QVariantMap preview = controller.recoverIncompleteRecordings(dir.path(), false, 15);
+    QCOMPARE(preview.value(QStringLiteral("totalCount")).toInt(), 2);
+    QCOMPARE(preview.value(QStringLiteral("staleCount")).toInt(), 2);
+    QCOMPARE(preview.value(QStringLiteral("removedCount")).toInt(), 0);
+
+    const QVariantMap cleanup = controller.recoverIncompleteRecordings(dir.path(), true, 15);
+    QCOMPARE(cleanup.value(QStringLiteral("removedCount")).toInt(), 2);
+    QVERIFY(!QFile::exists(stalePartial));
+    QVERIFY(!QFile::exists(stalePrevious));
+    QVERIFY(QFile::exists(validRecording));
 }
 
 QTEST_GUILESS_MAIN(ArchiveControllerTests)

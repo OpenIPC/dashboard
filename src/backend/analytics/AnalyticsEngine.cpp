@@ -1,4 +1,5 @@
 #include "AnalyticsEngine.h"
+#include "AnalyticsRuleZoneMatcher.h"
 #include "AnalyticsEvidenceImageProcessor.h"
 #include "ModelArtifactVerifier.h"
 #include "YoloDetector.h"
@@ -310,10 +311,9 @@ QVariantMap AnalyticsEngine::analyticsDiagnostics() const
         result["activeTracks"] = activeTracks;
     }
 
-    {
-        QMutexLocker locker(&m_uploadMutex);
-        result["uploadQueueDepth"] = m_uploadQueue.size() + (m_uploadActive ? 1 : 0);
-    }
+    const QVariantMap currentUploadStatus = uploadStatus();
+    result["uploadQueueDepth"] = currentUploadStatus.value("queueDepth");
+    result["uploadStatus"] = currentUploadStatus;
 
     result["analyticsActiveJobs"] = processingCameras.size();
 
@@ -927,39 +927,6 @@ QVariantMap AnalyticsEngine::detectionToVariant(const DetectionBox &box, const Q
     return detection;
 }
 
-bool AnalyticsEngine::zoneMatches(const QVariantMap &detection, const QString &zonePreset) const
-{
-    const QString normalizedZone = zonePreset.trimmed().toLower();
-    if (normalizedZone.isEmpty() || normalizedZone == "full") {
-        return true;
-    }
-
-    const double x = detection.value("x").toDouble();
-    const double y = detection.value("y").toDouble();
-    const double w = detection.value("w").toDouble();
-    const double h = detection.value("h").toDouble();
-    const double cx = x + (w / 2.0);
-    const double cy = y + (h / 2.0);
-
-    if (normalizedZone == "center") {
-        return cx >= 0.25 && cx <= 0.75 && cy >= 0.25 && cy <= 0.75;
-    }
-    if (normalizedZone == "left") {
-        return cx <= 0.40;
-    }
-    if (normalizedZone == "right") {
-        return cx >= 0.60;
-    }
-    if (normalizedZone == "top") {
-        return cy <= 0.40;
-    }
-    if (normalizedZone == "bottom") {
-        return cy >= 0.60;
-    }
-
-    return true;
-}
-
 void AnalyticsEngine::recordSkippedFrame(const QString &cameraId)
 {
     QMutexLocker locker(&m_telemetryMutex);
@@ -1297,7 +1264,8 @@ QVariantList AnalyticsEngine::evaluateRulesForDetection(const QString &cameraId,
         }
 
         const QString zonePreset = rule.value("zonePreset", "full").toString();
-        if (!zoneMatches(detection, zonePreset)) {
+        const QVariantList zonePolygon = rule.value("zonePolygon").toList();
+        if (!AnalyticsRuleZoneMatcher::matches(detection, zonePreset, zonePolygon)) {
             continue;
         }
 
@@ -1344,6 +1312,9 @@ QVariantList AnalyticsEngine::evaluateRulesForDetection(const QString &cameraId,
         event["ruleId"] = ruleId;
         event["ruleName"] = ruleName;
         event["zonePreset"] = zonePreset;
+        if (!zonePolygon.isEmpty()) {
+            event["zonePolygon"] = AnalyticsRuleZoneMatcher::normalizePolygon(zonePolygon);
+        }
         event["actionSnapshot"] = actionSnapshot;
         event["actionClip"] = actionClip;
         event["actionNotify"] = actionNotify;
