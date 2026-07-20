@@ -13,7 +13,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     env:
-      GSTREAMER_RELEASE_TAG: deps-gstreamer-1.22.8
+      GSTREAMER_RELEASE_TAG: gstreamer-1.26.10
+      GSTREAMER_VERSION: 1.26.10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -102,26 +103,49 @@ jobs:
           "OPENIPC_OPENSSL11_BIN=$opensslBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Download GStreamer (MinGW) from GitHub Release
-        env:
-           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-           # Download MSI assets from your specific release "gstreamer-1.26.10"
-           # NOTE: We assume the files attached are named:
-           # gstreamer-1.0-mingw-x86_64-1.22.8.msi OR similar.
-           # Since you mentioned the TAG is "gstreamer-1.26.10" but the files inside often follow standard naming.
-           # I will attempt to download ALL msi files from that tag to be safe, then install them.
-           
-           gh release download gstreamer-1.26.10 --pattern "*.msi" --repo OpenIPC/dashboard
-           
-           # Identify filenames
-           $msiRuntime = Get-ChildItem -Filter "gstreamer-1.0-mingw-*.msi" | Select-Object -ExpandProperty Name -First 1
-           $msiDevel   = Get-ChildItem -Filter "gstreamer-1.0-devel-mingw-*.msi" | Select-Object -ExpandProperty Name -First 1
-           
-           if (-not $msiRuntime -or -not $msiDevel) {
-               Write-Error "Could not find both runtime and devel MSIs in the downloaded assets. Files found: $(Get-ChildItem *.msi | Out-String)"
-               exit 1
+           $ErrorActionPreference = "Stop"
+           $msiRuntime = "gstreamer-1.0-mingw-x86_64-$env:GSTREAMER_VERSION.msi"
+           $msiDevel = "gstreamer-1.0-devel-mingw-x86_64-$env:GSTREAMER_VERSION.msi"
+           $assets = @($msiRuntime, $msiDevel)
+
+           foreach ($asset in $assets) {
+               $url = "https://github.com/OpenIPC/dashboard/releases/download/$env:GSTREAMER_RELEASE_TAG/$asset"
+               $partial = "$asset.part"
+               $downloaded = $false
+
+               for ($attempt = 1; $attempt -le 5; $attempt++) {
+                   Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+                   Write-Host "Downloading $asset (attempt $attempt of 5)"
+
+                   & curl.exe --fail --location --silent --show-error `
+                       --connect-timeout 30 --retry 2 --retry-delay 5 --retry-all-errors `
+                       --output $partial $url
+
+                   if ($LASTEXITCODE -eq 0 -and (Test-Path $partial) `
+                           -and (Get-Item $partial).Length -gt 100MB) {
+                       Move-Item -LiteralPath $partial -Destination $asset -Force
+                       $downloaded = $true
+                       break
+                   }
+
+                   Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+                   if ($attempt -lt 5) {
+                       $delay = 15 * $attempt
+                       Write-Warning "Download failed or produced an incomplete MSI; retrying in $delay seconds."
+                       Start-Sleep -Seconds $delay
+                   }
+               }
+
+               if (-not $downloaded) {
+                   throw "Failed to download a complete GStreamer asset after 5 attempts: $asset"
+               }
            }
+
+           Get-Item -LiteralPath $msiRuntime, $msiDevel |
+               Select-Object Name, Length |
+               Format-Table -AutoSize
            
                # Extract directly into the expected MinGW root to avoid nested paths
                $gstRoot = "C:\gstreamer\1.0\mingw_x86_64"
