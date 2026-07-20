@@ -1,133 +1,113 @@
-# OpenIPC Dashboard v0.2.6.1
+# OpenIPC Dashboard v0.2.7
 
-OpenIPC Dashboard v0.2.6.1 is a maintenance and reliability release that completes P8 polish/observability, P9 archive and recording evolution, and P10 analytics/reliability work while fixing the latest startup and navigation regressions reported after v0.2.6.
+OpenIPC Dashboard v0.2.7 delivers the P6 Web/Desktop parity milestone: a secure embedded Web companion and autonomous server mode with a responsive operator and administration interface.
 
 ## Русский
 
 ### Главное
 
-- Полностью завершён P8: рабочее логирование приложения, дальнейшая декомпозиция backend/QML, QML runtime hardening и очистка CI.
-- Полностью завершён P9: единый каталог записей, обновлённый архив, экспорт клипов, контроль хранилища и телеметрия записи.
-- Полностью завершён P10: пользовательские зоны аналитики, надёжная доставка evidence, безопасное завершение и восстановление записей, дальнейшая декомпозиция крупных компонентов.
-- Исправлены критические ошибки запуска приложения и открытия Camex.
-- Улучшена навигация с клавиатуры в окне входа: `Tab`, `Shift+Tab` и `Enter` позволяют пройти форму без мыши.
+- Реализован встроенный Web-сервер и автономный режим `--server-only`, использующие те же камеры, пользователей, настройки и backend, что и desktop-приложение.
+- Web-интерфейс повторяет основной desktop workflow, поддерживает русский и английский языки и адаптируется к desktop, планшетам и телефонам.
+- Добавлены защищённый HTTP API v1, live-обновления через WebSocket и общий presentation layer, исключающий расхождение данных и форматирования между QML и Web.
+- В настройках desktop появился отдельный раздел Web с адресами доступа, состоянием сервера, счётчиками клиентов и сессий, LAN bind, портами и параметрами безопасности.
 
-### Архив и запись
+### Монитор и камеры
 
-- Добавлен единый каталог ручных и событийных записей с поддержкой MP4, MKV, AVI и MOV.
-- Сохранена совместимость со старыми именами файлов; новый формат использует миллисекунды и устойчив к быстрым повторным запускам записи.
-- Архив показывает реальный путь, источник, размер, длительность, камеру и группировку по датам.
-- Добавлены быстрые периоды, точный календарный диапазон, фильтр `Все / Ручные / События` и сортировка по времени.
-- Интерфейс архива разделён на самостоятельные панели поиска, результатов, воспроизведения, экспорта и хранилища.
-- Добавлены прогресс экспорта, понятные ошибки ffmpeg и быстрое открытие каталога результата.
-- Реализованы подсчёт занятого места, безопасный dry-run очистки и retention-политики по возрасту и размеру.
-- Добавлено логирование старта, остановки, ошибки и ротации ручных и событийных записей.
-- Пользователь может задавать длительность сегмента записи от 5 до 60 минут с шагом 5 минут.
-- Панели периода и хранилища сделаны компактными и сворачиваемыми, чтобы список записей занимал основную высоту sidebar.
+- Доступны раскладки 1/4/9, назначение камер в ячейки, список устройств и компактные сворачиваемые контролы камеры для мобильных экранов.
+- Реализованы поиск камер, ручное добавление, редактирование и удаление устройств непосредственно из браузера.
+- Live preview использует WebRTC: H.264 передаётся с низкой задержкой без перекодирования, для H.265 предусмотрено ограниченное преобразование в H.264, а MJPEG используется как автоматический fallback.
+- Добавлены запись, snapshot, mute/volume, fullscreen и PTZ с понятными состояниями выполнения и ошибок.
+- Архив поддерживает фильтрацию, browser playback, HTTP Range и безопасное скачивание по opaque file ID без раскрытия локальных путей.
 
-### Логи, настройки и интерфейс
+### Администрирование и диагностика
 
-- Кнопка `Логи` теперь открывает реальный журнал приложения: сообщения пишутся в `app.log`, отображаются в `LogView`, фильтруются и экспортируются.
-- При открытии журнала загружается хвост существующего файла; добавлены пустое состояние и ручное обновление.
-- Проведён аудит настроек: значения связаны с backend-параметрами и корректно восстанавливаются после перезапуска.
-- Все пользовательские checkbox-компоненты приведены к единому MetroUI-стилю без наложения системного индикатора.
-- Переключатели evidence в настройках аналитики получили понятные подписи и подсказки на русском и английском языках.
-- В архиве текстовые переключатели заменены компактными иконками календаря и меню.
-- Исправлены размеры и null-safe bindings окна логов, обнаруженные расширенными smoke-тестами.
+- В Web доступны безопасные настройки приложения, управление пользователями и правами, смена паролей, отзыв активных сессий и защита последнего администратора.
+- Реализованы фильтрация и live tail логов, очистка журналов, диагностические метрики и скачивание диагностического bundle с redaction чувствительных данных.
+- Добавлены экспорт и импорт browser-safe конфигурации без передачи паролей камер и локальных секретов.
+- Camex, Majestic и OpenIPC Control Center получили capability checks, preview/diff и подтверждаемые safe-action сценарии; опасные операции остаются ограниченными серверной проверкой и аудитом.
 
-### Аналитика и надёжность
+### Безопасность
 
-- Редактор правил поддерживает пользовательские полигональные зоны из 3-8 точек и сохраняет их вместе с правилом.
-- Совпадение детекций с зонами вынесено в отдельный тестируемый модуль с поддержкой старых пресетов зон.
-- Доставка снимков и клипов получила повторные попытки с увеличивающейся задержкой, таймауты, счётчики и видимый последний статус.
-- Локальные и NAS-копии сначала пишутся во временный `.part`-файл и публикуются атомарным переименованием.
-- Экспорт и запись защищены от незавершённых файлов; архив находит и безопасно очищает устаревшие `.part`, `.tmp` и `.previous` артефакты.
-- Удалён неиспользуемый legacy `AnalyticsModel`; панели зон и загрузки evidence вынесены в самостоятельные QML-компоненты.
+- Web-вход не меняет desktop-сессию; используются 256-bit opaque tokens, на диске/в памяти хранятся только SHA-256 digest сессий.
+- Добавлены RBAC, sliding session TTL, отзыв сессий при изменении пользователя, CSRF/Origin checks, login rate limiting и security headers CSP/frame/no-sniff/no-referrer.
+- API не сериализует пароли камер, hashes/salts пользователей, OAuth secrets, RTSP URL с credentials и произвольные filesystem paths.
+- Mutation endpoints проверяют права, Origin/CSRF, входные данные, idempotency и создают audit events.
 
-### Исправления стабильности
+### Интерфейс и стабильность
 
-- Исправлен crash при запуске приложения после обновления настроек аналитики.
-- Исправлен crash при нажатии кнопки `Camex` в sidebar.
-- Исправлены некорректные QML-связи и жизненный цикл модальных окон Camex.
-- Улучшена последовательность фокуса формы входа для существующего пользователя и первого запуска.
-- Windows QML smoke-тесты запускают GUI-процесс контролируемо, сохраняют stdout/stderr и корректно завершаются по таймауту.
+- Окно поиска камер стало компактнее: больше места отдано результатам, а граница списка изменяется перетаскиванием мышью.
+- Плитка «Поиск камер» в desktop sidebar больше не имеет постоянного синего выделения и использует общие hover/pressed/focus эффекты.
+- `--server-only` использует offscreen Qt platform; Windows deployment включает необходимый `qoffscreen` plugin.
+- Windows/Linux packaging дополнен GStreamer WebRTC/ICE/DTLS/SRTP runtime-компонентами.
 
 ### Проверка релиза
 
-- Полная Release-сборка приложения.
-- 24 C++ unit-теста.
+- Полная Release-сборка Qt 6.4 / MinGW 12.2.
+- 27 C++ unit/contract tests, включая presentation, HTTP protocol и Web session store.
 - QML smoke-тесты в обычном режиме и при `QT_SCALE_FACTOR=1.5`.
 - Targeted QML lint и проверка каталога локализации.
-- Всего: 27 из 27 локальных тестов проходят.
-- GitHub Actions собирает Windows installer и Linux AppImage перед публикацией релиза.
+- Автономный `--server-only` smoke через `GET /api/v1/server`.
+- Всего: 30 из 30 локальных тестов проходят.
+- GitHub Actions публикует Windows installer и Linux AppImage только после успешной сборки обеих платформ.
 
 ### Ограничения
 
-- Web/server mode P6 остаётся в backlog.
-- Автоматический firmware rollback и непроверенный full restore не выполняются.
-- Интеграция `ipctool` намеренно не включена.
+- Сервер по умолчанию слушает только localhost; доступ из LAN включается явно и должен защищаться доверенной сетью, VPN или HTTPS reverse proxy.
+- WebRTC использует host ICE candidates для localhost/LAN/VPN; встроенной настройки STUN/TURN пока нет.
+- Общий SSH terminal намеренно не переносится в браузер; native window/tray/keychain функции остаются desktop-only.
+- Destructive firmware/restore операции требуют backup, стабильного питания и ручной проверки на совместимой камере.
 
 ## English
 
 ### Highlights
 
-- Completed P8: application logging, further backend/QML decomposition, QML runtime hardening, and CI cleanup.
-- Completed P9: unified recording catalog, Archive UI v2, clip export, storage management, and recording telemetry.
-- Completed P10: custom analytics zones, reliable evidence delivery, safe recording finalization and recovery, and further component decomposition.
-- Fixed critical application startup and Camex dialog crashes.
-- Added complete keyboard navigation to the login form with `Tab`, `Shift+Tab`, and `Enter`.
+- Added an embedded Web server and autonomous `--server-only` mode sharing the same cameras, users, settings and backend as the desktop application.
+- The responsive RU/EN Web interface follows the desktop operator workflow across desktop, tablet and mobile viewports.
+- Added a protected HTTP API v1, live WebSocket updates and a shared presentation layer so QML and Web expose consistent state and formatting.
+- Desktop Settings now includes a Web page with access URLs, runtime status, client/session counters, LAN binding, ports and security controls.
 
-### Archive And Recording
+### Monitor And Cameras
 
-- Added a unified catalog for manual and analytics-triggered recordings with MP4, MKV, AVI, and MOV support.
-- Preserved legacy filename compatibility while the new millisecond-based format prevents collisions during rapid recording restarts.
-- Archive entries now expose the real path, source, size, duration, camera, and date grouping.
-- Added quick periods, an exact calendar range, `All / Manual / Events` filtering, and time sorting.
-- Split the archive UI into focused search, results, playback, export, and storage components.
-- Added export progress, actionable ffmpeg errors, and a shortcut to the result directory.
-- Added storage usage summaries, safe cleanup dry runs, and age/size retention policies.
-- Added application-log telemetry for manual and event recording start, stop, failure, and segment rotation.
-- Recording segment duration is configurable from 5 to 60 minutes in 5-minute steps.
-- Period and storage panels are compact and collapsible so recordings retain most of the sidebar height.
+- Added 1/4/9 layouts, camera-to-cell assignment, the device sidebar and compact collapsible camera controls for mobile screens.
+- Camera discovery, manual onboarding, editing and deletion are available from the browser.
+- Live preview uses WebRTC with low-latency H.264 passthrough, bounded H.265-to-H.264 conversion and automatic MJPEG fallback.
+- Added recording, snapshots, mute/volume, fullscreen and PTZ with visible busy and error feedback.
+- Archive supports filtering, browser playback, HTTP Range and safe downloads through opaque file IDs without exposing local paths.
 
-### Logs, Settings, And UI
+### Administration And Diagnostics
 
-- The `Logs` action now opens a real application log viewer backed by `app.log`, with filtering, refresh, empty state, and export.
-- Existing log tails are loaded at startup and whenever the viewer is opened.
-- Audited settings bindings so values control their intended backend parameters and survive application restart.
-- Standardized user-facing checkboxes on the MetroUI style without overlapping native indicators.
-- Added localized labels and tooltips for analytics evidence switches.
-- Replaced text archive toggles with compact calendar and menu icons.
-- Fixed LogView sizing and null-safe bindings exposed by expanded smoke coverage.
+- Browser-safe settings, user and permission management, password changes, session revocation and last-administrator protection are available in Web.
+- Added filtered logs, live tail, log clearing, diagnostic metrics and redacted diagnostic bundle downloads.
+- Added browser-safe configuration export/import without camera passwords or local secrets.
+- Camex, Majestic and OpenIPC Control Center use capability checks, preview/diff and confirmed safe-action workflows with server-side validation and audit events.
 
-### Analytics And Reliability
+### Security
 
-- Rules now support persisted custom polygon zones with 3-8 draggable points.
-- Detection-to-zone matching is isolated in a tested component while retaining legacy zone presets.
-- Snapshot and clip delivery now has bounded exponential retries, timeouts, counters, and a visible last status.
-- Local and NAS uploads write to temporary `.part` files before atomic publication.
-- Export and recording finalization protect completed targets; Archive can find and safely clean stale `.part`, `.tmp`, and `.previous` artifacts.
-- Removed the unused legacy `AnalyticsModel` and extracted the zone editor and evidence upload settings into focused QML components.
+- Web authentication is isolated from the desktop session and uses 256-bit opaque tokens with SHA-256 session digests only.
+- Added RBAC, sliding session TTL, revocation after user security changes, CSRF/Origin validation, login rate limiting and CSP/frame/no-sniff/no-referrer headers.
+- The API never serializes camera passwords, user hashes/salts, OAuth secrets, credential-bearing RTSP URLs or arbitrary filesystem paths.
+- Mutation endpoints enforce permissions, Origin/CSRF validation, input validation, idempotency and audit logging.
 
-### Stability Fixes
+### UI And Reliability
 
-- Fixed an application startup crash introduced around analytics settings.
-- Fixed a crash when opening Camex from the sidebar.
-- Fixed invalid QML bindings and Camex modal lifecycle handling.
-- Improved initial focus and focus order for existing-user login and first-run account setup.
-- Windows QML smoke tests now launch the GUI process deterministically, capture stdout/stderr, and enforce a reliable timeout.
+- Compacted the camera discovery dialog, expanded result space and added a draggable result-pane divider.
+- Removed the permanent blue primary state from the desktop Camera Search tile so it shares the standard hover/pressed/focus effects.
+- `--server-only` uses the Qt offscreen platform; Windows deployments include the required `qoffscreen` plugin.
+- Windows and Linux packaging now includes the GStreamer WebRTC/ICE/DTLS/SRTP runtime components.
 
 ### Release Validation
 
-- Full Release build.
-- 24 C++ unit tests.
+- Full Qt 6.4 / MinGW 12.2 Release build.
+- 27 C++ unit and contract tests, including presentation, HTTP protocol and Web session storage.
 - QML smoke tests at the default scale and `QT_SCALE_FACTOR=1.5`.
 - Targeted QML lint and localization catalog validation.
-- All 27 local tests pass.
-- GitHub Actions must complete the Windows installer and Linux AppImage jobs before publishing the release.
+- Autonomous `--server-only` smoke through `GET /api/v1/server`.
+- All 30 local tests pass.
+- GitHub Actions publishes the Windows installer and Linux AppImage only after both platform builds succeed.
 
-### Scope
+### Known Limitations
 
-- P6 Web/server mode remains in the backlog.
-- Automatic firmware rollback and unverified full restore remain disabled.
-- `ipctool` integration is intentionally excluded.
+- The server listens on localhost by default. LAN access must be explicitly enabled and protected by a trusted network, VPN or HTTPS reverse proxy.
+- WebRTC currently uses host ICE candidates for localhost/LAN/VPN; built-in STUN/TURN configuration is not available yet.
+- A general SSH terminal is intentionally excluded from Web; native window, tray and keychain integrations remain desktop-only.
+- Destructive firmware and restore operations require a backup, stable power and manual validation on compatible camera hardware.

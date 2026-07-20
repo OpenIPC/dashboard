@@ -416,6 +416,7 @@ void AnalyticsEngine::initialize()
 
 void AnalyticsEngine::setupModules()
 {
+    const bool smokeMode = qEnvironmentVariable("OPENIPC_SMOKE_QML") == QStringLiteral("1");
     auto setupModule = [&](ModuleType type, const QString &name, const QString &desc, const QString &ver,
                           const QString &url, const QString &filename, const QString &sha256,
                           qint64 expectedSize, const QString &licenseId, const QString &sourceUrl,
@@ -431,6 +432,16 @@ void AnalyticsEngine::setupModules()
         ctx.licenseId = licenseId;
         ctx.sourceUrl = sourceUrl;
         ctx.options = opts;
+        if (smokeMode) {
+            // Smoke tests verify QML contracts, not DirectML/ONNX inference.
+            // Loading GPU providers here makes teardown nondeterministic and
+            // lets two unrelated UI checks contend for the same device.
+            ctx.status = QStringLiteral("smoke");
+            ctx.progress = 0.0f;
+            m_modules[type] = ctx;
+            emit moduleStatusChanged(type, ctx.status, ctx.progress, ctx.error);
+            return;
+        }
         ctx.backend = std::make_shared<YoloDetector>(opts);
 
         // Check if already installed

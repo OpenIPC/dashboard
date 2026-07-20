@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-14.
+Последнее обновление: 2026-07-20.
 
-Текущий стабильный релиз: `v0.2.6.1`.
+Текущий стабильный релиз: `v0.2.7`.
 
-Текущий фокус разработки: `P10 Reliability / Analytics completion / Architecture` закрыт; следующий продуктовый этап требует отдельного утверждения.
+Текущий фокус разработки: `P6 Web version / Server mode` выпущен в `v0.2.7`; следующий продуктовый этап требует отдельного утверждения.
 
 ## Обозначения
 
@@ -477,34 +477,108 @@ Smoke-run покрывает:
 - `cmake --build build_release --target appOpenIPC-Dashboard -j 2`;
 - `ctest --test-dir build_release -R "qml_smoke|majestic_client_tests|openipc_firmware_client_tests|camera_model_tests" --output-on-failure`.
 
-## 🧊 P6 — Web version / Server mode
+## ✅ P6 — Web version / Server mode
 
-Статус: backlog, архитектурно возможно, но это отдельный крупный этап.
+Цель: дать Dashboard безопасный браузерный companion и автономный server-only режим без дублирования desktop-состояния и секретов.
 
-Идея:
+Статус: Web/Desktop parity выпущен в `v0.2.7` 2026-07-20. P6.1–P6.16 закрыты;
+дальнейшее расширение Web API и поддержка STUN/TURN ведутся как отдельные этапы.
 
-- На ПК запускается desktop/server edition OpenIPC Dashboard.
-- Другие устройства в LAN/Internet подключаются к web UI через браузер.
-- Web UI повторяет основные функции desktop-приложения.
+Контрольная точка P6:
 
-Что потребуется:
+- desktop и автономный `--server-only` используют один backend, настройки, камеры и пользователей;
+- web-аутентификация, RBAC, HTTP API v1 и live-обновления через WebSocket работают;
+- интерфейс монитора повторяет основной desktop workflow: раскладки 1/4/9, активная ячейка,
+  список камер и рабочие окна Health, Analytics и Archive;
+- WebRTC проверен на реальной OpenIPC-камере: H.264 passthrough обеспечивает нормальный
+  исходный FPS и low-latency playback, MJPEG остается автоматическим fallback;
+- Qt WebSockets и полный GStreamer WebRTC/ICE/DTLS/SRTP runtime включены в Windows/Linux packaging;
+- полная MinGW release-сборка и 30 автоматических тестов проходят успешно.
 
-- Локальный HTTP/WebSocket server внутри приложения или отдельный companion server.
-- Auth/session модель.
-- Role-based permissions.
-- Streaming strategy:
-  - прямые ссылки на камеры;
-  - proxy;
-  - transcoding только если действительно потребуется.
-- API layer для Dashboard state.
-- Безопасная работа через статический IP/VPN/reverse proxy.
-- Отдельный security review.
+Зафиксированные границы текущей версии:
 
-Почему не P2/P3:
+- одновременно может работать только один экземпляр сервера на выбранных HTTP/WebSocket портах;
+- используются host ICE candidates для localhost/LAN/VPN; настройка STUN/TURN пока отсутствует;
+- общий SSH terminal и native window/tray/keychain интеграции намеренно остаются desktop-only;
+- destructive firmware/restore операции требуют backup и ручной проверки на совместимой камере.
 
-- Это не “просто страница”.
-- Нужно проектировать безопасность, сеть, доступ к потокам и синхронизацию состояния.
-- Начинать стоит после стабилизации desktop-core и Health/Discovery v2.
+Реализовано:
+
+- P6.1 Embedded server core:
+  - HTTP/1.1 server на `QTcpServer` с лимитами заголовков/тела и отказом от chunked request bodies;
+  - `--server-only` с offscreen Qt platform;
+  - localhost-only по умолчанию, LAN bind включается только явно;
+  - опциональный WebSocket server и debounce live-state updates при наличии Qt WebSockets.
+- P6.2 Auth/session/security:
+  - web-аутентификация через существующий `UserManager` без изменения desktop-сессии;
+  - 256-bit opaque tokens, хранение только SHA-256 digest, sliding TTL;
+  - HttpOnly/SameSite cookies, optional Secure cookie, Bearer API sessions;
+  - RBAC для Live View, Playback, PTZ, Settings и Analytics;
+  - CSRF/Origin checks, login rate limiting, invalidation при изменении пользователей/прав;
+  - CSP, frame denial, no-sniff, no-referrer, same-origin/no-store policies.
+- P6.3 Dashboard API v1:
+  - server/session/dashboard/cameras;
+  - Health status и запуск проверок;
+  - Analytics modules/diagnostics/events;
+  - Archive inventory и Range streaming;
+  - PTZ move/stop.
+- P6.4 Data boundaries:
+  - API не отдает пароли, hashes/salts, OAuth secrets, credential-bearing RTSP URL и локальные пути;
+  - archive playback использует SHA-256 file IDs и повторную canonical-root проверку;
+  - записи отдаются bounded chunks без загрузки файла целиком в память.
+- P6.5 Web UI:
+  - операторское рабочее пространство в стиле desktop с сохраняемыми раскладками 1/4/9;
+  - сворачиваемый блок действий, информативные карточки устройств и назначение камеры в активную ячейку;
+  - Health, Analytics и Archive открываются едиными рабочими окнами поверх live-раскладки;
+  - responsive рабочий интерфейс RU/EN;
+  - login, summary, camera cards и authenticated preview endpoint;
+  - Health, Analytics и Archive workspace;
+  - WebSocket connection status и live dashboard refresh.
+- P6.6 Desktop integration:
+  - отдельная вкладка `Настройки > Web`;
+  - enable/LAN/bind/HTTP/WebSocket/session/Secure cookie controls;
+  - runtime status, session/client counters, access URLs и запуск в браузере.
+
+Streaming strategy:
+
+- live preview использует WebRTC через GStreamer `webrtcbin`; H.264 передаётся без перекодирования с исходным FPS;
+- для H.265 применяется ограниченное low-latency перекодирование в H.264, а authenticated MJPEG relay остаётся автоматическим fallback для отдельной ячейки;
+- RTSP credentials не попадают в browser API, peer pipelines и idle fallback pipelines закрываются автоматически;
+- локальный архив отдается authenticated HTTP Range endpoint, поскольку браузер не имеет доступа к desktop filesystem.
+
+### P6.7 Web parity evolution
+
+Статус: P6.8–P6.16 реализованы и включены в `v0.2.7`. Кодовый hardening,
+Windows release build, server-only smoke и 30/30 test suite завершены;
+Windows installer и Linux AppImage публикуются только после успешного GitHub Actions CI.
+
+Детальный план возобновления и критерии полного паритета:
+[`WEB_PARITY_ROADMAP.md`](WEB_PARITY_ROADMAP.md).
+
+- [x] Desktop-like monitor workspace, раскладки 1/4/9 и sidebar устройств.
+- [x] Browser-compatible WebRTC live preview без раскрытия credentials камеры, с MJPEG fallback.
+- [x] Health, Analytics и Archive поверх рабочего монитора.
+- [x] Camera discovery, onboarding и edit dialogs.
+- [x] P6.8 — инвентаризация экранов, parity matrix, baseline screenshots и capability contract.
+- [x] P6.9 — shared presentation models, formatting, localization и design tokens.
+- [x] P6.10 — recording, snapshots, audio, fullscreen, PTZ feedback и Archive parity.
+- [x] P6.11 — Settings, users, permissions и session administration.
+- [x] P6.12 — logs, diagnostics, live tail, redaction и diagnostic bundles.
+- [x] P6.13 — Camex, Majestic и OpenIPC Control Center с safe-action workflow.
+- [x] P6.14 — browser-адаптации файловых, keychain, shortcut и native-only функций.
+- [x] P6.15 — visual parity, responsive polish, accessibility и Chromium screenshot baseline.
+- [x] P6.16 — production hardening, full-suite и автоматизированные release gates.
+
+Проверки этапа:
+
+- полная сборка `appOpenIPC-Dashboard` на Qt 6.4/MinGW;
+- `dashboard_http_protocol_tests`;
+- `dashboard_web_session_store_tests`;
+- `qml_smoke` и targeted QML lint;
+- живой `--server-only` smoke через `GET /api/v1/server`;
+- `git diff --check`.
+
+Эксплуатация и security review: `docs/WEB_SERVER.md`.
 
 ## ✅ P7 — Analytics / Modules evolution
 
@@ -843,7 +917,7 @@ Smoke-run покрывает:
 
 ## Ближайший практический порядок работ
 
-1. Поддерживать maintenance-релиз `v0.2.6.1` и собирать подтверждённые runtime-отчёты пользователей.
-2. Отдельно утвердить следующий продуктовый этап после закрытых P8/P9/P10.
+1. Поддерживать релиз `v0.2.7` и собирать подтверждённые runtime-отчёты desktop/Web пользователей.
+2. Отдельно утвердить следующий продуктовый этап после закрытых P6/P8/P9/P10.
 3. Расширять targeted `qmllint` на новые/изменённые компоненты и постепенно сокращать legacy baseline небольшими пакетами.
 4. Держать release workflow главным production gate: Windows installer, Linux AppImage, smoke и release assets.

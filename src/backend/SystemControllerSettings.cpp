@@ -1,5 +1,6 @@
 #include "SystemController.h"
 #include "PathUtils.h"
+#include "web/DashboardWebServer.h"
 
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -104,6 +105,9 @@ void SystemController::saveAppSettings(const QVariantMap &settings)
     }
     emit appSettingsChanged();
     saveState();
+    if (m_webServer) {
+        m_webServer->applySettings(m_appSettings);
+    }
 }
 
 QVariantMap SystemController::getAppSettings() const

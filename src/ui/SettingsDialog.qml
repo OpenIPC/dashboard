@@ -136,6 +136,15 @@ Window {
     property int playerOrientation: 0
     property bool playerMirror: false
 
+    // Embedded Web companion settings
+    property bool webServerEnabled: false
+    property bool webServerAllowRemote: false
+    property string webServerBindAddress: "127.0.0.1"
+    property int webServerPort: 8080
+    property int webSocketPort: 8081
+    property int webSessionTimeoutMinutes: 60
+    property bool webSecureCookies: false
+
     // Evidence settings (analytics-driven)
     property bool evidenceEnabled: true
     property bool evidenceSnapshotsEnabled: true
@@ -203,7 +212,7 @@ Window {
         applyCurrentSettings()
     }
 
-    property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("О программе")]
+    property var tabLabels: [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), "Web", I18n.t("О программе")]
 
     function languageIndex(value) {
         return value === "ru" ? 1 : 0
@@ -254,7 +263,14 @@ Window {
             "playerSaturation": playerSaturation,
             "playerGamma": playerGamma,
             "playerOrientation": playerOrientation,
-            "playerMirror": playerMirror
+            "playerMirror": playerMirror,
+            "webServerEnabled": webServerEnabled,
+            "webServerAllowRemote": webServerAllowRemote,
+            "webServerBindAddress": webServerBindAddress,
+            "webServerPort": webServerPort,
+            "webSocketPort": webSocketPort,
+            "webSessionTimeoutMinutes": webSessionTimeoutMinutes,
+            "webSecureCookies": webSecureCookies
         }
         SystemController.saveAppSettings(settings)
 
@@ -323,6 +339,13 @@ Window {
             if (settings.playerGamma !== undefined) playerGamma = settings.playerGamma
             if (settings.playerOrientation !== undefined) playerOrientation = settings.playerOrientation
             if (settings.playerMirror !== undefined) playerMirror = settings.playerMirror
+            if (settings.webServerEnabled !== undefined) webServerEnabled = settings.webServerEnabled
+            if (settings.webServerAllowRemote !== undefined) webServerAllowRemote = settings.webServerAllowRemote
+            if (settings.webServerBindAddress) webServerBindAddress = settings.webServerBindAddress
+            if (settings.webServerPort !== undefined) webServerPort = settings.webServerPort
+            if (settings.webSocketPort !== undefined) webSocketPort = settings.webSocketPort
+            if (settings.webSessionTimeoutMinutes !== undefined) webSessionTimeoutMinutes = settings.webSessionTimeoutMinutes
+            if (settings.webSecureCookies !== undefined) webSecureCookies = settings.webSecureCookies
         }
 
         var analyticsSettings = SystemController.analyticsEngine.getSettings()
@@ -414,7 +437,7 @@ Window {
 
     onLanguageChanged: {
         I18n.language = language
-        tabLabels = [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), I18n.t("О программе")]
+        tabLabels = [I18n.t("Общие"), I18n.t("Трансляция"), I18n.t("Аналитика"), "Web", I18n.t("О программе")]
         if (typeof langCombo !== "undefined" && langCombo.currentIndex !== languageIndex(language)) {
             langCombo.currentIndex = languageIndex(language)
         }
@@ -697,6 +720,7 @@ Window {
                 TabButton { text: I18n.t("Общие") }
                 TabButton { text: I18n.t("Трансляция") }
                 TabButton { text: I18n.t("Аналитика") }
+                TabButton { text: "Web" }
                 TabButton { text: I18n.t("О программе") }
         }
         
@@ -1089,6 +1113,10 @@ Window {
                     }
                 }
 
+                SettingsWebServerPage {
+                    settings: root
+                }
+
                 // -------------------------------------------------
                 // About Tab
                 // -------------------------------------------------
@@ -1112,7 +1140,7 @@ Window {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        visible: bar.currentIndex !== 3
+        visible: bar.currentIndex !== 4
 
         onSaveRequested: {
             applyCurrentSettings()

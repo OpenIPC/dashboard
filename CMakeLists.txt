@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.6.1 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.7 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -45,6 +45,19 @@ include(CTest)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick Core Network Concurrent Multimedia Sql Test)
 find_package(Qt6 QUIET OPTIONAL_COMPONENTS WebSockets)
+
+# The prebuilt Qt 6.4 MinGW package used by the Windows release is ABI-compatible
+# with GCC 12. MinGW 13 can still link the application, but the resulting binary
+# fails during startup with pseudo-relocation errors.
+if(WIN32 AND MINGW
+        AND Qt6_VERSION VERSION_LESS "6.5"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "13")
+    message(FATAL_ERROR
+        "Qt ${Qt6_VERSION} requires MinGW 12.x for this project; "
+        "MinGW ${CMAKE_CXX_COMPILER_VERSION} produces a non-runnable executable. "
+        "Use the same MinGW 12.2 toolchain as .github/workflows/release.yml.")
+endif()
+
 if(TARGET Qt6::WebSockets)
     message(STATUS "Qt WebSockets found: native OpenIPC live logs and /ws/upgrade are enabled")
 else()
@@ -108,22 +121,41 @@ if(WIN32)
         )
         include_directories(${GST_INCLUDE_DIRS})
         link_directories("${GST_ROOT}/lib")
-        set(GST_LIBRARIES gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0 gstbase-1.0 gstpbutils-1.0)
+        set(GST_LIBRARIES
+            gstreamer-1.0 gobject-2.0 glib-2.0 gstapp-1.0 gstvideo-1.0
+            gstbase-1.0 gstpbutils-1.0 gstsdp-1.0 gstwebrtc-1.0
+        )
         set(GST_RUNTIME_DLLS
             "${GST_ROOT}/bin/libffi-7.dll"
             "${GST_ROOT}/bin/libglib-2.0-0.dll"
             "${GST_ROOT}/bin/libgmodule-2.0-0.dll"
             "${GST_ROOT}/bin/libgobject-2.0-0.dll"
+            "${GST_ROOT}/bin/libgio-2.0-0.dll"
             "${GST_ROOT}/bin/libgstapp-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstaudio-1.0-0.dll"
             "${GST_ROOT}/bin/libgstbase-1.0-0.dll"
             "${GST_ROOT}/bin/libgstreamer-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstpbutils-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstrtp-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstsdp-1.0-0.dll"
+            "${GST_ROOT}/bin/libgsttag-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstvideo-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstwebrtc-1.0-0.dll"
+            "${GST_ROOT}/bin/libgstwebrtcnice-1.0-0.dll"
+            "${GST_ROOT}/bin/libnice-10.dll"
+            "${GST_ROOT}/bin/liborc-0.4-0.dll"
+            "${GST_ROOT}/bin/libsrtp2-1.dll"
             "${GST_ROOT}/bin/libintl-8.dll"
             "${GST_ROOT}/bin/libpcre2-8-0.dll"
+            "${GST_ROOT}/bin/libz-1.dll"
         )
     else()
         # Fallback to pkg-config if manual detection failed
         find_package(PkgConfig REQUIRED)
-        pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-app-1.0 gstreamer-video-1.0 gstreamer-pbutils-1.0)
+        pkg_check_modules(GST REQUIRED
+            gstreamer-1.0 gstreamer-base-1.0 gstreamer-app-1.0
+            gstreamer-video-1.0 gstreamer-pbutils-1.0
+            gstreamer-sdp-1.0 gstreamer-webrtc-1.0)
         include_directories(${GST_INCLUDE_DIRS})
         link_directories(${GST_LIBRARY_DIRS})
     endif()
@@ -132,7 +164,9 @@ endif()
 # Fallback for non-Windows (or if logic above was skipped unexpectedly)
 if(NOT WIN32 AND NOT GST_LIBRARIES)
     find_package(PkgConfig REQUIRED) 
-    pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 glib-2.0 gobject-2.0)
+    pkg_check_modules(GST REQUIRED
+        gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0
+        gstreamer-sdp-1.0 gstreamer-webrtc-1.0 glib-2.0 gobject-2.0)
     include_directories(${GST_INCLUDE_DIRS})
     link_directories(${GST_LIBRARY_DIRS})
     set(GST_LIBRARIES ${GST_LIBRARIES})
@@ -141,7 +175,9 @@ endif()
 if(NOT GST_LIBRARIES)
     # This block is only reached if logic above failed to set libs
     find_package(PkgConfig REQUIRED) 
-    pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0 glib-2.0 gobject-2.0)
+    pkg_check_modules(GST REQUIRED
+        gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0
+        gstreamer-sdp-1.0 gstreamer-webrtc-1.0 glib-2.0 gobject-2.0)
     include_directories(${GST_INCLUDE_DIRS})
     link_directories(${GST_LIBRARY_DIRS})
     set(GST_LIBRARIES ${GST_LIBRARIES})
@@ -297,6 +333,21 @@ set(SOURCES
     src/backend/UserManager.h
     src/backend/LogModel.cpp
     src/backend/LogModel.h
+    src/backend/presentation/DashboardPresentation.cpp
+    src/backend/presentation/DashboardPresentation.h
+    src/backend/web/DashboardHttpProtocol.cpp
+    src/backend/web/DashboardHttpProtocol.h
+    src/backend/web/DashboardWebSessionStore.cpp
+    src/backend/web/DashboardWebSessionStore.h
+    src/backend/web/DashboardWebPreviewManager.cpp
+    src/backend/web/DashboardWebPreviewManager.h
+    src/backend/web/DashboardWebRecordingManager.cpp
+    src/backend/web/DashboardWebRecordingManager.h
+    src/backend/web/DashboardWebRtcManager.cpp
+    src/backend/web/DashboardWebRtcManager.h
+    src/backend/web/DashboardWebServer.cpp
+    src/backend/web/DashboardWebApi.cpp
+    src/backend/web/DashboardWebServer.h
     src/backend/SshClient.cpp
     src/backend/SshClient.h
     src/backend/PtzController.cpp
@@ -321,6 +372,7 @@ set(QML_FILES
     src/ui/SettingsSaveNotification.qml
     src/ui/SettingsSpinBox.qml
     src/ui/SettingsStreamingPage.qml
+    src/ui/SettingsWebServerPage.qml
     src/ui/SettingsUpdatePanel.qml
     src/ui/AppUpdateDialog.qml
     src/ui/AppUpdateContent.qml
@@ -460,6 +512,8 @@ target_include_directories(appOpenIPC-Dashboard PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
     ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/analytics
     ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/gst
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/presentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/web
     ${GST_INCLUDE_DIRS}
     ${qtkeychain_SOURCE_DIR}
     ${qtkeychain_BINARY_DIR}
@@ -468,6 +522,15 @@ target_include_directories(appOpenIPC-Dashboard PRIVATE
 )
 
 openipc_enable_project_warnings(appOpenIPC-Dashboard)
+
+qt_add_resources(appOpenIPC-Dashboard web_assets
+    PREFIX "/"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    FILES
+        src/web/index.html
+        src/web/app.js
+        src/web/styles.css
+)
 
 # On Windows we want a GUI app (WinMain entry), on Linux standard main is fine
 if(WIN32)
@@ -609,6 +672,17 @@ if(WIN32)
     get_filename_component(QT_BIN_DIR "${QT_CORE_LIB}" DIRECTORY)
     set(WINDEPLOYQT_EXECUTABLE "${QT_BIN_DIR}/windeployqt.exe")
 
+    # windeployqt only selects qwindows.dll for a GUI application. The P6
+    # --server-only mode explicitly uses Qt's offscreen platform and must also
+    # work from a clean deployment without a system Qt installation.
+    get_filename_component(QT_ROOT_DIR "${QT_BIN_DIR}" DIRECTORY)
+    set(QT_OFFSCREEN_PLUGIN "${QT_ROOT_DIR}/plugins/platforms/qoffscreen.dll")
+    if(NOT EXISTS "${QT_OFFSCREEN_PLUGIN}")
+        message(FATAL_ERROR
+            "Qt offscreen platform plugin not found at ${QT_OFFSCREEN_PLUGIN}; "
+            "Windows server-only deployment would not start.")
+    endif()
+
     add_custom_command(TARGET appOpenIPC-Dashboard POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt..."
         COMMAND ${WINDEPLOYQT_EXECUTABLE} 
@@ -617,6 +691,11 @@ if(WIN32)
             --compiler-runtime
             --force
             "$<TARGET_FILE:appOpenIPC-Dashboard>"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/platforms"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${QT_OFFSCREEN_PLUGIN}"
+            "$<TARGET_FILE_DIR:appOpenIPC-Dashboard>/platforms/qoffscreen.dll"
         COMMENT "Deploying Qt dependencies using windeployqt"
     )
 endif()
@@ -651,6 +730,45 @@ if(WIN32)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(dashboard_presentation_tests
+        tests/DashboardPresentationTests.cpp
+        src/backend/presentation/DashboardPresentation.cpp
+        src/backend/presentation/DashboardPresentation.h
+        src/backend/CameraModel.cpp
+        src/backend/CameraModel.h
+    )
+    target_include_directories(dashboard_presentation_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/presentation
+    )
+    openipc_enable_project_warnings(dashboard_presentation_tests)
+    target_link_libraries(dashboard_presentation_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME dashboard_presentation_tests COMMAND dashboard_presentation_tests)
+
+    add_executable(dashboard_http_protocol_tests
+        tests/DashboardHttpProtocolTests.cpp
+        src/backend/web/DashboardHttpProtocol.cpp
+        src/backend/web/DashboardHttpProtocol.h
+    )
+    target_include_directories(dashboard_http_protocol_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/web
+    )
+    openipc_enable_project_warnings(dashboard_http_protocol_tests)
+    target_link_libraries(dashboard_http_protocol_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME dashboard_http_protocol_tests COMMAND dashboard_http_protocol_tests)
+
+    add_executable(dashboard_web_session_store_tests
+        tests/DashboardWebSessionStoreTests.cpp
+        src/backend/web/DashboardWebSessionStore.cpp
+        src/backend/web/DashboardWebSessionStore.h
+    )
+    target_include_directories(dashboard_web_session_store_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/web
+    )
+    openipc_enable_project_warnings(dashboard_web_session_store_tests)
+    target_link_libraries(dashboard_web_session_store_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME dashboard_web_session_store_tests COMMAND dashboard_web_session_store_tests)
+
     add_executable(user_manager_tests
         tests/UserManagerTests.cpp
         src/backend/UserManager.cpp
@@ -1112,6 +1230,7 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/analytics/AnalyticsZoneEditor.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/analytics/RulesPanel.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsEvidenceUploadPanel.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsWebServerPage.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30
@@ -1119,7 +1238,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1132,10 +1251,11 @@ if(BUILD_TESTING)
     set_tests_properties(qml_smoke qml_smoke_scaled PROPERTIES
         TIMEOUT 45
         LABELS "smoke"
+        RUN_SERIAL TRUE
     )
 
     if(WIN32)
-        set_tests_properties(user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
         set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES

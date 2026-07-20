@@ -51,6 +51,9 @@ public:
     QString rememberedPassword() const { return m_rememberedPassword; }
 
     Q_INVOKABLE bool login(const QString &username, const QString &password, bool rememberMe = false);
+    // Authenticates a web/API session without changing the interactive desktop user.
+    bool authenticateForSession(const QString &username, const QString &password,
+                                QVariantMap *userInfo = nullptr);
     Q_INVOKABLE bool loginWithRememberedCredentials();
     Q_INVOKABLE void logout();
     Q_INVOKABLE bool setupInitialAdmin(const QString &username, const QString &password, bool rememberMe = false);
@@ -77,6 +80,7 @@ signals:
     void permissionsVersionChanged();
     void rememberedUsernameChanged();
     void rememberedPasswordChanged();
+    void userSecurityChanged(const QString &username);
 
 private:
     struct User {

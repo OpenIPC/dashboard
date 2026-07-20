@@ -272,6 +272,10 @@ jobs:
             "libgstrtp-1.0-0.dll",
             "libgstrtsp-1.0-0.dll",
             "libgstsdp-1.0-0.dll",
+            "libgstwebrtc-1.0-0.dll",
+            "libgstwebrtcnice-1.0-0.dll",
+            "libnice-10.dll",
+            "libsrtp2-1.dll",
             "libgstcodecparsers-1.0-0.dll",
             "libgstcodecs-1.0-0.dll",
             "libgstallocators-1.0-0.dll",
@@ -342,6 +346,7 @@ jobs:
                   "libgstvideoscale.dll",
                   "libgstvideofilters.dll",
                   "libgstvideofilter.dll",
+                  "libgstvideorate.dll",
                   "libgstvideoparsersbad.dll",
                   "libgstdeinterlace.dll",
                   "libgstrtp.dll",
@@ -354,6 +359,10 @@ jobs:
                   "libgstmpegtsdemux.dll",
                   "libgstde265.dll",
                   "libgstopenh264.dll",
+                  "libgstwebrtc.dll",
+                  "libgstnice.dll",
+                  "libgstdtls.dll",
+                  "libgstsrtp.dll",
                   "libgstlibav.dll",
                   "libgstwasapi.dll",
                   "libgstdirectsound.dll"
@@ -603,7 +612,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libgl1-mesa-dev pkg-config libfuse2 imagemagick patchelf libwayland-dev libunwind-dev squashfs-tools desktop-file-utils \
-          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
           gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
           gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl
 
@@ -720,6 +729,10 @@ jobs:
             libgstde265.so
             libgstlibav.so
             libgstopenh264.so
+            libgstwebrtc.so
+            libgstnice.so
+            libgstdtls.so
+            libgstsrtp.so
             libgstalsa.so
             libgstpulseaudio.so
           )
@@ -744,6 +757,7 @@ jobs:
             cp /usr/lib/x86_64-linux-gnu/libgstpbutils-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/libgstrtp-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/libgstrtsp-1.0.so.* AppDir/usr/lib/
+            cp /usr/lib/x86_64-linux-gnu/libgstsdp-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/libgsttag-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/libgstnet-1.0.so.* AppDir/usr/lib/
             cp /usr/lib/x86_64-linux-gnu/liborc-0.4.so.* AppDir/usr/lib/
@@ -755,7 +769,10 @@ jobs:
                 /usr/lib/x86_64-linux-gnu/libgstbadaudio-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstadaptivedemux-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstwebrtc-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libgstwebrtcnice-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstsctp-1.0.so.* \
+                /usr/lib/x86_64-linux-gnu/libnice.so.* \
+                /usr/lib/x86_64-linux-gnu/libsrtp2.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstwayland-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstisoff-1.0.so.* \
                 /usr/lib/x86_64-linux-gnu/libgstmpegts-1.0.so.* \

@@ -2,7 +2,7 @@
 
 Desktop VMS and analytics client for OpenIPC and ONVIF cameras, built with C++17, Qt 6, QML, GStreamer and ONNX Runtime.
 
-The project is designed around resilient RTSP playback, secure credential handling, transactional state storage and observable/testable camera operations. See [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md) and [third-party AI models](docs/THIRD_PARTY_MODELS.md).
+The project is designed around resilient RTSP playback, secure credential handling, transactional state storage and observable/testable camera operations. See [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), [Web server](docs/WEB_SERVER.md) and [third-party AI models](docs/THIRD_PARTY_MODELS.md).
 
 ## Prerequisites
 
@@ -61,6 +61,7 @@ Pull requests are built and tested on Linux and Windows. CI runs C++ unit tests 
 *   **Multi-layer Camera Discovery**: OpenIPC mDNS, ONVIF WS-Discovery, Majestic and legacy WebUI fingerprints, bounded RTSP/HTTP subnet probing and Dahua SDK results are merged by IP with confidence and evidence.
 *   **Video Tools**: Horizontal video mirroring for HUD or teleprompter applications.
 *   **Modern Interface**: Clean and responsive dashboard built on Qt 6 and QML.
+*   **Web Companion**: Embedded localhost/LAN server with session authentication, role-based REST API, live state updates and protected archive playback.
 *   **Customizable**: Settings specifically exposed for tuning player performance.
 
 ### Majestic camera control

@@ -67,6 +67,8 @@ QtObject {
         "Откройте Control Center": "Open Control Center",
         "Глубокий поиск OpenIPC": "Deep OpenIPC scan",
         "Быстрый режим проверяет локальный /24, глубокий расширяет поиск до /20. В обоих режимах проверяются Majestic HTTP и RTSP.": "Quick mode checks the local /24; deep mode expands up to /20. Both modes probe Majestic HTTP and RTSP.",
+        "Обновить сетевые интерфейсы": "Refresh network interfaces",
+        "Изменить размер области результатов": "Resize results area",
         "Поиск: %1 · найдено %2": "Scanning: %1 · found %2",
         "Поиск завершён · найдено %1": "Scan complete · found %1",
         "Умный бюджет превью": "Smart preview budget",

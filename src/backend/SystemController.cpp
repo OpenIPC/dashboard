@@ -7,6 +7,7 @@
 #include "gst/StreamHealthPolicy.h"
 #include "gst/StreamQualityPolicy.h"
 #include "gst/StreamSessionPolicy.h"
+#include "web/DashboardWebServer.h"
 #include <QUuid>
 #include <QNetworkInterface>
 #include <QStandardPaths>
@@ -227,7 +228,9 @@ SystemController::SystemController(QObject *parent)
     , m_networkDiscovery(new NetworkDiscoveryService(this))
     , m_appUpdateChecker(new AppUpdateChecker(this))
     , m_cameraHealthController(new CameraHealthController(m_cameraModel, m_gridModel, this))
+    , m_presentation(new DashboardPresentation(this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
+    , m_webServer(new DashboardWebServer(this, this))
     , m_networkManager(new QNetworkAccessManager(this))
 {
     m_saveTimer->setSingleShot(true);
@@ -360,6 +363,14 @@ SystemController::SystemController(QObject *parent)
     m_appSettings["playerBufferMode"] = 1; // Balanced
     m_appSettings["playerRtspTransport"] = "tcp";
     m_appSettings["recordingSegmentDuration"] = 15;
+    // Web access is deliberately localhost-only and disabled until explicitly enabled.
+    m_appSettings["webServerEnabled"] = false;
+    m_appSettings["webServerAllowRemote"] = false;
+    m_appSettings["webServerBindAddress"] = "127.0.0.1";
+    m_appSettings["webServerPort"] = 8080;
+    m_appSettings["webSocketPort"] = 8081;
+    m_appSettings["webSessionTimeoutMinutes"] = 60;
+    m_appSettings["webSecureCookies"] = false;
 
     m_gridRows = 2;
     m_gridCols = 2; 
@@ -371,6 +382,7 @@ SystemController::SystemController(QObject *parent)
     if (qEnvironmentVariable("OPENIPC_SMOKE_QML") == QStringLiteral("1")) {
         qInfo() << "QML smoke mode: camera status monitoring disabled";
     } else {
+        m_webServer->applySettings(m_appSettings);
         m_statusChecker->start();
     }
 
@@ -1260,6 +1272,7 @@ void SystemController::addManualCamera(const QString &name, const QString &ip, c
                 job->start();
             }
             
+            markDiscoveryAddedFlags();
             saveState();
     }
 }
@@ -1297,7 +1310,14 @@ void SystemController::updateCamera(int index, const QString &name, const QStrin
     cam.password = password;
     
     m_cameraModel->setCamera(index, cam);
-    
+
+    if (!oldIp.isEmpty() && oldIp != cam.ip) {
+        auto oldJob = new QKeychain::DeletePasswordJob("OpenIPC");
+        oldJob->setAutoDelete(true);
+        oldJob->setKey(oldIp);
+        oldJob->start();
+    }
+
     if (!cam.ip.isEmpty()) {
         if (cam.password.isEmpty()) {
             auto job = new QKeychain::DeletePasswordJob("OpenIPC");
@@ -1341,6 +1361,7 @@ void SystemController::updateCamera(int index, const QString &name, const QStrin
         qWarning() << "SystemController: Camera updated but not found in Grid to update live view. ID:" << cam.id << "IP:" << oldIp;
     }
 
+    markDiscoveryAddedFlags();
     saveState();
 }
 
@@ -1567,6 +1588,7 @@ void SystemController::removeDevice(int index)
         }
     }
     m_cameraModel->removeCamera(index);
+    markDiscoveryAddedFlags();
     saveState();
 }
 

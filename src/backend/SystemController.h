@@ -26,6 +26,8 @@
 #include "OpenIpcFirmwareClient.h"
 #include "AppUpdateChecker.h"
 #include "CameraHealthController.h"
+#include "presentation/DashboardPresentation.h"
+#include "web/DashboardWebServer.h"
 
 class StatusChecker;
 
@@ -49,6 +51,8 @@ class SystemController : public QObject
     Q_PROPERTY(NetworkDiscoveryService* networkDiscovery READ networkDiscovery CONSTANT)
     Q_PROPERTY(AppUpdateChecker* appUpdateChecker READ appUpdateChecker CONSTANT)
     Q_PROPERTY(CameraHealthController* cameraHealthController READ cameraHealthController CONSTANT)
+    Q_PROPERTY(DashboardPresentation* presentation READ presentation CONSTANT)
+    Q_PROPERTY(DashboardWebServer* webServer READ webServer CONSTANT)
     Q_PROPERTY(QString discoveryLastUpdated READ discoveryLastUpdated NOTIFY discoverySessionChanged)
     Q_PROPERTY(QVariantMap appSettings READ getAppSettings WRITE saveAppSettings NOTIFY appSettingsChanged)
     Q_PROPERTY(int gridRows READ gridRows WRITE setGridRows NOTIFY gridLayoutChanged)
@@ -87,6 +91,8 @@ public:
     NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
     AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
     CameraHealthController* cameraHealthController() const { return m_cameraHealthController; }
+    DashboardPresentation* presentation() const { return m_presentation; }
+    DashboardWebServer* webServer() const { return m_webServer; }
     QString discoveryLastUpdated() const { return m_discoveryLastUpdated; }
     Q_INVOKABLE QVariantMap parseCameraQrPayload(const QString &payload) const;
     Q_INVOKABLE QString xmSofiaPasswordHash(const QString &password) const;
@@ -304,7 +310,9 @@ private:
     NetworkDiscoveryService *m_networkDiscovery;
     AppUpdateChecker *m_appUpdateChecker;
     CameraHealthController *m_cameraHealthController;
+    DashboardPresentation *m_presentation;
     StatusChecker *m_statusChecker;
+    DashboardWebServer *m_webServer;
     QHash<QString, qint64> m_streamOfflineUntilMs;
     QHash<QString, QString> m_cameraStatusDetails;
     QString m_discoveryLastUpdated;

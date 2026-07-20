@@ -137,17 +137,17 @@ Dialog {
     
     header: Rectangle {
         color: "transparent"
-        height: 60 // Increased height to prevent overlap
+        height: 52
         
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: 20
+            anchors.leftMargin: 16
             anchors.top: parent.top
-            anchors.topMargin: 20
+            anchors.topMargin: 15
             text: I18n.t("Найденные камеры")
             color: Theme.textPrimary
             font.family: Theme.metroFontFamily
-            font.pixelSize: 18
+            font.pixelSize: 17
             font.bold: true
         }
         
@@ -156,9 +156,9 @@ Dialog {
             width: 34
             height: 34
             anchors.right: parent.right
-            anchors.rightMargin: 20
+            anchors.rightMargin: 12
             anchors.top: parent.top
-            anchors.topMargin: 16
+            anchors.topMargin: 9
             onClicked: root.close()
         }
     }
@@ -169,6 +169,12 @@ Dialog {
     property int validationCompleted: 0
     property int validationTotal: 0
     property int validationRevision: 0
+    property real controlsHeight: 164
+    property real resizeStartY: 0
+    property real resizeStartHeight: 0
+    readonly property real minimumControlsHeight: 78
+    readonly property real maximumControlsHeight: Math.max(minimumControlsHeight,
+                                                           Math.min(230, root.height - 360))
     readonly property string selectedProfile: profileCombo.currentValue || "openipc"
 
     Connections {
@@ -263,230 +269,302 @@ Dialog {
     }
 
     contentItem: ColumnLayout {
+        id: mainLayout
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.top: parent.top
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        anchors.bottomMargin: 20
-        anchors.topMargin: 80 // Header height (60) + spacing (20)
-        spacing: 15
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
+        anchors.bottomMargin: 16
+        anchors.topMargin: 60
+        spacing: 8
         
-        // Interface Selection Section
-        ColumnLayout {
+        // Compact discovery parameters. The pane is intentionally clipped when
+        // the user drags the results handle upward; dragging it back restores
+        // access to every field without changing any entered values.
+        Item {
+            id: controlsPane
             Layout.fillWidth: true
-            spacing: 5
-            
-            RowLayout {
-                Layout.fillWidth: true
-                Text { 
-                    text: I18n.t("Сетевой интерфейс")
-                    color: Theme.textPrimary
-                    font.family: Theme.metroFontFamily
-                    font.bold: true
-                    font.pixelSize: 14
-                }
-                
-                Item { Layout.fillWidth: true }
-                
-                Text {
-                    text: I18n.t("ОБНОВИТЬ ИНТЕРФЕЙСЫ")
-                    color: Theme.metroBlue
-                    font.pixelSize: 12
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.refreshInterfaces()
-                    }
-                }
-                
-                Rectangle {
-                    width: 40
-                    height: 24
-                    color: "transparent"
-                    border.color: Theme.metroStroke
-                    radius: Theme.metroTileRadius
+            Layout.preferredHeight: root.controlsHeight
+            Layout.minimumHeight: root.minimumControlsHeight
+            clip: true
+
+            ColumnLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                spacing: 5
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
                     Text {
-                        anchors.centerIn: parent
-                        text: I18n.t("ВСЕ")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                    }
-                }
-            }
-            
-            Text {
-                text: I18n.t("Выберите адаптер, который нужно сканировать.")
-                color: Theme.textMuted
-                font.pixelSize: 12
-            }
-            
-            StyledComboBox {
-                id: interfaceCombo
-                Layout.fillWidth: true
-                Layout.preferredHeight: 40
-                textRole: "text"
-                valueRole: "value"
-                model: ListModel { id: interfaceModel }
-            }
-
-            GridLayout {
-                Layout.fillWidth: true
-                columns: width > 640 ? 3 : 1
-                rowSpacing: 8
-                columnSpacing: 10
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Text { text: I18n.t("Профиль добавления"); color: Theme.textMuted; font.pixelSize: 11 }
-                    StyledComboBox {
-                        id: profileCombo
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 38
-                        textRole: "text"
-                        valueRole: "value"
-                        model: profileModel
-                        currentIndex: 0
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Text { text: I18n.t("Логин для проверки"); color: Theme.textMuted; font.pixelSize: 11 }
-                    TextField {
-                        id: validationLoginField
-                        Layout.fillWidth: true
-                        implicitHeight: 38
-                        text: "root"
+                        text: I18n.t("Сетевой интерфейс")
                         color: Theme.textPrimary
-                        selectionColor: Theme.metroBlue
-                        selectedTextColor: Theme.textPrimary
+                        font.family: Theme.metroFontFamily
+                        font.bold: true
+                        font.pixelSize: 13
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Button {
+                        id: refreshInterfacesButton
+                        Layout.preferredWidth: 30
+                        Layout.preferredHeight: 26
+                        padding: 0
+                        text: "↻"
+                        hoverEnabled: true
+                        ToolTip.visible: hovered
+                        ToolTip.text: I18n.t("Обновить сетевые интерфейсы")
+                        onClicked: root.refreshInterfaces()
                         background: Rectangle {
-                            color: Theme.metroSurfaceAlt
+                            color: refreshInterfacesButton.hovered ? Theme.metroTileHover : Theme.metroTile
                             radius: Theme.metroTileRadius
-                            border.color: validationLoginField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                            border.color: refreshInterfacesButton.hovered ? Theme.metroBlue : Theme.metroStroke
+                        }
+                        contentItem: Text {
+                            text: refreshInterfacesButton.text
+                            color: Theme.textSecondary
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 16
                         }
                     }
                 }
 
-                ColumnLayout {
+                StyledComboBox {
+                    id: interfaceCombo
                     Layout.fillWidth: true
-                    spacing: 4
-                    Text { text: I18n.t("Пароль для проверки"); color: Theme.textMuted; font.pixelSize: 11 }
-                    TextField {
-                        id: validationPasswordField
+                    Layout.preferredHeight: 32
+                    textRole: "text"
+                    valueRole: "value"
+                    model: ListModel { id: interfaceModel }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: width > 640 ? 3 : 1
+                    rowSpacing: 4
+                    columnSpacing: 10
+
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        implicitHeight: 38
-                        echoMode: TextInput.Password
-                        color: Theme.textPrimary
-                        selectionColor: Theme.metroBlue
-                        selectedTextColor: Theme.textPrimary
+                        spacing: 2
+                        Text { text: I18n.t("Профиль добавления"); color: Theme.textMuted; font.pixelSize: 10 }
+                        StyledComboBox {
+                            id: profileCombo
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 32
+                            textRole: "text"
+                            valueRole: "value"
+                            model: profileModel
+                            currentIndex: 0
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: I18n.t("Логин для проверки"); color: Theme.textMuted; font.pixelSize: 10 }
+                        TextField {
+                            id: validationLoginField
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 32
+                            text: "root"
+                            color: Theme.textPrimary
+                            font.pixelSize: 12
+                            selectionColor: Theme.metroBlue
+                            selectedTextColor: Theme.textPrimary
+                            background: Rectangle {
+                                color: Theme.metroSurfaceAlt
+                                radius: Theme.metroTileRadius
+                                border.color: validationLoginField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: I18n.t("Пароль для проверки"); color: Theme.textMuted; font.pixelSize: 10 }
+                        TextField {
+                            id: validationPasswordField
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 32
+                            echoMode: TextInput.Password
+                            color: Theme.textPrimary
+                            font.pixelSize: 12
+                            selectionColor: Theme.metroBlue
+                            selectedTextColor: Theme.textPrimary
+                            background: Rectangle {
+                                color: Theme.metroSurfaceAlt
+                                radius: Theme.metroTileRadius
+                                border.color: validationPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    MajesticCheckBox {
+                        id: deepScanCheck
+                        text: I18n.t("Глубокий поиск OpenIPC")
+                        ToolTip.visible: hovered
+                        ToolTip.text: I18n.t("Быстрый режим проверяет локальный /24, глубокий расширяет поиск до /20. В обоих режимах проверяются Majestic HTTP и RTSP.")
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignRight
+                        text: validationTotal > 0
+                              ? I18n.t("Проверка выбранных: %1/%2", [validationCompleted, validationTotal])
+                              : (SystemController.networkDiscovery.running
+                                 ? I18n.t("Поиск: %1 · найдено %2", [I18n.t(SystemController.networkDiscovery.phase),
+                                                                    SystemController.networkDiscovery.foundCount])
+                                 : (SystemController.networkDiscovery.progress === 100
+                                    ? I18n.t("Поиск завершён · найдено %1", [SystemController.networkDiscovery.foundCount])
+                                    : SystemController.discoverySessionSummary()))
+                        color: validationTotal > 0 || SystemController.networkDiscovery.running
+                               ? Theme.metroBlue : Theme.textMuted
+                        font.pixelSize: 10
+                        elide: Text.ElideLeft
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: SystemController.networkDiscovery.running
+                    spacing: 8
+
+                    ProgressBar {
+                        id: discoveryProgress
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 8
+                        from: 0
+                        to: 100
+                        value: SystemController.networkDiscovery.progress
+                        Behavior on value { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                         background: Rectangle {
+                            implicitHeight: 8
+                            radius: 4
                             color: Theme.metroSurfaceAlt
-                            radius: Theme.metroTileRadius
-                            border.color: validationPasswordField.activeFocus ? Theme.metroBlue : Theme.metroStroke
+                            border.color: Theme.metroStroke
+                        }
+                        contentItem: Item {
+                            Rectangle {
+                                width: discoveryProgress.visualPosition * parent.width
+                                height: parent.height
+                                radius: 4
+                                color: Theme.metroBlue
+                            }
                         }
                     }
-                }
-            }
 
-            RowLayout {
-                Layout.fillWidth: true
-                MajesticCheckBox {
-                    id: deepScanCheck
-                    text: I18n.t("Глубокий поиск OpenIPC")
-                    ToolTip.visible: hovered
-                    ToolTip.text: I18n.t("Быстрый режим проверяет локальный /24, глубокий расширяет поиск до /20. В обоих режимах проверяются Majestic HTTP и RTSP.")
-                }
-                Text {
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignRight
-                    text: SystemController.networkDiscovery.running
-                          ? I18n.t("Поиск: %1 · найдено %2", [I18n.t(SystemController.networkDiscovery.phase),
-                                                             SystemController.networkDiscovery.foundCount])
-                          : (SystemController.networkDiscovery.progress === 100
-                             ? I18n.t("Поиск завершён · найдено %1", [SystemController.networkDiscovery.foundCount]) : "")
-                    color: SystemController.networkDiscovery.running ? Theme.metroBlue : Theme.textMuted
-                    font.pixelSize: 11
-                    elide: Text.ElideLeft
-                }
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: validationTotal > 0
-                      ? I18n.t("Проверка выбранных: %1/%2", [validationCompleted, validationTotal])
-                      : SystemController.discoverySessionSummary()
-                color: validationTotal > 0 ? Theme.metroBlue : Theme.textMuted
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                visible: SystemController.networkDiscovery.running
-                spacing: 10
-
-                ProgressBar {
-                    id: discoveryProgress
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 10
-                    from: 0
-                    to: 100
-                    value: SystemController.networkDiscovery.progress
-                    Behavior on value { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                    background: Rectangle {
-                        implicitHeight: 10
-                        radius: 5
-                        color: Theme.metroSurfaceAlt
-                        border.color: Theme.metroStroke
+                    Text {
+                        Layout.preferredWidth: 38
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(SystemController.networkDiscovery.progress) + "%"
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.bold: true
                     }
-                    contentItem: Item {
-                        Rectangle {
-                            width: discoveryProgress.visualPosition * parent.width
-                            height: parent.height
-                            radius: 5
-                            color: SystemController.networkDiscovery.running ? Theme.metroBlue : Theme.metroGreen
-                        }
-                    }
-                }
-
-                Text {
-                    Layout.preferredWidth: 44
-                    horizontalAlignment: Text.AlignRight
-                    text: Math.round(SystemController.networkDiscovery.progress) + "%"
-                    color: SystemController.networkDiscovery.running ? Theme.textSecondary : Theme.metroGreen
-                    font.pixelSize: 12
-                    font.bold: true
                 }
             }
         }
-        
-        // Results Header
-        RowLayout {
+
+        // Draggable results divider. It has no click action: resizing happens
+        // only while the user holds the double-arrow handle and moves it.
+        Item {
+            id: resultsResizeBar
             Layout.fillWidth: true
+            Layout.preferredHeight: 32
+
             Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: -3
                 text: I18n.t("Найдено устройств: ") + resultsList.count
                 color: Theme.textPrimary
                 font.family: Theme.metroFontFamily
                 font.bold: true
-                font.pixelSize: 14
+                font.pixelSize: 13
             }
-            Item { Layout.fillWidth: true }
+
             Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: -3
                 text: I18n.t("Найдено камер: ") + resultsList.count
                 color: Theme.textMuted
-                font.pixelSize: 12
+                font.pixelSize: 11
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 3
+                height: 1
+                color: Theme.metroStroke
+            }
+
+            Rectangle {
+                id: resizeHandle
+                z: 2
+                width: 54
+                height: 24
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                color: resizeMouse.pressed ? Theme.metroDeepBlue
+                                           : (resizeMouse.containsMouse ? Theme.metroTileHover : Theme.metroSidebarBackground)
+                radius: Theme.metroTileRadius
+                border.color: resizeMouse.containsMouse || resizeMouse.pressed ? Theme.metroBlue : Theme.metroStroke
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "↕"
+                    color: resizeMouse.containsMouse || resizeMouse.pressed ? Theme.textPrimary : Theme.textSecondary
+                    font.family: Theme.metroFontFamily
+                    font.pixelSize: 17
+                }
+
+                ToolTip.visible: resizeMouse.containsMouse
+                ToolTip.text: I18n.t("Изменить размер области результатов")
+
+                MouseArea {
+                    id: resizeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeVerCursor
+
+                    onPressed: function(mouse) {
+                        var point = resizeMouse.mapToItem(mainLayout, mouse.x, mouse.y)
+                        root.resizeStartY = point.y
+                        root.resizeStartHeight = root.controlsHeight
+                    }
+
+                    onPositionChanged: function(mouse) {
+                        if (!pressed)
+                            return
+                        var point = resizeMouse.mapToItem(mainLayout, mouse.x, mouse.y)
+                        var requestedHeight = root.resizeStartHeight + point.y - root.resizeStartY
+                        root.controlsHeight = Math.max(root.minimumControlsHeight,
+                                                       Math.min(root.maximumControlsHeight, requestedHeight))
+                    }
+                }
             }
         }
         
         // Table Header
         Rectangle {
             Layout.fillWidth: true
-            height: 30
+            Layout.preferredHeight: 24
             color: "transparent"
             
             RowLayout {
@@ -499,10 +577,10 @@ Dialog {
                     Layout.preferredWidth: 22
                 }
                 
-                Text { Layout.preferredWidth: 200; text: I18n.t("Устройство"); color: Theme.textMuted; font.pixelSize: 12 }
-                Text { Layout.preferredWidth: 100; text: I18n.t("Сеть"); color: Theme.textMuted; font.pixelSize: 12 }
-                Text { Layout.preferredWidth: 195; text: I18n.t("Порты"); color: Theme.textMuted; font.pixelSize: 12 }
-                Text { Layout.fillWidth: true; text: I18n.t("Протокол"); color: Theme.textMuted; font.pixelSize: 12 }
+                Text { Layout.preferredWidth: 200; text: I18n.t("Устройство"); color: Theme.textMuted; font.pixelSize: 11 }
+                Text { Layout.preferredWidth: 100; text: I18n.t("Сеть"); color: Theme.textMuted; font.pixelSize: 11 }
+                Text { Layout.preferredWidth: 195; text: I18n.t("Порты"); color: Theme.textMuted; font.pixelSize: 11 }
+                Text { Layout.fillWidth: true; text: I18n.t("Протокол"); color: Theme.textMuted; font.pixelSize: 11 }
             }
         }
         
@@ -513,11 +591,11 @@ Dialog {
             Layout.fillHeight: true
             clip: true
             model: SystemController.discoveryModel
-            spacing: 5
+            spacing: 4
             
             delegate: Rectangle {
                 width: resultsList.width
-                height: 78
+                height: 70
                 color: model.alreadyAdded ? Theme.successSurface
                                            : (model.validationStatus === "fail" ? Theme.dangerSurface
                                               : (model.validationStatus === "ok" ? Theme.successSurface : Theme.metroTile))
@@ -542,8 +620,8 @@ Dialog {
                 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 10
+                    anchors.margins: 8
+                    spacing: 8
                     
                     MetroCheckBox {
                         id: selectionCheck
@@ -728,12 +806,13 @@ Dialog {
         // Footer Actions
         RowLayout {
             Layout.fillWidth: true
+            spacing: 8
             
             Button {
                 text: SystemController.networkDiscovery.running
                       ? I18n.t("ОСТАНОВИТЬ") : I18n.t("СКАНИРОВАТЬ")
-                Layout.preferredWidth: 140
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 132
+                Layout.preferredHeight: 36
                 hoverEnabled: true
                 
                 background: Rectangle {
@@ -762,8 +841,8 @@ Dialog {
 
             Button {
                 text: I18n.t("ОЧИСТИТЬ")
-                Layout.preferredWidth: 110
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 102
+                Layout.preferredHeight: 36
                 enabled: !SystemController.networkDiscovery.running && resultsList.count > 0
                 hoverEnabled: true
 
@@ -792,8 +871,8 @@ Dialog {
                 text: validationTotal > 0
                       ? I18n.t("ПРОВЕРКА %1/%2", [validationCompleted, validationTotal])
                       : I18n.t("ПРОВЕРИТЬ ВЫБРАННЫЕ")
-                Layout.preferredWidth: 190
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 184
+                Layout.preferredHeight: 36
                 enabled: root.selectedCount > 0 && validationTotal === 0
                 hoverEnabled: true
 
@@ -826,8 +905,8 @@ Dialog {
                 text: root.selectedReadyToAdd()
                       ? I18n.t("ДОБАВИТЬ ВЫБРАННЫЕ (") + root.selectedCount + ")"
                       : I18n.t("ПРОВЕРИТЬ И ДОБАВИТЬ (") + root.selectedCount + ")"
-                Layout.preferredWidth: 200
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: 196
+                Layout.preferredHeight: 36
                 enabled: root.selectedCount > 0 && validationTotal === 0
                 hoverEnabled: true
                 

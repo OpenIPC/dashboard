@@ -141,6 +141,47 @@ bool UserManager::login(const QString &username, const QString &password, bool r
     return false;
 }
 
+bool UserManager::authenticateForSession(const QString &username, const QString &password,
+                                         QVariantMap *userInfo)
+{
+    const QString normalizedUsername = username.trimmed();
+    if (normalizedUsername.isEmpty() || password.isEmpty()) {
+        return false;
+    }
+
+    for (User &storedUser : m_users) {
+        bool needsUpgrade = false;
+        if (storedUser.username != normalizedUsername
+            || !verifyPassword(storedUser, password, &needsUpgrade)) {
+            continue;
+        }
+
+        bool changed = false;
+        if ((storedUser.username == QStringLiteral("admin")
+             || storedUser.role == QStringLiteral("admin"))
+            && (storedUser.permissions & Perm_All) != Perm_All) {
+            storedUser.permissions = Perm_All;
+            changed = true;
+        }
+        if (needsUpgrade) {
+            setPassword(storedUser, password);
+            changed = true;
+        }
+        if (changed) {
+            saveUsers();
+        }
+        if (userInfo) {
+            *userInfo = {
+                {QStringLiteral("username"), storedUser.username},
+                {QStringLiteral("role"), storedUser.role},
+                {QStringLiteral("permissions"), storedUser.permissions}
+            };
+        }
+        return true;
+    }
+    return false;
+}
+
 bool UserManager::loginWithRememberedCredentials()
 {
     if (m_rememberedUsername.isEmpty() || m_rememberedPassword.isEmpty()) {
@@ -198,6 +239,7 @@ bool UserManager::setupInitialAdmin(const QString &username, const QString &pass
     emit isLoggedInChanged();
     m_permissionsVersion++;
     emit permissionsVersionChanged();
+    emit userSecurityChanged(normalizedUsername);
     return true;
 }
 
@@ -234,6 +276,7 @@ bool UserManager::addUser(const QString &username, const QString &password, cons
     emit usersChanged();
     m_permissionsVersion++;
     emit permissionsVersionChanged();
+    emit userSecurityChanged(normalizedUsername);
     return true;
 }
 
@@ -273,6 +316,7 @@ void UserManager::updateUserPermissions(const QString &username, int permissions
         emit usersChanged();
         m_permissionsVersion++;
         emit permissionsVersionChanged();
+        emit userSecurityChanged(username);
         return;
     }
 }
@@ -304,6 +348,7 @@ bool UserManager::deleteUser(const QString &username)
         emit usersChanged();
         m_permissionsVersion++;
         emit permissionsVersionChanged();
+        emit userSecurityChanged(username);
         return true;
     }
 
@@ -330,6 +375,7 @@ bool UserManager::changePassword(const QString &username, const QString &oldPass
         if (m_rememberedUsername == username) {
             setRememberedCredentials(username, newPassword);
         }
+        emit userSecurityChanged(username);
         return true;
     }
 

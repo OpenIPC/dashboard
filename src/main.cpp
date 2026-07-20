@@ -21,6 +21,7 @@
 #include "backend/SshClient.h"
 #include "backend/RemoteFsModel.h"
 #include "backend/CamexController.h"
+#include "backend/web/DashboardWebServer.h"
 #include <functional>
 #include <atomic>
 #include <cstdio>
@@ -120,6 +121,16 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 
 int main(int argc, char *argv[])
 {
+    bool serverOnlyRequested = false;
+    for (int index = 1; index < argc; ++index) {
+        if (QString::fromLocal8Bit(argv[index]) == QStringLiteral("--server-only")) {
+            serverOnlyRequested = true;
+            break;
+        }
+    }
+    if (serverOnlyRequested && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
 #ifdef Q_OS_WIN
     // Ensure Qt can find bundled plugins when running from installer
     const QString appDir = QDir::cleanPath(QFileInfo(QString::fromLocal8Bit(argv[0])).absolutePath());
@@ -250,6 +261,16 @@ int main(int argc, char *argv[])
         QMutexLocker locker(&shutdownState.logMutex);
         shutdownState.logCallback = nullptr;
     });
+
+    if (serverOnlyRequested) {
+        if (!systemController.webServer()->start()) {
+            qCritical().noquote() << "Failed to start server-only mode:"
+                                  << systemController.webServer()->lastError();
+            return 5;
+        }
+        qInfo().noquote() << "Server-only mode ready at" << systemController.webServer()->url();
+        return app.exec();
+    }
 
     QQmlApplicationEngine engine;
 #ifdef APP_VERSION

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>OpenIPC Dashboard</title>
+    <link rel="stylesheet" href="/styles.css?v=0261-p6-onboarding4">
+</head>
+<body>
+  <main id="login-view" class="login-shell">
+    <form id="login-form" class="login-panel" autocomplete="on">
+      <div class="brand-mark">O</div>
+      <div class="login-heading">
+        <h1>OpenIPC Dashboard</h1>
+        <p data-i18n="companion">Web companion</p>
+      </div>
+      <label>
+        <span data-i18n="username">Username</span>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>
+        <span data-i18n="password">Password</span>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="primary" type="submit" data-i18n="login">Sign in</button>
+      <button id="language-login" class="quiet" type="button">EN</button>
+    </form>
+  </main>
+
+  <div id="app-view" class="app-shell" hidden>
+    <header class="desktop-topbar">
+      <div class="layout-toolbar">
+        <button id="layout-label" class="toolbar-command active" type="button" data-i18n="layout">Layout</button>
+        <span class="toolbar-separator" aria-hidden="true"></span>
+        <button id="select-empty-cell" class="toolbar-icon" type="button" data-i18n-title="selectEmpty" title="Select empty cell" aria-label="Select empty cell">+</button>
+        <div class="layout-picker">
+          <button id="layout-menu-toggle" class="toolbar-icon grid-icon" type="button" aria-expanded="false" data-i18n-title="gridSize" title="Grid size" aria-label="Grid size">&#x25A6;</button>
+          <div id="layout-menu" class="layout-menu" hidden>
+            <button type="button" data-layout="1"><span class="layout-swatch one"></span><span data-i18n="layoutOne">1 camera</span></button>
+            <button type="button" data-layout="4"><span class="layout-swatch four"></span><span data-i18n="layoutFour">4 cameras</span></button>
+            <button type="button" data-layout="9"><span class="layout-swatch nine"></span><span data-i18n="layoutNine">9 cameras</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-identity">
+        <span class="brand-mark tiny">O</span>
+        <strong>OpenIPC Dashboard</strong>
+      </div>
+      <div class="topbar-session">
+        <span id="connection-state" class="connection-indicator" title="HTTP polling"></span>
+        <span id="current-user"></span>
+        <button id="language" class="toolbar-icon text-icon" type="button" data-i18n-title="language" title="Language">EN</button>
+      </div>
+    </header>
+
+    <main class="dashboard-workspace">
+      <section class="monitor-stage" aria-label="Camera layout">
+        <div id="monitor-grid" class="monitor-grid" data-layout="4"></div>
+      </section>
+
+      <aside id="dashboard-sidebar" class="dashboard-sidebar">
+        <div class="sidebar-header">
+          <h2 data-i18n="actions">Actions</h2>
+          <button id="sidebar-toggle" class="sidebar-menu-button" type="button" aria-expanded="true" data-i18n-title="collapseActions" title="Collapse actions">&#x2630;</button>
+        </div>
+
+        <div id="sidebar-tools" class="sidebar-tools">
+          <div class="action-grid">
+            <button class="action-button active" type="button" data-view="cameras"><span class="action-symbol">&#x25A6;</span><span data-i18n="cameras">Cameras</span></button>
+            <button class="action-button" type="button" data-view="health"><span class="action-symbol">&#x25C7;</span><span data-i18n="health">Health</span></button>
+            <button class="action-button" type="button" data-view="analytics"><span class="action-symbol">&#x2315;</span><span data-i18n="analytics">Analytics</span></button>
+            <button class="action-button" type="button" data-view="archive"><span class="action-symbol">&#x25A3;</span><span data-i18n="archive">Archive</span></button>
+            <button id="action-settings" class="action-button" type="button" data-view="settings" hidden><span class="action-symbol">&#9881;</span><span data-i18n="settings">Settings</span></button>
+            <button id="action-users" class="action-button" type="button" data-view="users" hidden><span class="action-symbol">&#9786;</span><span data-i18n="users">Users</span></button>
+            <button id="action-logs" class="action-button" type="button" data-view="logs" hidden><span class="action-symbol">&#9776;</span><span data-i18n="logs">Logs</span></button>
+            <button id="action-devices" class="action-button" type="button" data-view="devices" hidden><span class="action-symbol">&#9670;</span><span data-i18n="controlCenter">Control Center</span></button>
+            <button id="refresh-dashboard" class="action-button" type="button"><span class="action-symbol">&#x21BB;</span><span data-i18n="refresh">Refresh</span></button>
+            <button id="logout" class="action-button" type="button"><span class="action-symbol">&#x21AA;</span><span data-i18n="logout">Logout</span></button>
+          </div>
+
+          <div class="sidebar-stat">
+            <div><strong data-i18n="state">State</strong><span id="sidebar-user"></span></div>
+            <p><span id="sidebar-total">0</span> <span data-i18n="totalShort">total</span> &middot; <span id="sidebar-online">0</span> <span data-i18n="onlineShort">online</span> &middot; <span id="sidebar-offline">0</span> <span data-i18n="offlineShort">offline</span></p>
+          </div>
+          <div class="sidebar-stat compact">
+            <div><strong>Live-preview</strong><span id="preview-state">0/4</span></div>
+            <p id="preview-detail" data-i18n="previewReady">Ready</p>
+          </div>
+          <label class="sidebar-search">
+            <span class="search-symbol" aria-hidden="true">&#x2315;</span>
+            <input id="camera-search" type="search" data-i18n-placeholder="searchDevices" placeholder="Search devices">
+          </label>
+        </div>
+
+        <section class="device-panel">
+          <div class="device-heading"><h2 data-i18n="devices">Devices</h2><span id="device-total">0</span></div>
+          <div id="device-commands" class="device-commands" hidden>
+            <button id="discover-cameras" class="secondary" type="button"><span aria-hidden="true">&#x2315;</span><span data-i18n="discoverCameras">Discover</span></button>
+            <button id="add-camera" class="primary" type="button"><span aria-hidden="true">+</span><span data-i18n="addCamera">Add camera</span></button>
+          </div>
+          <div class="device-group-heading"><strong data-i18n="ungrouped">Ungrouped</strong><span id="device-group-count">0</span></div>
+          <div id="device-list" class="device-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <div><span class="statusbar-dot"></span><span id="server-status" data-i18n="serverReady">Web server ready</span></div>
+      <div><span data-i18n="updated">Updated</span> <strong id="updated-at">-</strong><span id="status-clock">--:--:--</span></div>
+    </footer>
+
+    <div id="dialog-backdrop" class="dialog-backdrop" hidden>
+      <section class="workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <header class="dialog-header">
+          <div class="dialog-title-wrap"><span id="dialog-symbol" class="dialog-symbol">O</span><div><h2 id="dialog-title"></h2><p id="dialog-subtitle"></p></div></div>
+          <button id="dialog-close" class="dialog-close" type="button" data-i18n-title="close" title="Close" aria-label="Close">&#x00D7;</button>
+        </header>
+        <nav class="dialog-tabs" aria-label="Dashboard sections">
+          <button type="button" data-view="health" data-i18n="health">Health</button>
+          <button type="button" data-view="analytics" data-i18n="analytics">Analytics</button>
+          <button type="button" data-view="archive" data-i18n="archive">Archive</button>
+          <button id="tab-settings" type="button" data-view="settings" data-i18n="settings" hidden>Settings</button>
+          <button id="tab-users" type="button" data-view="users" data-i18n="users" hidden>Users</button>
+          <button id="tab-logs" type="button" data-view="logs" data-i18n="logs" hidden>Logs</button>
+          <button id="tab-devices" type="button" data-view="devices" data-i18n="controlCenter" hidden>Control Center</button>
+        </nav>
+
+        <div class="dialog-body">
+          <section id="page-health" class="dialog-page" hidden>
+            <div class="page-commandbar">
+              <div class="metric-strip">
+                <div><span data-i18n="total">Total</span><strong id="health-total">0</strong></div>
+                <div><span data-i18n="online">Online</span><strong id="health-online" class="success">0</strong></div>
+                <div><span data-i18n="problems">Problems</span><strong id="health-problems" class="warning">0</strong></div>
+              </div>
+              <button id="run-health" class="primary" type="button" data-i18n="runCheck">Run check</button>
+            </div>
+            <div id="health-progress" class="progress-row"></div>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="camera">Camera</th><th>IP</th><th data-i18n="status">Status</th><th data-i18n="reason">Reason</th><th data-i18n="temperature">Temperature</th></tr></thead><tbody id="health-body"></tbody></table></div>
+          </section>
+
+          <section id="page-analytics" class="dialog-page" hidden>
+            <div id="analytics-summary" class="metric-strip analytics-metrics"></div>
+            <div id="analytics-modules" class="module-grid"></div>
+            <div class="section-heading"><h3 data-i18n="recentEvents">Recent events</h3></div>
+            <div class="table-wrap"><table><thead><tr><th data-i18n="time">Time</th><th data-i18n="camera">Camera</th><th data-i18n="event">Event</th><th data-i18n="confidence">Confidence</th></tr></thead><tbody id="analytics-body"></tbody></table></div>
+          </section>
+
+          <section id="page-archive" class="dialog-page archive-page" hidden>
+            <div class="page-commandbar archive-commandbar">
+              <label><span data-i18n="camera">Camera</span><select id="archive-camera"></select></label>
+              <button id="refresh-archive" class="secondary" type="button" data-i18n="refresh">Refresh</button>
+            </div>
+            <div class="archive-layout">
+              <aside id="archive-list" class="archive-list"></aside>
+              <div class="player-panel"><video id="archive-player" controls preload="metadata"></video><div id="archive-empty" class="empty-state"><strong data-i18n="chooseRecording">Choose a recording</strong></div></div>
+            </div>
+          </section>
+
+          <section id="page-settings" class="dialog-page" hidden>
+            <form id="settings-form" class="admin-form">
+              <div class="page-commandbar"><div><h3 data-i18n="settings">Settings</h3><p data-i18n="settingsHint">Only browser-safe settings are exposed. Server endpoint changes remain desktop-only.</p></div><div class="button-row"><a class="button-link" href="/api/v1/configuration/export" download data-i18n="exportConfig">Export config</a><label class="button-link file-button"><span data-i18n="importConfig">Import config</span><input id="configuration-import" type="file" accept="application/json,.json" hidden></label><button class="primary" type="submit" data-i18n="saveSettings">Save settings</button></div></div>
+              <div id="settings-fields" class="settings-groups"></div>
+              <p id="settings-error" class="error" role="alert"></p>
+              <p id="configuration-import-state" class="form-note" role="status"></p>
+            </form>
+          </section>
+
+          <section id="page-users" class="dialog-page" hidden>
+            <div class="admin-split">
+              <div class="admin-card">
+                <div class="section-heading"><h3 data-i18n="users">Users</h3></div>
+                <form id="user-create-form" class="compact-form" autocomplete="off">
+                  <input id="new-user-name" maxlength="64" required data-i18n-placeholder="username" placeholder="Username">
+                  <input id="new-user-password" type="password" minlength="8" maxlength="256" required autocomplete="new-password" data-i18n-placeholder="password" placeholder="Password">
+                  <select id="new-user-role"><option value="operator" data-i18n="operator">Operator</option><option value="admin" data-i18n="administrator">Administrator</option></select>
+                  <button class="primary" type="submit" data-i18n="addUser">Add user</button>
+                </form>
+                <div id="permission-editor" class="permission-editor"></div>
+                <div class="table-wrap"><table><thead><tr><th data-i18n="username">Username</th><th data-i18n="role">Role</th><th data-i18n="permissions">Permissions</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="users-body"></tbody></table></div>
+              </div>
+              <div class="admin-card">
+                <div class="section-heading"><h3 data-i18n="activeSessions">Active sessions</h3></div>
+                <div class="table-wrap"><table><thead><tr><th data-i18n="username">Username</th><th data-i18n="lastSeen">Last seen</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="sessions-body"></tbody></table></div>
+                <form id="password-change-form" class="compact-form vertical" autocomplete="off">
+                  <h3 data-i18n="changePassword">Change password</h3>
+                  <input id="old-password" type="password" required autocomplete="current-password" data-i18n-placeholder="currentPassword" placeholder="Current password">
+                  <input id="new-password" type="password" minlength="8" maxlength="256" required autocomplete="new-password" data-i18n-placeholder="newPassword" placeholder="New password">
+                  <button class="secondary" type="submit" data-i18n="changePassword">Change password</button>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section id="page-logs" class="dialog-page" hidden>
+            <div class="page-commandbar logs-commandbar">
+              <div class="filter-row"><select id="log-level"><option value="all" data-i18n="allLevels">All levels</option><option value="debug">Debug</option><option value="info">Info</option><option value="warning">Warning</option><option value="critical">Critical</option></select><input id="log-search" type="search" data-i18n-placeholder="searchLogs" placeholder="Search logs"></div>
+              <div class="button-row"><button id="refresh-logs" type="button" data-i18n="refresh">Refresh</button><a id="download-logs" class="button-link" href="/api/v1/logs?limit=200&download=1" download data-i18n="download">Download</a><a id="download-diagnostics" class="button-link" href="/api/v1/diagnostics/bundle" download data-i18n="diagnosticBundle">Diagnostic bundle</a><button id="clear-logs" class="danger" type="button" data-i18n="clearLogs">Clear logs</button></div>
+            </div>
+            <div id="diagnostics-summary" class="metric-strip analytics-metrics"></div>
+            <div class="table-wrap logs-table"><table><thead><tr><th data-i18n="time">Time</th><th data-i18n="level">Level</th><th data-i18n="message">Message</th></tr></thead><tbody id="logs-body"></tbody></table></div>
+            <button id="load-more-logs" class="secondary load-more" type="button" data-i18n="loadMore">Load more</button>
+          </section>
+
+          <section id="page-devices" class="dialog-page" hidden>
+            <div class="page-commandbar"><label class="device-select"><span data-i18n="camera">Camera</span><select id="control-camera"></select></label><div class="button-row"><button id="device-status" class="primary" type="button" data-device-operation="status" data-i18n="loadStatus">Load status</button><button type="button" data-device-operation="majestic" data-i18n="majestic">Majestic</button><button type="button" data-device-operation="network" data-i18n="network">Network</button><button type="button" data-device-operation="timeSettings" data-i18n="timeSettings">Time</button><button type="button" data-device-operation="cameraLogs" data-i18n="logs">Logs</button><button type="button" data-device-operation="update-info" data-i18n="updateInfo">Update info</button></div></div>
+            <div class="button-row device-danger-zone" aria-label="Confirmed device actions"><button type="button" data-device-operation="sync-time" data-device-mutation data-i18n="syncTime">Sync time</button><button class="danger" type="button" data-device-operation="reboot" data-device-mutation data-i18n="rebootDevice">Reboot</button><button class="danger" type="button" data-device-operation="github-update" data-device-mutation data-i18n="startUpdate">Start update</button></div>
+            <div id="device-operation-state" class="progress-row"></div>
+            <pre id="device-output" class="device-output" data-i18n="selectDeviceAction">Select a safe read-only operation.</pre>
+            <section id="majestic-editor" class="admin-card majestic-editor" hidden>
+              <div class="section-heading"><div><h3 data-i18n="majesticEditor">Majestic configuration</h3><p data-i18n="majesticEditorHint">Edit JSON, preview the exact diff, then explicitly apply it.</p></div><div class="button-row"><button id="majestic-preview" type="button" data-i18n="previewChanges">Preview changes</button><button id="majestic-apply" class="danger" type="button" data-i18n="applyChanges" disabled>Apply changes</button></div></div>
+              <textarea id="majestic-json" class="config-editor" spellcheck="false" aria-label="Majestic JSON configuration"></textarea>
+              <pre id="majestic-diff" class="device-output"></pre>
+            </section>
+            <div class="section-heading"><h3>Camex</h3></div>
+            <form id="camex-form" class="compact-form"><input id="camex-host" placeholder="Server host"><input id="camex-port" type="number" min="1" max="65535" value="5000"><input id="camex-client-id" maxlength="64" placeholder="Client ID"><button type="submit" data-i18n="previewConfig">Preview config</button></form>
+            <pre id="camex-output" class="device-output"></pre>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="camera-backdrop" class="dialog-backdrop" hidden>
+      <section class="camera-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-dialog-title">
+        <header class="dialog-header">
+          <div class="dialog-title-wrap"><span class="dialog-symbol">C</span><div><h2 id="camera-dialog-title" data-i18n="cameraManagement">Camera management</h2><p id="camera-dialog-subtitle" data-i18n="cameraManagementSubtitle">Onboarding and discovery use the desktop camera database</p></div></div>
+          <button id="camera-dialog-close" class="dialog-close" type="button" data-i18n-title="close" title="Close" aria-label="Close">&#x00D7;</button>
+        </header>
+        <nav class="dialog-tabs camera-tabs" aria-label="Camera management sections">
+          <button type="button" data-camera-page="manual" data-i18n="manualCamera">Manual camera</button>
+          <button type="button" data-camera-page="discovery" data-i18n="discoverCameras">Discover</button>
+        </nav>
+
+        <div class="camera-manager-body">
+          <form id="camera-form" class="camera-form" autocomplete="off">
+            <input id="camera-edit-index" type="hidden">
+            <input id="camera-edit-id" type="hidden">
+            <div class="camera-form-scroll">
+              <div class="form-grid">
+                <label><span data-i18n="cameraName">Camera name</span><input id="camera-name" maxlength="128" data-i18n-placeholder="cameraNameOptional" placeholder="Optional; defaults to host"></label>
+                <label><span data-i18n="cameraHost">IP address or host</span><input id="camera-host" maxlength="253" required placeholder="192.168.1.10"></label>
+                <label><span data-i18n="cameraProfile">Camera profile</span><select id="camera-profile"><option value="openipc">OpenIPC</option><option value="onvif">ONVIF / Hikvision</option><option value="generic" data-i18n="genericCamera">Generic RTSP</option></select></label>
+                <span class="form-spacer" aria-hidden="true"></span>
+                <label><span data-i18n="rtspPort">RTSP port</span><input id="camera-rtsp-port" type="number" min="1" max="65535" value="554" required></label>
+                <label><span data-i18n="httpOnvifPort">HTTP / ONVIF port</span><input id="camera-onvif-port" type="number" min="1" max="65535" value="80" required></label>
+                <label><span data-i18n="hdPath">HD RTSP path</span><input id="camera-hd-path" maxlength="1024" data-i18n-placeholder="pathAutomatic" placeholder="Automatic for selected profile"></label>
+                <label><span data-i18n="sdPath">SD RTSP path</span><input id="camera-sd-path" maxlength="1024" data-i18n-placeholder="pathAutomatic" placeholder="Automatic for selected profile"></label>
+                <label><span data-i18n="cameraLogin">Camera login</span><input id="camera-login" maxlength="128" autocomplete="username" data-i18n-placeholder="credentialsPreserved" placeholder="Blank preserves stored value when editing"></label>
+                <label><span data-i18n="cameraPassword">Camera password</span><input id="camera-password" type="password" maxlength="512" autocomplete="new-password" data-i18n-placeholder="credentialsPreserved" placeholder="Blank preserves stored value when editing"></label>
+              </div>
+              <p id="camera-secret-note" class="form-note" data-i18n="secretNote">Stored credentials and credential-bearing RTSP URLs are never returned to the browser.</p>
+              <label id="clear-camera-credentials-row" class="check-row" hidden><input id="clear-camera-credentials" type="checkbox"><span data-i18n="clearCredentials">Clear stored camera credentials</span></label>
+              <p id="camera-form-error" class="error" role="alert"></p>
+            </div>
+            <footer class="form-actions"><button id="camera-form-cancel" class="secondary" type="button" data-i18n="cancel">Cancel</button><button id="camera-form-submit" class="primary" type="submit" data-i18n="saveCamera">Save camera</button></footer>
+          </form>
+
+          <section id="camera-page-discovery" class="discovery-page" hidden>
+            <div class="discovery-toolbar">
+              <label><span data-i18n="networkInterface">Network interface</span><select id="discovery-interface"><option value="" data-i18n="allInterfaces">All interfaces</option></select></label>
+              <label class="check-row"><input id="discovery-deep" type="checkbox"><span data-i18n="deepScan">Deep subnet scan</span></label>
+              <button id="discovery-start" class="primary" type="button" data-i18n="startDiscovery">Start discovery</button>
+              <button id="discovery-clear" class="secondary" type="button" data-i18n="clearResults">Clear results</button>
+            </div>
+            <div class="discovery-credentials">
+              <label><span data-i18n="onboardingProfile">Onboarding profile</span><select id="discovery-profile"><option value="auto" data-i18n="automatic">Automatic</option><option value="openipc">OpenIPC</option><option value="onvif">ONVIF</option><option value="generic" data-i18n="genericCamera">Generic RTSP</option></select></label>
+              <label><span data-i18n="cameraLogin">Camera login</span><input id="discovery-login" maxlength="128" autocomplete="username" value="root"></label>
+              <label><span data-i18n="cameraPassword">Camera password</span><input id="discovery-password" type="password" maxlength="512" autocomplete="new-password"></label>
+            </div>
+            <div class="discovery-state"><div><strong id="discovery-summary" data-i18n="noDiscoveryResults">No discovery results yet</strong><span id="discovery-phase"></span></div><progress id="discovery-progress" max="100" value="0"></progress></div>
+            <div id="discovery-list" class="discovery-list"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+    <script src="/app.js?v=0261-p6-onboarding4" defer></script>
+</body>
+</html>
