@@ -4,7 +4,7 @@
 
 Текущий стабильный релиз: `v0.2.7`.
 
-Текущий фокус разработки: `P6 Web version / Server mode` выпущен в `v0.2.7`; следующий продуктовый этап требует отдельного утверждения.
+Текущий фокус разработки: 🟡 `P11 Production hardening / Web operations / Release quality`, целевой stable-релиз — `v0.2.8`.
 
 ## Обозначения
 
@@ -16,7 +16,7 @@
 
 ## Краткое состояние проекта
 
-OpenIPC Dashboard после `v0.2.6` уже умеет не только смотреть камеры, но и управлять OpenIPC/Majestic-устройствами как единый control center:
+OpenIPC Dashboard после `v0.2.7` объединяет desktop VMS, OpenIPC/Majestic control center и защищённый Web companion на одном backend:
 
 - поиск OpenIPC/ONVIF/RTSP камер в сети;
 - live preview с HD/SD режимами;
@@ -27,7 +27,35 @@ OpenIPC Dashboard после `v0.2.6` уже умеет не только смо
 - live firmware logs;
 - in-app updater приложения через GitHub Releases;
 - более компактный Dashboard UI и sidebar;
+- WebRTC/MJPEG Web monitor, запись, snapshots, PTZ, архив и responsive RU/EN интерфейс;
+- browser-safe Settings/Users/Logs/Diagnostics и device safe-action workflows;
+- автономный `--server-only` режим с RBAC, session security и API v1;
 - релизные Windows/Linux сборки через GitHub Actions.
+
+## Актуализация 2026-07-20 — после `v0.2.7`
+
+Этапы P2–P10 и полный цикл P6 Web/Desktop parity завершены. Следующая задача проекта —
+не наращивать число несвязанных экранов, а сделать уже реализованную платформу проще в
+развёртывании, поддержке и эксплуатации на десятках камер и нескольких площадках.
+
+Ближайшие продуктовые принципы:
+
+- сначала подтверждать стабильность `v0.2.7` на реальных desktop/Web установках;
+- сокращать стоимость релиза: воспроизводимые пакеты, checksums, package smoke и быстрый CI;
+- разрешать удалённый Web-доступ только через явно спроектированные TLS/VPN/proxy границы;
+- не дублировать domain logic между QML, Web и будущими интеграциями;
+- массовые операции над камерами начинать с inventory, preview/diff и dry-run;
+- строить Incident Center поверх существующих Health/Analytics/Archive/Audit данных;
+- повышать число потоков только вместе с измеримым resource budget и benchmark matrix;
+- расширять публичный API только как versioned contract с scoped credentials и audit.
+
+Порядок новых продуктовых волн:
+
+1. 🟡 P11 — production hardening, release engineering, Web deployment и UI/runtime debt.
+2. 🔜 P12 — Sites / Fleet Management и безопасные групповые операции.
+3. 🔜 P13 — Incident Center, уведомления и операторские workflows.
+4. 🧊 P14 — media scale, adaptive quality и multi-monitor.
+5. 🧊 P15 — versioned integration ecosystem и внешние automation adapters.
 
 ## Актуализация 2026-07-04
 
@@ -890,6 +918,226 @@ Windows installer и Linux AppImage публикуются только посл
 - targeted `qmllint` для новых и изменённых критичных компонентов;
 - `git diff --check` и отсутствие новых TypeError/ReferenceError в smoke-логах.
 
+## 🟡 P11 — Production hardening / Web operations / Release quality
+
+Цель: превратить функционально насыщенный `v0.2.7` в предсказуемую production-платформу,
+которую можно безопасно обновлять, диагностировать и развёртывать как desktop-приложение
+или автономный Web-сервер.
+
+Целевой релиз: `v0.2.8`.
+
+### P11.1 Field stabilization и upgrade compatibility
+
+Статус: 🟡 ближайший активный пакет.
+
+Работы:
+
+- собрать подтверждённые runtime-отчёты Windows/Linux и desktop/server-only после `v0.2.7`;
+- завести воспроизводимую issue-форму с версией, platform, GPU, Qt/GStreamer и diagnostic bundle;
+- проверить обновление с `v0.2.6.1` и `v0.2.7` с сохранением пользователей, камер, групп,
+  Web-настроек, архива и credential references;
+- добавить explicit migration tests для settings/state/session schema;
+- проверить первый запуск, повторный запуск, портовые конфликты и восстановление после
+  некорректного завершения desktop и `--server-only`;
+- зафиксировать time-to-ready, time-to-first-frame, reconnect storm и shutdown budget;
+- исключить crash/blocker и неконтролируемый рост логов до начала новых крупных функций.
+
+Результат этапа:
+
+- обновление не требует ручной очистки пользовательского состояния;
+- diagnostic bundle достаточен для воспроизведения типовых runtime-проблем;
+- подтверждённая compatibility matrix становится частью release notes.
+
+### P11.2 Release engineering и supply-chain metadata
+
+Статус: 🟡 следующий пакет внутри P11.
+
+Работы:
+
+- перевести Windows CMake build на контролируемый `--parallel` и измерить выигрыш без OOM;
+- кэшировать безопасно кэшируемые Qt/GStreamer/download зависимости между CI run;
+- оставить bounded retries и integrity/size validation для внешних release assets;
+- публиковать SHA-256 checksums Windows Installer и Linux AppImage;
+- генерировать SBOM/third-party manifest с версиями Qt, GStreamer, OpenSSL, libssh и AI models;
+- выполнять smoke уже упакованного Installer/AppImage, а не только build-directory executable;
+- проверять `--server-only`, offscreen plugin, WebRTC runtime и TLS runtime из чистого package;
+- унифицировать CI/release workflow, чтобы одинаковые build flags не расходились;
+- добавить понятный failure summary и сохранять релевантные CMake/package logs.
+
+Результат этапа:
+
+- release assets воспроизводимы, проверяемы и сопровождаются checksums/metadata;
+- transient dependency failure не требует ручного редактирования тега;
+- среднее время release workflow заметно сокращено относительно `v0.2.7` baseline.
+
+### P11.3 Secure Web deployment
+
+Статус: 🔜 после field stabilization.
+
+Работы:
+
+- формализовать trusted reverse proxy и external base URL без доверия произвольным headers;
+- добавить deployment profiles для localhost, trusted LAN, VPN и HTTPS reverse proxy;
+- подготовить systemd unit и Windows service/headless guidance для `--server-only`;
+- добавить health/readiness endpoints, структурированную startup diagnostics и port-conflict hints;
+- спроектировать STUN/TURN configuration с write-only credentials и ICE diagnostics;
+- проверить secure cookies, WebSocket upgrade и download URLs за TLS-терминирующим proxy;
+- добавить session/audit dashboard: активные клиенты, origin, idle/absolute TTL и revoke reason;
+- определить backup/restore Web server settings без экспорта secrets;
+- провести отдельный threat-model review перед любым публичным remote-access сценарием.
+
+Результат этапа:
+
+- Web server разворачивается как управляемый локальный/VPN/proxy service;
+- документация даёт проверяемый путь HTTPS deployment без прямого проброса HTTP-порта;
+- STUN/TURN и trusted proxy не ослабляют существующие RBAC/CSRF/session границы.
+
+Принятая граница: собственный cloud relay в P11 не создаётся.
+
+### P11.4 Web UI maintainability и remaining parity
+
+Статус: 🔜 параллельно с P11.3 после стабилизации contracts.
+
+Работы:
+
+- разделить крупный `src/web/app.js` на state, API, monitor, admin и device modules;
+- формализовать Web component states и design tokens без отдельной бизнес-логики в DOM;
+- довести Health и Analytics details до документированного parity либо оставить явный Partial;
+- добавить screenshot regression для desktop/tablet/mobile, RU/EN и основных error/empty states;
+- проверить keyboard-only flow, focus return, screen-reader labels, contrast и reduced motion;
+- расширить браузерную матрицу Chromium → Firefox → WebKit с известными codec limitations;
+- добавить contract smoke для login/logout, role boundaries, settings update и archive download;
+- удерживать mobile controls компактными без горизонтального overflow.
+
+Результат этапа:
+
+- Web UI изменяется пакетами без дальнейшего роста одного глобального скрипта;
+- parity matrix подтверждается автоматическими contract/visual gates;
+- browser-specific ограничения видны пользователю до запуска действия.
+
+### P11.5 Desktop QML/runtime debt
+
+Статус: 🔜 непрерывный пакет без смешивания с device firmware changes.
+
+Работы:
+
+- продолжить сокращение legacy `qmllint` baseline небольшими измеримыми пакетами;
+- вынести coordination/state из `MajesticControlDialog.qml` и следующих крупнейших QML файлов;
+- добавить targeted smoke для Camera Search resize/compact layout и sidebar interaction states;
+- унифицировать focus/keyboard/accessibility правила desktop dialogs;
+- проверять scaling 100/125/150/200% и длинные RU/EN строки;
+- сокращать прямые связи QML → крупный SystemController через presentation/adapters;
+- запрещать новые lint/runtime warnings в изменяемых компонентах.
+
+Результат этапа:
+
+- новые функции не увеличивают legacy QML debt;
+- критичные desktop workflows имеют focused smoke и lint gates;
+- крупные dialogs постепенно становятся thin UI поверх тестируемых state objects.
+
+### P11 release gates
+
+- upgrade/migration matrix `v0.2.6.1 → v0.2.8` и `v0.2.7 → v0.2.8`;
+- полный C++/contract/QML test suite на Windows и Linux;
+- package-level smoke Windows Installer и Linux AppImage;
+- desktop и `--server-only` startup/shutdown/recovery smoke;
+- Web login/RBAC/CSRF/session/archive/device-action negative tests;
+- browser baseline Chromium и documented Firefox/WebKit result;
+- release assets, SHA-256 checksums, SBOM/manifest и актуальные release notes;
+- отсутствие открытых Critical/High security defects и blocker regressions.
+
+## 🔜 P12 — Sites / Fleet Management
+
+Цель: управлять десятками камер и несколькими площадками без опасных неявных массовых
+операций и без обязательного внешнего cloud service.
+
+Работы:
+
+- модель `Site / Area / Group / Tag` поверх существующих камер и групп;
+- fleet inventory с firmware/Majestic versions, capabilities, health и last-seen;
+- быстрые фильтры по site, tag, model, firmware drift, offline и maintenance state;
+- сохранённые views и role-scoped доступ к отдельным площадкам;
+- configuration baseline и drift report с redacted preview/diff;
+- безопасные групповые read operations и экспорт inventory/diagnostics;
+- batch mutation только через selection summary, compatibility preflight, dry-run и audit;
+- maintenance windows, concurrency limits, progress, cancellation и per-device result;
+- backup-before-change и recovery guidance для firmware/configuration waves;
+- offline-friendly import/export site definitions без credentials.
+
+Definition of Done:
+
+- оператор видит состояние площадок и быстро локализует проблемную группу;
+- администратор получает drift/compatibility report до любых изменений;
+- массовая операция не скрывает частичный failure и не обходит per-device capability checks.
+
+Принятая граница: массовое автоматическое firmware обновление не включается до отдельной
+real-camera qualification matrix и подтверждённого recovery plan.
+
+## 🔜 P13 — Incident Center / Notifications / Operator workflow
+
+Цель: объединить Health, Analytics, Recording, Logs и Audit в управляемый жизненный цикл
+инцидента, а не набор разрозненных событий.
+
+Работы:
+
+- единая нормализованная event schema и корреляция по camera/site/time window;
+- состояния `new / acknowledged / investigating / resolved / false positive`;
+- severity, owner, comments, bookmarks и immutable activity timeline;
+- связь инцидента с recordings, snapshots, health runs, logs и device operations;
+- фильтры, saved searches, retention и экспорт incident bundle;
+- rule-based дедупликация, cooldown и suppression during maintenance;
+- адаптеры Webhook/MQTT/Telegram/email с scoped secrets, retries и delivery audit;
+- notification routing по site/severity/schedule без раскрытия camera credentials;
+- операторские dashboard counters и SLA/time-to-ack metrics;
+- desktop/Web parity для incident review и acknowledgement.
+
+Definition of Done:
+
+- одно событие не создаёт бесконтрольный notification storm;
+- evidence и audit позволяют восстановить историю решения;
+- failed delivery виден, повторяем и не теряется молча.
+
+## 🧊 P14 — Media scale / Adaptive quality / Multi-monitor
+
+Цель: увеличить практический предел одновременного наблюдения только вместе с измеримыми
+CPU/GPU/network budgets и предсказуемой деградацией.
+
+Исследовательские пакеты:
+
+- layout 16/25 после подтверждения preview/decoder budget;
+- adaptive HD/SD selection по cell size, focus, visibility и resource pressure;
+- per-camera/per-cell codec, FPS, bitrate, latency, drops и reconnect telemetry;
+- hardware decode/encode capability matrix Windows/Linux/GPU vendors;
+- bounded WebRTC peer/transcode pools и fair resource scheduling;
+- background-tab, hidden-window и multi-monitor lifecycle;
+- optional low-bandwidth/site profile и operator-controlled quality caps;
+- benchmark fixtures H.264/H.265, offline/reconnect storm и mixed-resolution walls.
+
+Definition of Done:
+
+- заявленный camera count подтверждён benchmark matrix, а не только успешным открытием;
+- перегрузка снижает качество предсказуемо и не приводит к crash/OOM/reconnect storm;
+- desktop и Web показывают причину degraded mode.
+
+## 🧊 P15 — Versioned integration ecosystem
+
+Цель: позволить внешней автоматизации безопасно использовать Dashboard без прямого доступа
+к внутренним SQLite/settings и без загрузки непроверенного кода в процесс приложения.
+
+Возможные работы:
+
+- OpenAPI/JSON Schema для стабильной части `/api/v1` и compatibility policy;
+- scoped service accounts/API tokens с expiry, rotation, revoke и audit;
+- webhook subscriptions с signature verification, retry и delivery status;
+- MQTT/Home Assistant/NVR adapters как внешние процессы поверх versioned contracts;
+- documented examples для inventory, health, archive и incident APIs;
+- import/export schemas с versioning и migration tools;
+- provider interface для внешней аналитики/evidence без передачи camera credentials;
+- deprecation window и contract tests для API clients.
+
+Принятая граница: произвольные in-process plugins и unsigned native modules не входят в
+первую версию ecosystem из-за ABI, supply-chain и security рисков.
+
 ## ⛔ Решения, которые пока не делаем автоматически
 
 - Автоматический full restore OpenIPC backup через непроверенный endpoint.
@@ -917,7 +1165,10 @@ Windows installer и Linux AppImage публикуются только посл
 
 ## Ближайший практический порядок работ
 
-1. Поддерживать релиз `v0.2.7` и собирать подтверждённые runtime-отчёты desktop/Web пользователей.
-2. Отдельно утвердить следующий продуктовый этап после закрытых P6/P8/P9/P10.
-3. Расширять targeted `qmllint` на новые/изменённые компоненты и постепенно сокращать legacy baseline небольшими пакетами.
-4. Держать release workflow главным production gate: Windows installer, Linux AppImage, smoke и release assets.
+1. Запустить P11.1: field stabilization, upgrade matrix и runtime diagnostics после `v0.2.7`.
+2. Выполнить P11.2: ускорить release workflow и добавить package smoke/checksums/SBOM.
+3. После стабилизации contracts начать P11.3 Secure Web deployment и P11.4 Web decomposition.
+4. Вести P11.5 QML debt малыми пакетами без смешивания с firmware/device changes.
+5. Утвердить data model P12 Sites/Fleet до реализации массовых операций.
+6. Держать release workflow главным production gate: Windows installer, Linux AppImage,
+   package smoke, release notes и проверяемые assets.
