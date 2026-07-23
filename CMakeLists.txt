@@ -1318,6 +1318,9 @@ if(BUILD_TESTING)
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
     else()
+        set_tests_properties(app_update_checker_tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
         set_tests_properties(qml_smoke PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         )
