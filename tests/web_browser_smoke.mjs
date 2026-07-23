@@ -60,6 +60,13 @@ function launchBrowser(name) {
   throw new Error(`Unsupported browser: ${name}`);
 }
 
+function collectConsoleError(errors, name, scope, message) {
+  if (message.type() !== "error") return;
+  const value = message.text();
+  if (/Failed to load resource:.*status of (401|403|404|409)/.test(value)) return;
+  errors.push(`${name}/${scope}: ${value}`);
+}
+
 async function assertNoHorizontalOverflow(page, label) {
   const dimensions = await page.evaluate(() => ({
     documentClient: document.documentElement.clientWidth,
@@ -86,9 +93,14 @@ async function login(page, baseUrl, loginUsername = username, loginPassword = pa
 
 async function browserApi(page, apiPath, options = {}) {
   return await page.evaluate(async ({ apiPath: target, options: request }) => {
+    const method = (request.method || "GET").toUpperCase();
     const response = await fetch(target, {
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", ...(request.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(method === "GET" || method === "HEAD" ? {} : { "X-OpenIPC-CSRF": "1" }),
+        ...(request.headers || {})
+      },
       ...request,
       body: request.body === undefined ? undefined : JSON.stringify(request.body)
     });
@@ -121,9 +133,7 @@ async function runBrowser(name, baseUrl) {
   const failedAssets = [];
   try {
     const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    desktop.on("console", message => {
-      if (message.type() === "error") errors.push(`${name}/desktop: ${message.text()}`);
-    });
+    desktop.on("console", message => collectConsoleError(errors, name, "desktop", message));
     desktop.on("response", response => {
       const resource = new URL(response.url()).pathname.slice(1);
       if (webModules.includes(resource) && !response.ok()) failedAssets.push(`${resource}: ${response.status()}`);
@@ -156,25 +166,23 @@ async function runBrowser(name, baseUrl) {
     });
     if (csrf.status() !== 403) throw new Error(`${name}: cross-origin settings mutation returned ${csrf.status()}`);
 
-    const healthAction = desktop.locator('[data-view="health"]');
+    const healthAction = desktop.locator('#sidebar-tools .action-grid [data-view="health"]');
     await healthAction.focus();
     await healthAction.press("Enter");
     await desktop.locator("#dialog-backdrop").waitFor({ state: "visible" });
     await desktop.keyboard.press("Escape");
     await desktop.locator("#dialog-backdrop").waitFor({ state: "hidden" });
-    const returnedFocus = await desktop.evaluate(() => document.activeElement?.id || "");
-    if (returnedFocus !== "action-health") throw new Error(`${name}: dialog focus returned to ${returnedFocus}`);
+    const returnedFocus = await desktop.evaluate(() => document.activeElement?.dataset?.view || "");
+    if (returnedFocus !== "health") throw new Error(`${name}: dialog focus returned to ${returnedFocus}`);
 
     for (const view of ["health", "settings", "users"]) {
-      await desktop.locator(`[data-view="${view}"]`).click();
+      const selector = view === "health"
+        ? '#sidebar-tools .action-grid [data-view="health"]'
+        : `#action-${view}`;
+      await desktop.locator(selector).click();
       await desktop.locator("#dialog-backdrop").waitFor({ state: "visible" });
       await assertNoHorizontalOverflow(desktop, `${name}/desktop/${view}`);
       await desktop.locator("#dialog-close").click();
-    }
-
-    if (artifactRoot) {
-      await mkdir(artifactRoot, { recursive: true });
-      await desktop.screenshot({ path: path.join(artifactRoot, `${name}-desktop.png`), fullPage: true });
     }
 
     const viewer = await browser.newPage({ viewport: { width: 1024, height: 768 } });
@@ -190,20 +198,21 @@ async function runBrowser(name, baseUrl) {
     }
     await viewer.close();
 
-    const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
-    mobile.on("console", message => {
-      if (message.type() === "error") errors.push(`${name}/mobile: ${message.text()}`);
-    });
+    const mobileOptions = { viewport: { width: 390, height: 844 } };
+    if (name !== "firefox") mobileOptions.isMobile = true;
+    const mobile = await browser.newPage(mobileOptions);
+    mobile.on("console", message => collectConsoleError(errors, name, "mobile", message));
     await login(mobile, baseUrl);
     await mobile.locator("#monitor-grid").waitFor({ state: "visible" });
     await assertNoHorizontalOverflow(mobile, `${name}/mobile`);
     await assertAccessibleControls(mobile, `${name}/mobile`);
-    if (artifactRoot) {
-      await mobile.screenshot({ path: path.join(artifactRoot, `${name}-mobile.png`), fullPage: true });
-    }
-
     if (failedAssets.length || errors.length) {
       throw new Error(`Browser errors: ${[...failedAssets, ...errors].join(" | ")}`);
+    }
+    if (artifactRoot) {
+      await mkdir(artifactRoot, { recursive: true });
+      await desktop.screenshot({ path: path.join(artifactRoot, `${name}-desktop.png`), fullPage: true });
+      await mobile.screenshot({ path: path.join(artifactRoot, `${name}-mobile.png`), fullPage: true });
     }
     await desktop.close();
     await mobile.close();

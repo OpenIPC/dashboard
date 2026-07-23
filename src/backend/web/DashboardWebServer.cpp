@@ -256,7 +256,8 @@ void DashboardWebServer::applySettings(const QVariantMap &settings)
     const int previousWebSocketPort = m_webSocketPort;
     const bool previousAllowRemote = m_allowRemote;
 
-    m_enabled = effectiveSettings.value(QStringLiteral("webServerEnabled"), false).toBool();
+    m_enabled = m_serverOnlyMode
+        || effectiveSettings.value(QStringLiteral("webServerEnabled"), false).toBool();
     m_deployment = DashboardWebDeploymentPolicy::fromSettings(effectiveSettings);
     m_allowRemote = m_deployment.allowRemote;
     m_configuredBindAddress = m_deployment.configuredBindAddress;

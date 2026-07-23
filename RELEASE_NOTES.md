@@ -19,6 +19,7 @@ OpenIPC Dashboard v0.2.8 completes the P11 production-hardening cycle: safer upg
 - Secure cookies автоматически обязательны за валидным HTTPS proxy.
 - Для нового headless-host добавлен одноразовый `--initialize-admin <name>` с паролем из локального файла, а не из command line.
 - Добавлен `OPENIPC_DATA_ROOT` для изолированного server-only профиля без пересечения users/state/logs с desktop-профилем.
+- `--server-only` больше не останавливается после изменения безопасных Web-настроек, даже если desktop auto-start отключён.
 - Добавлены пример systemd unit, Windows Scheduled Task helper, Nginx guidance, backup/restore boundaries и отдельный threat model.
 - Администратор видит origin/peer, idle/absolute TTL активных сессий и задаёт причину их отзыва; raw session tokens не раскрываются.
 - Browser import больше не может изменить listener, deployment profile или trusted proxy list собственного сервера.
@@ -70,6 +71,7 @@ OpenIPC Dashboard v0.2.8 completes the P11 production-hardening cycle: safer upg
 - Added liveness/readiness probes, public/local/WebSocket URLs, secure-cookie enforcement and actionable bind-conflict diagnostics.
 - New headless hosts can bootstrap one administrator from a restricted local password file with `--initialize-admin`; the password is never a command-line value.
 - Added `OPENIPC_DATA_ROOT` for an isolated server-only profile that does not share users, state or logs with the desktop profile.
+- `--server-only` now remains online after browser-safe settings updates even when desktop auto-start is disabled.
 - Added systemd, Windows Scheduled Task and Nginx guidance plus backup/restore and threat-model documentation.
 - Session administration now includes origin/peer, idle/absolute TTL and a revocation reason without exposing tokens.
 - Browser imports cannot move or expose their own listener/deployment/trusted-proxy settings.

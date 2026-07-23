@@ -66,6 +66,7 @@ public:
     Q_INVOKABLE QVariantMap status() const;
     QVariantMap healthStatus(bool readiness) const;
     void applySettings(const QVariantMap &settings);
+    void setServerOnlyMode(bool enabled) { m_serverOnlyMode = enabled; }
 
 signals:
     void stateChanged();
@@ -164,6 +165,7 @@ private:
     int m_sessionTimeoutMinutes = 60;
     qint64 m_timeToReadyMs = -1;
     bool m_enabled = false;
+    bool m_serverOnlyMode = false;
     bool m_allowRemote = false;
     bool m_secureCookies = false;
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import http.cookiejar
 import os
 import socket
 import subprocess
@@ -99,17 +100,39 @@ def stop(process: subprocess.Popen) -> float:
     return time.monotonic() - started
 
 
-def login(port: int, username: str, password: str) -> None:
+def login(port: int, username: str, password: str):
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/v1/auth/login",
         data=json.dumps({"username": username, "password": password}).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=2.0) as response:
+    with opener.open(request, timeout=2.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
         if response.status != 200 or not payload.get("ok"):
             raise RuntimeError("headless administrator could not authenticate")
+    return opener
+
+
+def update_settings(opener, port: int) -> None:
+    origin = f"http://127.0.0.1:{port}"
+    request = urllib.request.Request(
+        f"{origin}/api/v1/settings",
+        data=json.dumps({"language": "ru"}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Origin": origin,
+            "X-OpenIPC-CSRF": "1",
+        },
+        method="POST",
+    )
+    with opener.open(request, timeout=2.0) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+        if response.status != 200 or not payload.get("ok"):
+            raise RuntimeError("server-only settings update failed")
 
 
 def main() -> int:
@@ -174,7 +197,9 @@ def main() -> int:
                 _, bootstrap_seconds = wait_for_readiness(
                     initialized, http_port, root / "initialized.log"
                 )
-                login(http_port, "admin", password)
+                admin_opener = login(http_port, "admin", password)
+                update_settings(admin_opener, http_port)
+                wait_for_readiness(initialized, http_port, root / "initialized.log")
             finally:
                 stop(initialized)
                 initialized_log.close()

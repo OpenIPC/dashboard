@@ -330,6 +330,7 @@ int main(int argc, char *argv[])
     });
 
     if (serverOnlyRequested) {
+        systemController.webServer()->setServerOnlyMode(true);
         if (!systemController.webServer()->start()) {
             qCritical().noquote() << "Failed to start server-only mode:"
                                   << systemController.webServer()->lastError();
