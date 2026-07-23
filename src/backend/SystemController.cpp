@@ -366,11 +366,15 @@ SystemController::SystemController(QObject *parent)
     // Web access is deliberately localhost-only and disabled until explicitly enabled.
     m_appSettings["webServerEnabled"] = false;
     m_appSettings["webServerAllowRemote"] = false;
+    m_appSettings["webDeploymentProfile"] = "localhost";
     m_appSettings["webServerBindAddress"] = "127.0.0.1";
     m_appSettings["webServerPort"] = 8080;
     m_appSettings["webSocketPort"] = 8081;
     m_appSettings["webSessionTimeoutMinutes"] = 60;
     m_appSettings["webSecureCookies"] = false;
+    m_appSettings["webExternalBaseUrl"] = "";
+    m_appSettings["webExternalWebSocketUrl"] = "";
+    m_appSettings["webTrustedProxyAddresses"] = "";
 
     m_gridRows = 2;
     m_gridCols = 2; 

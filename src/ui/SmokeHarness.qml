@@ -40,6 +40,25 @@ Item {
         function applyCurrentSettings() {}
     }
 
+    QtObject {
+        id: downloadingUpdateStub
+
+        property string currentVersion: "0.2.6.1"
+        property string latestVersion: "0.2.8"
+        property string latestName: "OpenIPC Dashboard v0.2.8"
+        property string releaseNotes: "A deliberately long release note verifies that wrapped text stays inside the updater window."
+        property bool latestPrerelease: false
+        property bool downloadAvailable: true
+        property bool downloading: true
+        property bool installing: false
+        property int downloadProgress: 42
+        property real downloadReceivedBytes: 52428800
+        property real downloadTotalBytes: 126667980
+        property string downloadedFilePath: ""
+        property string assetName: "OpenIPC-Dashboard-Installer.exe"
+        property string errorString: ""
+    }
+
     ListModel {
         id: toolbarLayoutsModel
 
@@ -148,6 +167,16 @@ Item {
                     return object.contentLayoutReady
                         ? ""
                         : "compact settings content has invalid geometry"
+                }
+            },
+            {
+                name: "Updater Download Compact",
+                component: compactUpdaterDownloadComponent,
+                parentObject: host,
+                validate: function(object) {
+                    return object.layoutReady
+                        ? ""
+                        : "downloading updater content exceeds its window"
                 }
             },
             {
@@ -428,6 +457,16 @@ Item {
             width: 520
             height: 420
             settings: streamingSettingsStub
+        }
+    }
+
+    Component {
+        id: compactUpdaterDownloadComponent
+
+        AppUpdateContent {
+            width: 600
+            height: 480
+            updateChecker: downloadingUpdateStub
         }
     }
 

@@ -1,4 +1,5 @@
 #include "UserManager.h"
+#include "AppPaths.h"
 
 #include <QDebug>
 #include <QEventLoop>
@@ -459,8 +460,8 @@ void UserManager::saveUsers()
     const QJsonDocument doc(array);
     file.write(doc.toJson());
 
-    const QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
-    const QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
+    const QString configPath = AppPaths::configDirectory() + "/users.json";
+    const QString dataPath = AppPaths::dataDirectory() + "/users.json";
     if (path == configPath && QFile::exists(dataPath) && dataPath != configPath) {
         QFile::remove(dataPath);
     }
@@ -670,8 +671,8 @@ void UserManager::deleteLoginSecret(const QString &username) const
 
 QString UserManager::usersFilePath() const
 {
-    const QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/users.json";
-    const QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/users.json";
+    const QString configPath = AppPaths::configDirectory() + "/users.json";
+    const QString dataPath = AppPaths::dataDirectory() + "/users.json";
 
     const bool hasConfig = QFile::exists(configPath);
     const bool hasData = QFile::exists(dataPath);

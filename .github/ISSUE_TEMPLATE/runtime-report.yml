@@ -1,0 +1,73 @@
+name: Runtime or upgrade report
+description: Report a reproducible desktop, server-only, Web or upgrade problem
+title: "[Runtime] "
+labels: ["runtime", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove passwords, access tokens, credential-bearing camera URLs, recordings and private network layouts. Attach the redacted diagnostic bundle from Settings > Logs/Diagnostics when possible.
+  - type: input
+    id: version
+    attributes:
+      label: Dashboard version
+      placeholder: 0.2.8
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime mode
+      options:
+        - Windows desktop
+        - Windows server-only
+        - Linux desktop
+        - Linux server-only
+        - Browser/Web client
+    validations:
+      required: true
+  - type: input
+    id: upgrade
+    attributes:
+      label: Upgrade path
+      description: State the previous version, or "clean install".
+      placeholder: 0.2.7 -> 0.2.8
+    validations:
+      required: true
+  - type: textarea
+    id: platform
+    attributes:
+      label: Platform and media runtime
+      description: OS build, CPU/GPU, graphics driver, Qt/GStreamer versions, display scale and browser version where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start Dashboard with ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Attach or paste the redacted diagnostic bundle and relevant bounded logs. Confirm that secrets and private data were removed.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed passwords, tokens and credential-bearing URLs.
+          required: true
+        - label: I can reproduce this with the steps above.
+          required: true

@@ -34,6 +34,14 @@ ColumnLayout {
     signal primaryActionRequested()
 
     spacing: 0
+    clip: true
+
+    readonly property bool layoutReady: bodyLayout.x >= 0
+                                         && bodyLayout.x + bodyLayout.width <= content.width + 0.5
+                                         && downloadPanel.x + downloadPanel.width <= bodyLayout.width + 0.5
+                                         && releaseNotesPanel.x + releaseNotesPanel.width <= bodyLayout.width + 0.5
+                                         && actionGrid.x + actionGrid.width <= bodyLayout.width + 0.5
+                                         && primaryActionButton.x + primaryActionButton.width <= actionGrid.width + 0.5
 
     function formatBytes(bytes) {
         if (bytes <= 0) return "—"
@@ -154,13 +162,19 @@ ColumnLayout {
     }
 
     ColumnLayout {
+        id: bodyLayout
+
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumWidth: 0
         Layout.margins: 18
         spacing: 12
 
         Rectangle {
+            id: downloadPanel
+
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Layout.preferredHeight: content.downloading || content.downloaded || content.installing || content.errorString.length > 0 ? 112 : 70
             radius: Theme.metroTileRadius
             color: Theme.metroSurface
@@ -227,8 +241,11 @@ ColumnLayout {
         }
 
         Rectangle {
+            id: releaseNotesPanel
+
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumWidth: 0
             radius: Theme.metroTileRadius
             color: Theme.metroSurfaceAlt
             border.color: Theme.metroStroke
@@ -267,13 +284,20 @@ ColumnLayout {
             wrapMode: Text.WordWrap
         }
 
-        RowLayout {
+        GridLayout {
+            id: actionGrid
+
             Layout.fillWidth: true
-            spacing: 10
+            Layout.minimumWidth: 0
+            columns: content.width < 700 ? 2 : (content.downloading ? 3 : 4)
+            columnSpacing: 10
+            rowSpacing: 8
 
             DashboardDialogButton {
                 text: I18n.t("Пропустить эту версию")
                 Layout.preferredWidth: 170
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 enabled: !content.downloading && !content.installing
                 buttonColor: Theme.metroTile
@@ -286,6 +310,8 @@ ColumnLayout {
             DashboardDialogButton {
                 text: I18n.t("Напомнить позже")
                 Layout.preferredWidth: 145
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 enabled: !content.downloading && !content.installing
                 buttonColor: Theme.metroTile
@@ -295,12 +321,12 @@ ColumnLayout {
                 onClicked: content.remindLaterRequested()
             }
 
-            Item { Layout.fillWidth: true }
-
             DashboardDialogButton {
                 visible: content.downloading
                 text: I18n.t("Отмена")
                 Layout.preferredWidth: 110
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 buttonColor: Theme.metroTile
                 buttonHoverColor: Theme.metroTileHover
@@ -312,6 +338,8 @@ ColumnLayout {
             DashboardDialogButton {
                 text: I18n.t("Открыть релиз")
                 Layout.preferredWidth: 135
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 enabled: !content.downloading && !content.installing
                 buttonColor: Theme.metroTile
@@ -322,8 +350,12 @@ ColumnLayout {
             }
 
             DashboardDialogButton {
+                id: primaryActionButton
+
                 text: content.primaryText()
                 Layout.preferredWidth: 180
+                Layout.minimumWidth: 0
+                Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 enabled: !content.downloading && !content.installing && (content.downloadAvailable || content.downloaded)
                 buttonColor: Theme.metroBlue

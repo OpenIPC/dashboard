@@ -6,7 +6,7 @@
 
 OpenIPC Dashboard is a cross-platform VMS, analytics workspace and OpenIPC-native control center for OpenIPC and ONVIF cameras. It combines a Qt/QML desktop application with a secure embedded Web companion and autonomous server mode, all backed by the same C++ domain state and permission model.
 
-The current stable release is [v0.2.7](https://github.com/OpenIPC/dashboard/releases/tag/v0.2.7).
+The current stable release is [v0.2.8](https://github.com/OpenIPC/dashboard/releases/tag/v0.2.8).
 
 ## Download
 
@@ -61,8 +61,9 @@ chmod +x OpenIPC-Dashboard-Linux.AppImage
 - Browser-safe settings, users, permissions, sessions, logs and diagnostics.
 - Camex, Majestic and OpenIPC actions with capability, preview/diff, confirmation and audit boundaries.
 - Versioned REST API, WebSocket state updates, CSRF/Origin validation and role-based access control.
+- Explicit localhost/LAN/VPN/reverse-proxy profiles, readiness probes and auditable session management.
 
-See the [Web server guide](docs/WEB_SERVER.md) and [Web/Desktop parity matrix](docs/WEB_PARITY_MATRIX.md) for deployment details and intentional browser adaptations.
+See the [Web server guide](docs/WEB_SERVER.md), [secure deployment guide](docs/WEB_DEPLOYMENT.md) and [Web/Desktop parity matrix](docs/WEB_PARITY_MATRIX.md) for deployment details and intentional browser adaptations.
 
 ## Quick Start
 
@@ -82,7 +83,20 @@ The same executable can run without loading the desktop QML window:
 appOpenIPC-Dashboard --server-only
 ```
 
-Server-only mode uses the saved Web settings. Create the initial administrator once in the desktop application before relying on browser login.
+Server-only mode uses the saved Web settings. For a new headless host, the first administrator can
+be created once from a restricted local password file:
+
+```bash
+OPENIPC_INITIAL_ADMIN_PASSWORD_FILE=/run/openipc-dashboard-admin \
+  appOpenIPC-Dashboard --server-only --initialize-admin admin
+```
+
+Remove the password file after the successful first start. Subsequent starts use only
+`--server-only`. See [Secure Web deployment](docs/WEB_DEPLOYMENT.md) for systemd, Windows scheduled
+task, VPN and HTTPS reverse-proxy guidance.
+
+For a dedicated service profile, set `OPENIPC_DATA_ROOT` to an absolute writable directory. This
+keeps headless users, state, settings, analytics data and logs separate from the desktop profile.
 
 ## Security Model
 
@@ -99,7 +113,7 @@ See [Security](docs/SECURITY.md) and [Web server security](docs/WEB_SERVER.md#se
 
 - Windows 10/11 x64. Official releases use Qt 6.4.2 with MinGW 12.2.
 - Linux x86_64 through the official AppImage or a source build.
-- Chromium-based browsers are the current Web UI release baseline; Firefox and WebKit compatibility remains part of ongoing validation.
+- Microsoft Edge, Chromium, Firefox and WebKit UI flows are exercised by the release browser gate. WebRTC codec availability remains browser/OS dependent and falls back to MJPEG.
 
 For multiple high-bitrate streams, 8 GB or more RAM, hardware video decoding and Gigabit Ethernet are recommended. Actual capacity depends on codec, resolution, frame rate, analytics modules and GPU/driver support.
 
@@ -140,7 +154,11 @@ ctest --test-dir build -L unit --output-on-failure
 ctest --test-dir build -R "qml_smoke|qml_lint_targeted" --output-on-failure
 ```
 
-The `v0.2.7` release baseline contains 27 unit/contract tests, two QML smoke tests and targeted QML lint: 30 tests in total. CI validates Linux and Windows, including an RTSP smoke path on Linux. The release workflow produces both the Windows installer and Linux AppImage before publishing a stable GitHub Release.
+The `v0.2.8` release baseline contains 29 unit/contract tests, four QML scale smoke tests,
+targeted QML lint, a static Web-module contract and a server lifecycle test: 36 CTest gates in
+total. Release CI additionally validates authenticated admin/viewer browser paths in Edge,
+Chromium, Firefox and WebKit, then smoke-tests the installed Windows package and extracted Linux
+AppImage. Published assets include SHA-256 checksums, release metadata and a CycloneDX SBOM.
 
 ## Repository Layout
 
@@ -160,7 +178,9 @@ The `v0.2.7` release baseline contains 27 unit/contract tests, two QML smoke tes
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security](docs/SECURITY.md)
 - [Web server deployment](docs/WEB_SERVER.md)
+- [Secure Web deployment](docs/WEB_DEPLOYMENT.md)
 - [Web/Desktop parity matrix](docs/WEB_PARITY_MATRIX.md)
+- [Upgrade compatibility](docs/UPGRADE_COMPATIBILITY.md)
 - [Camera discovery](docs/DISCOVERY.md)
 - [Majestic integration](docs/MAJESTIC.md)
 - [Third-party AI models](docs/THIRD_PARTY_MODELS.md)
@@ -168,6 +188,8 @@ The `v0.2.7` release baseline contains 27 unit/contract tests, two QML smoke tes
 
 ## Next Direction
 
-With the existing roadmap through P10 and Web/Desktop parity delivered, the next active cycle is P11: production hardening, release engineering, secure Web deployment and UI/runtime debt reduction. Later planned directions cover fleet/sites, incident operations, higher media scale and a versioned integration ecosystem.
+With P11 production hardening delivered in v0.2.8, the next active cycle is P12: Sites / Fleet
+Management and safe group operations. Later planned directions cover incident operations, higher
+media scale and a versioned integration ecosystem.
 
 See the [Roadmap](docs/ROADMAP.md) for scope, dependencies and release gates.

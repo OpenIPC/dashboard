@@ -39,7 +39,7 @@
 | Tray/window chrome/global shortcuts | `Main.qml`, window controls | OS integration | Browser-native equivalents | Web N/A | P6.14 |
 | RU/EN localization | `I18n.qml` | shared semantic keys | Web catalog | Done | P6.9, P6.15 |
 | Theme/design tokens | `Theme.qml` | `DashboardPresentation` | CSS variables | Done | P6.9, P6.15 |
-| Responsive/accessibility/cross-browser | QML scalable layout | presentation states | CSS/DOM | Done (Chromium baseline) | P6.15 |
+| Responsive/accessibility/cross-browser | QML scalable layout | presentation states | CSS/DOM | Done (Edge/Chromium/Firefox/WebKit UI baseline; codec limits documented) | P6.15, P11.4 |
 
 ## Эталонные состояния
 
@@ -53,11 +53,22 @@ backend error, offline/reconnect и session expired. Эталонные viewport
 design tokens. Web не выводит недоступное действие только по локальной проверке роли:
 каждая операция повторно проверяется backend endpoint.
 
-## Проверенный baseline 2026-07-19
+## Явные Partial-границы
+
+- Health Web показывает сводку, запуск проверки и текущие per-camera результаты. История прогонов,
+  расширенные рекомендации и часть desktop-only detail drill-down остаются `Partial`.
+- Analytics Web показывает модули, события, confidence, detections и evidence counters. Редактор
+  polygon zones и нативный image/file browser остаются desktop-only, поэтому строка Analytics
+  сохраняет статус `Partial`, а не создаёт ложную parity.
+- WebKit/Firefox проходят UI, auth, RBAC, API и responsive gates. Доступность WebRTC codec зависит
+  от browser/OS; при отсутствии подходящего H.264 path интерфейс использует MJPEG fallback.
+
+## Проверенный baseline 2026-07-23
 
 - release build: Qt 6.4.2 / MinGW 12.2;
-- `ctest -j2`: 30/30, включая обычный/scaled QML smoke и targeted QML lint;
-- browser: Chromium-based Codex in-app browser;
-- viewport 1600×900 и 390×844: login layout, RU/EN, autofocus и отсутствие horizontal overflow;
-- server-only: public server/root `200`, CSP присутствует, защищённый dashboard без сессии `401`;
-- authenticated operator/admin screenshots требуют тестовую учётную запись и реальные/fixture камеры и остаются release-check, а не хранятся с пользовательскими credentials в репозитории.
+- `ctest -j2`: 36 tests, включая QML smoke 100/125/150/200%, targeted lint, Web asset contract и server lifecycle;
+- release browser matrix: Microsoft Edge (Windows), Chromium, Firefox и WebKit (Linux);
+- viewport 1440×900, 1024×768 и 390×844: admin/viewer RBAC, keyboard dialog flow,
+  accessible names and отсутствие horizontal overflow;
+- server-only: liveness/readiness, one-shot headless bootstrap, port conflict, shutdown/recovery;
+- desktop/mobile screenshots сохраняются как CI browser-baseline artifacts без пользовательских credentials.

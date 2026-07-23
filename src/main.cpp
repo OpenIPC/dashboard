@@ -10,12 +10,15 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <QTimer>
-#include <QStandardPaths>
 #include <QPointer>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QSslSocket>
+#include <QRegularExpression>
+#include <QSettings>
+#include "backend/AppPaths.h"
 #include "backend/SystemController.h"
+#include "backend/UserManager.h"
 #include "backend/gst/GstPlayer.h"
 #include "backend/analytics/AnalyticsEngine.h"
 #include "backend/SshClient.h"
@@ -122,10 +125,15 @@ void logMessageHandler(QtMsgType type, const QMessageLogContext &context, const 
 int main(int argc, char *argv[])
 {
     bool serverOnlyRequested = false;
+    QString initialAdminUsername;
     for (int index = 1; index < argc; ++index) {
-        if (QString::fromLocal8Bit(argv[index]) == QStringLiteral("--server-only")) {
+        const QString argument = QString::fromLocal8Bit(argv[index]);
+        if (argument == QStringLiteral("--server-only")) {
             serverOnlyRequested = true;
-            break;
+        } else if (argument == QStringLiteral("--initialize-admin") && index + 1 < argc) {
+            initialAdminUsername = QString::fromLocal8Bit(argv[++index]).trimmed();
+        } else if (argument == QStringLiteral("--data-root") && index + 1 < argc) {
+            qputenv("OPENIPC_DATA_ROOT", QByteArray(argv[++index]));
         }
     }
     if (serverOnlyRequested && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
@@ -176,6 +184,15 @@ int main(int argc, char *argv[])
     app.setApplicationVersion(QString::fromUtf8(APP_VERSION));
 #endif
 
+    const QString runtimeRoot = AppPaths::runtimeRoot();
+    if (!runtimeRoot.isEmpty()) {
+        QDir().mkpath(AppPaths::configDirectory());
+        QDir().mkpath(AppPaths::dataDirectory());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                           AppPaths::configDirectory());
+    }
+
     const bool smokeQml = app.arguments().contains(QStringLiteral("--smoke-qml"));
 
     if (app.arguments().contains(QStringLiteral("--self-test-tls"))) {
@@ -210,7 +227,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    QString logPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString logPath = AppPaths::dataDirectory();
     QDir().mkpath(logPath);
     LogState &state = logState();
     state.logFile.setFileName(logPath + "/app.log");
@@ -243,6 +260,56 @@ int main(int argc, char *argv[])
     // Register the C++ backend controller FIRST to ensure it outlives the engine
     SystemController systemController;    
     QPointer<SystemController> systemControllerPtr(&systemController);
+
+    if (!initialAdminUsername.isEmpty()) {
+        if (!serverOnlyRequested) {
+            qCritical() << "--initialize-admin is supported only with --server-only";
+            return 6;
+        }
+        if (systemController.userManager()->hasUsers()) {
+            qCritical() << "Initial administrator was not created: users already exist";
+            return 6;
+        }
+        const QString passwordFilePath = qEnvironmentVariable(
+            "OPENIPC_INITIAL_ADMIN_PASSWORD_FILE").trimmed();
+        const QFileInfo passwordFileInfo(passwordFilePath);
+        QFile passwordFile(passwordFilePath);
+        static const QRegularExpression usernamePattern(
+            QStringLiteral("^[A-Za-z0-9_.@-]{1,64}$"));
+        if (!usernamePattern.match(initialAdminUsername).hasMatch()) {
+            qCritical() << "Initial administrator username is invalid";
+            return 6;
+        }
+        if (passwordFilePath.isEmpty() || !passwordFileInfo.isFile()
+            || passwordFileInfo.isSymLink() || !passwordFile.open(QIODevice::ReadOnly)
+            || passwordFile.size() > 4096) {
+            qCritical() << "Initial administrator password file is missing, unreadable or oversized";
+            return 6;
+        }
+#ifdef Q_OS_UNIX
+        const QFileDevice::Permissions unsafePermissions = QFileDevice::ReadGroup
+            | QFileDevice::WriteGroup | QFileDevice::ExeGroup | QFileDevice::ReadOther
+            | QFileDevice::WriteOther | QFileDevice::ExeOther;
+        if (passwordFileInfo.permissions() & unsafePermissions) {
+            qCritical() << "Initial administrator password file must not be accessible by group or other users";
+            return 6;
+        }
+#endif
+        QByteArray passwordBytes = passwordFile.readAll();
+        while (passwordBytes.endsWith('\n') || passwordBytes.endsWith('\r')) {
+            passwordBytes.chop(1);
+        }
+        const QString password = QString::fromUtf8(passwordBytes);
+        passwordBytes.fill('\0');
+        if (password.size() < 12
+            || !systemController.userManager()->setupInitialAdmin(
+                initialAdminUsername, password, false)) {
+            qCritical() << "Initial administrator was not created: use a unique username and a password of at least 12 characters";
+            return 6;
+        }
+        systemController.userManager()->logout();
+        qInfo() << "Initial server administrator created:" << initialAdminUsername;
+    }
     if (LogModel *model = systemController.logModel()) {
         model->setSourcePath(state.logFile.fileName());
         model->reloadFromFile();

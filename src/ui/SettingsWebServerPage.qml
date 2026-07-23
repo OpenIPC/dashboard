@@ -86,15 +86,41 @@ Item {
                 onToggled: page.settings.webServerEnabled = checked
             }
 
-            MetroCheckBox {
-                text: I18n.language === "ru" ? "Разрешить подключения из локальной сети" : "Allow local network connections"
-                checked: page.settings.webServerAllowRemote
-                enabled: page.settings.webServerEnabled
-                onToggled: page.settings.webServerAllowRemote = checked
+            GridLayout {
+                columns: page.compact ? 1 : 2
+                columnSpacing: 16
+                rowSpacing: 10
+                Layout.fillWidth: true
+
+                Text { text: I18n.language === "ru" ? "Профиль развёртывания" : "Deployment profile"; color: Theme.textMuted }
+                StyledComboBox {
+                    id: deploymentProfileCombo
+                    readonly property var values: ["localhost", "lan", "vpn", "reverse_proxy"]
+                    model: I18n.language === "ru"
+                           ? ["Только этот компьютер", "Доверенная локальная сеть", "VPN", "HTTPS reverse proxy"]
+                           : ["Localhost only", "Trusted LAN", "VPN", "HTTPS reverse proxy"]
+                    currentIndex: Math.max(0, values.indexOf(page.settings.webDeploymentProfile))
+                    enabled: page.settings.webServerEnabled
+                    Layout.fillWidth: true
+                    onUserSelected: function(index) {
+                        page.settings.webDeploymentProfile = values[index]
+                        if (values[index] === "localhost") page.settings.webServerAllowRemote = false
+                        else if (values[index] === "lan" || values[index] === "vpn") page.settings.webServerAllowRemote = true
+                    }
+                }
+
+                MetroCheckBox {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: I18n.language === "ru" ? "Reverse proxy находится на другом хосте" : "Reverse proxy runs on another host"
+                    checked: page.settings.webServerAllowRemote
+                    enabled: page.settings.webServerEnabled
+                    Layout.columnSpan: page.compact ? 1 : 2
+                    onToggled: page.settings.webServerAllowRemote = checked
+                }
             }
 
             Rectangle {
-                visible: page.settings.webServerAllowRemote
+                visible: page.settings.webDeploymentProfile !== "localhost"
                 Layout.fillWidth: true
                 Layout.preferredHeight: warningText.implicitHeight + 20
                 color: Theme.warningSurfaceSoft
@@ -105,8 +131,8 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 10
                     text: I18n.language === "ru"
-                          ? "LAN-доступ открывает панель другим устройствам. Используйте VPN или HTTPS reverse proxy; не публикуйте HTTP-порт напрямую в Интернет."
-                          : "LAN access exposes the dashboard to other devices. Use a VPN or HTTPS reverse proxy; never publish the HTTP port directly to the Internet."
+                          ? "Сетевой доступ разрешайте только доверенной LAN/VPN или явно настроенному HTTPS reverse proxy. Не публикуйте HTTP-порт напрямую в Интернет."
+                          : "Allow network access only from a trusted LAN/VPN or an explicitly configured HTTPS reverse proxy. Never publish the HTTP port directly to the Internet."
                     color: Theme.warningText
                     wrapMode: Text.WordWrap
                 }
@@ -121,7 +147,7 @@ Item {
                 Text { text: I18n.language === "ru" ? "Адрес привязки" : "Bind address"; color: Theme.textMuted }
                 TextField {
                     text: page.settings.webServerBindAddress
-                    enabled: page.settings.webServerEnabled && page.settings.webServerAllowRemote
+                    enabled: page.settings.webServerEnabled && page.settings.webDeploymentProfile !== "localhost"
                     Layout.fillWidth: true
                     placeholderText: "0.0.0.0"
                     onTextEdited: page.settings.webServerBindAddress = text.trim()
@@ -151,6 +177,54 @@ Item {
                     value: page.settings.webSessionTimeoutMinutes
                     enabled: page.settings.webServerEnabled
                     onValueModified: page.settings.webSessionTimeoutMinutes = value
+                }
+
+                Text {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: I18n.language === "ru" ? "Внешний HTTPS URL" : "External HTTPS URL"
+                    color: Theme.textMuted
+                }
+                TextField {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: page.settings.webExternalBaseUrl
+                    enabled: page.settings.webServerEnabled
+                    Layout.fillWidth: true
+                    placeholderText: "https://dashboard.example"
+                    onTextEdited: page.settings.webExternalBaseUrl = text.trim()
+                    color: Theme.textSecondary
+                    background: Rectangle { color: Theme.controlBackground; border.color: Theme.controlBorder; radius: Theme.radiusSm }
+                }
+
+                Text {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: I18n.language === "ru" ? "Внешний WebSocket URL" : "External WebSocket URL"
+                    color: Theme.textMuted
+                }
+                TextField {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: page.settings.webExternalWebSocketUrl
+                    enabled: page.settings.webServerEnabled
+                    Layout.fillWidth: true
+                    placeholderText: "wss://dashboard.example/ws"
+                    onTextEdited: page.settings.webExternalWebSocketUrl = text.trim()
+                    color: Theme.textSecondary
+                    background: Rectangle { color: Theme.controlBackground; border.color: Theme.controlBorder; radius: Theme.radiusSm }
+                }
+
+                Text {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: I18n.language === "ru" ? "Доверенные IP proxy" : "Trusted proxy IPs"
+                    color: Theme.textMuted
+                }
+                TextField {
+                    visible: page.settings.webDeploymentProfile === "reverse_proxy"
+                    text: page.settings.webTrustedProxyAddresses
+                    enabled: page.settings.webServerEnabled
+                    Layout.fillWidth: true
+                    placeholderText: "127.0.0.1, ::1"
+                    onTextEdited: page.settings.webTrustedProxyAddresses = text.trim()
+                    color: Theme.textSecondary
+                    background: Rectangle { color: Theme.controlBackground; border.color: Theme.controlBorder; radius: Theme.radiusSm }
                 }
             }
 

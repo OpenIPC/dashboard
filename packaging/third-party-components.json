@@ -1,0 +1,9 @@
+[
+  {"type":"framework","name":"Qt","version":"6.4.2","license":"LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only","scope":"required"},
+  {"type":"framework","name":"GStreamer","version":"1.26.10 (Windows); Ubuntu 22.04 packages (Linux)","license":"LGPL-2.1-or-later","scope":"required"},
+  {"type":"library","name":"OpenSSL","version":"1.1 runtime for Qt 6.4 packaging","license":"OpenSSL","scope":"required"},
+  {"type":"library","name":"libssh","version":"0.10.6","license":"LGPL-2.1-only","scope":"required"},
+  {"type":"library","name":"QtKeychain","version":"0.14.2","license":"BSD-2-Clause","scope":"required"},
+  {"type":"library","name":"ONNX Runtime","version":"API 18","license":"MIT","scope":"required"},
+  {"type":"library","name":"Dahua NetSDK","version":"repository binary SDK","license":"proprietary","scope":"required"}
+]

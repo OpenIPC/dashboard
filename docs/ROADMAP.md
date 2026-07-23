@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-20.
+Последнее обновление: 2026-07-23.
 
-Текущий стабильный релиз: `v0.2.7`.
+Текущий стабильный релиз: `v0.2.8`.
 
-Текущий фокус разработки: 🟡 `P11 Production hardening / Web operations / Release quality`, целевой stable-релиз — `v0.2.8`.
+Текущий фокус разработки: 🟡 `P12 Sites / Fleet Management / safe group operations`.
 
 ## Обозначения
 
@@ -32,15 +32,15 @@ OpenIPC Dashboard после `v0.2.7` объединяет desktop VMS, OpenIPC/
 - автономный `--server-only` режим с RBAC, session security и API v1;
 - релизные Windows/Linux сборки через GitHub Actions.
 
-## Актуализация 2026-07-20 — после `v0.2.7`
+## Актуализация 2026-07-23 — после `v0.2.8`
 
-Этапы P2–P10 и полный цикл P6 Web/Desktop parity завершены. Следующая задача проекта —
-не наращивать число несвязанных экранов, а сделать уже реализованную платформу проще в
-развёртывании, поддержке и эксплуатации на десятках камер и нескольких площадках.
+Этапы P2–P11, полный цикл P6 Web/Desktop parity и production hardening завершены. Следующая
+задача проекта — перенести уже проверенные security/release/contracts границы на управление
+десятками камер и несколькими площадками.
 
 Ближайшие продуктовые принципы:
 
-- сначала подтверждать стабильность `v0.2.7` на реальных desktop/Web установках;
+- продолжать подтверждать стабильность `v0.2.8` на реальных desktop/Web установках;
 - сокращать стоимость релиза: воспроизводимые пакеты, checksums, package smoke и быстрый CI;
 - разрешать удалённый Web-доступ только через явно спроектированные TLS/VPN/proxy границы;
 - не дублировать domain logic между QML, Web и будущими интеграциями;
@@ -51,8 +51,8 @@ OpenIPC Dashboard после `v0.2.7` объединяет desktop VMS, OpenIPC/
 
 Порядок новых продуктовых волн:
 
-1. 🟡 P11 — production hardening, release engineering, Web deployment и UI/runtime debt.
-2. 🔜 P12 — Sites / Fleet Management и безопасные групповые операции.
+1. ✅ P11 — production hardening, release engineering, Web deployment и UI/runtime debt.
+2. 🟡 P12 — Sites / Fleet Management и безопасные групповые операции.
 3. 🔜 P13 — Incident Center, уведомления и операторские workflows.
 4. 🧊 P14 — media scale, adaptive quality и multi-monitor.
 5. 🧊 P15 — versioned integration ecosystem и внешние automation adapters.
@@ -918,7 +918,7 @@ Windows installer и Linux AppImage публикуются только посл
 - targeted `qmllint` для новых и изменённых критичных компонентов;
 - `git diff --check` и отсутствие новых TypeError/ReferenceError в smoke-логах.
 
-## 🟡 P11 — Production hardening / Web operations / Release quality
+## ✅ P11 — Production hardening / Web operations / Release quality
 
 Цель: превратить функционально насыщенный `v0.2.7` в предсказуемую production-платформу,
 которую можно безопасно обновлять, диагностировать и развёртывать как desktop-приложение
@@ -928,7 +928,7 @@ Windows installer и Linux AppImage публикуются только посл
 
 ### P11.1 Field stabilization и upgrade compatibility
 
-Статус: 🟡 ближайший активный пакет.
+Статус: ✅ закрыт в `v0.2.8`.
 
 Работы:
 
@@ -950,7 +950,7 @@ Windows installer и Linux AppImage публикуются только посл
 
 ### P11.2 Release engineering и supply-chain metadata
 
-Статус: 🟡 следующий пакет внутри P11.
+Статус: ✅ закрыт в `v0.2.8`.
 
 Работы:
 
@@ -972,7 +972,7 @@ Windows installer и Linux AppImage публикуются только посл
 
 ### P11.3 Secure Web deployment
 
-Статус: 🔜 после field stabilization.
+Статус: ✅ закрыт в `v0.2.8`.
 
 Работы:
 
@@ -996,7 +996,7 @@ Windows installer и Linux AppImage публикуются только посл
 
 ### P11.4 Web UI maintainability и remaining parity
 
-Статус: 🔜 параллельно с P11.3 после стабилизации contracts.
+Статус: ✅ закрыт в `v0.2.8`; Health/Analytics сохраняют документированные `Partial`-границы.
 
 Работы:
 
@@ -1017,7 +1017,7 @@ Windows installer и Linux AppImage публикуются только посл
 
 ### P11.5 Desktop QML/runtime debt
 
-Статус: 🔜 непрерывный пакет без смешивания с device firmware changes.
+Статус: ✅ release-пакет `v0.2.8` закрыт; дальнейшее сокращение legacy debt продолжается инкрементально.
 
 Работы:
 
@@ -1046,7 +1046,7 @@ Windows installer и Linux AppImage публикуются только посл
 - release assets, SHA-256 checksums, SBOM/manifest и актуальные release notes;
 - отсутствие открытых Critical/High security defects и blocker regressions.
 
-## 🔜 P12 — Sites / Fleet Management
+## 🟡 P12 — Sites / Fleet Management
 
 Цель: управлять десятками камер и несколькими площадками без опасных неявных массовых
 операций и без обязательного внешнего cloud service.
@@ -1165,10 +1165,9 @@ Definition of Done:
 
 ## Ближайший практический порядок работ
 
-1. Запустить P11.1: field stabilization, upgrade matrix и runtime diagnostics после `v0.2.7`.
-2. Выполнить P11.2: ускорить release workflow и добавить package smoke/checksums/SBOM.
-3. После стабилизации contracts начать P11.3 Secure Web deployment и P11.4 Web decomposition.
-4. Вести P11.5 QML debt малыми пакетами без смешивания с firmware/device changes.
-5. Утвердить data model P12 Sites/Fleet до реализации массовых операций.
-6. Держать release workflow главным production gate: Windows installer, Linux AppImage,
+1. Утвердить data model P12 Sites/Fleet до реализации массовых операций.
+2. Начать read-only inventory и фильтры site/area/tag без массовых mutations.
+3. Спроектировать configuration drift report и dry-run contract до batch apply.
+4. Вести QML/Web debt малыми пакетами без смешивания с firmware/device changes.
+5. Держать release workflow главным production gate: Windows installer, Linux AppImage,
    package smoke, release notes и проверяемые assets.

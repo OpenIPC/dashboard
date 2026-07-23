@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(OpenIPC-Dashboard VERSION 0.2.7 LANGUAGES CXX)
+project(OpenIPC-Dashboard VERSION 0.2.8 LANGUAGES CXX)
 
 # CMake 4 removes compatibility with projects that declare very old minimum
 # versions. Some bundled dependencies still do that, so keep their policy floor
@@ -337,6 +337,8 @@ set(SOURCES
     src/backend/presentation/DashboardPresentation.h
     src/backend/web/DashboardHttpProtocol.cpp
     src/backend/web/DashboardHttpProtocol.h
+    src/backend/web/DashboardWebDeploymentPolicy.cpp
+    src/backend/web/DashboardWebDeploymentPolicy.h
     src/backend/web/DashboardWebSessionStore.cpp
     src/backend/web/DashboardWebSessionStore.h
     src/backend/web/DashboardWebPreviewManager.cpp
@@ -528,6 +530,10 @@ qt_add_resources(appOpenIPC-Dashboard web_assets
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/src"
     FILES
         src/web/index.html
+        src/web/core.js
+        src/web/monitor.js
+        src/web/devices.js
+        src/web/admin.js
         src/web/app.js
         src/web/styles.css
 )
@@ -730,6 +736,7 @@ if(WIN32)
 endif()
 
 if(BUILD_TESTING)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
     add_executable(dashboard_presentation_tests
         tests/DashboardPresentationTests.cpp
         src/backend/presentation/DashboardPresentation.cpp
@@ -756,6 +763,20 @@ if(BUILD_TESTING)
     openipc_enable_project_warnings(dashboard_http_protocol_tests)
     target_link_libraries(dashboard_http_protocol_tests PRIVATE Qt6::Core Qt6::Test)
     add_test(NAME dashboard_http_protocol_tests COMMAND dashboard_http_protocol_tests)
+
+    add_executable(dashboard_web_deployment_policy_tests
+        tests/DashboardWebDeploymentPolicyTests.cpp
+        src/backend/web/DashboardWebDeploymentPolicy.cpp
+        src/backend/web/DashboardWebDeploymentPolicy.h
+        src/backend/web/DashboardHttpProtocol.cpp
+        src/backend/web/DashboardHttpProtocol.h
+    )
+    target_include_directories(dashboard_web_deployment_policy_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend/web
+    )
+    openipc_enable_project_warnings(dashboard_web_deployment_policy_tests)
+    target_link_libraries(dashboard_web_deployment_policy_tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
+    add_test(NAME dashboard_web_deployment_policy_tests COMMAND dashboard_web_deployment_policy_tests)
 
     add_executable(dashboard_web_session_store_tests
         tests/DashboardWebSessionStoreTests.cpp
@@ -1205,9 +1226,42 @@ if(BUILD_TESTING)
         add_test(NAME qml_smoke_scaled
             COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $dir = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>'; $env:PATH = $dir + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '1.5'; $out = Join-Path $dir 'qml_smoke_scaled.out.log'; $err = Join-Path $dir 'qml_smoke_scaled.err.log'; Remove-Item -LiteralPath $out,$err -ErrorAction SilentlyContinue; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru; if (Test-Path $out) { Get-Content -LiteralPath $out }; if (Test-Path $err) { Get-Content -LiteralPath $err }; exit $p.ExitCode"
         )
+        add_test(NAME qml_smoke_scaled_125
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $dir = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>'; $env:PATH = $dir + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '1.25'; $out = Join-Path $dir 'qml_smoke_scaled_125.out.log'; $err = Join-Path $dir 'qml_smoke_scaled_125.err.log'; Remove-Item -LiteralPath $out,$err -ErrorAction SilentlyContinue; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru; if (Test-Path $out) { Get-Content -LiteralPath $out }; if (Test-Path $err) { Get-Content -LiteralPath $err }; exit $p.ExitCode"
+        )
+        add_test(NAME qml_smoke_scaled_200
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "$sep = [System.IO.Path]::PathSeparator; $dir = '$<TARGET_FILE_DIR:appOpenIPC-Dashboard>'; $env:PATH = $dir + $sep + '$<TARGET_FILE_DIR:Qt6::Core>' + $sep + $env:PATH; $env:QT_SCALE_FACTOR = '2.0'; $out = Join-Path $dir 'qml_smoke_scaled_200.out.log'; $err = Join-Path $dir 'qml_smoke_scaled_200.err.log'; Remove-Item -LiteralPath $out,$err -ErrorAction SilentlyContinue; $p = Start-Process -FilePath '$<TARGET_FILE:appOpenIPC-Dashboard>' -ArgumentList '--smoke-qml' -WorkingDirectory $dir -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru; if (Test-Path $out) { Get-Content -LiteralPath $out }; if (Test-Path $err) { Get-Content -LiteralPath $err }; exit $p.ExitCode"
+        )
     else()
         add_test(NAME qml_smoke COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
         add_test(NAME qml_smoke_scaled COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+        add_test(NAME qml_smoke_scaled_125 COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+        add_test(NAME qml_smoke_scaled_200 COMMAND $<TARGET_FILE:appOpenIPC-Dashboard> --smoke-qml)
+    endif()
+
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME web_asset_contract
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/web_asset_contract.py")
+        set_tests_properties(web_asset_contract PROPERTIES
+            TIMEOUT 20
+            LABELS "static;web")
+
+        add_test(NAME release_metadata_tests
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/release_metadata_tests.py")
+        set_tests_properties(release_metadata_tests PROPERTIES
+            TIMEOUT 20
+            LABELS "unit;release")
+
+        add_test(NAME server_only_smoke
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/server_only_smoke.py
+                $<TARGET_FILE:appOpenIPC-Dashboard>
+        )
+        set_tests_properties(server_only_smoke PROPERTIES
+            TIMEOUT 70
+            LABELS "smoke;runtime"
+            RUN_SERIAL TRUE
+        )
     endif()
 
     if(TARGET Qt6::qmllint)
@@ -1231,6 +1285,8 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/analytics/RulesPanel.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsEvidenceUploadPanel.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsWebServerPage.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/AppUpdateContent.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CameraSearchDialog.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30
@@ -1238,7 +1294,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1248,14 +1304,14 @@ if(BUILD_TESTING)
         LABELS "unit"
     )
 
-    set_tests_properties(qml_smoke qml_smoke_scaled PROPERTIES
+    set_tests_properties(qml_smoke qml_smoke_scaled qml_smoke_scaled_125 qml_smoke_scaled_200 PROPERTIES
         TIMEOUT 45
         LABELS "smoke"
         RUN_SERIAL TRUE
     )
 
     if(WIN32)
-        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
         set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES
@@ -1267,6 +1323,12 @@ if(BUILD_TESTING)
         )
         set_tests_properties(qml_smoke_scaled PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1.5"
+        )
+        set_tests_properties(qml_smoke_scaled_125 PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1.25"
+        )
+        set_tests_properties(qml_smoke_scaled_200 PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2.0"
         )
     endif()
 endif()

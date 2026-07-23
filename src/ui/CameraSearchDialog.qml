@@ -102,20 +102,24 @@ Dialog {
                 spacing: 10
                 
                 Button {
+                    id: batchCancelButton
+
                     text: I18n.t("Отмена")
                     Layout.fillWidth: true
                     hoverEnabled: true
-                    background: Rectangle { color: parent.hovered ? Theme.metroTileHover : Theme.metroTile; radius: Theme.metroTileRadius; border.color: Theme.metroStroke }
-                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Theme.metroFontFamily }
+                    background: Rectangle { color: batchCancelButton.hovered ? Theme.metroTileHover : Theme.metroTile; radius: Theme.metroTileRadius; border.color: Theme.metroStroke }
+                    contentItem: Text { text: batchCancelButton.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: Theme.metroFontFamily }
                     onClicked: batchLoginDialog.close()
                 }
                 
                 Button {
+                    id: batchAddButton
+
                     text: I18n.t("Добавить")
                     Layout.fillWidth: true
                     hoverEnabled: true
-                    background: Rectangle { color: parent.hovered ? Theme.metroBlueHover : Theme.metroBlue; radius: Theme.metroTileRadius; border.color: Theme.metroBlue }
-                    contentItem: Text { text: parent.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.bold: true; font.family: Theme.metroFontFamily }
+                    background: Rectangle { color: batchAddButton.hovered ? Theme.metroBlueHover : Theme.metroBlue; radius: Theme.metroTileRadius; border.color: Theme.metroBlue }
+                    contentItem: Text { text: batchAddButton.text; color: Theme.textPrimary; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.bold: true; font.family: Theme.metroFontFamily }
                     onClicked: {
                         root.processBatchAdd(batchLoginField.text, batchPasswordField.text)
                         batchLoginDialog.close()
@@ -809,6 +813,8 @@ Dialog {
             spacing: 8
             
             Button {
+                id: scanButton
+
                 text: SystemController.networkDiscovery.running
                       ? I18n.t("ОСТАНОВИТЬ") : I18n.t("СКАНИРОВАТЬ")
                 Layout.preferredWidth: 132
@@ -816,12 +822,12 @@ Dialog {
                 hoverEnabled: true
                 
                 background: Rectangle {
-                    color: parent.hovered ? Theme.metroBlueHover : Theme.metroBlue
+                    color: scanButton.hovered ? Theme.metroBlueHover : Theme.metroBlue
                     radius: Theme.metroTileRadius
                     border.color: Theme.metroBlue
                 }
                 contentItem: Text {
-                    text: parent.text
+                    text: scanButton.text
                     color: Theme.textPrimary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -840,6 +846,8 @@ Dialog {
             }
 
             Button {
+                id: clearButton
+
                 text: I18n.t("ОЧИСТИТЬ")
                 Layout.preferredWidth: 102
                 Layout.preferredHeight: 36
@@ -847,13 +855,13 @@ Dialog {
                 hoverEnabled: true
 
                 background: Rectangle {
-                    color: parent.enabled ? (parent.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
+                    color: clearButton.enabled ? (clearButton.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
                     radius: Theme.metroTileRadius
-                    border.color: parent.enabled ? Theme.metroStroke : Theme.metroStroke
+                    border.color: Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
-                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
+                    text: clearButton.text
+                    color: clearButton.enabled ? Theme.textPrimary : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     font.family: Theme.metroFontFamily
@@ -868,6 +876,8 @@ Dialog {
             Item { Layout.fillWidth: true }
 
             Button {
+                id: validateSelectedButton
+
                 text: validationTotal > 0
                       ? I18n.t("ПРОВЕРКА %1/%2", [validationCompleted, validationTotal])
                       : I18n.t("ПРОВЕРИТЬ ВЫБРАННЫЕ")
@@ -877,16 +887,16 @@ Dialog {
                 hoverEnabled: true
 
                 background: Rectangle {
-                    color: parent.enabled ? (parent.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
+                    color: validateSelectedButton.enabled ? (validateSelectedButton.hovered ? Theme.metroTileHover : Theme.metroTile) : Theme.metroTileDisabled
                     radius: Theme.metroTileRadius
-                    border.color: parent.enabled ? Theme.metroBlue : Theme.metroStroke
+                    border.color: validateSelectedButton.enabled ? Theme.metroBlue : Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
-                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
+                    text: validateSelectedButton.text
+                    color: validateSelectedButton.enabled ? Theme.textPrimary : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.bold: parent.enabled
+                    font.bold: validateSelectedButton.enabled
                     font.family: Theme.metroFontFamily
                     font.pixelSize: 11
                     elide: Text.ElideRight
@@ -902,6 +912,8 @@ Dialog {
             }
             
             Button {
+                id: addSelectedButton
+
                 text: root.selectedReadyToAdd()
                       ? I18n.t("ДОБАВИТЬ ВЫБРАННЫЕ (") + root.selectedCount + ")"
                       : I18n.t("ПРОВЕРИТЬ И ДОБАВИТЬ (") + root.selectedCount + ")"
@@ -911,13 +923,13 @@ Dialog {
                 hoverEnabled: true
                 
                 background: Rectangle {
-                    color: parent.enabled ? (parent.hovered ? Theme.metroBlueHover : Theme.metroBlue) : Theme.metroTileDisabled
+                    color: addSelectedButton.enabled ? (addSelectedButton.hovered ? Theme.metroBlueHover : Theme.metroBlue) : Theme.metroTileDisabled
                     radius: Theme.metroTileRadius
-                    border.color: parent.enabled ? Theme.metroBlue : Theme.metroStroke
+                    border.color: addSelectedButton.enabled ? Theme.metroBlue : Theme.metroStroke
                 }
                 contentItem: Text {
-                    text: parent.text
-                    color: parent.enabled ? Theme.textPrimary : Theme.textMuted
+                    text: addSelectedButton.text
+                    color: addSelectedButton.enabled ? Theme.textPrimary : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     font.bold: true

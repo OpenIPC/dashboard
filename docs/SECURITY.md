@@ -20,3 +20,27 @@ TLS errors abort network operations; certificates are not silently accepted.
 ## Reporting
 
 Do not include passwords, camera URLs with user information, access tokens, recordings or customer network layouts in a public issue. Provide sanitized logs and a minimal reproduction.
+
+## Web deployment threat model
+
+Protected assets are camera credentials, recordings, device-control authority, user accounts,
+session tokens and the host filesystem. Relevant attackers are an unauthenticated LAN client, a
+compromised browser origin, a malicious configuration import and a client spoofing reverse-proxy
+headers.
+
+Security boundaries:
+
+- `localhost` is the default; LAN/VPN/reverse-proxy exposure requires an explicit profile;
+- Dashboard never treats `Forwarded` or `X-Forwarded-*` as identity evidence;
+- an external HTTPS Origin is accepted only from an exact configured proxy peer and exact external
+  base URL;
+- reverse-proxy deployment forces secure cookies; mutations still require the session, permission,
+  same-origin/CSRF check, bounded input and audit;
+- browser imports cannot mutate the listener, deployment profile or trusted proxy list;
+- session administration exposes origin/peer and expiry metadata, never the raw token;
+- the public liveness/readiness responses contain bounded operational state and no secrets.
+
+Residual boundaries: plain HTTP on a trusted LAN does not provide confidentiality; use VPN or an
+HTTPS reverse proxy. Dashboard has no public cloud relay and public NAT traversal/STUN/TURN remains
+disabled until the credential, relay and interoperability design is qualified. See
+[Secure Web deployment](WEB_DEPLOYMENT.md).

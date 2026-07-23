@@ -183,7 +183,7 @@
               </div>
               <div class="admin-card">
                 <div class="section-heading"><h3 data-i18n="activeSessions">Active sessions</h3></div>
-                <div class="table-wrap"><table><thead><tr><th data-i18n="username">Username</th><th data-i18n="lastSeen">Last seen</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="sessions-body"></tbody></table></div>
+                <div class="table-wrap"><table><thead><tr><th data-i18n="username">Username</th><th data-i18n="sessionSource">Origin / peer</th><th data-i18n="lastSeen">Last seen</th><th data-i18n="sessionExpiry">Expiry</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="sessions-body"></tbody></table></div>
                 <form id="password-change-form" class="compact-form vertical" autocomplete="off">
                   <h3 data-i18n="changePassword">Change password</h3>
                   <input id="old-password" type="password" required autocomplete="current-password" data-i18n-placeholder="currentPassword" placeholder="Current password">
@@ -278,6 +278,10 @@
 
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
-    <script src="/app.js?v=0261-p6-onboarding4" defer></script>
+    <script src="/core.js?v=028-p11" defer></script>
+    <script src="/monitor.js?v=028-p11" defer></script>
+    <script src="/devices.js?v=028-p11" defer></script>
+    <script src="/admin.js?v=028-p11" defer></script>
+    <script src="/app.js?v=028-p11" defer></script>
 </body>
 </html>

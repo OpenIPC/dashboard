@@ -1,8 +1,10 @@
 #pragma once
 
 #include "DashboardHttpProtocol.h"
+#include "DashboardWebDeploymentPolicy.h"
 #include "DashboardWebSessionStore.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QPointer>
@@ -30,6 +32,8 @@ class DashboardWebServer : public QObject
     Q_PROPERTY(int port READ port NOTIFY stateChanged)
     Q_PROPERTY(int webSocketPort READ webSocketPort NOTIFY stateChanged)
     Q_PROPERTY(QString url READ url NOTIFY stateChanged)
+    Q_PROPERTY(QString deploymentProfile READ deploymentProfile NOTIFY stateChanged)
+    Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY stateChanged)
     Q_PROPERTY(int activeSessions READ activeSessions NOTIFY activeSessionsChanged)
     Q_PROPERTY(int connectedClients READ connectedClients NOTIFY connectedClientsChanged)
@@ -45,6 +49,10 @@ public:
     int port() const { return m_httpServer.isListening() ? m_httpServer.serverPort() : m_port; }
     int webSocketPort() const { return m_webSocketPort; }
     QString url() const;
+    QString localUrl() const;
+    QString webSocketUrl() const;
+    QString deploymentProfile() const { return m_deployment.profile; }
+    bool ready() const { return running() && m_deployment.valid; }
     QString lastError() const { return m_lastError; }
     int activeSessions() const { return m_sessions.count(); }
     int connectedClients() const;
@@ -56,6 +64,7 @@ public:
     Q_INVOKABLE bool restart();
     Q_INVOKABLE void openInBrowser();
     Q_INVOKABLE QVariantMap status() const;
+    QVariantMap healthStatus(bool readiness) const;
     void applySettings(const QVariantMap &settings);
 
 signals:
@@ -86,6 +95,7 @@ private:
     bool requirePermission(const DashboardWebSessionStore::Session &session, int permission,
                            DashboardHttpProtocol::Response *response) const;
     bool validateMutationRequest(const DashboardHttpProtocol::Request &request,
+                                 const QString &peerAddress,
                                  DashboardHttpProtocol::Response *response) const;
     bool mutationAllowed(const QByteArray &rawToken, const QString &peerAddress,
                          qint64 nowMs);
@@ -144,12 +154,15 @@ private:
     QHash<QString, QString> m_idempotentDeviceOperations;
     QTimer m_sessionCleanupTimer;
     QTimer m_broadcastTimer;
+    QElapsedTimer m_uptimeTimer;
+    DashboardWebDeploymentPolicy::Config m_deployment;
     QString m_configuredBindAddress = QStringLiteral("127.0.0.1");
     QString m_effectiveBindAddress = QStringLiteral("127.0.0.1");
     QString m_lastError;
     int m_port = 8080;
     int m_webSocketPort = 8081;
     int m_sessionTimeoutMinutes = 60;
+    qint64 m_timeToReadyMs = -1;
     bool m_enabled = false;
     bool m_allowRemote = false;
     bool m_secureCookies = false;

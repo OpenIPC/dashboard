@@ -72,6 +72,14 @@ void normalizeAppSettings(QVariantMap &settings)
         settings[QStringLiteral("playerFillMode")] =
             normalizedPlayerFillMode(settings.value(QStringLiteral("playerFillMode")));
     }
+
+    const QString profile = settings.value(QStringLiteral("webDeploymentProfile"))
+                                .toString().trimmed().toLower();
+    if (profile == QStringLiteral("localhost")) {
+        settings[QStringLiteral("webServerAllowRemote")] = false;
+    } else if (profile == QStringLiteral("lan") || profile == QStringLiteral("vpn")) {
+        settings[QStringLiteral("webServerAllowRemote")] = true;
+    }
 }
 
 } // namespace

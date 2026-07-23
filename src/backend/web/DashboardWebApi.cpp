@@ -298,8 +298,12 @@ DashboardHttpProtocol::Response DashboardWebServer::routeStatic(
     QString resourcePath;
     if (request.path == QStringLiteral("/") || request.path == QStringLiteral("/index.html")) {
         resourcePath = QStringLiteral(":/web/index.html");
-    } else if (request.path == QStringLiteral("/app.js")) {
-        resourcePath = QStringLiteral(":/web/app.js");
+    } else if (request.path == QStringLiteral("/core.js")
+               || request.path == QStringLiteral("/monitor.js")
+               || request.path == QStringLiteral("/devices.js")
+               || request.path == QStringLiteral("/admin.js")
+               || request.path == QStringLiteral("/app.js")) {
+        resourcePath = QStringLiteral(":/web") + request.path;
     } else if (request.path == QStringLiteral("/styles.css")) {
         resourcePath = QStringLiteral(":/web/styles.css");
     } else {
@@ -345,11 +349,12 @@ bool DashboardWebServer::requirePermission(const DashboardWebSessionStore::Sessi
 }
 
 bool DashboardWebServer::validateMutationRequest(const DashboardHttpProtocol::Request &request,
+                                                 const QString &peerAddress,
                                                  DashboardHttpProtocol::Response *response) const
 {
     const QByteArray origin = request.header("origin");
-    if (!origin.isEmpty()
-        && !DashboardHttpProtocol::originMatchesHost(origin, request.header("host"))) {
+    if (!DashboardWebDeploymentPolicy::originAllowed(
+            m_deployment, origin, request.header("host"), peerAddress)) {
         if (response) *response = jsonResponse(403, {}, tr("Origin check failed"));
         return false;
     }
@@ -427,16 +432,31 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.method == "POST") {
         DashboardHttpProtocol::Response validation;
-        if (!validateMutationRequest(request, &validation)) return validation;
+        if (!validateMutationRequest(request, peerAddress, &validation)) return validation;
+    }
+
+    if (request.path == QStringLiteral("/api/v1/health/live") && request.method == "GET") {
+        return jsonResponse(200, healthStatus(false));
+    }
+    if (request.path == QStringLiteral("/api/v1/health/ready") && request.method == "GET") {
+        const QVariantMap health = healthStatus(true);
+        return jsonResponse(health.value(QStringLiteral("ready")).toBool() ? 200 : 503, health,
+                            health.value(QStringLiteral("ready")).toBool()
+                                ? QString() : tr("Web server is not ready"));
     }
 
     if (request.path == QStringLiteral("/api/v1/server") && request.method == "GET") {
         const QVariantMap data{
             {QStringLiteral("name"), QStringLiteral("OpenIPC Dashboard")},
+            {QStringLiteral("version"), QCoreApplication::applicationVersion()},
             {QStringLiteral("apiVersion"), QStringLiteral("v1")},
+            {QStringLiteral("ready"), ready()},
+            {QStringLiteral("deploymentProfile"), m_deployment.profile},
+            {QStringLiteral("publicUrl"), url()},
             {QStringLiteral("hasUsers"), m_systemController->userManager()->hasUsers()},
             {QStringLiteral("webSocketsAvailable"), webSocketsAvailable()},
             {QStringLiteral("webSocketPort"), webSocketPort()},
+            {QStringLiteral("webSocketUrl"), webSocketUrl()},
             {QStringLiteral("webRtcAvailable"), m_webRtcManager
                  && m_webRtcManager->available()},
             {QStringLiteral("webRtcError"), m_webRtcManager
@@ -465,7 +485,11 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
             return jsonResponse(401, {}, tr("Invalid username or password"));
         }
         m_loginWindows.remove(peerAddress);
-        const QByteArray token = m_sessions.create(user);
+        const QByteArray token = m_sessions.create(user, QVariantMap{
+            {QStringLiteral("peerAddress"), peerAddress},
+            {QStringLiteral("origin"), QString::fromUtf8(request.header("origin"))},
+            {QStringLiteral("userAgent"), QString::fromUtf8(request.header("user-agent"))}
+        });
         const bool bearerSession = input.value(QStringLiteral("sessionMode")).toString()
             .compare(QStringLiteral("bearer"), Qt::CaseInsensitive) == 0;
         QVariantMap sessionData = user;
@@ -507,8 +531,9 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (request.path == QStringLiteral("/api/v1/auth/logout") && request.method == "POST") {
         m_sessions.remove(rawToken);
         DashboardHttpProtocol::Response response = jsonResponse(200, QVariantMap{});
-        response.headers.insert("Set-Cookie",
-                                "openipc_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+        QByteArray clearCookie = "openipc_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0";
+        if (m_secureCookies) clearCookie += "; Secure";
+        response.headers.insert("Set-Cookie", clearCookie);
         return response;
     }
 
@@ -644,11 +669,15 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString sessionId = input.value(QStringLiteral("id")).toString().trimmed().toLower();
+        const QString reason = input.value(QStringLiteral("reason"), QStringLiteral("administrator"))
+                                   .toString().trimmed().left(128);
         if (!jsonOk || !m_sessions.removeById(sessionId)) {
             return jsonResponse(404, {}, tr("Session not found"));
         }
-        audit(session, QStringLiteral("session.revoke"), sessionId);
-        return jsonResponse(200, QVariantMap{{QStringLiteral("id"), sessionId}});
+        audit(session, QStringLiteral("session.revoke"), sessionId,
+              reason.isEmpty() ? QStringLiteral("administrator") : reason);
+        return jsonResponse(200, QVariantMap{{QStringLiteral("id"), sessionId},
+                                             {QStringLiteral("reason"), reason}});
     }
     if (request.path == QStringLiteral("/api/v1/logs") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
@@ -768,7 +797,15 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         }
         QVariantMap normalizedSettings;
         QString settingsError;
-        const QVariantMap settings = configuration.value(QStringLiteral("settings")).toMap();
+        QVariantMap settings = configuration.value(QStringLiteral("settings")).toMap();
+        const QStringList desktopOnlySettings{
+            QStringLiteral("webServerEnabled"), QStringLiteral("webServerAllowRemote"),
+            QStringLiteral("webDeploymentProfile"), QStringLiteral("webServerBindAddress"),
+            QStringLiteral("webServerPort"), QStringLiteral("webSocketPort"),
+            QStringLiteral("webExternalBaseUrl"), QStringLiteral("webExternalWebSocketUrl"),
+            QStringLiteral("webTrustedProxyAddresses")
+        };
+        for (const QString &key : desktopOnlySettings) settings.remove(key);
         if (!m_systemController->presentation()->normalizeSettingsPatch(
                 settings, &normalizedSettings, &settingsError)) {
             return jsonResponse(400, {}, settingsError);
@@ -840,7 +877,8 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         return jsonResponse(200, QVariantMap{
             {QStringLiteral("added"), added},
             {QStringLiteral("updated"), updated},
-            {QStringLiteral("credentialsPreserved"), true}
+            {QStringLiteral("credentialsPreserved"), true},
+            {QStringLiteral("serverSettingsPreserved"), true}
         });
     }
     if (request.path == QStringLiteral("/api/v1/devices/operation") && request.method == "POST") {

@@ -10,12 +10,14 @@
 #include "analytics/AnalyticsEngine.h"
 
 #include <QDesktopServices>
+#include <QCoreApplication>
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QNetworkInterface>
 #include <QRegularExpression>
+#include <QSslSocket>
 #include <QTcpSocket>
 #include <QUrl>
 
@@ -27,12 +29,6 @@ namespace {
 
 constexpr int kMaxHttpConnections = 64;
 constexpr qsizetype kMaxHttpRequestBytes = 32 * 1024 + 1024 * 1024 + 4;
-
-QString displayHost(const QString &address)
-{
-    return address == QStringLiteral("0.0.0.0") || address == QStringLiteral("::")
-        ? QStringLiteral("127.0.0.1") : address;
-}
 
 QString redactDeviceText(QString text)
 {
@@ -183,7 +179,19 @@ DashboardWebServer::~DashboardWebServer()
 
 QString DashboardWebServer::url() const
 {
-    return QStringLiteral("http://%1:%2").arg(displayHost(m_effectiveBindAddress)).arg(port());
+    return DashboardWebDeploymentPolicy::publicHttpUrl(
+        m_deployment, m_effectiveBindAddress, port());
+}
+
+QString DashboardWebServer::localUrl() const
+{
+    return DashboardWebDeploymentPolicy::localHttpUrl(m_effectiveBindAddress, port());
+}
+
+QString DashboardWebServer::webSocketUrl() const
+{
+    return DashboardWebDeploymentPolicy::publicWebSocketUrl(
+        m_deployment, m_effectiveBindAddress, webSocketPort());
 }
 
 int DashboardWebServer::connectedClients() const
@@ -222,27 +230,50 @@ QVariantList DashboardWebServer::accessUrls() const
 
 void DashboardWebServer::applySettings(const QVariantMap &settings)
 {
+    QVariantMap effectiveSettings = settings;
+    const QString environmentProfile = qEnvironmentVariable("OPENIPC_WEB_DEPLOYMENT_PROFILE").trimmed();
+    const QString environmentBind = qEnvironmentVariable("OPENIPC_WEB_BIND_ADDRESS").trimmed();
+    bool environmentPortOk = false;
+    bool environmentWebSocketPortOk = false;
+    const int environmentPort = qEnvironmentVariableIntValue("OPENIPC_WEB_PORT", &environmentPortOk);
+    const int environmentWebSocketPort = qEnvironmentVariableIntValue(
+        "OPENIPC_WEBSOCKET_PORT", &environmentWebSocketPortOk);
+    if (!environmentProfile.isEmpty()) {
+        effectiveSettings[QStringLiteral("webDeploymentProfile")] = environmentProfile;
+    }
+    if (!environmentBind.isEmpty()) {
+        effectiveSettings[QStringLiteral("webServerBindAddress")] = environmentBind;
+    }
+    if (environmentPortOk) effectiveSettings[QStringLiteral("webServerPort")] = environmentPort;
+    if (environmentWebSocketPortOk) {
+        effectiveSettings[QStringLiteral("webSocketPort")] = environmentWebSocketPort;
+    }
+
     const bool wasRunning = running();
+    const DashboardWebDeploymentPolicy::Config previousDeployment = m_deployment;
     const QString previousAddress = m_configuredBindAddress;
     const int previousPort = m_port;
     const int previousWebSocketPort = m_webSocketPort;
     const bool previousAllowRemote = m_allowRemote;
 
-    m_enabled = settings.value(QStringLiteral("webServerEnabled"), false).toBool();
-    m_allowRemote = settings.value(QStringLiteral("webServerAllowRemote"), false).toBool();
-    m_configuredBindAddress = settings.value(QStringLiteral("webServerBindAddress"),
-                                             QStringLiteral("127.0.0.1")).toString().trimmed();
-    if (m_configuredBindAddress.isEmpty()) m_configuredBindAddress = QStringLiteral("127.0.0.1");
-    m_port = qBound(1024, settings.value(QStringLiteral("webServerPort"), 8080).toInt(), 65535);
-    m_webSocketPort = qBound(1024, settings.value(QStringLiteral("webSocketPort"), 8081).toInt(), 65535);
+    m_enabled = effectiveSettings.value(QStringLiteral("webServerEnabled"), false).toBool();
+    m_deployment = DashboardWebDeploymentPolicy::fromSettings(effectiveSettings);
+    m_allowRemote = m_deployment.allowRemote;
+    m_configuredBindAddress = m_deployment.configuredBindAddress;
+    m_port = qBound(1024, effectiveSettings.value(QStringLiteral("webServerPort"), 8080).toInt(), 65535);
+    m_webSocketPort = qBound(1024, effectiveSettings.value(QStringLiteral("webSocketPort"), 8081).toInt(), 65535);
     if (m_webSocketPort == m_port) m_webSocketPort = m_port < 65535 ? m_port + 1 : m_port - 1;
-    m_sessionTimeoutMinutes = qBound(5, settings.value(QStringLiteral("webSessionTimeoutMinutes"), 60).toInt(), 1440);
-    m_secureCookies = settings.value(QStringLiteral("webSecureCookies"), false).toBool();
+    m_sessionTimeoutMinutes = qBound(5, effectiveSettings.value(QStringLiteral("webSessionTimeoutMinutes"), 60).toInt(), 1440);
+    m_secureCookies = m_deployment.secureCookies;
     m_sessions.setTimeoutMinutes(m_sessionTimeoutMinutes);
 
     const bool endpointChanged = previousAddress != m_configuredBindAddress
         || previousPort != m_port || previousWebSocketPort != m_webSocketPort
-        || previousAllowRemote != m_allowRemote;
+        || previousAllowRemote != m_allowRemote
+        || previousDeployment.profile != m_deployment.profile
+        || previousDeployment.externalBaseUrl != m_deployment.externalBaseUrl
+        || previousDeployment.externalWebSocketUrl != m_deployment.externalWebSocketUrl
+        || previousDeployment.trustedProxyAddresses != m_deployment.trustedProxyAddresses;
     if (!m_enabled) {
         stop();
     } else if (!wasRunning || endpointChanged) {
@@ -255,6 +286,13 @@ bool DashboardWebServer::start()
 {
     if (running()) return true;
     m_lastError.clear();
+    m_timeToReadyMs = -1;
+    m_uptimeTimer.start();
+    if (!m_deployment.valid) {
+        m_lastError = m_deployment.validationError;
+        emit stateChanged();
+        return false;
+    }
     m_effectiveBindAddress = m_allowRemote ? m_configuredBindAddress : QStringLiteral("127.0.0.1");
     QHostAddress address;
     if (!address.setAddress(m_effectiveBindAddress)) {
@@ -268,7 +306,8 @@ bool DashboardWebServer::start()
         }
     }
     if (!m_httpServer.listen(address, static_cast<quint16>(m_port))) {
-        m_lastError = m_httpServer.errorString();
+        m_lastError = tr("Could not listen on %1:%2: %3. Another Dashboard instance or service may already use this port.")
+                          .arg(m_effectiveBindAddress).arg(m_port).arg(m_httpServer.errorString());
         emit stateChanged();
         return false;
     }
@@ -276,8 +315,14 @@ bool DashboardWebServer::start()
 #ifdef OPENIPC_HAS_QT_WEBSOCKETS
     startWebSocketServer(address);
 #endif
-    qInfo().noquote() << "Dashboard web server listening on" << url()
-                      << (m_allowRemote ? "(remote access enabled)" : "(localhost only)");
+    m_timeToReadyMs = m_uptimeTimer.elapsed();
+    qInfo().noquote() << "Dashboard web server ready"
+                      << "profile=" << m_deployment.profile
+                      << "local=" << localUrl()
+                      << "public=" << url()
+                      << "websocket=" << webSocketUrl()
+                      << "tlsRuntime=" << QSslSocket::supportsSsl()
+                      << "readyMs=" << m_timeToReadyMs;
     emit stateChanged();
     return true;
 }
@@ -330,7 +375,10 @@ QVariantMap DashboardWebServer::status() const
 {
     return {
         {QStringLiteral("running"), running()},
+        {QStringLiteral("ready"), ready()},
         {QStringLiteral("url"), url()},
+        {QStringLiteral("localUrl"), localUrl()},
+        {QStringLiteral("webSocketUrl"), webSocketUrl()},
         {QStringLiteral("bindAddress"), bindAddress()},
         {QStringLiteral("port"), port()},
         {QStringLiteral("webSocketPort"), webSocketPort()},
@@ -345,8 +393,32 @@ QVariantMap DashboardWebServer::status() const
         {QStringLiteral("activeSessions"), activeSessions()},
         {QStringLiteral("connectedClients"), connectedClients()},
         {QStringLiteral("allowRemote"), m_allowRemote},
+        {QStringLiteral("secureCookies"), m_secureCookies},
+        {QStringLiteral("deployment"), DashboardWebDeploymentPolicy::publicStatus(m_deployment)},
+        {QStringLiteral("tlsRuntimeAvailable"), QSslSocket::supportsSsl()},
+        {QStringLiteral("uptimeMs"), m_uptimeTimer.isValid() ? m_uptimeTimer.elapsed() : 0},
+        {QStringLiteral("timeToReadyMs"), m_timeToReadyMs},
         {QStringLiteral("lastError"), m_lastError},
         {QStringLiteral("accessUrls"), accessUrls()}
+    };
+}
+
+QVariantMap DashboardWebServer::healthStatus(bool readiness) const
+{
+    const bool healthy = readiness ? ready() : true;
+    return {
+        {QStringLiteral("status"), healthy ? QStringLiteral("ok") : QStringLiteral("not-ready")},
+        {QStringLiteral("ready"), ready()},
+        {QStringLiteral("running"), running()},
+        {QStringLiteral("version"), QCoreApplication::applicationVersion()},
+        {QStringLiteral("profile"), m_deployment.profile},
+        {QStringLiteral("uptimeMs"), m_uptimeTimer.isValid() ? m_uptimeTimer.elapsed() : 0},
+        {QStringLiteral("timeToReadyMs"), m_timeToReadyMs},
+        {QStringLiteral("tlsRuntimeAvailable"), QSslSocket::supportsSsl()},
+        {QStringLiteral("webRtcAvailable"), m_webRtcManager && m_webRtcManager->available()},
+        {QStringLiteral("webSocketsAvailable"), webSocketsAvailable()},
+        {QStringLiteral("bootstrapRequired"), m_systemController
+             && !m_systemController->userManager()->hasUsers()}
     };
 }
 

@@ -8,6 +8,7 @@
 
 QVariantMap DashboardWebSessionStore::Session::toVariantMap() const
 {
+    const QDateTime now = QDateTime::currentDateTimeUtc();
     return {
         {QStringLiteral("username"), username},
         {QStringLiteral("role"), role},
@@ -15,7 +16,12 @@ QVariantMap DashboardWebSessionStore::Session::toVariantMap() const
         {QStringLiteral("createdAt"), createdAt.toString(Qt::ISODate)},
         {QStringLiteral("expiresAt"), expiresAt.toString(Qt::ISODate)},
         {QStringLiteral("absoluteExpiresAt"), absoluteExpiresAt.toString(Qt::ISODate)},
-        {QStringLiteral("lastSeenAt"), lastSeenAt.toString(Qt::ISODate)}
+        {QStringLiteral("lastSeenAt"), lastSeenAt.toString(Qt::ISODate)},
+        {QStringLiteral("idleTtlSeconds"), qMax<qint64>(0, now.secsTo(expiresAt))},
+        {QStringLiteral("absoluteTtlSeconds"), qMax<qint64>(0, now.secsTo(absoluteExpiresAt))},
+        {QStringLiteral("peerAddress"), peerAddress},
+        {QStringLiteral("origin"), origin},
+        {QStringLiteral("userAgent"), userAgent}
     };
 }
 
@@ -29,7 +35,7 @@ void DashboardWebSessionStore::setTimeoutMinutes(int minutes)
     m_timeoutMinutes = qBound(5, minutes, 24 * 60);
 }
 
-QByteArray DashboardWebSessionStore::create(const QVariantMap &user)
+QByteArray DashboardWebSessionStore::create(const QVariantMap &user, const QVariantMap &context)
 {
     QByteArray rawToken(32, Qt::Uninitialized);
     for (qsizetype index = 0; index < rawToken.size(); index += 8) {
@@ -44,6 +50,9 @@ QByteArray DashboardWebSessionStore::create(const QVariantMap &user)
     session.username = user.value(QStringLiteral("username")).toString();
     session.role = user.value(QStringLiteral("role")).toString();
     session.permissions = user.value(QStringLiteral("permissions")).toInt();
+    session.peerAddress = context.value(QStringLiteral("peerAddress")).toString().left(64);
+    session.origin = context.value(QStringLiteral("origin")).toString().left(512);
+    session.userAgent = context.value(QStringLiteral("userAgent")).toString().left(512);
     session.createdAt = now;
     session.lastSeenAt = now;
     session.absoluteExpiresAt = now.addSecs(24 * 60 * 60);

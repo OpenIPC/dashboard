@@ -3,6 +3,7 @@
 #include "AnalyticsEvidenceImageProcessor.h"
 #include "ModelArtifactVerifier.h"
 #include "YoloDetector.h"
+#include "../AppPaths.h"
 #include "../PathUtils.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -57,7 +58,7 @@ AnalyticsEngine::AnalyticsEngine(QObject *parent)
     qInfo() << "SSL Library Run:" << QSslSocket::sslLibraryVersionString();
 
     // Use AppData location for modules to ensure write permissions
-    m_modulesDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/modules";
+    m_modulesDir = AppPaths::dataDirectory() + "/modules";
     qInfo() << "Analytics modules directory:" << m_modulesDir;
     
     QDir dir(m_modulesDir);
@@ -70,9 +71,14 @@ AnalyticsEngine::AnalyticsEngine(QObject *parent)
     }
 
     // Default evidence directories
-    m_evidenceSnapshotsDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + "/OpenIPC/Evidence";
-    m_evidenceClipsDir = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC/Evidence";
-    m_eventStorePath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/analytics_events.sqlite";
+    const QString runtimeRoot = AppPaths::runtimeRoot();
+    m_evidenceSnapshotsDir = runtimeRoot.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + "/OpenIPC/Evidence"
+        : AppPaths::evidenceDirectory(QStringLiteral("snapshots"));
+    m_evidenceClipsDir = runtimeRoot.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) + "/OpenIPC/Evidence"
+        : AppPaths::evidenceDirectory(QStringLiteral("clips"));
+    m_eventStorePath = AppPaths::dataDirectory() + "/analytics_events.sqlite";
     m_eventStoreConnectionName = QStringLiteral("analytics_events_%1").arg(reinterpret_cast<quintptr>(this));
     initEventStore();
     m_analyticsEvents = loadRecentAnalyticsEvents(m_maxAnalyticsEvents);

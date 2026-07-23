@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 2
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -32,6 +35,15 @@ jobs:
           target: 'desktop'
           arch: 'win64_mingw'
           modules: 'qtmultimedia qtwebsockets'
+          cache: true
+
+      - name: Cache GStreamer installers
+        uses: actions/cache@v5
+        with:
+          path: |
+            gstreamer-1.0-mingw-x86_64-${{ env.GSTREAMER_VERSION }}.msi
+            gstreamer-1.0-devel-mingw-x86_64-${{ env.GSTREAMER_VERSION }}.msi
+          key: gstreamer-mingw-${{ env.GSTREAMER_VERSION }}-v1
 
       - name: Install OpenSSL 1.1 runtime for Qt TLS
         shell: pwsh
@@ -109,8 +121,19 @@ jobs:
            $msiRuntime = "gstreamer-1.0-mingw-x86_64-$env:GSTREAMER_VERSION.msi"
            $msiDevel = "gstreamer-1.0-devel-mingw-x86_64-$env:GSTREAMER_VERSION.msi"
            $assets = @($msiRuntime, $msiDevel)
+           $expectedSha256 = @{
+               $msiRuntime = "709408361169e1f2a644ada0c5bf58625236e9d740e9ddf1afb5272fcce485ad"
+               $msiDevel = "73ec18a7e16d243e92b38eb1c3d9216f937da7f79dc729f93f85109208f40865"
+           }
 
            foreach ($asset in $assets) {
+               $cachedHash = if (Test-Path $asset) { (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant() } else { "" }
+               if ((Test-Path $asset) -and (Get-Item $asset).Length -gt 100MB `
+                       -and $cachedHash -eq $expectedSha256[$asset]) {
+                   Write-Host "Using cached GStreamer asset: $asset"
+                   continue
+               }
+               Remove-Item -LiteralPath $asset -Force -ErrorAction SilentlyContinue
                $url = "https://github.com/OpenIPC/dashboard/releases/download/$env:GSTREAMER_RELEASE_TAG/$asset"
                $partial = "$asset.part"
                $downloaded = $false
@@ -123,8 +146,10 @@ jobs:
                        --connect-timeout 30 --retry 2 --retry-delay 5 --retry-all-errors `
                        --output $partial $url
 
+                   $partialHash = if (Test-Path $partial) { (Get-FileHash -Algorithm SHA256 -LiteralPath $partial).Hash.ToLowerInvariant() } else { "" }
                    if ($LASTEXITCODE -eq 0 -and (Test-Path $partial) `
-                           -and (Get-Item $partial).Length -gt 100MB) {
+                           -and (Get-Item $partial).Length -gt 100MB `
+                           -and $partialHash -eq $expectedSha256[$asset]) {
                        Move-Item -LiteralPath $partial -Destination $asset -Force
                        $downloaded = $true
                        break
@@ -220,10 +245,27 @@ jobs:
            $opensslRoot = $env:OPENSSL_ROOT_DIR
            if (-not $opensslRoot) { $opensslRoot = $gstRoot }
            $opensslCmakeRoot = $opensslRoot.Replace('\', '/')
-           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH="$qtDir" -DGStreamer_ROOT="$gstCmakeRoot" -DOPENSSL_ROOT_DIR="$opensslCmakeRoot" -DAPP_VERSION="$appVersion"
+           cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_PREFIX_PATH="$qtDir" -DGStreamer_ROOT="$gstCmakeRoot" -DOPENSSL_ROOT_DIR="$opensslCmakeRoot" -DAPP_VERSION="$appVersion" -DBUILD_TESTING=ON -DOPENIPC_WARNINGS_AS_ERRORS=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Test Windows release build
+        run: ctest --test-dir build --output-on-failure --timeout 90 -j2
+
+      - name: Browser smoke (Microsoft Edge)
+        shell: pwsh
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.61.1
+          node tests/web_browser_smoke.mjs --executable build/appOpenIPC-Dashboard.exe --browsers edge --artifacts browser-artifacts
+
+      - name: Upload Windows browser baselines
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-baselines-windows
+          path: browser-artifacts
+          if-no-files-found: ignore
 
       - name: Upload CMake logs (Windows)
         if: failure()
@@ -620,6 +662,20 @@ jobs:
       - name: Build Installer
         run: iscc setup.iss
 
+      - name: Smoke installed Windows package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installDir = Join-Path $env:RUNNER_TEMP "OpenIPC-Dashboard-PackageSmoke"
+          $installer = (Resolve-Path .\OpenIPC-Dashboard-Installer.exe).Path
+          $process = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$installDir"
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)" }
+          $executable = Join-Path $installDir 'appOpenIPC-Dashboard.exe'
+          if (-not (Test-Path $executable)) { throw "Installed executable is missing: $executable" }
+          python tests/server_only_smoke.py $executable
+
       - name: Upload Installer
         uses: actions/upload-artifact@v7
         with:
@@ -647,15 +703,35 @@ jobs:
           host: 'linux'
           target: 'desktop'
           modules: 'qtmultimedia qtwebsockets'
+          cache: true
 
       - name: Install libxcb dependencies
         run: sudo apt-get install -y libxcb-cursor0
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          APP_VERSION="${GITHUB_REF_NAME#v}"
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DAPP_VERSION="$APP_VERSION" -DBUILD_TESTING=ON -DOPENIPC_WARNINGS_AS_ERRORS=ON
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Test Linux release build
+        run: ctest --test-dir build --output-on-failure --timeout 90 -j2
+
+      - name: Browser smoke (Chromium, Firefox and WebKit)
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.61.1
+          npx playwright install --with-deps chromium firefox webkit
+          node tests/web_browser_smoke.mjs --executable build/appOpenIPC-Dashboard --browsers chromium,firefox,webkit --artifacts browser-artifacts
+
+      - name: Upload Linux browser baselines
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-baselines-linux
+          path: browser-artifacts
+          if-no-files-found: ignore
 
       - name: Upload CMake logs (Linux)
         if: failure()
@@ -680,14 +756,21 @@ jobs:
       - name: Create AppImage
         env:
           VERSION: ${{ github.ref_name }}
+          LINUXDEPLOYQT_SHA256: 974a87457ed26241b793bed7841978fcdf84158d13220e53833a06515f173b0b
         run: |
           set -euo pipefail
           exec > >(tee -a create_appimage.log) 2>&1
           set -x
           : > linuxdeployqt.log
           : > appimagetool.log
-          # Download linuxdeployqt
-          wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          # The upstream "continuous" asset is mutable. Keep the audited digest
+          # explicit so an upstream replacement fails closed until reviewed.
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 20 \
+            --output linuxdeployqt-continuous-x86_64.AppImage.part \
+            https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          test "$(stat --format=%s linuxdeployqt-continuous-x86_64.AppImage.part)" -gt 10000000
+          echo "${LINUXDEPLOYQT_SHA256}  linuxdeployqt-continuous-x86_64.AppImage.part" | sha256sum --check --strict
+          mv linuxdeployqt-continuous-x86_64.AppImage.part linuxdeployqt-continuous-x86_64.AppImage
           chmod +x linuxdeployqt-continuous-x86_64.AppImage
           ./linuxdeployqt-continuous-x86_64.AppImage --appimage-extract
           rm -rf linuxdeployqt-root
@@ -932,6 +1015,13 @@ jobs:
             exit 1
           fi
 
+      - name: Smoke extracted Linux AppImage
+        run: |
+          chmod +x OpenIPC-Dashboard-Linux.AppImage
+          rm -rf squashfs-root
+          ./OpenIPC-Dashboard-Linux.AppImage --appimage-extract >/dev/null
+          python3 tests/server_only_smoke.py squashfs-root/AppRun
+
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
@@ -956,8 +1046,17 @@ jobs:
         with:
           name: linux-appimage
 
+      - name: Generate checksums and release metadata
+        run: |
+          python3 tools/generate_release_metadata.py \
+            --version "$GITHUB_REF_NAME" \
+            --components packaging/third-party-components.json \
+            --output-dir . \
+            OpenIPC-Dashboard-Installer.exe OpenIPC-Dashboard-Linux.AppImage
+          cat SHA256SUMS.txt
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: OpenIPC Dashboard ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
@@ -965,3 +1064,6 @@ jobs:
           files: |
             OpenIPC-Dashboard-Installer.exe
             OpenIPC-Dashboard-Linux.AppImage
+            SHA256SUMS.txt
+            OpenIPC-Dashboard-${{ github.ref_name }}-release-metadata.json
+            OpenIPC-Dashboard-${{ github.ref_name }}.cdx.json

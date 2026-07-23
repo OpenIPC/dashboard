@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenIPC Dashboard Web Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openipc-dashboard
+Group=openipc-dashboard
+Environment=QT_QPA_PLATFORM=offscreen
+Environment=OPENIPC_DATA_ROOT=/var/lib/openipc-dashboard
+Environment=XDG_DATA_HOME=/var/lib/openipc-dashboard
+Environment=XDG_CONFIG_HOME=/var/lib/openipc-dashboard/config
+ExecStart=/opt/openipc-dashboard/AppRun --server-only
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/openipc-dashboard
+
+[Install]
+WantedBy=multi-user.target

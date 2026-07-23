@@ -139,11 +139,15 @@ Window {
     // Embedded Web companion settings
     property bool webServerEnabled: false
     property bool webServerAllowRemote: false
+    property string webDeploymentProfile: "localhost"
     property string webServerBindAddress: "127.0.0.1"
     property int webServerPort: 8080
     property int webSocketPort: 8081
     property int webSessionTimeoutMinutes: 60
     property bool webSecureCookies: false
+    property string webExternalBaseUrl: ""
+    property string webExternalWebSocketUrl: ""
+    property string webTrustedProxyAddresses: ""
 
     // Evidence settings (analytics-driven)
     property bool evidenceEnabled: true
@@ -266,11 +270,15 @@ Window {
             "playerMirror": playerMirror,
             "webServerEnabled": webServerEnabled,
             "webServerAllowRemote": webServerAllowRemote,
+            "webDeploymentProfile": webDeploymentProfile,
             "webServerBindAddress": webServerBindAddress,
             "webServerPort": webServerPort,
             "webSocketPort": webSocketPort,
             "webSessionTimeoutMinutes": webSessionTimeoutMinutes,
-            "webSecureCookies": webSecureCookies
+            "webSecureCookies": webSecureCookies,
+            "webExternalBaseUrl": webExternalBaseUrl,
+            "webExternalWebSocketUrl": webExternalWebSocketUrl,
+            "webTrustedProxyAddresses": webTrustedProxyAddresses
         }
         SystemController.saveAppSettings(settings)
 
@@ -341,11 +349,15 @@ Window {
             if (settings.playerMirror !== undefined) playerMirror = settings.playerMirror
             if (settings.webServerEnabled !== undefined) webServerEnabled = settings.webServerEnabled
             if (settings.webServerAllowRemote !== undefined) webServerAllowRemote = settings.webServerAllowRemote
+            if (settings.webDeploymentProfile) webDeploymentProfile = settings.webDeploymentProfile
             if (settings.webServerBindAddress) webServerBindAddress = settings.webServerBindAddress
             if (settings.webServerPort !== undefined) webServerPort = settings.webServerPort
             if (settings.webSocketPort !== undefined) webSocketPort = settings.webSocketPort
             if (settings.webSessionTimeoutMinutes !== undefined) webSessionTimeoutMinutes = settings.webSessionTimeoutMinutes
             if (settings.webSecureCookies !== undefined) webSecureCookies = settings.webSecureCookies
+            if (settings.webExternalBaseUrl !== undefined) webExternalBaseUrl = settings.webExternalBaseUrl
+            if (settings.webExternalWebSocketUrl !== undefined) webExternalWebSocketUrl = settings.webExternalWebSocketUrl
+            if (settings.webTrustedProxyAddresses !== undefined) webTrustedProxyAddresses = settings.webTrustedProxyAddresses
         }
 
         var analyticsSettings = SystemController.analyticsEngine.getSettings()

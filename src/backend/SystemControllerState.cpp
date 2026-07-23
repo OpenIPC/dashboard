@@ -1,4 +1,5 @@
 #include "SystemController.h"
+#include "AppPaths.h"
 #include "PathUtils.h"
 #include "StateStore.h"
 
@@ -7,7 +8,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 #include <algorithm>
@@ -57,6 +57,11 @@ int normalizedPlayerFillModeForState(const QVariant &value)
 
 void normalizeAppSettingsForState(QVariantMap &settings)
 {
+    if (!settings.contains(QStringLiteral("webDeploymentProfile"))) {
+        settings[QStringLiteral("webDeploymentProfile")] =
+            settings.value(QStringLiteral("webServerAllowRemote"), false).toBool()
+                ? QStringLiteral("lan") : QStringLiteral("localhost");
+    }
     const QStringList pathKeys{
         QStringLiteral("recordingsPath"),
         QStringLiteral("screenshotsPath")
@@ -77,6 +82,14 @@ void normalizeAppSettingsForState(QVariantMap &settings)
     if (settings.contains(QStringLiteral("playerFillMode"))) {
         settings[QStringLiteral("playerFillMode")] =
             normalizedPlayerFillModeForState(settings.value(QStringLiteral("playerFillMode")));
+    }
+
+    const QString profile = settings.value(QStringLiteral("webDeploymentProfile"))
+                                .toString().trimmed().toLower();
+    if (profile == QStringLiteral("localhost")) {
+        settings[QStringLiteral("webServerAllowRemote")] = false;
+    } else if (profile == QStringLiteral("lan") || profile == QStringLiteral("vpn")) {
+        settings[QStringLiteral("webServerAllowRemote")] = true;
     }
 }
 
@@ -104,7 +117,7 @@ void removeLegacyPasswords(QJsonObject &state)
 } // namespace
 QString SystemController::stateFilePath() const
 {
-    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString baseDir = AppPaths::dataDirectory();
     QDir().mkpath(baseDir);
     return baseDir + "/state.json";
 }
@@ -583,7 +596,7 @@ void SystemController::loadState()
 
 QString SystemController::stateDatabasePath() const
 {
-    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString baseDir = AppPaths::dataDirectory();
     QDir().mkpath(baseDir);
     return baseDir + QStringLiteral("/state.sqlite3");
 }

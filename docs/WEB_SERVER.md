@@ -16,17 +16,21 @@ The same executable can run without loading the QML window:
 appOpenIPC-Dashboard --server-only
 ```
 
-Server-only mode uses the saved Web settings but starts the HTTP listener even when automatic startup is disabled. The initial administrator must be created once in the desktop UI before browser login is possible.
+Server-only mode uses the saved Web settings but starts the HTTP listener even when automatic startup is disabled. The initial administrator can be created in the desktop UI or once on a new headless profile with `--initialize-admin` and `OPENIPC_INITIAL_ADMIN_PASSWORD_FILE`; see [Secure Web deployment](WEB_DEPLOYMENT.md#operations).
+
+Set `OPENIPC_DATA_ROOT` for a dedicated server profile. When present, core state, users, QSettings,
+analytics storage, modules and logs are resolved below that directory instead of the interactive
+desktop user's paths. `--data-root <absolute-path>` provides the same override for service launchers.
 
 Only one Dashboard process can listen on a configured HTTP/WebSocket port pair. Do not run the desktop Web server and a separate `--server-only` instance on the same ports. If the settings page reports `The bound address is already in use`, close the previous Dashboard process or assign a different port pair, then apply and restart the server.
 
 ## Network model
 
-- Remote access is disabled by default. The server binds to `127.0.0.1` even if another bind address remains in old settings.
-- Enabling LAN access makes the configured bind address effective. Use `0.0.0.0` to listen on all IPv4 interfaces.
+- The default `localhost` profile forces `127.0.0.1` even if an old bind address remains in settings.
+- `lan`, `vpn` and `reverse_proxy` are explicit deployment profiles. Use `0.0.0.0` only on a protected management network when all interfaces are intentional.
 - Do not forward the plain HTTP port from a router to the Internet.
 - For remote access, prefer WireGuard/Tailscale/another VPN or an HTTPS reverse proxy with strict network allowlists.
-- Enable **Secure cookie** only when browser traffic reaches Dashboard through HTTPS. A browser correctly refuses to send that cookie over plain HTTP.
+- A valid HTTPS reverse-proxy profile forces secure cookies and requires an exact trusted proxy IP list and external base URL.
 
 The server does not enable CORS. Browser API access is same-origin by design.
 
@@ -46,7 +50,7 @@ The web server uses the desktop user database and the same permission mask:
 | Settings, logs, diagnostics and device administration | Settings |
 | User and active-session administration | User Manage |
 
-Session tokens contain 256 random bits. Only their SHA-256 digests are held in memory. Browser cookies are `HttpOnly`, `SameSite=Strict` and use a bounded, sliding expiration with a 24-hour absolute lifetime. Password, permission and user changes invalidate the affected user's web sessions without interrupting unrelated operators. Administrators can inspect opaque session IDs and revoke an individual session; raw tokens are never listed.
+Session tokens contain 256 random bits. Only their SHA-256 digests are held in memory. Browser cookies are `HttpOnly`, `SameSite=Strict` and use a bounded, sliding expiration with a 24-hour absolute lifetime. Password, permission and user changes invalidate the affected user's web sessions without interrupting unrelated operators. Administrators can inspect opaque session IDs, origin/peer, idle/absolute expiry and revoke reason; raw tokens are never listed.
 
 Five failed logins from one address within a minute block that address for five minutes. Authenticated mutations are limited to 60 requests per session/address per minute. State-changing cookie requests require `X-OpenIPC-CSRF: 1`; requests with an `Origin` header must match the server host. Confirmed device mutations and Majestic apply requests additionally require an `Idempotency-Key`.
 
@@ -55,6 +59,8 @@ Five failed logins from one address within a minute block that address for five 
 Public:
 
 - `GET /api/v1/server`
+- `GET /api/v1/health/live`
+- `GET /api/v1/health/ready`
 - `POST /api/v1/auth/login`
 
 Authenticated:
@@ -169,14 +175,7 @@ Archive IDs are SHA-256 identifiers derived from canonical paths. Each playback 
 
 ## Reverse proxy example
 
-Terminate HTTPS at the proxy and forward to localhost only. A minimal conceptual Nginx location is:
-
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto https;
-}
-```
-
-WebSocket forwarding uses the separately configured WebSocket port. Restrict both upstream ports to localhost/firewall rules and apply normal proxy request limits. Dashboard currently validates browser `Origin` against the visible `Host`, so preserve the original host header.
+Terminate HTTPS at an explicitly trusted proxy and forward HTTP/WebSocket upstreams to protected
+Dashboard ports. Dashboard ignores arbitrary forwarded headers: the TCP peer must match the trusted
+proxy list and browser Origin must match the configured external HTTPS base URL. Use the complete
+[Nginx example and deployment profile checklist](WEB_DEPLOYMENT.md#trusted-reverse-proxy).

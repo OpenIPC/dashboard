@@ -20,6 +20,9 @@ public:
         QDateTime expiresAt;
         QDateTime absoluteExpiresAt;
         QDateTime lastSeenAt;
+        QString peerAddress;
+        QString origin;
+        QString userAgent;
 
         bool isValid() const {
             const QDateTime now = QDateTime::currentDateTimeUtc();
@@ -32,7 +35,7 @@ public:
 
     int count() const { return m_sessions.size(); }
     void setTimeoutMinutes(int minutes);
-    QByteArray create(const QVariantMap &user);
+    QByteArray create(const QVariantMap &user, const QVariantMap &context = {});
     Session find(const QByteArray &rawToken, bool touch = true);
     bool remove(const QByteArray &rawToken);
     bool removeById(const QString &sessionId);
