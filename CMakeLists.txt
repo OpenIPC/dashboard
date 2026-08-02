@@ -287,6 +287,8 @@ set(SOURCES
     src/backend/CameraHealthController.h
     src/backend/FleetManager.cpp
     src/backend/FleetManager.h
+    src/backend/IncidentManager.cpp
+    src/backend/IncidentManager.h
     src/backend/CamexController.cpp
     src/backend/CamexController.h
     src/backend/SystemController.cpp
@@ -846,6 +848,21 @@ if(BUILD_TESTING)
     add_test(NAME fleet_manager_tests COMMAND fleet_manager_tests)
     set_tests_properties(fleet_manager_tests PROPERTIES LABELS "unit;fleet")
 
+    add_executable(incident_manager_tests
+        tests/IncidentManagerTests.cpp
+        src/backend/IncidentManager.cpp
+        src/backend/IncidentManager.h
+        src/backend/CameraModel.cpp
+        src/backend/CameraModel.h
+    )
+    target_include_directories(incident_manager_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+    )
+    openipc_enable_project_warnings(incident_manager_tests)
+    target_link_libraries(incident_manager_tests PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME incident_manager_tests COMMAND incident_manager_tests)
+    set_tests_properties(incident_manager_tests PROPERTIES LABELS "unit;incident")
+
     add_executable(path_utils_tests
         tests/PathUtilsTests.cpp
         src/backend/PathUtils.cpp
@@ -1339,7 +1356,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests incident_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1356,7 +1373,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests incident_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
         set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES

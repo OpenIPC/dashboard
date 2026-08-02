@@ -283,6 +283,7 @@ void SystemController::performSave()
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
     root["cameraHealthHistory"] = m_cameraHealthController->historyJson();
     root["fleet"] = m_fleetManager->toJson();
+    root["incidentCenter"] = m_incidentManager->toJson();
 
     QString errorMessage;
     StateStore store(stateDatabasePath());
@@ -518,6 +519,9 @@ void SystemController::loadState()
 
     if (root.contains(QStringLiteral("fleet"))) {
         m_fleetManager->restoreJson(root.value(QStringLiteral("fleet")).toObject());
+    }
+    if (root.contains(QStringLiteral("incidentCenter"))) {
+        m_incidentManager->restoreJson(root.value(QStringLiteral("incidentCenter")).toObject());
     }
 
     const QJsonObject discovery = root.value(QStringLiteral("lastDiscovery")).toObject();

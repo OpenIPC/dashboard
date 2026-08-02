@@ -28,6 +28,7 @@
 #include "AppUpdateChecker.h"
 #include "CameraHealthController.h"
 #include "FleetManager.h"
+#include "IncidentManager.h"
 #include "presentation/DashboardPresentation.h"
 #include "web/DashboardWebServer.h"
 
@@ -56,6 +57,7 @@ class SystemController : public QObject
     Q_PROPERTY(AppUpdateChecker* appUpdateChecker READ appUpdateChecker CONSTANT)
     Q_PROPERTY(CameraHealthController* cameraHealthController READ cameraHealthController CONSTANT)
     Q_PROPERTY(FleetManager* fleetManager READ fleetManager CONSTANT)
+    Q_PROPERTY(IncidentManager* incidentManager READ incidentManager CONSTANT)
     Q_PROPERTY(DashboardPresentation* presentation READ presentation CONSTANT)
     Q_PROPERTY(DashboardWebServer* webServer READ webServer CONSTANT)
     Q_PROPERTY(QString discoveryLastUpdated READ discoveryLastUpdated NOTIFY discoverySessionChanged)
@@ -103,6 +105,7 @@ public:
     AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
     CameraHealthController* cameraHealthController() const { return m_cameraHealthController; }
     FleetManager* fleetManager() const { return m_fleetManager; }
+    IncidentManager* incidentManager() const { return m_incidentManager; }
     DashboardPresentation* presentation() const { return m_presentation; }
     DashboardWebServer* webServer() const { return m_webServer; }
     QString discoveryLastUpdated() const { return m_discoveryLastUpdated; }
@@ -331,6 +334,7 @@ private:
     AppUpdateChecker *m_appUpdateChecker;
     CameraHealthController *m_cameraHealthController;
     FleetManager *m_fleetManager;
+    IncidentManager *m_incidentManager;
     DashboardPresentation *m_presentation;
     StatusChecker *m_statusChecker;
     DashboardWebServer *m_webServer;

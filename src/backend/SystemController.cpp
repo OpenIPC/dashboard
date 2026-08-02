@@ -238,11 +238,24 @@ SystemController::SystemController(QObject *parent)
     , m_fleetManager(new FleetManager(m_cameraModel, m_cameraHealthController,
                                       m_firmwareClient, m_majesticClient,
                                       m_userManager, m_logModel, this))
+    , m_incidentManager(new IncidentManager(m_cameraModel, this))
     , m_presentation(new DashboardPresentation(this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
     , m_webServer(new DashboardWebServer(this, this))
     , m_networkManager(new QNetworkAccessManager(this))
 {
+    m_incidentManager->setLocationResolver(
+        [this](const QString &cameraId, const QString &cameraIp) {
+            QString resolvedId = cameraId.trimmed();
+            if (resolvedId.isEmpty() && !cameraIp.trimmed().isEmpty()) {
+                const int index = m_cameraModel->findIndexByIp(cameraIp.trimmed());
+                if (index >= 0) {
+                    const Camera camera = m_cameraModel->getCamera(index);
+                    resolvedId = camera.id.trimmed().isEmpty() ? camera.ip : camera.id;
+                }
+            }
+            return m_fleetManager->cameraAssignment(resolvedId);
+        });
     m_userManager->setCameraScopeResolver(
         [this](const QString &cameraId, const QString &cameraIp, int cameraIndex) {
             return m_fleetManager->scopeAliases(cameraId, cameraIp, cameraIndex);
@@ -328,15 +341,44 @@ SystemController::SystemController(QObject *parent)
     connect(m_archiveController, &ArchiveController::exportStarted, this,
             [this](const QString &outputFile) {
         addLog(QtInfoMsg, QStringLiteral("Archive export started: %1").arg(outputFile));
+        m_incidentManager->ingestEvent({
+            {QStringLiteral("source"), QStringLiteral("archive")},
+            {QStringLiteral("category"), QStringLiteral("archive")},
+            {QStringLiteral("type"), QStringLiteral("export-started")},
+            {QStringLiteral("severity"), QStringLiteral("info")},
+            {QStringLiteral("title"), QStringLiteral("Archive export started")},
+            {QStringLiteral("message"), outputFile},
+            {QStringLiteral("attributes"), QVariantMap{{QStringLiteral("outputFile"), outputFile}}}
+        });
     });
     connect(m_archiveController, &ArchiveController::exportFinished, this,
             [this]() {
         addLog(QtInfoMsg,
                QStringLiteral("Archive export finished: %1").arg(m_archiveController->exportOutputFile()));
+        const QString outputFile = m_archiveController->exportOutputFile();
+        m_incidentManager->ingestEvent({
+            {QStringLiteral("source"), QStringLiteral("archive")},
+            {QStringLiteral("category"), QStringLiteral("archive")},
+            {QStringLiteral("type"), QStringLiteral("export-finished")},
+            {QStringLiteral("severity"), QStringLiteral("info")},
+            {QStringLiteral("title"), QStringLiteral("Archive export finished")},
+            {QStringLiteral("message"), outputFile},
+            {QStringLiteral("evidence"), QVariantList{QVariantMap{
+                 {QStringLiteral("kind"), QStringLiteral("recording-export")},
+                 {QStringLiteral("path"), outputFile}}}}
+        });
     });
     connect(m_archiveController, &ArchiveController::exportError, this,
             [this](const QString &error) {
         addLog(QtWarningMsg, QStringLiteral("Archive export failed: %1").arg(error.left(500)));
+        m_incidentManager->ingestEvent({
+            {QStringLiteral("source"), QStringLiteral("archive")},
+            {QStringLiteral("category"), QStringLiteral("archive")},
+            {QStringLiteral("type"), QStringLiteral("export-failed")},
+            {QStringLiteral("severity"), QStringLiteral("error")},
+            {QStringLiteral("title"), QStringLiteral("Archive export failed")},
+            {QStringLiteral("message"), error}
+        });
     });
     connect(m_archiveController, &ArchiveController::cleanupFinished, this,
             [this](const QVariantMap &result) {
@@ -358,6 +400,20 @@ SystemController::SystemController(QObject *parent)
 
     m_analyticsEngine->initialize();
     connect(m_analyticsEngine, &AnalyticsEngine::settingsChanged, this, &SystemController::saveState);
+    connect(m_analyticsEngine, &AnalyticsEngine::analyticsEventsChanged, this, [this]() {
+        const QVariantList events = m_analyticsEngine->analyticsEvents();
+        for (const QVariant &value : events) {
+            m_incidentManager->ingestAnalyticsEvent(value.toMap());
+        }
+    });
+    connect(m_cameraHealthController, &CameraHealthController::runCompleted,
+            this, [this](const QString &runId) {
+        m_incidentManager->ingestHealthRun(m_cameraHealthController->runById(runId));
+    });
+    connect(m_fleetManager, &FleetManager::auditEvent,
+            this, [this](const QVariantMap &event) {
+        m_incidentManager->ingestAuditEvent(event);
+    });
     
     // Default settings
     m_appSettings["language"] = "ru";
@@ -399,6 +455,9 @@ SystemController::SystemController(QObject *parent)
     m_gridCols = 2; 
 
     loadState();
+    for (const QVariant &value : m_analyticsEngine->analyticsEvents()) {
+        m_incidentManager->ingestAnalyticsEvent(value.toMap());
+    }
     
     // QML smoke tests instantiate the real controller to verify bindings, but
     // they should not probe saved cameras or touch the LAN.
@@ -435,6 +494,8 @@ SystemController::SystemController(QObject *parent)
     connect(m_cameraHealthController, &CameraHealthController::historyChanged,
             this, &SystemController::saveState);
     connect(m_fleetManager, &FleetManager::stateChanged,
+            this, &SystemController::saveState);
+    connect(m_incidentManager, &IncidentManager::stateChanged,
             this, &SystemController::saveState);
 }
 

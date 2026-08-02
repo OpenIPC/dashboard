@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-29.
+Последнее обновление: 2026-08-02.
 
 Текущий стабильный релиз: `v0.2.8`.
 
-Текущий фокус разработки: ✅ `P12 Sites / Fleet Management`, затем 🔜 `P13 Incident Center`.
+Текущий фокус разработки: ✅ `P13.1 normalized event foundation`, затем 🔜 `P13.2 Incident lifecycle`.
 
 ## Обозначения
 
@@ -54,7 +54,7 @@ OpenIPC Dashboard после `v0.2.7` объединяет desktop VMS, OpenIPC/
 1. ✅ P11 — production hardening, release engineering, Web deployment и UI/runtime debt.
 2. ✅ P12.0 — paged layouts, kiosk/cycling, digital zoom, camera scope и push-to-talk в Qt и Web.
 3. ✅ P12 — Sites / Fleet Management и безопасные групповые операции.
-4. 🔜 P13 — Incident Center, уведомления и операторские workflows.
+4. 🟡 P13 — event foundation готов; далее Incident lifecycle, UI и уведомления.
 5. 🧊 P14 — media scale, adaptive quality и multi-monitor.
 6. 🧊 P15 — versioned integration ecosystem и внешние automation adapters.
 
@@ -1127,16 +1127,34 @@ Definition of Done:
 Принятая граница: массовое автоматическое firmware обновление не включается до отдельной
 real-camera qualification matrix и подтверждённого recovery plan.
 
-## 🔜 P13 — Incident Center / Notifications / Operator workflow
+## 🟡 P13 — Incident Center / Notifications / Operator workflow
 
 Цель: объединить Health, Analytics, Recording, Logs и Audit в управляемый жизненный цикл
 инцидента, а не набор разрозненных событий.
 
+### ✅ P13.1 — Normalized event foundation
+
+- введён `IncidentManager` и единый versioned event schema для Health, Analytics,
+  Archive/Recording и Fleet Audit;
+- события получают UTC timestamps, severity, camera/site/area scope, evidence, fingerprint и
+  idempotent source identifier;
+- реализована read-only корреляция по camera/site, category/type и пятиминутному окну;
+- nested credentials и secret-like поля рекурсивно редактируются до persistence;
+- event history ограничена 5 000 записями и хранится транзакционно в `state.sqlite3`;
+- добавлены source adapters, фильтрация, restore validation и unit tests;
+- контракт документирован в `docs/INCIDENT_EVENTS.md`.
+
+### 🔜 P13.2 — Incident lifecycle / Immutable timeline
+
+- состояния `new / acknowledged / investigating / resolved / false positive`;
+- owner, comments, bookmarks и immutable activity timeline;
+- permission и camera/site/area scope для каждого изменения;
+- миграция read-only correlation group в устойчивый incident record.
+
+### P13.3+ — Incident Center, suppression и delivery
+
 Работы:
 
-- единая нормализованная event schema и корреляция по camera/site/time window;
-- состояния `new / acknowledged / investigating / resolved / false positive`;
-- severity, owner, comments, bookmarks и immutable activity timeline;
 - связь инцидента с recordings, snapshots, health runs, logs и device operations;
 - фильтры, saved searches, retention и экспорт incident bundle;
 - rule-based дедупликация, cooldown и suppression during maintenance;
@@ -1221,8 +1239,8 @@ Definition of Done:
 
 ## Ближайший практический порядок работ
 
-1. Спроектировать normalized event schema P13 поверх Health/Analytics/Archive/Audit.
-2. Определить incident lifecycle, immutable timeline и deduplication/cooldown contract.
+1. ✅ Реализовать normalized event schema P13 поверх Health/Analytics/Archive/Audit.
+2. 🔜 Определить incident lifecycle, immutable timeline и deduplication/cooldown contract.
 3. Начать Incident Center с read-only correlation и saved searches до notification delivery.
 4. Вести QML/Web debt малыми пакетами без смешивания с firmware/device changes.
 5. Держать release workflow главным production gate: Windows installer, Linux AppImage,

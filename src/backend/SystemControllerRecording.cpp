@@ -110,6 +110,11 @@ void SystemController::notifyRecordingStarted(const QString &cameraIp, const QSt
                .arg(source.trimmed().isEmpty() ? QStringLiteral("manual") : source.trimmed(),
                     cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
                     PathUtils::localPathFromUserInput(path)));
+    m_incidentManager->ingestRecordingEvent(
+        QStringLiteral("started"), cameraIp, PathUtils::localPathFromUserInput(path),
+        QStringLiteral("Recording started"),
+        {{QStringLiteral("owner"), source.trimmed().isEmpty() ? QStringLiteral("manual")
+                                                               : source.trimmed()}});
 }
 
 void SystemController::notifyRecordingStopped(const QString &cameraIp, const QString &path, const QString &source)
@@ -119,6 +124,11 @@ void SystemController::notifyRecordingStopped(const QString &cameraIp, const QSt
                .arg(source.trimmed().isEmpty() ? QStringLiteral("manual") : source.trimmed(),
                     cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
                     PathUtils::localPathFromUserInput(path)));
+    m_incidentManager->ingestRecordingEvent(
+        QStringLiteral("stopped"), cameraIp, PathUtils::localPathFromUserInput(path),
+        QStringLiteral("Recording stopped"),
+        {{QStringLiteral("owner"), source.trimmed().isEmpty() ? QStringLiteral("manual")
+                                                               : source.trimmed()}});
 }
 
 void SystemController::notifyRecordingSegment(const QString &cameraIp, const QString &oldPath, const QString &newPath)
@@ -128,6 +138,10 @@ void SystemController::notifyRecordingSegment(const QString &cameraIp, const QSt
                .arg(cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
                     PathUtils::localPathFromUserInput(oldPath),
                     PathUtils::localPathFromUserInput(newPath)));
+    m_incidentManager->ingestRecordingEvent(
+        QStringLiteral("segment-rotated"), cameraIp, PathUtils::localPathFromUserInput(newPath),
+        QStringLiteral("Recording segment rotated"),
+        {{QStringLiteral("previousPath"), PathUtils::localPathFromUserInput(oldPath)}});
 }
 
 void SystemController::notifyRecordingError(const QString &cameraIp, const QString &path, const QString &message)
@@ -137,6 +151,9 @@ void SystemController::notifyRecordingError(const QString &cameraIp, const QStri
                .arg(cameraIp.trimmed().isEmpty() ? QStringLiteral("unknown camera") : cameraIp.trimmed(),
                     PathUtils::localPathFromUserInput(path),
                     message.trimmed().isEmpty() ? QStringLiteral("unknown error") : message.trimmed()));
+    m_incidentManager->ingestRecordingEvent(
+        QStringLiteral("error"), cameraIp, PathUtils::localPathFromUserInput(path),
+        message.trimmed().isEmpty() ? QStringLiteral("Unknown recording error") : message.trimmed());
 }
 
 void SystemController::exportRecording(const QString &inputFile, const QString &outputFile, int startMs, int endMs)

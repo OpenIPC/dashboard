@@ -200,13 +200,16 @@ AppImage. Published assets include SHA-256 checksums, release metadata and a Cyc
 - [Camera discovery](docs/DISCOVERY.md)
 - [Majestic integration](docs/MAJESTIC.md)
 - [Sites and Fleet management](docs/FLEET_MANAGEMENT.md)
+- [Incident event foundation](docs/INCIDENT_EVENTS.md)
 - [Third-party AI models](docs/THIRD_PARTY_MODELS.md)
 - [QML lint baseline](docs/QML_LINT_BASELINE.md)
 
 ## Next Direction
 
-P12 Sites / Fleet Management is implemented in the main Qt application. The next active cycle is
-P13: Incident Center, notifications and operator workflows. Later directions cover higher media
-scale and a versioned integration ecosystem.
+P12 Sites / Fleet Management is implemented in the main Qt application. P13.1 now provides the
+normalized, credential-safe event foundation for Health, Analytics, Archive/Recording and Fleet
+Audit. The next active package is P13.2: incident lifecycle and immutable operator timeline.
+Later directions cover notification delivery, higher media scale and a versioned integration
+ecosystem.
 
 See the [Roadmap](docs/ROADMAP.md) for scope, dependencies and release gates.

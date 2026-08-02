@@ -39,6 +39,17 @@ requires a successful per-device backup, retains partial results and recovery gu
 attempts automatic firmware rollback. Fleet administration is a native Qt workspace; the Web
 companion remains focused on monitoring and archive workflows.
 
+## Incident event foundation
+
+`IncidentManager` is the P13 normalization boundary between operational event producers and future
+incident workflows. Analytics, Health, Archive/Recording and Fleet Audit adapters submit source
+payloads; the manager resolves camera/Site/Area scope, redacts nested secret-like fields, assigns a
+schema-v1 identity and derives read-only five-minute correlation groups. The bounded event set is
+persisted through the same transactional state document as the rest of the controller.
+
+Lifecycle transitions and outbound notifications must consume this normalized contract rather than
+coupling directly to source-specific payloads. See `docs/INCIDENT_EVENTS.md`.
+
 ## Extension points
 
 - `MajesticClient` is a schema-driven OpenIPC device service. It discovers the live Majestic configuration/schema, flattens supported fields for QML, creates minimal nested patches, validates them against the camera schema, redacts sensitive diffs, and owns runtime commands, metrics and backup I/O. Older firmware without `config.schema.json` is exposed read-only rather than guessed.

@@ -25,6 +25,14 @@ Majestic commonly exposes HTTP Basic authentication over plain HTTP on the camer
 - Batch audit retains selection, outcome and recovery guidance but removes the local backup
   directory from persisted history. Automatic fleet firmware update/rollback remains disabled.
 
+## Incident event data
+
+P13 event ingestion recursively replaces password, token, secret, PSK, API-key, private-key,
+authorization and cookie-like fields before the payload reaches persistence or UI consumers.
+Payload depth, collection sizes and strings are bounded, history is capped, and source identifiers
+make repeated ingestion idempotent. Notification adapters are not allowed to recover camera
+credentials from an event; scoped delivery secrets will be stored separately in later P13 work.
+
 ## Downloads
 
 AI model URLs are pinned to a commit or release. Every artifact has an expected byte size and SHA-256 digest. Downloads go to a `.part` file, are verified, and are promoted with rollback protection. A failed verification never replaces an installed model.

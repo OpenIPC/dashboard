@@ -123,6 +123,7 @@ signals:
     void lastErrorChanged();
     void stateChanged();
     void operationMessage(const QString &message);
+    void auditEvent(const QVariantMap &event);
 
 private:
     struct PendingRequest {

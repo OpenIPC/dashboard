@@ -665,6 +665,21 @@ void FleetManager::audit(const QString &action, const QString &target,
              detail.isEmpty() ? QString() : QStringLiteral(" detail=") + detail.left(300));
     if (m_logModel) m_logModel->addLog(outcome == QStringLiteral("failed")
                                            ? QtWarningMsg : QtInfoMsg, message);
+    const int cameraIndex = cameraIndexForKey(target);
+    const QString cameraId = cameraIndex >= 0 ? cameraKeyAt(cameraIndex) : QString();
+    const QVariantMap assignment = cameraId.isEmpty() ? QVariantMap{} : cameraAssignment(cameraId);
+    emit const_cast<FleetManager *>(this)->auditEvent({
+        {QStringLiteral("id"), newId()},
+        {QStringLiteral("occurredAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+        {QStringLiteral("action"), QStringLiteral("fleet.") + action.left(80)},
+        {QStringLiteral("target"), target.left(160)},
+        {QStringLiteral("outcome"), outcome.left(40)},
+        {QStringLiteral("detail"), detail.left(300)},
+        {QStringLiteral("actor"), username.left(80)},
+        {QStringLiteral("cameraId"), cameraId},
+        {QStringLiteral("siteId"), assignment.value(QStringLiteral("siteId"))},
+        {QStringLiteral("areaId"), assignment.value(QStringLiteral("areaId"))}
+    });
 }
 
 QString FleetManager::createSite(const QString &name, const QString &description,
