@@ -113,11 +113,18 @@ private:
                            DashboardHttpProtocol::Response *errorResponse);
     QString archiveFileForId(const QString &fileId) const;
     QVariantList archiveItems(const QString &cameraId, int limit) const;
-    QVariantMap dashboardData() const;
-    QVariantList cameraData() const;
+    QVariantMap dashboardData(const DashboardWebSessionStore::Session *session = nullptr) const;
+    QVariantList cameraData(const DashboardWebSessionStore::Session *session = nullptr) const;
+    bool sessionCanAccessCamera(const DashboardWebSessionStore::Session &session,
+                                int cameraIndex) const;
+    bool requireCameraAccess(const DashboardWebSessionStore::Session &session,
+                             int cameraIndex,
+                             DashboardHttpProtocol::Response *response) const;
+    bool requireUnrestrictedCameraAccess(const DashboardWebSessionStore::Session &session,
+                                         DashboardHttpProtocol::Response *response) const;
     QVariantMap discoveryData() const;
-    QVariantMap healthData() const;
-    QVariantMap analyticsData() const;
+    QVariantMap healthData(const DashboardWebSessionStore::Session *session = nullptr) const;
+    QVariantMap analyticsData(const DashboardWebSessionStore::Session *session = nullptr) const;
     QVariantMap logsData(int cursor, int limit, const QString &level,
                          const QString &search) const;
     QVariantMap diagnosticsData();
@@ -136,6 +143,7 @@ private:
     void startWebSocketServer(const QHostAddress &address);
     void acceptWebSocketConnections();
     void handleWebSocketMessage(QWebSocket *socket, const QString &message);
+    void handleWebSocketBinaryMessage(QWebSocket *socket, const QByteArray &message);
     void broadcastLogTail(int first, int last);
 #endif
 
@@ -174,5 +182,9 @@ private:
     QSet<QWebSocket *> m_webSockets;
     QHash<QWebSocket *, DashboardWebSessionStore::Session> m_webSocketSessions;
     QHash<QString, QPointer<QWebSocket>> m_webRtcPeerSockets;
+    QHash<QWebSocket *, int> m_talkCameras;
+    QHash<QWebSocket *, qint64> m_talkWindowStartedMs;
+    QHash<QWebSocket *, qsizetype> m_talkWindowBytes;
+    QHash<QString, QPointer<QWebSocket>> m_talkRequests;
 #endif
 };

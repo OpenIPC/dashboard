@@ -8,6 +8,8 @@
 #include <QRandomGenerator>
 #include <keychain.h>
 
+#include <utility>
+
 namespace {
 constexpr int kPasswordIterations = 120000;
 constexpr int kPasswordKeyLength = 32;
@@ -23,6 +25,18 @@ QByteArray randomSalt(int length)
         salt[i] = static_cast<char>(QRandomGenerator::global()->bounded(256));
     }
     return salt;
+}
+
+QStringList normalizedCameraScopes(const QStringList &input)
+{
+    QStringList result;
+    result.reserve(qMin(input.size(), 512));
+    for (const QString &value : input) {
+        const QString scope = value.trimmed().left(160);
+        if (!scope.isEmpty() && !result.contains(scope)) result.append(scope);
+        if (result.size() >= 512) break;
+    }
+    return result;
 }
 }
 
@@ -72,7 +86,8 @@ QVariantMap UserManager::currentUser() const
     return QVariantMap{
         {"username", m_currentUser.username},
         {"role", m_currentUser.role},
-        {"permissions", m_currentUser.permissions}
+        {"permissions", m_currentUser.permissions},
+        {"cameraScopes", m_currentUser.cameraScopes}
     };
 }
 
@@ -83,7 +98,8 @@ QVariantList UserManager::users() const
         list.append(QVariantMap{
             {"username", user.username},
             {"role", user.role},
-            {"permissions", user.permissions}
+            {"permissions", user.permissions},
+            {"cameraScopes", user.cameraScopes}
         });
     }
     return list;
@@ -175,7 +191,8 @@ bool UserManager::authenticateForSession(const QString &username, const QString 
             *userInfo = {
                 {QStringLiteral("username"), storedUser.username},
                 {QStringLiteral("role"), storedUser.role},
-                {QStringLiteral("permissions"), storedUser.permissions}
+                {QStringLiteral("permissions"), storedUser.permissions},
+                {QStringLiteral("cameraScopes"), storedUser.cameraScopes}
             };
         }
         return true;
@@ -244,7 +261,14 @@ bool UserManager::setupInitialAdmin(const QString &username, const QString &pass
     return true;
 }
 
-bool UserManager::addUser(const QString &username, const QString &password, const QString &role, int permissions)
+bool UserManager::addUser(const QString &username, const QString &password, const QString &role,
+                          int permissions)
+{
+    return addUser(username, password, role, permissions, {});
+}
+
+bool UserManager::addUser(const QString &username, const QString &password, const QString &role,
+                          int permissions, const QStringList &cameraScopes)
 {
     const QString normalizedUsername = username.trimmed();
     if (normalizedUsername.isEmpty() || password.isEmpty()) {
@@ -260,6 +284,7 @@ bool UserManager::addUser(const QString &username, const QString &password, cons
     User newUser;
     newUser.username = normalizedUsername;
     newUser.role = role;
+    newUser.cameraScopes = normalizedCameraScopes(cameraScopes);
     setPassword(newUser, password);
 
     if (permissions < 0) {
@@ -270,6 +295,9 @@ bool UserManager::addUser(const QString &username, const QString &password, cons
         }
     } else {
         newUser.permissions = (role == "admin" || normalizedUsername == "admin") ? Perm_All : permissions;
+    }
+    if (role == QStringLiteral("admin") || normalizedUsername == QStringLiteral("admin")) {
+        newUser.cameraScopes.clear();
     }
 
     m_users.append(newUser);
@@ -293,6 +321,46 @@ bool UserManager::hasPermission(int permission) const
         return true;
     }
     return (m_currentUser.permissions & permission) == permission;
+}
+
+bool UserManager::canAccessCamera(const QString &cameraId, const QString &cameraIp,
+                                  int cameraIndex) const
+{
+    if (!m_isLoggedIn) {
+        return false;
+    }
+    if (isAdmin() || m_currentUser.cameraScopes.isEmpty()) {
+        return true;
+    }
+
+    const QString id = cameraId.trimmed();
+    const QString ip = cameraIp.trimmed();
+    if (!id.isEmpty()
+        && (m_currentUser.cameraScopes.contains(id)
+            || m_currentUser.cameraScopes.contains(QStringLiteral("camera:") + id))) {
+        return true;
+    }
+    if (!ip.isEmpty()
+        && (m_currentUser.cameraScopes.contains(ip)
+            || m_currentUser.cameraScopes.contains(QStringLiteral("ip:") + ip))) {
+        return true;
+    }
+    if (m_cameraScopeResolver) {
+        const QStringList aliases = m_cameraScopeResolver(id, ip, cameraIndex);
+        for (const QString &alias : aliases) {
+            if (m_currentUser.cameraScopes.contains(alias, Qt::CaseInsensitive)) return true;
+        }
+    }
+    return cameraIndex >= 0
+        && m_currentUser.cameraScopes.contains(QStringLiteral("index:%1").arg(cameraIndex));
+}
+
+void UserManager::setCameraScopeResolver(
+    std::function<QStringList(const QString &, const QString &, int)> resolver)
+{
+    m_cameraScopeResolver = std::move(resolver);
+    ++m_permissionsVersion;
+    emit permissionsVersionChanged();
 }
 
 void UserManager::updateUserPermissions(const QString &username, int permissions)
@@ -424,6 +492,10 @@ void UserManager::loadUsers()
         User user = User::fromJson(value.toObject());
         if ((user.username == "admin" || user.role == "admin") && (user.permissions & Perm_All) != Perm_All) {
             user.permissions = Perm_All;
+            changed = true;
+        }
+        if ((user.username == "admin" || user.role == "admin") && !user.cameraScopes.isEmpty()) {
+            user.cameraScopes.clear();
             changed = true;
         }
         m_users.append(user);
@@ -580,6 +652,28 @@ void UserManager::setRememberedCredentials(const QString &username, const QStrin
     }
     if (passwordChanged) {
         emit rememberedPasswordChanged();
+    }
+}
+
+void UserManager::updateUserCameraScopes(const QString &username,
+                                         const QStringList &cameraScopes)
+{
+    for (int i = 0; i < m_users.size(); ++i) {
+        if (m_users[i].username != username) continue;
+
+        m_users[i].cameraScopes = (m_users[i].username == QStringLiteral("admin")
+                                   || m_users[i].role == QStringLiteral("admin"))
+            ? QStringList{} : normalizedCameraScopes(cameraScopes);
+        if (m_isLoggedIn && m_currentUser.username == username) {
+            m_currentUser.cameraScopes = m_users[i].cameraScopes;
+            emit currentUserChanged();
+        }
+        saveUsers();
+        emit usersChanged();
+        ++m_permissionsVersion;
+        emit permissionsVersionChanged();
+        emit userSecurityChanged(username);
+        return;
     }
 }
 

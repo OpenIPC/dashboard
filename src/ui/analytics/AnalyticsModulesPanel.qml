@@ -136,6 +136,8 @@ Item {
         var token = refreshToken
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
+            if (!camera || !SystemController.userManager.canAccessCamera(
+                        camera.cameraId || "", camera.cameraIp || "", i)) continue
             if (SystemController.analyticsEngine.isCameraModuleEnabled(camera.cameraIp, type))
                 total += 1
         }
@@ -179,6 +181,11 @@ Item {
         function onRowsRemoved(parent, first, last) { root.refresh() }
         function onModelReset() { root.refresh() }
         function onDataChanged(topLeft, bottomRight, roles) { root.refresh() }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onPermissionsVersionChanged() { root.refresh() }
     }
 
     component Metric: Rectangle {

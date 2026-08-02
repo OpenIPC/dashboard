@@ -63,7 +63,7 @@ function launchBrowser(name) {
 function collectConsoleError(errors, name, scope, message) {
   if (message.type() !== "error") return;
   const value = message.text();
-  if (/Failed to load resource:.*status of (401|403|404|409)/.test(value)) return;
+  if (/Failed to load resource:.*status of (401|403|404|409|502|503)/.test(value)) return;
   errors.push(`${name}/${scope}: ${value}`);
 }
 
@@ -153,6 +153,51 @@ async function runBrowser(name, baseUrl) {
     const archiveMissing = await browserApi(desktop, `/api/v1/archive/file/${"0".repeat(64)}`);
     if (archiveMissing.status !== 404) throw new Error(`${name}: invalid archive id returned ${archiveMissing.status}`);
 
+    for (let index = 1; index <= 5; ++index) {
+      const cameraCreate = await browserApi(desktop, "/api/v1/cameras", {
+        method: "POST", body: { name: `P12 camera ${index}`, ip: `198.51.100.${index}`,
+          profile: "openipc", rtspPort: 554, onvifPort: 80 }
+      });
+      if (![201, 409].includes(cameraCreate.status)) {
+        throw new Error(`${name}: camera ${index} creation returned ${cameraCreate.status}`);
+      }
+    }
+    await desktop.evaluate(async () => { await loadDashboard(); });
+    await desktop.waitForFunction(() => (state.dashboard?.cameras || []).length >= 5);
+    await desktop.evaluate(() => {
+      setLayout(4);
+      state.assignments = state.dashboard.cameras.slice(0, 5).map(cameraKey);
+      state.page = 0;
+      state.activeCell = 0;
+      persistWorkspace();
+      state.monitorSignature = "";
+      renderMonitorGrid(state.dashboard.cameras);
+      updatePageControls();
+    });
+    if ((await desktop.locator("[data-page-indicator]").first().textContent())?.trim() !== "1 / 2") {
+      throw new Error(`${name}: paged layout indicator is not 1 / 2`);
+    }
+    await desktop.locator('[data-page-nav="1"]').first().click();
+    if (await desktop.locator('#monitor-grid .stream-cell[data-cell="4"]').count() !== 1) {
+      throw new Error(`${name}: second layout page did not render absolute cell 4`);
+    }
+    await desktop.evaluate(() => {
+      const cell = document.querySelector("#monitor-grid .stream-cell[data-camera-index]");
+      changeDigitalZoom(cell, "in");
+      if (!cell.classList.contains("digitally-zoomed")) throw new Error("digital zoom not applied");
+      setKiosk(true);
+      if (!document.querySelector("#app-view").classList.contains("kiosk")) throw new Error("kiosk not applied");
+      setKiosk(false);
+    });
+    await desktop.locator('[data-clear-cell="4"]').click();
+    if ((await desktop.locator("[data-page-indicator]").first().textContent())?.trim() !== "1 / 1"
+        || await desktop.locator('#monitor-grid .stream-cell.active[data-cell="0"]').count() !== 1) {
+      throw new Error(`${name}: removing the final-page camera did not compact paging`);
+    }
+
+    const scopedCameraId = await desktop.evaluate(() => state.dashboard.cameras[0].id);
+    const restrictedCameraIndex = await desktop.evaluate(() => state.dashboard.cameras[1].index);
+
     const viewerPassword = "Viewer-P11-Smoke!";
     const viewerCreate = await browserApi(desktop, "/api/v1/users/create", {
       method: "POST", body: { username: "viewer", password: viewerPassword, role: "operator", permissions: 1 }
@@ -160,6 +205,11 @@ async function runBrowser(name, baseUrl) {
     if (![201, 409].includes(viewerCreate.status)) {
       throw new Error(`${name}: viewer creation returned ${viewerCreate.status}`);
     }
+    const viewerScope = await browserApi(desktop, "/api/v1/users/permissions", {
+      method: "POST", body: { username: "viewer", permissions: 1,
+        cameraScopes: [scopedCameraId] }
+    });
+    if (viewerScope.status !== 200) throw new Error(`${name}: viewer scope returned ${viewerScope.status}`);
 
     const csrf = await desktop.context().request.post(`${baseUrl}/api/v1/settings`, {
       headers: { Origin: "http://untrusted.invalid" }, data: { language: "ru" }
@@ -195,6 +245,12 @@ async function runBrowser(name, baseUrl) {
     const deniedArchive = await browserApi(viewer, `/api/v1/archive/file/${"0".repeat(64)}`);
     if (deniedUsers.status !== 403 || deniedArchive.status !== 403) {
       throw new Error(`${name}: role boundary failed (${deniedUsers.status}/${deniedArchive.status})`);
+    }
+    const scopedDashboard = await browserApi(viewer, "/api/v1/dashboard");
+    const deniedPreview = await browserApi(viewer,
+      `/api/v1/cameras/${restrictedCameraIndex}/preview.jpg`);
+    if (scopedDashboard.body?.data?.cameras?.length !== 1 || deniedPreview.status !== 403) {
+      throw new Error(`${name}: camera scope failed (${scopedDashboard.body?.data?.cameras?.length}/${deniedPreview.status})`);
     }
     await viewer.close();
 

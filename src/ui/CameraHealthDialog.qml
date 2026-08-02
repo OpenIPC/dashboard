@@ -39,6 +39,10 @@ Dialog {
     property bool reportSaveFailed: false
     property string lastReportPath: ""
     property double lastAutoRefreshMs: 0
+    readonly property bool restrictedCameraScope: {
+        var user = SystemController.userManager.currentUser
+        return user && user.cameraScopes && user.cameraScopes.length > 0
+    }
     readonly property int autoRefreshCooldownMs: 15000
     readonly property real statsTopInDialog: healthStatsRow.mapToItem(root.parent, 0, 0).y
     readonly property real headerHeight: healthHeader.height
@@ -66,6 +70,21 @@ Dialog {
         if (typeof SystemController.isCameraOnline === "function")
             return SystemController.isCameraOnline("", statusText || "")
         return String(statusText || "").toLowerCase() === "online"
+    }
+
+    function cameraAccessAllowed(camera, cameraIndex) {
+        var token = SystemController.userManager.permissionsVersion
+        return camera && SystemController.userManager.canAccessCamera(
+                    camera.cameraId || "", camera.cameraIp || "", cameraIndex)
+    }
+
+    function accessibleCameraCount() {
+        var version = dataVersion
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (cameraAccessAllowed(SystemController.cameraModel.getCamera(i), i)) count++
+        }
+        return count
     }
 
     function effectiveCameraStatus(ip, fallbackStatus) {
@@ -121,7 +140,7 @@ Dialog {
         var count = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
-            if (!camera) continue
+            if (!cameraAccessAllowed(camera, i)) continue
             var healthResult = root.latestHealthResult(camera.cameraIp)
             var healthKnown = healthResult.status === "ok"
                     || healthResult.status === "warning"
@@ -141,7 +160,7 @@ Dialog {
         var count = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
-            if (!camera) continue
+            if (!cameraAccessAllowed(camera, i)) continue
             var healthResult = root.latestHealthResult(camera.cameraIp)
             var healthKnown = healthResult.status === "ok"
                     || healthResult.status === "warning"
@@ -222,7 +241,7 @@ Dialog {
         var count = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var cam = SystemController.cameraModel.getCamera(i)
-            if (!cam) continue
+            if (!cameraAccessAllowed(cam, i)) continue
             if (root.filterMatchesForMode(mode, cam.cameraIp, cam.status))
                 count++
         }
@@ -238,8 +257,16 @@ Dialog {
     }
 
     function recheckAll() {
-        if (root.healthController)
+        if (!root.healthController) return
+        if (!root.restrictedCameraScope) {
             root.healthController.runAll(root.selectedProfile)
+            return
+        }
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (root.cameraAccessAllowed(camera, i))
+                root.healthController.runCamera(camera.cameraIp, root.selectedProfile)
+        }
     }
 
     function recheckCamera(ip, name) {
@@ -250,9 +277,17 @@ Dialog {
     }
 
     function healthReport() {
-        return root.healthController
-                ? root.healthController.reportText(root.selectedRunId)
-                : ""
+        if (!root.healthController) return ""
+        if (!root.restrictedCameraScope) return root.healthController.reportText(root.selectedRunId)
+        var lines = ["OpenIPC Dashboard — scoped camera health"]
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (!root.cameraAccessAllowed(camera, i)) continue
+            lines.push((camera.cameraName || camera.cameraIp) + " · " + camera.cameraIp
+                       + " · " + root.effectiveCameraStatus(camera.cameraIp, camera.status)
+                       + " · " + root.cameraAttentionReason(camera.cameraIp, camera.status))
+        }
+        return lines.join("\n")
     }
 
     function copyHealthReport() {
@@ -372,6 +407,11 @@ Dialog {
         function onRowsRemoved(parent, first, last) { root.dataVersion++ }
         function onModelReset() { root.dataVersion++ }
         function onDataChanged(topLeft, bottomRight, roles) { root.dataVersion++ }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onPermissionsVersionChanged() { root.dataVersion++ }
     }
 
     Connections {
@@ -551,7 +591,7 @@ Dialog {
                 id: totalStatCard
 
                 title: "Всего"
-                value: String(SystemController.cameraModel.rowCount())
+                value: String(root.accessibleCameraCount())
                 accent: Theme.textPrimary
             }
             StatCard {
@@ -561,7 +601,7 @@ Dialog {
             }
             StatCard {
                 title: "Офлайн"
-                value: String(Math.max(0, SystemController.cameraModel.rowCount() - root.onlineCount()))
+                value: String(Math.max(0, root.accessibleCameraCount() - root.onlineCount()))
                 accent: Theme.danger
             }
             StatCard {
@@ -618,7 +658,8 @@ Dialog {
             id: healthHistoryStrip
 
             Layout.fillWidth: true
-            Layout.preferredHeight: 82
+            Layout.preferredHeight: visible ? 82 : 0
+            visible: !root.restrictedCameraScope
             controller: root.healthController
             selectedRunId: root.selectedRunId
             onRunSelected: runId => root.selectedRunId = runId
@@ -663,6 +704,7 @@ Dialog {
                 border.color: row.online ? Theme.controlBorder : Theme.warning
 
                 required property int index
+                required property string cameraId
                 required property string cameraName
                 required property string cameraIp
                 required property string status
@@ -685,7 +727,10 @@ Dialog {
                                       || healthResult.status === "warning"
                                       || root.isOnlineStatus(rowStatus)
                 property bool inGrid: root.isCameraInGrid(row.cameraIp)
-                property bool rowVisible: root.rowMatches(rowName, row.cameraIp, row.status,
+                property bool rowVisible: root.dataVersion >= 0
+                                          && SystemController.userManager.canAccessCamera(
+                                              row.cameraId, row.cameraIp, row.index)
+                                          && root.rowMatches(rowName, row.cameraIp, row.status,
                                                           root.cameraStatusSearchText(row.cameraIp, row.status),
                                                           rowDetail)
 
@@ -821,7 +866,7 @@ Dialog {
 
         Text {
             Layout.fillWidth: true
-            visible: SystemController.cameraModel.rowCount() === 0
+            visible: root.accessibleCameraCount() === 0
             text: I18n.t("Камер пока нет. Добавьте камеру или запустите поиск.")
             color: Theme.textMuted
             horizontalAlignment: Text.AlignHCenter

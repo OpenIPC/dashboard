@@ -18,7 +18,8 @@ public:
     QVariantMap cameraView(const Camera &camera, int index,
                            const QVariantMap &health = {}) const;
     QVariantMap capabilityManifest(int permissions, bool webRtcAvailable,
-                                   bool audioAvailable) const;
+                                   bool audioAvailable,
+                                   bool cameraRestricted = false) const;
     QVariantList permissionCatalog() const;
     QVariantList settingsSchema() const;
     QVariantMap settingsView(const QVariantMap &settings) const;

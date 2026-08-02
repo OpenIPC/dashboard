@@ -6,6 +6,7 @@
 
 struct Camera {
     Q_GADGET
+    Q_PROPERTY(QString cameraId MEMBER id)
     Q_PROPERTY(QString cameraName MEMBER name)
     Q_PROPERTY(QString cameraIp MEMBER ip)
     Q_PROPERTY(int cameraPort MEMBER port)

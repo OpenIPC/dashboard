@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QHash>
 #include <QNetworkAccessManager>
@@ -46,6 +47,8 @@ public:
                                      const QString &password, const QString &mode);
     Q_INVOKABLE QString playPcmFile(const QString &host, int port, const QString &username,
                                     const QString &password, const QString &filePath);
+    QString playPcmData(const QString &host, int port, const QString &username,
+                        const QString &password, const QByteArray &pcmData);
 
     Q_INVOKABLE QString saveConfigurationBackup(const QVariantMap &config,
                                                 const QVariantMap &schema,

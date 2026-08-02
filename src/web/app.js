@@ -11,6 +11,10 @@ function showToast(message, error = false) {
 
 function showLogin(message = "") {
   stopAllWebRtcPeers();
+  stopPushToTalk();
+  window.clearInterval(state.pageCycleTimer);
+  state.pageCycleTimer = null;
+  if (state.kiosk) setKiosk(false);
   closeCameraDialog();
   if (state.socket) state.socket.close();
   state.monitorSignature = "";
@@ -30,7 +34,8 @@ function showApp(session) {
   byId("app-view").hidden = false;
   byId("current-user").textContent = session.username;
   byId("sidebar-user").textContent = session.username;
-  byId("device-commands").hidden = !canManageCameras();
+  byId("device-commands").hidden = !Boolean(
+    state.capabilities?.administration?.cameraOnboarding);
   applyCapabilityVisibility();
   restoreSidebarState();
   setLayout(state.layout, false);
@@ -97,21 +102,121 @@ async function loadDashboard() {
 
 function normalizeAssignments(cameras) {
   const keys = new Set(cameras.map(cameraKey));
-  state.assignments = state.assignments.slice(0, state.layout).map(key => keys.has(String(key)) ? String(key) : null);
-  while (state.assignments.length < state.layout) state.assignments.push(null);
+  state.assignments = state.assignments.map(key => keys.has(String(key)) ? String(key) : null);
+  compactAssignmentPages();
   if (!state.assignments.some(Boolean) && cameras.length) state.assignments[0] = cameraKey(cameras[0]);
-  state.activeCell = Math.min(state.activeCell, state.layout - 1);
+  state.page = Math.min(state.page, workspacePageCount() - 1);
+  const start = workspacePageStart();
+  if (state.activeCell < start || state.activeCell >= start + state.layout) state.activeCell = start;
   if (state.openControlsCell !== null
-      && (state.openControlsCell >= state.layout || !state.assignments[state.openControlsCell])) {
+      && !state.assignments[state.openControlsCell]) {
     state.openControlsCell = null;
   }
   persistWorkspace();
+  updatePageControls();
+}
+
+function compactAssignmentPages() {
+  while (state.assignments.length < state.layout
+         || (state.assignments.length % state.layout) !== 0) state.assignments.push(null);
+  while (state.assignments.length > state.layout
+         && state.assignments.slice(-state.layout).every(value => !value)) {
+    state.assignments.splice(-state.layout);
+  }
 }
 
 function selectNextEmptyCell() {
   setCellControlsOpen(null);
-  const next = state.assignments.findIndex(value => !value);
-  state.activeCell = next >= 0 ? next : (state.activeCell + 1) % state.layout;
+  const start = workspacePageStart();
+  let next = state.assignments.findIndex((value, index) => index >= start
+    && index < start + state.layout && !value);
+  if (next < 0) {
+    const existing = state.assignments.findIndex(value => !value);
+    if (existing >= 0) {
+      next = existing;
+      state.page = Math.floor(existing / state.layout);
+    } else {
+      state.assignments.push(...Array(state.layout).fill(null));
+      state.page = workspacePageCount() - 1;
+      next = workspacePageStart();
+    }
+  }
+  state.activeCell = next;
+  persistWorkspace();
+  updatePageControls();
+  if (state.dashboard) renderMonitorGrid(state.dashboard.cameras || []);
+}
+
+function workspacePageCount() {
+  return Math.max(1, Math.ceil(Math.max(state.assignments.length, state.layout) / state.layout));
+}
+
+function workspacePageStart() { return state.page * state.layout; }
+
+function updatePageControls() {
+  const count = workspacePageCount();
+  state.page = Math.max(0, Math.min(state.page, count - 1));
+  document.querySelectorAll("[data-page-indicator]").forEach(node => {
+    node.textContent = `${state.page + 1} / ${count}`;
+  });
+  document.querySelectorAll("[data-cycle-toggle]").forEach(button => {
+    button.classList.toggle("active", state.pageCycling);
+    button.setAttribute("aria-pressed", String(state.pageCycling));
+  });
+  document.querySelectorAll('[data-page-nav="-1"]').forEach(button => { button.disabled = count <= 1; });
+  document.querySelectorAll('[data-page-nav="1"]').forEach(button => { button.disabled = count <= 1; });
+  schedulePageCycling();
+}
+
+function setPage(page, wrap = false) {
+  const count = workspacePageCount();
+  let next = Number(page);
+  if (wrap) next = ((next % count) + count) % count;
+  else next = Math.max(0, Math.min(next, count - 1));
+  if (next === state.page && state.monitorSignature) { updatePageControls(); return; }
+  stopPushToTalk();
+  setCellControlsOpen(null);
+  state.page = next;
+  state.activeCell = workspacePageStart();
+  state.monitorSignature = "";
+  persistWorkspace();
+  updatePageControls();
+  if (state.dashboard) renderMonitorGrid(state.dashboard.cameras || []);
+}
+
+function schedulePageCycling() {
+  if (!state.pageCycling || workspacePageCount() <= 1 || byId("app-view").hidden) {
+    window.clearInterval(state.pageCycleTimer);
+    state.pageCycleTimer = null;
+    return;
+  }
+  if (state.pageCycleTimer) return;
+  state.pageCycleTimer = window.setInterval(() => setPage(state.page + 1, true), 10000);
+}
+
+function togglePageCycling() {
+  state.pageCycling = !state.pageCycling;
+  persistWorkspace();
+  updatePageControls();
+}
+
+async function toggleKiosk() {
+  if (state.kiosk) {
+    if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen().catch(() => {});
+    setKiosk(false);
+    return;
+  }
+  setKiosk(true);
+  if (document.documentElement.requestFullscreen) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+
+function setKiosk(enabled) {
+  state.kiosk = Boolean(enabled);
+  byId("app-view").classList.toggle("kiosk", state.kiosk);
+  document.body.classList.toggle("kiosk-active", state.kiosk);
+  state.monitorSignature = "";
   if (state.dashboard) renderMonitorGrid(state.dashboard.cameras || []);
 }
 
@@ -322,6 +427,12 @@ byId("add-camera").addEventListener("click", () => openCameraForm());
 byId("discover-cameras").addEventListener("click", openDiscovery);
 byId("sidebar-toggle").addEventListener("click", toggleSidebarTools);
 byId("select-empty-cell").addEventListener("click", selectNextEmptyCell);
+document.querySelectorAll("[data-page-nav]").forEach(button => button.addEventListener("click", () => {
+  setPage(state.page + Number(button.dataset.pageNav), true);
+}));
+document.querySelectorAll("[data-cycle-toggle]").forEach(button => button.addEventListener("click", togglePageCycling));
+document.querySelectorAll("[data-kiosk-toggle]").forEach(button => button.addEventListener("click", toggleKiosk));
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && state.kiosk) setKiosk(false); });
 byId("layout-label").addEventListener("click", () => setLayout(state.layout === 1 ? 4 : state.layout === 4 ? 9 : 1));
 byId("layout-menu-toggle").addEventListener("click", event => {
   event.stopPropagation();

@@ -13,6 +13,7 @@ QVariantMap DashboardWebSessionStore::Session::toVariantMap() const
         {QStringLiteral("username"), username},
         {QStringLiteral("role"), role},
         {QStringLiteral("permissions"), permissions},
+        {QStringLiteral("cameraScopes"), cameraScopes},
         {QStringLiteral("createdAt"), createdAt.toString(Qt::ISODate)},
         {QStringLiteral("expiresAt"), expiresAt.toString(Qt::ISODate)},
         {QStringLiteral("absoluteExpiresAt"), absoluteExpiresAt.toString(Qt::ISODate)},
@@ -50,6 +51,7 @@ QByteArray DashboardWebSessionStore::create(const QVariantMap &user, const QVari
     session.username = user.value(QStringLiteral("username")).toString();
     session.role = user.value(QStringLiteral("role")).toString();
     session.permissions = user.value(QStringLiteral("permissions")).toInt();
+    session.cameraScopes = user.value(QStringLiteral("cameraScopes")).toStringList();
     session.peerAddress = context.value(QStringLiteral("peerAddress")).toString().left(64);
     session.origin = context.value(QStringLiteral("origin")).toString().left(512);
     session.userAgent = context.value(QStringLiteral("userAgent")).toString().left(512);

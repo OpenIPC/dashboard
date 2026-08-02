@@ -13,6 +13,7 @@
 #include <QAuthenticator>
 #include <QHash>
 #include <QSet>
+#include <QAudioFormat>
 #include "CameraModel.h"
 #include "analytics/AnalyticsEngine.h"
 #include "UserManager.h"
@@ -26,10 +27,13 @@
 #include "OpenIpcFirmwareClient.h"
 #include "AppUpdateChecker.h"
 #include "CameraHealthController.h"
+#include "FleetManager.h"
 #include "presentation/DashboardPresentation.h"
 #include "web/DashboardWebServer.h"
 
 class StatusChecker;
+class QAudioSource;
+class QIODevice;
 
 class SystemController : public QObject
 {
@@ -51,6 +55,7 @@ class SystemController : public QObject
     Q_PROPERTY(NetworkDiscoveryService* networkDiscovery READ networkDiscovery CONSTANT)
     Q_PROPERTY(AppUpdateChecker* appUpdateChecker READ appUpdateChecker CONSTANT)
     Q_PROPERTY(CameraHealthController* cameraHealthController READ cameraHealthController CONSTANT)
+    Q_PROPERTY(FleetManager* fleetManager READ fleetManager CONSTANT)
     Q_PROPERTY(DashboardPresentation* presentation READ presentation CONSTANT)
     Q_PROPERTY(DashboardWebServer* webServer READ webServer CONSTANT)
     Q_PROPERTY(QString discoveryLastUpdated READ discoveryLastUpdated NOTIFY discoverySessionChanged)
@@ -59,6 +64,9 @@ class SystemController : public QObject
     Q_PROPERTY(int gridCols READ gridCols WRITE setGridCols NOTIFY gridLayoutChanged)
     Q_PROPERTY(QVariantList layoutTemplates READ layoutTemplates WRITE setLayoutTemplates NOTIFY layoutTemplatesChanged)
     Q_PROPERTY(bool isArchiveOpen READ isArchiveOpen WRITE setIsArchiveOpen NOTIFY isArchiveOpenChanged)
+    Q_PROPERTY(bool pushToTalkActive READ pushToTalkActive NOTIFY pushToTalkStateChanged)
+    Q_PROPERTY(int pushToTalkGridIndex READ pushToTalkGridIndex NOTIFY pushToTalkStateChanged)
+    Q_PROPERTY(QString pushToTalkError READ pushToTalkError NOTIFY pushToTalkStateChanged)
 
 public:
     explicit SystemController(QObject *parent = nullptr);
@@ -76,6 +84,9 @@ public:
     int gridRows() const { return m_gridRows; }
     int gridCols() const { return m_gridCols; }
     bool isArchiveOpen() const { return m_isArchiveOpen; }
+    bool pushToTalkActive() const { return m_pushToTalkActive; }
+    int pushToTalkGridIndex() const { return m_pushToTalkGridIndex; }
+    QString pushToTalkError() const { return m_pushToTalkError; }
     void setIsArchiveOpen(bool open);
 
     QVariantList layoutTemplates() const { return m_layoutTemplates; }
@@ -91,6 +102,7 @@ public:
     NetworkDiscoveryService* networkDiscovery() const { return m_networkDiscovery; }
     AppUpdateChecker* appUpdateChecker() const { return m_appUpdateChecker; }
     CameraHealthController* cameraHealthController() const { return m_cameraHealthController; }
+    FleetManager* fleetManager() const { return m_fleetManager; }
     DashboardPresentation* presentation() const { return m_presentation; }
     DashboardWebServer* webServer() const { return m_webServer; }
     QString discoveryLastUpdated() const { return m_discoveryLastUpdated; }
@@ -146,6 +158,12 @@ public slots:
     // Ensure grid model has exactly 'size' slots
     Q_INVOKABLE void updateGridSize(int size);
     Q_INVOKABLE int gridCapacity() const;
+    Q_INVOKABLE int ensureGridPageCapacity(int pageSize, bool appendPage = false);
+    Q_INVOKABLE int compactGridPages(int pageSize);
+
+    // Desktop push-to-talk: captures the default microphone and sends 8 kHz mono PCM.
+    Q_INVOKABLE bool startPushToTalk(int gridIndex);
+    Q_INVOKABLE void stopPushToTalk();
 
     Q_INVOKABLE void saveAppSettings(const QVariantMap &settings);
     Q_INVOKABLE QVariantMap getAppSettings() const;
@@ -271,9 +289,11 @@ signals:
     void discoveryValidationProgress(int completed, int total);
     void discoveryValidationFinished(int okCount, int failCount);
     void discoveryBatchAddFinished(int addedCount, int skippedCount);
+    void pushToTalkStateChanged();
 
 private slots:
     void performSave();
+    void readPushToTalkAudio();
 
 private:
     struct DiscoveryValidationProbe {
@@ -310,6 +330,7 @@ private:
     NetworkDiscoveryService *m_networkDiscovery;
     AppUpdateChecker *m_appUpdateChecker;
     CameraHealthController *m_cameraHealthController;
+    FleetManager *m_fleetManager;
     DashboardPresentation *m_presentation;
     StatusChecker *m_statusChecker;
     DashboardWebServer *m_webServer;
@@ -324,6 +345,15 @@ private:
     QHash<int, QStringList> m_discoveryValidationMessages;
     int m_discoveryValidationCompleted = 0;
     int m_discoveryValidationTotal = 0;
+    QAudioSource *m_pushToTalkSource = nullptr;
+    QIODevice *m_pushToTalkDevice = nullptr;
+    QAudioFormat m_pushToTalkFormat;
+    QByteArray m_pushToTalkInputBuffer;
+    QByteArray m_pushToTalkOutputBuffer;
+    qint64 m_pushToTalkResampleAccumulator = 0;
+    bool m_pushToTalkActive = false;
+    int m_pushToTalkGridIndex = -1;
+    QString m_pushToTalkError;
     
     // App Settings
     QVariantMap m_appSettings;
@@ -357,6 +387,8 @@ private:
     QString buildSanitizedRtspUrl(const Camera &camera, const QString &profile, bool subStream) const;
     void handleDiscoveryValidationProbe(const QString &requestId, bool success,
                                         const QString &message, int httpStatus, int elapsedMs);
+    QByteArray convertPushToTalkAudio(const QByteArray &data);
+    void sendPushToTalkChunk(bool flush);
 };
 
 #endif // SYSTEMCONTROLLER_H

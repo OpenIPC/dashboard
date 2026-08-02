@@ -10,6 +10,9 @@ Rectangle {
     property bool fullscreenVisible: false
     property bool ptzVisible: false
     property bool canPtz: false
+    property bool canTalk: false
+    property bool talkActive: false
+    property real digitalZoomScale: 1.0
     property string iconFontFamily: "Material Icons"
     property string previewQualityText: ""
     property bool muted: true
@@ -23,7 +26,7 @@ Rectangle {
     property bool analyticsFaceEnabled: false
     property bool analyticsObjectEnabled: false
     property bool analyticsPlateEnabled: false
-    readonly property bool expanded: controlsHover.hovered || volumeGroup.sliderShowing
+    readonly property bool expanded: controlsHover.hovered || volumeGroup.sliderShowing || talkActive
 
     signal permissionDenied()
     signal ptzToggleRequested()
@@ -35,6 +38,11 @@ Rectangle {
     signal snapshotRequested()
     signal closeClicked()
     signal analyticsModuleToggleRequested(int moduleIndex)
+    signal talkStartRequested()
+    signal talkStopRequested()
+    signal digitalZoomOutRequested()
+    signal digitalZoomResetRequested()
+    signal digitalZoomInRequested()
 
     height: 40
     width: controlsRow.implicitWidth + 12
@@ -94,6 +102,95 @@ Rectangle {
                 verticalAlignment: Text.AlignVCenter
             }
             onClicked: control.previewQualityToggleRequested()
+        }
+
+        Button {
+            id: talkButton
+            width: 30
+            height: 26
+            background: Rectangle {
+                color: control.talkActive ? Theme.metroRed : "transparent"
+                radius: 3
+            }
+            contentItem: Text {
+                text: "mic"
+                font.family: control.iconFontFamily
+                font.pixelSize: 18
+                color: control.canTalk ? "white" : Theme.textFaint
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            ToolTip.visible: hovered
+            ToolTip.text: control.canTalk
+                          ? I18n.t("Удерживайте для разговора")
+                          : I18n.t("Нет права Push-to-talk")
+            onPressedChanged: {
+                if (pressed) {
+                    if (!control.canTalk) {
+                        control.permissionDenied()
+                        return
+                    }
+                    control.talkStartRequested()
+                } else if (control.talkActive) {
+                    control.talkStopRequested()
+                }
+            }
+        }
+
+        Button {
+            width: 26
+            height: 26
+            enabled: control.digitalZoomScale > 1.0
+            background: Rectangle { color: "transparent"; radius: 3 }
+            contentItem: Text {
+                text: "zoom_out"
+                font.family: control.iconFontFamily
+                font.pixelSize: 18
+                color: parent.enabled ? "white" : Theme.textFaint
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            ToolTip.visible: hovered
+            ToolTip.text: I18n.t("Уменьшить цифровой зум")
+            onClicked: control.digitalZoomOutRequested()
+        }
+
+        Button {
+            width: 38
+            height: 26
+            enabled: control.digitalZoomScale > 1.0
+            background: Rectangle {
+                color: control.digitalZoomScale > 1.0 ? "#334299e1" : "transparent"
+                radius: 3
+            }
+            contentItem: Text {
+                text: control.digitalZoomScale.toFixed(1) + "×"
+                font.pixelSize: 10
+                color: parent.enabled ? "white" : Theme.textFaint
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            ToolTip.visible: hovered
+            ToolTip.text: I18n.t("Сбросить цифровой зум")
+            onClicked: control.digitalZoomResetRequested()
+        }
+
+        Button {
+            width: 26
+            height: 26
+            enabled: control.digitalZoomScale < 4.0
+            background: Rectangle { color: "transparent"; radius: 3 }
+            contentItem: Text {
+                text: "zoom_in"
+                font.family: control.iconFontFamily
+                font.pixelSize: 18
+                color: parent.enabled ? "white" : Theme.textFaint
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+            ToolTip.visible: hovered
+            ToolTip.text: I18n.t("Увеличить цифровой зум")
+            onClicked: control.digitalZoomInRequested()
         }
 
         Item {

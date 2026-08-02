@@ -11,6 +11,9 @@
 #include <QStandardPaths>
 #include <QCryptographicHash>
 #include <QSettings>
+#include <QStringList>
+
+#include <functional>
 
 class UserManager : public QObject
 {
@@ -35,6 +38,7 @@ public:
         Perm_Settings       = 0x10, // System Config
         Perm_UserManage     = 0x20, // Account Management
         Perm_Analytics      = 0x40, // Analytics workspace
+        Perm_Talk           = 0x80, // Push-to-talk (desktop and Web)
         Perm_All            = 0xFF  // Super Admin
     };
     Q_ENUM(Permission)
@@ -57,7 +61,10 @@ public:
     Q_INVOKABLE bool loginWithRememberedCredentials();
     Q_INVOKABLE void logout();
     Q_INVOKABLE bool setupInitialAdmin(const QString &username, const QString &password, bool rememberMe = false);
-    Q_INVOKABLE bool addUser(const QString &username, const QString &password, const QString &role, int permissions = -1);
+    Q_INVOKABLE bool addUser(const QString &username, const QString &password,
+                             const QString &role, int permissions = -1);
+    bool addUser(const QString &username, const QString &password, const QString &role,
+                 int permissions, const QStringList &cameraScopes);
     Q_INVOKABLE bool deleteUser(const QString &username);
     Q_INVOKABLE bool changePassword(const QString &username, const QString &oldPassword, const QString &newPassword);
     Q_INVOKABLE bool isAdmin() const;
@@ -71,7 +78,15 @@ public:
     Q_INVOKABLE bool canSettings() const { return hasPermission(Perm_Settings); }
     Q_INVOKABLE bool canUserManage() const { return hasPermission(Perm_UserManage); }
     Q_INVOKABLE bool canAnalytics() const { return hasPermission(Perm_Analytics); }
+    Q_INVOKABLE bool canTalk() const { return hasPermission(Perm_Talk); }
+    Q_INVOKABLE bool canAccessCamera(const QString &cameraId,
+                                     const QString &cameraIp = QString(),
+                                     int cameraIndex = -1) const;
+    void setCameraScopeResolver(
+        std::function<QStringList(const QString &, const QString &, int)> resolver);
     Q_INVOKABLE void updateUserPermissions(const QString &username, int permissions);
+    Q_INVOKABLE void updateUserCameraScopes(const QString &username,
+                                            const QStringList &cameraScopes);
 
 signals:
     void currentUserChanged();
@@ -91,6 +106,7 @@ private:
         int passwordIterations = 0;
         QString role;
         int permissions = 0;
+        QStringList cameraScopes;
         
         QJsonObject toJson() const {
             QJsonObject json{
@@ -109,6 +125,7 @@ private:
             if (passwordIterations > 0) {
                 json["passwordIterations"] = passwordIterations;
             }
+            json["cameraScopes"] = QJsonArray::fromStringList(cameraScopes);
 
             return json;
         }
@@ -121,6 +138,13 @@ private:
             u.passwordAlgorithm = json["passwordAlgorithm"].toString();
             u.passwordIterations = json["passwordIterations"].toInt();
             u.role = json["role"].toString();
+            for (const QJsonValue &value : json["cameraScopes"].toArray()) {
+                const QString scope = value.toString().trimmed().left(160);
+                if (!scope.isEmpty() && !u.cameraScopes.contains(scope)) {
+                    u.cameraScopes.append(scope);
+                }
+                if (u.cameraScopes.size() >= 512) break;
+            }
             // Backward compatibility: if no permissions stored, infer from role
             if (json.contains("permissions")) {
                 u.permissions = json["permissions"].toInt();
@@ -151,6 +175,7 @@ private:
     int m_permissionsVersion = 0;
     QString m_rememberedUsername;
     QString m_rememberedPassword;
+    std::function<QStringList(const QString &, const QString &, int)> m_cameraScopeResolver;
 };
 
 #endif // USERMANAGER_H

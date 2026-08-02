@@ -42,6 +42,9 @@ def main() -> int:
             "core.js must own shared state and the HTTP API client")
     require("function renderMonitorGrid(" in contents["monitor.js"],
             "monitor.js must own the live monitor")
+    require("function bindDigitalZoom(" in contents["monitor.js"]
+            and "function startPushToTalk(" in contents["monitor.js"],
+            "monitor.js must expose digital zoom and browser push-to-talk")
     require("function renderDeviceList(" in contents["devices.js"]
             and "function openDiscovery(" in contents["devices.js"],
             "devices.js must own camera management and discovery")
@@ -51,6 +54,9 @@ def main() -> int:
     require("const state =" not in contents["app.js"]
             and "function renderMonitorGrid(" not in contents["app.js"],
             "app.js must remain a small coordinator, not regain feature ownership")
+    require("function workspacePageCount(" in contents["app.js"]
+            and "function toggleKiosk(" in contents["app.js"],
+            "app.js must coordinate paged layouts and kiosk mode")
 
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     routes = (ROOT / "src" / "backend" / "web" / "DashboardWebApi.cpp").read_text(encoding="utf-8")

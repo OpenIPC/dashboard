@@ -56,11 +56,20 @@ async function loadUsers() {
 function renderUsers(data) {
   state.userAdmin = data;
   const catalog = data.permissions || [];
+  const cameras = state.dashboard?.cameras || [];
+  const scopeOptions = selected => cameras.map(camera => {
+    const key = cameraKey(camera);
+    return `<option value="${escapeHtml(key)}" ${selected.includes(key) ? "selected" : ""}>${escapeHtml(camera.name || camera.ip)}</option>`;
+  }).join("");
+  byId("new-user-camera-scopes").innerHTML = scopeOptions([]);
   byId("permission-editor").innerHTML = catalog.map(permission =>
     `<label><input type="checkbox" data-new-permission="${Number(permission.value)}" ${[1, 2, 4, 64].includes(Number(permission.value)) ? "checked" : ""}><span>${escapeHtml(permission.id)}</span></label>`
   ).join("");
   const users = data.users || [];
-  byId("users-body").innerHTML = users.length ? users.map(user => `<tr><td>${escapeHtml(user.username)}</td><td>${escapeHtml(text(user.role === "admin" ? "administrator" : "operator"))}</td><td>${Number(user.permissions)}</td><td><div class="inline-actions">${user.role === "admin" ? "" : `<input type="number" min="0" max="127" value="${Number(user.permissions)}" data-permissions-user="${escapeHtml(user.username)}"><button type="button" data-save-permissions="${escapeHtml(user.username)}">${text("saveSettings")}</button>`}${user.username === state.session?.username ? "" : `<button class="danger" type="button" data-delete-user="${escapeHtml(user.username)}">${text("delete")}</button>`}</div></td></tr>`).join("") : `<tr><td colspan="4">${text("noData")}</td></tr>`;
+  byId("users-body").innerHTML = users.length ? users.map(user => {
+    const scopes = Array.isArray(user.cameraScopes) ? user.cameraScopes : [];
+    return `<tr><td>${escapeHtml(user.username)}</td><td>${escapeHtml(text(user.role === "admin" ? "administrator" : "operator"))}</td><td>${Number(user.permissions)}${user.role === "admin" ? "" : `<label class="table-scope"><span>${text("cameraScope")}: ${scopes.length ? text("selectedCamerasScope") : text("allCamerasScope")}</span><select multiple size="3" data-scopes-user="${escapeHtml(user.username)}">${scopeOptions(scopes)}</select></label>`}</td><td><div class="inline-actions">${user.role === "admin" ? "" : `<input type="number" min="0" max="255" value="${Number(user.permissions)}" data-permissions-user="${escapeHtml(user.username)}"><button type="button" data-save-permissions="${escapeHtml(user.username)}">${text("saveSettings")}</button>`}${user.username === state.session?.username ? "" : `<button class="danger" type="button" data-delete-user="${escapeHtml(user.username)}">${text("delete")}</button>`}</div></td></tr>`;
+  }).join("") : `<tr><td colspan="4">${text("noData")}</td></tr>`;
   const sessions = data.sessions || [];
   byId("sessions-body").innerHTML = sessions.length ? sessions.map(session => `<tr><td>${escapeHtml(session.username)}${session.current ? " · current" : ""}</td><td>${escapeHtml(session.origin || session.peerAddress || "—")}</td><td>${formatDateTime(session.lastSeenAt)}</td><td>${formatDateTime(session.expiresAt)}<br><small>${formatDateTime(session.absoluteExpiresAt)}</small></td><td>${session.current ? "" : `<button type="button" data-revoke-session="${escapeHtml(session.id)}">${text("revoke")}</button>`}</td></tr>`).join("") : `<tr><td colspan="5">${text("noData")}</td></tr>`;
   document.querySelectorAll("[data-save-permissions]").forEach(button => button.addEventListener("click", () => saveUserPermissions(button.dataset.savePermissions)));
@@ -76,7 +85,8 @@ async function createUser(event) {
   try {
     await api("/api/v1/users/create", { method: "POST", body: JSON.stringify({
       username: byId("new-user-name").value.trim(), password: byId("new-user-password").value,
-      role, permissions
+      role, permissions,
+      cameraScopes: [...byId("new-user-camera-scopes").selectedOptions].map(option => option.value)
     }) });
     byId("new-user-name").value = ""; byId("new-user-password").value = "";
     await loadUsers();
@@ -85,8 +95,12 @@ async function createUser(event) {
 
 async function saveUserPermissions(username) {
   const input = document.querySelector(`[data-permissions-user="${CSS.escape(username)}"]`);
+  const scopes = document.querySelector(`[data-scopes-user="${CSS.escape(username)}"]`);
   try {
-    await api("/api/v1/users/permissions", { method: "POST", body: JSON.stringify({ username, permissions: Number(input.value) }) });
+    await api("/api/v1/users/permissions", { method: "POST", body: JSON.stringify({
+      username, permissions: Number(input.value),
+      cameraScopes: scopes ? [...scopes.selectedOptions].map(option => option.value) : []
+    }) });
     await loadUsers();
   } catch (error) { showToast(error.message, true); }
 }

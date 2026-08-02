@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QStringList>
 
 class DashboardWebSessionStore : public QObject
 {
@@ -16,6 +17,7 @@ public:
         QString username;
         QString role;
         int permissions = 0;
+        QStringList cameraScopes;
         QDateTime createdAt;
         QDateTime expiresAt;
         QDateTime absoluteExpiresAt;

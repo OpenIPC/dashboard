@@ -11,6 +11,20 @@ Ordinary application exports must not include passwords or OAuth client secrets.
 
 Majestic commonly exposes HTTP Basic authentication over plain HTTP on the camera LAN. Dashboard does not downgrade an HTTPS endpoint, but it cannot add transport encryption to an HTTP-only firmware. Use a trusted management network, a VPN/tunnel, or an HTTPS reverse proxy for untrusted paths.
 
+## Fleet operations
+
+- `site:`, `area:` and `tag:` scopes are resolved in the backend and combined with the existing
+  per-camera authorization check; filtering the Qt list is not considered authorization.
+- Site topology import/export is administrator-only. Imports containing credential-like keys are
+  rejected, and exports recursively strip password, token, secret, credential, PSK, API-key and
+  private-key fields.
+- Configuration snapshots, baselines, drift details and diagnostics use the same recursive
+  redaction. Users without Settings permission cannot read baselines or configuration snapshots.
+- A real baseline apply requires a compatible OpenIPC/Majestic device, an allowed camera scope,
+  the maintenance window (or explicit override), and a successful per-device backup before write.
+- Batch audit retains selection, outcome and recovery guidance but removes the local backup
+  directory from persisted history. Automatic fleet firmware update/rollback remains disabled.
+
 ## Downloads
 
 AI model URLs are pinned to a commit or release. Every artifact has an expected byte size and SHA-256 digest. Downloads go to a `.part` file, are verified, and are promoted with rollback protection. A failed verification never replaces an installed model.
@@ -39,6 +53,9 @@ Security boundaries:
 - browser imports cannot mutate the listener, deployment profile or trusted proxy list;
 - session administration exposes origin/peer and expiry metadata, never the raw token;
 - the public liveness/readiness responses contain bounded operational state and no secrets.
+- camera scope is applied to Qt views and enforced again on camera-specific HTTP, archive and
+  WebSocket media/control paths; desktop/Web push-to-talk requires its own permission and bounded
+  PCM transport;
 
 Residual boundaries: plain HTTP on a trusted LAN does not provide confidentiality; use VPN or an
 HTTPS reverse proxy. Dashboard has no public cloud relay and public NAT traversal/STUN/TURN remains

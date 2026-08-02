@@ -37,6 +37,8 @@ private slots:
     void invalidRememberedCredentialsAreCleared();
     void legacyPlaintextRememberedPasswordIsMigrated();
     void savedNonAdminPermissionsArePreservedOnRestart();
+    void cameraScopesAndTalkPermissionArePreservedOnRestart();
+    void siteAndAreaAliasesAuthorizeCameraAccess();
 
 private:
     QString m_settingsRoot;
@@ -288,6 +290,74 @@ void UserManagerTests::savedNonAdminPermissionsArePreservedOnRestart()
     QVERIFY(restarted.canLiveView());
     QVERIFY(!restarted.canAnalytics());
     QVERIFY(!restarted.canSettings());
+}
+
+void UserManagerTests::cameraScopesAndTalkPermissionArePreservedOnRestart()
+{
+    const int permissions = UserManager::Perm_LiveView | UserManager::Perm_Talk;
+    {
+        UserManager manager;
+        QVERIFY(manager.setupInitialAdmin(QStringLiteral("admin"),
+                                          QStringLiteral("AdminPass123!"), false));
+        QVERIFY(manager.addUser(QStringLiteral("guard"), QStringLiteral("GuardPass123!"),
+                                QStringLiteral("operator"), permissions,
+                                {QStringLiteral("front-gate"), QStringLiteral("warehouse")}));
+    }
+
+    UserManager restarted;
+    QVariantMap sessionUser;
+    QVERIFY(restarted.authenticateForSession(QStringLiteral("guard"),
+                                              QStringLiteral("GuardPass123!"), &sessionUser));
+    QCOMPARE(sessionUser.value(QStringLiteral("permissions")).toInt(), permissions);
+    QCOMPARE(sessionUser.value(QStringLiteral("cameraScopes")).toStringList(),
+             QStringList({QStringLiteral("front-gate"), QStringLiteral("warehouse")}));
+    QVERIFY(restarted.login(QStringLiteral("guard"), QStringLiteral("GuardPass123!"), false));
+    QVERIFY(restarted.canLiveView());
+    QVERIFY(restarted.canTalk());
+    QVERIFY(!restarted.canPtz());
+    QVERIFY(restarted.canAccessCamera(QStringLiteral("front-gate")));
+    QVERIFY(restarted.canAccessCamera(QStringLiteral("warehouse")));
+    QVERIFY(!restarted.canAccessCamera(QStringLiteral("back-yard")));
+    QVERIFY(!restarted.canAccessCamera(QString(), QStringLiteral("192.168.1.50"), 4));
+
+    restarted.updateUserCameraScopes(QStringLiteral("guard"),
+        {QStringLiteral(" warehouse "), QStringLiteral("warehouse"), QStringLiteral("loading-bay")});
+    QCOMPARE(restarted.currentUser().value(QStringLiteral("cameraScopes")).toStringList(),
+             QStringList({QStringLiteral("warehouse"), QStringLiteral("loading-bay")}));
+    QVERIFY(!restarted.canAccessCamera(QStringLiteral("front-gate")));
+    QVERIFY(restarted.canAccessCamera(QStringLiteral("loading-bay")));
+
+    restarted.logout();
+    QVERIFY(restarted.login(QStringLiteral("admin"), QStringLiteral("AdminPass123!"), false));
+    QVERIFY(restarted.canAccessCamera(QStringLiteral("any-camera"),
+                                      QStringLiteral("192.168.1.99"), 99));
+}
+
+void UserManagerTests::siteAndAreaAliasesAuthorizeCameraAccess()
+{
+    UserManager manager;
+    QVERIFY(manager.setupInitialAdmin(QStringLiteral("admin"),
+                                      QStringLiteral("AdminPass123!"), false));
+    QVERIFY(manager.addUser(QStringLiteral("site-operator"),
+                            QStringLiteral("OperatorPass123!"),
+                            QStringLiteral("operator"),
+                            int(UserManager::Perm_LiveView),
+                            {QStringLiteral("site:east"), QStringLiteral("area:loading")}));
+    manager.logout();
+    QVERIFY(manager.login(QStringLiteral("site-operator"),
+                          QStringLiteral("OperatorPass123!"), false));
+    manager.setCameraScopeResolver(
+        [](const QString &cameraId, const QString &, int) {
+            if (cameraId == QStringLiteral("east-gate"))
+                return QStringList{QStringLiteral("site:east"), QStringLiteral("area:gate")};
+            if (cameraId == QStringLiteral("west-loading"))
+                return QStringList{QStringLiteral("site:west"), QStringLiteral("area:loading")};
+            return QStringList{};
+        });
+
+    QVERIFY(manager.canAccessCamera(QStringLiteral("east-gate")));
+    QVERIFY(manager.canAccessCamera(QStringLiteral("west-loading")));
+    QVERIFY(!manager.canAccessCamera(QStringLiteral("west-office")));
 }
 
 QString UserManagerTests::usersFilePath() const

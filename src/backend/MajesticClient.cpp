@@ -607,6 +607,24 @@ QString MajesticClient::playPcmFile(const QString &host, int port, const QString
     return requestId;
 }
 
+QString MajesticClient::playPcmData(const QString &host, int port, const QString &username,
+                                    const QString &password, const QByteArray &pcmData)
+{
+    const QString requestId = newRequestId();
+    if (pcmData.isEmpty() || pcmData.size() > 128 * 1024 || (pcmData.size() % 2) != 0) {
+        emitFailureLater(requestId, QStringLiteral("play-audio"),
+                         QStringLiteral("Invalid PCM chunk"));
+        return requestId;
+    }
+    QNetworkRequest request = makeRequest(host, port, QStringLiteral("/play_audio"),
+                                          username, password);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/octet-stream"));
+    QNetworkReply *reply = m_networkManager.post(request, pcmData);
+    handleSimpleReply(reply, requestId, QStringLiteral("play-audio"));
+    return requestId;
+}
+
 QString MajesticClient::saveConfigurationBackup(const QVariantMap &config,
                                                  const QVariantMap &schema,
                                                  const QString &destinationPath)

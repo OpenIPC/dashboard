@@ -28,7 +28,10 @@ chmod +x OpenIPC-Dashboard-Linux.AppImage
 - Low-latency RTSP playback with `Zero`, `Balanced` and `Smooth` buffer modes.
 - Configurable TCP, UDP and HTTP transports, frame watchdogs, bounded reconnect and automatic HD-to-SD fallback.
 - Platform-dependent hardware decoding through DXVA, D3D11, CUDA and Intel Quick Sync paths.
-- Layouts, per-cell controls, PTZ, audio, snapshots, fullscreen and manual/event recording.
+- Multi-page layouts with preserved assignments, kiosk/page cycling, per-cell digital zoom,
+  PTZ, audio, desktop push-to-talk, snapshots, fullscreen and manual/event recording.
+- Per-user camera scope is shared by the Qt application and Web server; Talk remains a
+  separate permission and does not follow automatically from Live View or PTZ.
 - Unified archive with filtering, playback, clip export, retention controls and safe recovery of incomplete files.
 
 ### Discovery and onboarding
@@ -51,12 +54,23 @@ chmod +x OpenIPC-Dashboard-Linux.AppImage
 - Analytics modules, custom polygon zones, event feed and evidence snapshots/clips.
 - Shared manual and event recording coordination with EOS-safe finalization.
 - Camera Health Center, application logs, diagnostics and exportable diagnostic bundles.
+- Native Qt Sites/Fleet workspace with `Site → Area`, groups and tags, version/health/last-seen
+  inventory, saved filters and site-scoped operator access.
+- Redacted configuration baselines and drift reports, plus guarded batch inventory, health,
+  configuration-read and baseline-apply workflows with preflight, dry-run, maintenance windows,
+  bounded concurrency, cancellation, per-device outcomes, backup and audit.
+- Offline import/export of site definitions and credential-free inventory/diagnostic exports.
 - Versioned SQLite state, legacy migration and observable/testable camera policies.
 
 ### Web companion
 
 - Responsive RU/EN interface for desktop, tablet and mobile browsers.
-- Authenticated layouts `1/4/9`, camera assignment, WebRTC live view and MJPEG fallback.
+- Authenticated paged layouts `1/4/9`: assignments may exceed the visible grid, with manual
+  navigation, kiosk mode and automatic page cycling.
+- WebRTC live view with MJPEG fallback, per-cell digital zoom/pan, recording, snapshots,
+  audio, fullscreen and PTZ.
+- Per-user camera scope enforced by the API and WebSocket paths, plus a separate browser
+  push-to-talk permission for OpenIPC/Majestic cameras.
 - Discovery, onboarding, recording, snapshots, audio, fullscreen, PTZ, archive and downloads.
 - Browser-safe settings, users, permissions, sessions, logs and diagnostics.
 - Camex, Majestic and OpenIPC actions with capability, preview/diff, confirmation and audit boundaries.
@@ -104,6 +118,8 @@ keeps headless users, state, settings, analytics data and logs separate from the
 - Web sessions use opaque tokens, digest-only server storage, bounded lifetime and revocation after user security changes.
 - The browser API does not serialize camera passwords, user hashes/salts, OAuth secrets or arbitrary local filesystem paths.
 - State-changing requests enforce permissions, CSRF/Origin validation, input validation, rate limits and audit events.
+- Camera-scoped users are filtered and authorized again on direct preview, WebRTC, recording,
+  PTZ, analytics, health and archive paths; push-to-talk has its own permission bit.
 - Archive and configuration downloads use opaque identifiers and canonical-root validation.
 - Destructive firmware/restore operations are never assumed safe: use a backup, stable power and compatible recovery procedure.
 
@@ -154,8 +170,8 @@ ctest --test-dir build -L unit --output-on-failure
 ctest --test-dir build -R "qml_smoke|qml_lint_targeted" --output-on-failure
 ```
 
-The `v0.2.8` release baseline contains 29 unit/contract tests, four QML scale smoke tests,
-targeted QML lint, a static Web-module contract and a server lifecycle test: 36 CTest gates in
+The current tree contains 30 unit/contract tests, four QML scale smoke tests,
+targeted QML lint, a static Web-module contract and a server lifecycle test: 38 CTest gates in
 total. Release CI additionally validates authenticated admin/viewer browser paths in Edge,
 Chromium, Firefox and WebKit, then smoke-tests the installed Windows package and extracted Linux
 AppImage. Published assets include SHA-256 checksums, release metadata and a CycloneDX SBOM.
@@ -183,13 +199,14 @@ AppImage. Published assets include SHA-256 checksums, release metadata and a Cyc
 - [Upgrade compatibility](docs/UPGRADE_COMPATIBILITY.md)
 - [Camera discovery](docs/DISCOVERY.md)
 - [Majestic integration](docs/MAJESTIC.md)
+- [Sites and Fleet management](docs/FLEET_MANAGEMENT.md)
 - [Third-party AI models](docs/THIRD_PARTY_MODELS.md)
 - [QML lint baseline](docs/QML_LINT_BASELINE.md)
 
 ## Next Direction
 
-With P11 production hardening delivered in v0.2.8, the next active cycle is P12: Sites / Fleet
-Management and safe group operations. Later planned directions cover incident operations, higher
-media scale and a versioned integration ecosystem.
+P12 Sites / Fleet Management is implemented in the main Qt application. The next active cycle is
+P13: Incident Center, notifications and operator workflows. Later directions cover higher media
+scale and a versioned integration ecosystem.
 
 See the [Roadmap](docs/ROADMAP.md) for scope, dependencies and release gates.

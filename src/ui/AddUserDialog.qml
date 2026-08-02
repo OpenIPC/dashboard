@@ -7,11 +7,45 @@ Dialog {
     id: root
     title: I18n.t("Добавить нового пользователя")
     modal: true
-    width: 400
-    height: 450
+    width: 520
+    height: Math.min(650, parent ? parent.height - 32 : 650)
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    function selectedCameraScopes() {
+        if (roleBox.currentIndex === 0 || allCamerasScope.checked) return []
+        var scopes = []
+        for (var s = 0; s < siteScopeRepeater.count; ++s) {
+            var siteItem = siteScopeRepeater.itemAt(s)
+            if (siteItem && siteItem.checked) scopes.push(siteItem.scopeKey)
+        }
+        for (var a = 0; a < areaScopeRepeater.count; ++a) {
+            var areaItem = areaScopeRepeater.itemAt(a)
+            if (areaItem && areaItem.checked) scopes.push(areaItem.scopeKey)
+        }
+        for (var i = 0; i < scopeRepeater.count; ++i) {
+            var item = scopeRepeater.itemAt(i)
+            if (item && item.checked) scopes.push(item.scopeKey)
+        }
+        return scopes
+    }
+
+    onOpened: {
+        allCamerasScope.checked = true
+        for (var s = 0; s < siteScopeRepeater.count; ++s) {
+            var siteItem = siteScopeRepeater.itemAt(s)
+            if (siteItem) siteItem.checked = false
+        }
+        for (var a = 0; a < areaScopeRepeater.count; ++a) {
+            var areaItem = areaScopeRepeater.itemAt(a)
+            if (areaItem) areaItem.checked = false
+        }
+        for (var i = 0; i < scopeRepeater.count; ++i) {
+            var item = scopeRepeater.itemAt(i)
+            if (item) item.checked = false
+        }
+    }
     
     background: Rectangle {
         color: Theme.metroSurface
@@ -179,6 +213,92 @@ Dialog {
                 checked: false
                 enabled: !parent.isAdmin
             }
+            StyledCheckBox {
+                id: pTalk
+                text: I18n.t("Разговор (Push-to-talk)")
+                checked: false
+                enabled: !parent.isAdmin
+            }
+        }
+
+        Label {
+            visible: roleBox.currentIndex !== 0
+            text: I18n.t("Доступ к камерам")
+            color: Theme.textPrimary
+            font.family: Theme.metroFontFamily
+            font.bold: true
+        }
+
+        MetroCheckBox {
+            id: allCamerasScope
+            visible: roleBox.currentIndex !== 0
+            text: I18n.t("Все камеры")
+            checked: true
+        }
+
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 130
+            visible: roleBox.currentIndex !== 0 && !allCamerasScope.checked
+            clip: true
+
+            Column {
+                width: parent.width
+                spacing: 3
+
+                Text {
+                    text: I18n.t("Сайты")
+                    color: Theme.textMuted
+                    font.bold: true
+                }
+                Repeater {
+                    id: siteScopeRepeater
+                    model: SystemController.fleetManager.sites
+                    delegate: MetroCheckBox {
+                        required property var modelData
+                        property string scopeKey: "site:" + modelData.id
+                        width: parent ? parent.width : 0
+                        text: modelData.name
+                    }
+                }
+
+                Text {
+                    text: I18n.t("Зоны")
+                    color: Theme.textMuted
+                    font.bold: true
+                }
+                Repeater {
+                    id: areaScopeRepeater
+                    model: SystemController.fleetManager.areas
+                    delegate: MetroCheckBox {
+                        required property var modelData
+                        property string scopeKey: "area:" + modelData.id
+                        width: parent ? parent.width : 0
+                        text: modelData.name
+                    }
+                }
+
+                Text {
+                    text: I18n.t("Отдельные камеры")
+                    color: Theme.textMuted
+                    font.bold: true
+                }
+
+                Repeater {
+                    id: scopeRepeater
+                    model: SystemController.cameraModel
+
+                    delegate: MetroCheckBox {
+                        required property int index
+                        required property string cameraId
+                        required property string cameraName
+                        required property string cameraIp
+                        property string scopeKey: cameraId !== "" ? cameraId : "index:" + index
+                        width: parent ? parent.width : 0
+                        text: (cameraName || cameraIp) + "  ·  " + cameraIp
+                    }
+                }
+            }
         }
         
         Item { Layout.fillHeight: true }
@@ -215,9 +335,12 @@ Dialog {
                             if (pSettings.checked) perms |= 0x10
                             if (pUsers.checked) perms |= 0x20
                             if (pAnalytics.checked) perms |= 0x40
+                            if (pTalk.checked) perms |= 0x80
                         }
 
-                        if (SystemController.userManager.addUser(loginField.text, passwordField.text, roleBox.currentValue, perms)) {
+                        var newUsername = loginField.text
+                        if (SystemController.userManager.addUser(newUsername, passwordField.text, roleBox.currentValue, perms)) {
+                            SystemController.userManager.updateUserCameraScopes(newUsername, root.selectedCameraScopes())
                             loginField.text = ""
                             passwordField.text = ""
                             root.close()

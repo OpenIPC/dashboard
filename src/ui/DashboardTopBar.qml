@@ -7,11 +7,18 @@ Rectangle {
 
     property var layoutsModel: null
     property int currentLayoutIndex: -1
+    property int currentPage: 0
+    property int pageCount: 1
+    property bool pageCycling: false
 
     signal applyLayoutRequested(int index)
     signal closeLayoutRequested(int index)
     signal addLayoutRequested()
     signal editLayoutRequested()
+    signal previousPageRequested()
+    signal nextPageRequested()
+    signal pageCyclingToggleRequested()
+    signal kioskToggleRequested()
 
     color: Theme.metroSidebarBackground
     clip: true
@@ -40,7 +47,7 @@ Rectangle {
 
     DashboardLayoutToolbar {
         anchors.left: parent.left
-        anchors.right: windowControls.left
+        anchors.right: pageControls.left
         anchors.bottom: parent.bottom
         anchors.margins: 12
         anchors.rightMargin: 12
@@ -51,6 +58,20 @@ Rectangle {
         onCloseRequested: (index) => topBar.closeLayoutRequested(index)
         onAddRequested: topBar.addLayoutRequested()
         onEditRequested: topBar.editLayoutRequested()
+    }
+
+    DashboardPageControls {
+        id: pageControls
+        anchors.right: windowControls.left
+        anchors.rightMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        currentPage: topBar.currentPage
+        pageCount: topBar.pageCount
+        cycling: topBar.pageCycling
+        onPreviousRequested: topBar.previousPageRequested()
+        onNextRequested: topBar.nextPageRequested()
+        onCyclingToggleRequested: topBar.pageCyclingToggleRequested()
+        onKioskToggleRequested: topBar.kioskToggleRequested()
     }
 
     DashboardWindowControls {

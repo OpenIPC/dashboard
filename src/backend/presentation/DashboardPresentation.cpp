@@ -123,7 +123,8 @@ QVariantMap DashboardPresentation::cameraView(const Camera &camera, int index,
 
 QVariantMap DashboardPresentation::capabilityManifest(int permissions,
                                                       bool webRtcAvailable,
-                                                      bool audioAvailable) const
+                                                      bool audioAvailable,
+                                                      bool cameraRestricted) const
 {
     const bool live = hasPermission(permissions, UserManager::Perm_LiveView);
     const bool playback = hasPermission(permissions, UserManager::Perm_Playback);
@@ -132,6 +133,7 @@ QVariantMap DashboardPresentation::capabilityManifest(int permissions,
     const bool settings = hasPermission(permissions, UserManager::Perm_Settings);
     const bool users = hasPermission(permissions, UserManager::Perm_UserManage);
     const bool analytics = hasPermission(permissions, UserManager::Perm_Analytics);
+    const bool talk = hasPermission(permissions, UserManager::Perm_Talk);
     return {
         {QStringLiteral("version"), 1},
         {QStringLiteral("monitor"), QVariantMap{
@@ -142,6 +144,7 @@ QVariantMap DashboardPresentation::capabilityManifest(int permissions,
              {QStringLiteral("recording"), live},
              {QStringLiteral("snapshot"), live},
              {QStringLiteral("audio"), live && webRtcAvailable && audioAvailable},
+             {QStringLiteral("talk"), live && talk},
              {QStringLiteral("fullscreen"), live},
              {QStringLiteral("ptz"), ptz}}},
         {QStringLiteral("archive"), QVariantMap{
@@ -149,9 +152,10 @@ QVariantMap DashboardPresentation::capabilityManifest(int permissions,
              {QStringLiteral("download"), playback && exportAllowed}}},
         {QStringLiteral("administration"), QVariantMap{
              {QStringLiteral("settings"), settings},
-             {QStringLiteral("users"), users},
-             {QStringLiteral("logs"), settings},
+             {QStringLiteral("users"), users && !cameraRestricted},
+             {QStringLiteral("logs"), settings && !cameraRestricted},
              {QStringLiteral("devices"), settings},
+             {QStringLiteral("cameraOnboarding"), settings && !cameraRestricted},
              {QStringLiteral("camex"), settings}}},
         {QStringLiteral("analytics"), analytics},
         {QStringLiteral("adaptations"), QVariantMap{
@@ -178,7 +182,9 @@ QVariantList DashboardPresentation::permissionCatalog() const
         QVariantMap{{QStringLiteral("id"), QStringLiteral("userManage")},
                     {QStringLiteral("value"), UserManager::Perm_UserManage}},
         QVariantMap{{QStringLiteral("id"), QStringLiteral("analytics")},
-                    {QStringLiteral("value"), UserManager::Perm_Analytics}}
+                    {QStringLiteral("value"), UserManager::Perm_Analytics}},
+        QVariantMap{{QStringLiteral("id"), QStringLiteral("talk")},
+                    {QStringLiteral("value"), UserManager::Perm_Talk}}
     };
 }
 

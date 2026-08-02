@@ -22,6 +22,23 @@ Application state is stored in `state.sqlite3` using WAL-capable SQLite and expl
 
 Analytics events use a separate indexed SQLite store so high-volume event history does not rewrite application state.
 
+## Sites and fleet management
+
+`FleetManager` owns the non-secret `Site → Area` topology, camera assignments and tags, saved
+views, configuration baselines, inventory metadata and bounded batch history. Its JSON state is
+stored inside the same transactional application-state record; camera credentials remain in the
+operating-system credential store and are never part of fleet import/export.
+
+The service resolves `site:<id>`, `area:<id>` and `tag:<value>` aliases for `UserManager`, so every
+existing per-camera authorization check also understands fleet scopes. QML only submits intent:
+the backend repeats permission, camera-scope, compatibility, maintenance-window and backup checks
+before a batch device is dispatched. Configuration snapshots and diffs are recursively redacted.
+
+Read operations use a bounded queue. Configuration mutation is limited to an explicit baseline,
+requires a successful per-device backup, retains partial results and recovery guidance, and never
+attempts automatic firmware rollback. Fleet administration is a native Qt workspace; the Web
+companion remains focused on monitoring and archive workflows.
+
 ## Extension points
 
 - `MajesticClient` is a schema-driven OpenIPC device service. It discovers the live Majestic configuration/schema, flattens supported fields for QML, creates minimal nested patches, validates them against the camera schema, redacts sensitive diffs, and owns runtime commands, metrics and backup I/O. Older firmware without `config.schema.json` is exposed read-only rather than guessed.

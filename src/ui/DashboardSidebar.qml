@@ -26,6 +26,7 @@ Rectangle {
     signal noAccessRequested()
     signal searchRequested()
     signal healthRequested()
+    signal fleetRequested()
     signal addGroupRequested()
     signal addCameraRequested()
     signal analyticsRequested()
@@ -63,6 +64,7 @@ Rectangle {
         case "add_camera": return "add"
         case "add_folder": return "create_new_folder"
         case "health": return "security"
+        case "fleet": return "domain"
         case "analytics": return "assessment"
         case "settings": return "settings"
         case "logs": return "description"
@@ -127,6 +129,12 @@ Rectangle {
                 : true
     }
 
+    function cameraAccessAllowed(cameraId, cameraIp, cameraIndex) {
+        return dashboard && dashboard.cameraAccessAllowed
+                ? dashboard.cameraAccessAllowed(cameraId, cameraIp, cameraIndex)
+                : true
+    }
+
     function triggerAction(action) {
         if (!actionAllowed(action)) {
             noAccessRequested()
@@ -135,6 +143,7 @@ Rectangle {
 
         if (action === "search") searchRequested()
         else if (action === "health") healthRequested()
+        else if (action === "fleet") fleetRequested()
         else if (action === "add_folder") addGroupRequested()
         else if (action === "add_camera") addCameraRequested()
         else if (action === "settings") settingsRequested()
@@ -284,6 +293,7 @@ Rectangle {
                             { iconPath: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z", action: "add_camera", label: "Камера", tooltip: "Добавить камеру" },
                             { iconPath: "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z", action: "add_folder", label: "Группа", tooltip: "Добавить группу" },
                             { iconPath: "M12 2L4 5v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V5l-8-3zm0 2.18L18 6.4V11c0 4.52-2.98 8.69-6 9.82-3.02-1.13-6-5.3-6-9.82V6.4l6-2.22zm-1 4.82h2v5h-2V9zm0 6h2v2h-2v-2z", action: "health", label: "Здоровье", tooltip: "Здоровье камер и диагностика" },
+                            { iconPath: "M3 21V8l6-4v4l6-4v6h6v11H3zm2-2h2v-3H5v3zm0-5h2v-3H5v3zm4 5h2v-3H9v3zm0-5h2v-3H9v3zm4 5h2v-3h-2v3zm0-5h2v-2h-2v2zm4 5h2v-3h-2v3zm0-5h2v-2h-2v2z", action: "fleet", label: "Парк", tooltip: "Сайты и парк камер" },
                             { iconPath: "M19.87 18.73l-5.32-5.32C15.2 12.33 15.6 11.22 15.6 10c0-3.09-2.51-5.6-5.6-5.6S4.4 6.91 4.4 10s2.51 5.6 5.6 5.6c1.22 0 2.33-.4 3.41-1.05l5.32 5.32c.39.39 1.02.39 1.41 0l-.27-.27.27.27c.39-.39.39-1.02 0-1.41zM10 14.1c-2.26 0-4.1-1.84-4.1-4.1S7.74 5.9 10 5.9s4.1 1.84 4.1 4.1-1.84 4.1-4.1 4.1z", action: "analytics", label: "Аналитика", tooltip: "Аналитика" },
                             { iconPath: "M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.09-.16-.26-.25-.44-.25-.06 0-.12.01-.17.03l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.06-.02-.12-.03-.18-.03-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.09.16.26.25.44.25.06 0 .12-.01.17-.03l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.13-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z", action: "settings", label: "Настройки", tooltip: "Настройки" },
                             { iconPath: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z", action: "logs", label: "Логи", tooltip: "Логи" },
@@ -489,6 +499,8 @@ Rectangle {
 
                             for (var i = 0; i < sidebar.systemController.cameraModel.rowCount(); ++i) {
                                 var cam = sidebar.systemController.cameraModel.getCamera(i)
+                                if (!sidebar.cameraAccessAllowed(cam.cameraId || "", cam.cameraIp || "", i))
+                                    continue
                                 var g = cam.cameraGroup || ""
                                 if (g === groupBlockItem.groupName
                                         && sidebar.cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp,
@@ -524,13 +536,17 @@ Rectangle {
                                     id: deviceRow
 
                                     required property int index
+                                    required property string cameraId
                                     required property string cameraGroup
                                     required property string status
 
                                     property int rowCameraIndex: deviceRow.index
                                     property string effectiveStatusValue: sidebar.effectiveCameraStatus(deviceRow.cameraIp, deviceRow.status)
                                     property string effectiveDetailValue: sidebar.effectiveCameraDetail(deviceRow.cameraIp, deviceRow.status)
-                                    property bool inGroup: (deviceRow.cameraGroup || "") === groupBlockItem.groupName
+                                    property bool inGroup: sidebar.cameraAccessAllowed(deviceRow.cameraId,
+                                                                                       deviceRow.cameraIp,
+                                                                                       deviceRow.index)
+                                                           && (deviceRow.cameraGroup || "") === groupBlockItem.groupName
                                                            && sidebar.cameraMatchesDeviceFilter(deviceRow.cameraName, deviceRow.cameraIp,
                                                                                                 deviceRow.effectiveStatusValue + " " + deviceRow.effectiveDetailValue,
                                                                                                 deviceRow.cameraGroup)

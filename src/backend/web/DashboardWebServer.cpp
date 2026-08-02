@@ -11,6 +11,7 @@
 
 #include <QDesktopServices>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -167,6 +168,21 @@ DashboardWebServer::DashboardWebServer(SystemController *systemController, QObje
 #ifdef OPENIPC_HAS_QT_WEBSOCKETS
     connect(m_systemController->logModel(), &QAbstractItemModel::rowsInserted, this,
             [this](const QModelIndex &, int first, int last) { broadcastLogTail(first, last); });
+    connect(m_systemController->majesticClient(), &MajesticClient::operationSucceeded, this,
+            [this](const QString &id, const QString &operation, const QString &) {
+        if (operation == QStringLiteral("play-audio")) m_talkRequests.remove(id);
+    });
+    connect(m_systemController->majesticClient(), &MajesticClient::operationFailed, this,
+            [this](const QString &id, const QString &operation, const QString &message, int) {
+        if (operation != QStringLiteral("play-audio")) return;
+        QPointer<QWebSocket> socket = m_talkRequests.take(id);
+        if (!socket || !m_webSockets.contains(socket)) return;
+        const QJsonObject payload{{QStringLiteral("type"), QStringLiteral("talk-state")},
+                                  {QStringLiteral("active"), false},
+                                  {QStringLiteral("error"), redactDeviceText(message)}};
+        socket->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+    });
 #endif
     connect(m_systemController->userManager(), &UserManager::userSecurityChanged,
             this, &DashboardWebServer::invalidateUserSessions);
@@ -703,6 +719,9 @@ void DashboardWebServer::acceptWebSocketConnections()
             }
             m_webSockets.remove(socket);
             m_webSocketSessions.remove(socket);
+            m_talkCameras.remove(socket);
+            m_talkWindowStartedMs.remove(socket);
+            m_talkWindowBytes.remove(socket);
             socket->deleteLater();
             emit connectedClientsChanged();
         });
@@ -710,9 +729,13 @@ void DashboardWebServer::acceptWebSocketConnections()
                 [this, socket](const QString &message) {
             handleWebSocketMessage(socket, message);
         });
+        connect(socket, &QWebSocket::binaryMessageReceived, this,
+                [this, socket](const QByteArray &message) {
+            handleWebSocketBinaryMessage(socket, message);
+        });
         emit connectedClientsChanged();
         const QJsonObject message{{QStringLiteral("type"), QStringLiteral("dashboard")},
-                                  {QStringLiteral("data"), QJsonValue::fromVariant(dashboardData())}};
+                                  {QStringLiteral("data"), QJsonValue::fromVariant(dashboardData(&session))}};
         socket->sendTextMessage(QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
     }
 }
@@ -732,6 +755,47 @@ void DashboardWebServer::handleWebSocketMessage(QWebSocket *socket,
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) return;
     const QJsonObject object = document.object();
     const QString type = object.value(QStringLiteral("type")).toString();
+    if (type == QStringLiteral("talk-start") || type == QStringLiteral("talk-stop")) {
+        const auto session = m_webSocketSessions.value(socket);
+        const bool allowed = (session.permissions & UserManager::Perm_All) == UserManager::Perm_All
+            || (session.permissions & UserManager::Perm_Talk) != 0;
+        const int cameraIndex = object.value(QStringLiteral("cameraIndex")).toInt(-1);
+        bool speakerBusy = false;
+        for (auto it = m_talkCameras.cbegin(); it != m_talkCameras.cend(); ++it) {
+            if (it.key() != socket && it.value() == cameraIndex) { speakerBusy = true; break; }
+        }
+        QString error;
+        bool active = false;
+        if (!allowed) {
+            error = tr("Push-to-talk permission is required");
+        } else if (type == QStringLiteral("talk-start")
+                   && !sessionCanAccessCamera(session, cameraIndex)) {
+            error = tr("Camera access is not allowed");
+        } else if (type == QStringLiteral("talk-start") && speakerBusy) {
+            error = tr("Camera speaker is already in use");
+        } else if (type == QStringLiteral("talk-start")) {
+            m_talkCameras.insert(socket, cameraIndex);
+            m_talkWindowStartedMs.insert(socket, QDateTime::currentMSecsSinceEpoch());
+            m_talkWindowBytes.insert(socket, 0);
+            active = true;
+            audit(session, QStringLiteral("talk.start"), QString::number(cameraIndex));
+        } else {
+            const bool wasActive = m_talkCameras.contains(socket);
+            const int stoppedCamera = m_talkCameras.take(socket);
+            m_talkWindowStartedMs.remove(socket);
+            m_talkWindowBytes.remove(socket);
+            if (wasActive) {
+                audit(session, QStringLiteral("talk.stop"), QString::number(stoppedCamera));
+            }
+        }
+        const QJsonObject payload{{QStringLiteral("type"), QStringLiteral("talk-state")},
+                                  {QStringLiteral("active"), active},
+                                  {QStringLiteral("cameraIndex"), cameraIndex},
+                                  {QStringLiteral("error"), error}};
+        socket->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(payload).toJson(QJsonDocument::Compact)));
+        return;
+    }
     const QString peerId = object.value(QStringLiteral("peerId")).toString();
     static const QRegularExpression peerIdPattern(QStringLiteral("^[A-Za-z0-9_-]{8,80}$"));
 
@@ -760,6 +824,11 @@ void DashboardWebServer::handleWebSocketMessage(QWebSocket *socket,
             return;
         }
         const int cameraIndex = object.value(QStringLiteral("cameraIndex")).toInt(-1);
+        const auto session = m_webSocketSessions.value(socket);
+        if (!sessionCanAccessCamera(session, cameraIndex)) {
+            sendError(tr("Camera access is not allowed"));
+            return;
+        }
         const QString quality = object.value(QStringLiteral("quality")).toString();
         m_webRtcPeerSockets.insert(peerId, socket);
         QString error;
@@ -793,6 +862,35 @@ void DashboardWebServer::handleWebSocketMessage(QWebSocket *socket,
     }
 }
 
+void DashboardWebServer::handleWebSocketBinaryMessage(QWebSocket *socket,
+                                                       const QByteArray &message)
+{
+    if (!socket || !m_webSockets.contains(socket) || message.isEmpty()
+        || message.size() > 32 * 1024 || (message.size() % 2) != 0) return;
+    const auto session = m_webSocketSessions.value(socket);
+    const bool allowed = (session.permissions & UserManager::Perm_All) == UserManager::Perm_All
+        || (session.permissions & UserManager::Perm_Talk) != 0;
+    const int cameraIndex = m_talkCameras.value(socket, -1);
+    if (!allowed || !sessionCanAccessCamera(session, cameraIndex)) {
+        m_talkCameras.remove(socket);
+        m_talkWindowStartedMs.remove(socket);
+        m_talkWindowBytes.remove(socket);
+        return;
+    }
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - m_talkWindowStartedMs.value(socket) >= 1000) {
+        m_talkWindowStartedMs.insert(socket, nowMs);
+        m_talkWindowBytes.insert(socket, 0);
+    }
+    const qsizetype nextBytes = m_talkWindowBytes.value(socket) + message.size();
+    if (nextBytes > 64 * 1024) return;
+    m_talkWindowBytes.insert(socket, nextBytes);
+    const Camera camera = m_systemController->cameraModel()->getCamera(cameraIndex);
+    const QString requestId = m_systemController->majesticClient()->playPcmData(
+        camera.ip, camera.onvifPort, camera.login, camera.password, message);
+    m_talkRequests.insert(requestId, socket);
+}
+
 void DashboardWebServer::broadcastLogTail(int first, int last)
 {
     Q_UNUSED(first)
@@ -815,9 +913,13 @@ void DashboardWebServer::broadcastState()
 {
 #ifdef OPENIPC_HAS_QT_WEBSOCKETS
     if (m_webSockets.isEmpty()) return;
-    const QJsonObject message{{QStringLiteral("type"), QStringLiteral("dashboard")},
-                              {QStringLiteral("data"), QJsonValue::fromVariant(dashboardData())}};
-    const QString payload = QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact));
-    for (QWebSocket *socket : std::as_const(m_webSockets)) socket->sendTextMessage(payload);
+    for (QWebSocket *socket : std::as_const(m_webSockets)) {
+        const auto session = m_webSocketSessions.value(socket);
+        const QJsonObject message{{QStringLiteral("type"), QStringLiteral("dashboard")},
+                                  {QStringLiteral("data"), QJsonValue::fromVariant(
+                                       dashboardData(&session))}};
+        socket->sendTextMessage(QString::fromUtf8(
+            QJsonDocument(message).toJson(QJsonDocument::Compact)));
+    }
 #endif
 }

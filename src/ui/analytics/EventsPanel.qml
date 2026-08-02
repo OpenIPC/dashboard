@@ -92,6 +92,10 @@ Item {
     function exportEvents(format) {
         if (!root.model || !root.model.exportAnalyticsEvents)
             return
+        if (root.restrictedCameraScope()) {
+            exportStatus = I18n.t("Экспорт общей ленты недоступен при ограничении камер")
+            return
+        }
 
         var result = root.model.exportAnalyticsEvents(
             "",
@@ -116,6 +120,25 @@ Item {
         if (camera.cameraName !== undefined && camera.cameraName !== "")
             return camera.cameraName
         return ""
+    }
+
+    function cameraAccessAllowedByIndex(cameraIndex) {
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) return false
+        var camera = SystemController.cameraModel.getCamera(cameraIndex)
+        return SystemController.userManager.canAccessCamera(
+                    camera.cameraId || "", camera.cameraIp || "", cameraIndex)
+    }
+
+    function eventCameraAllowed(eventItem) {
+        if (!eventItem) return false
+        var id = String(eventItem.cameraId || eventItem.cameraIp || "")
+        var cameraIndex = SystemController.cameraModel.findIndexByIp(id)
+        return cameraAccessAllowedByIndex(cameraIndex)
+    }
+
+    function restrictedCameraScope() {
+        var user = SystemController.userManager.currentUser
+        return user && user.cameraScopes && user.cameraScopes.length > 0
     }
 
     function refreshPipelineStatus() {
@@ -150,6 +173,7 @@ Item {
         if (SystemController.cameraModel && root.model.isCameraModuleEnabled) {
             for (var cameraIndex = 0; cameraIndex < SystemController.cameraModel.rowCount(); ++cameraIndex) {
                 var camera = SystemController.cameraModel.getCamera(cameraIndex)
+                if (!root.cameraAccessAllowedByIndex(cameraIndex)) continue
                 var cameraId = root.cameraIdFromModel(camera)
                 if (cameraId === "")
                     continue
@@ -205,6 +229,8 @@ Item {
             if (root.moduleType >= 0 && Number(eventItem.moduleType) !== root.moduleType)
                 continue
             if (root.eventTypeFilter !== "" && eventItem.eventType !== root.eventTypeFilter)
+                continue
+            if (!root.eventCameraAllowed(eventItem))
                 continue
             filtered.push(eventItem)
         }
@@ -266,6 +292,11 @@ Item {
         function onRowsRemoved(parent, first, last) { root.refreshPipelineStatus() }
         function onModelReset() { root.refreshPipelineStatus() }
         function onDataChanged(topLeft, bottomRight, roles) { root.refreshPipelineStatus() }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onPermissionsVersionChanged() { root.scheduleRefreshData() }
     }
 
     component MetricTile: Rectangle {

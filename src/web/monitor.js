@@ -26,16 +26,20 @@ function renderMonitorGrid(cameras) {
   const grid = byId("monitor-grid");
   const signature = JSON.stringify({
     layout: state.layout,
+    page: state.page,
     activeCell: state.activeCell,
-    assignments: state.assignments.slice(0, state.layout),
+    assignments: state.assignments.slice(workspacePageStart(), workspacePageStart() + state.layout),
     cameras: cameras.map(camera => [cameraKey(camera), camera.index, camera.ip,
       camera.name, camera.status, camera.recording, camera.previewStreamUrl, camera.previewUrl])
   });
   if (signature === state.monitorSignature) return;
   state.monitorSignature = signature;
+  stopPushToTalk();
   stopAllWebRtcPeers();
   grid.dataset.layout = String(state.layout);
-  grid.innerHTML = Array.from({ length: state.layout }, (_, cellIndex) => {
+  const pageStart = workspacePageStart();
+  grid.innerHTML = Array.from({ length: state.layout }, (_, pageCellIndex) => {
+    const cellIndex = pageStart + pageCellIndex;
     const camera = findCameraByKey(cameras, state.assignments[cellIndex]);
     const active = cellIndex === state.activeCell ? " active" : "";
     if (!camera) {
@@ -46,12 +50,15 @@ function renderMonitorGrid(cameras) {
     const online = isOnline(camera.status);
     const canAudio = Boolean(state.capabilities?.monitor?.audio);
     const canPtz = Boolean(state.capabilities?.monitor?.ptz);
+    const canTalk = Boolean(state.capabilities?.monitor?.talk);
     const controlsOpen = cellIndex === state.openControlsCell;
     const controlsTitle = text(controlsOpen ? "hideCameraControls" : "showCameraControls");
     return `<article class="stream-cell${active}${controlsOpen ? " controls-open" : ""}${camera.recording ? " recording" : ""}" data-cell="${cellIndex}" data-camera-index="${camera.index}" tabindex="0">
       <div class="stream-fallback"><span class="camera-symbol">O</span><strong>${escapeHtml(camera.ip)}</strong><span>${text("streamUnavailable")}</span></div>
-      <video data-webrtc-video autoplay muted playsinline hidden></video>
-      <img data-stream-image data-preview-url="${escapeHtml(camera.previewStreamUrl || camera.previewUrl)}" alt="${escapeHtml(camera.name || camera.ip)}" hidden>
+      <div class="media-surface" data-media-surface>
+        <video data-webrtc-video autoplay muted playsinline hidden></video>
+        <img data-stream-image data-preview-url="${escapeHtml(camera.previewStreamUrl || camera.previewUrl)}" alt="${escapeHtml(camera.name || camera.ip)}" hidden>
+      </div>
       <span class="stream-overlay stream-status ${online ? "online" : ""}"><span class="dot"></span>${escapeHtml(camera.status || (online ? "Online" : "Offline"))}</span>
       <span class="stream-overlay stream-meta"><span data-stream-transport>WebRTC</span> &middot; ${escapeHtml(camera.ip)} &middot; RTSP ${escapeHtml(camera.rtspPort || 554)}</span>
       <span class="stream-overlay stream-name">${escapeHtml(camera.name || camera.ip)}</span>
@@ -60,7 +67,11 @@ function renderMonitorGrid(cameras) {
         <button type="button" data-record-camera="${camera.index}" class="${camera.recording ? "recording-active" : ""}" title="${text(camera.recording ? "stopRecording" : "startRecording")}" aria-label="${text(camera.recording ? "stopRecording" : "startRecording")}">&#9679;</button>
         <button type="button" data-snapshot-camera="${camera.index}" title="${text("snapshot")}" aria-label="${text("snapshot")}">&#9635;</button>
         ${canAudio ? `<button type="button" data-audio-toggle title="${text("unmute")}" aria-label="${text("unmute")}">&#128263;</button><input type="range" data-audio-volume min="0" max="1" step="0.05" value="1" title="${text("mute")}">` : ""}
+        ${canTalk ? `<button type="button" data-talk-camera="${camera.index}" title="${text("pushToTalk")}" aria-label="${text("pushToTalk")}">&#127908;</button>` : ""}
         ${canPtz ? `<button type="button" data-ptz-toggle title="${text("ptz")}" aria-label="${text("ptz")}">PTZ</button>` : ""}
+        <button type="button" data-digital-zoom="out" title="${text("digitalZoomOut")}" aria-label="${text("digitalZoomOut")}">&#8722;</button>
+        <button type="button" data-digital-zoom="reset" title="${text("digitalZoomReset")}" aria-label="${text("digitalZoomReset")}">1:1</button>
+        <button type="button" data-digital-zoom="in" title="${text("digitalZoomIn")}" aria-label="${text("digitalZoomIn")}">+</button>
         <button type="button" data-fullscreen-cell title="${text("fullscreen")}" aria-label="${text("fullscreen")}">&#9974;</button>
       </div>
       ${canPtz ? `<div class="ptz-pad" hidden><button type="button" data-ptz="up">&#9650;</button><button type="button" data-ptz="left">&#9664;</button><button type="button" data-ptz="stop">&#9632;</button><button type="button" data-ptz="right">&#9654;</button><button type="button" data-ptz="down">&#9660;</button><button type="button" data-ptz="zoom-in">+</button><button type="button" data-ptz="zoom-out">−</button></div>` : ""}
@@ -83,14 +94,20 @@ function renderMonitorGrid(cameras) {
     event.stopPropagation();
     const index = Number(button.dataset.clearCell);
     state.assignments[index] = null;
-    state.activeCell = index;
+    compactAssignmentPages();
+    state.page = Math.min(state.page, workspacePageCount() - 1);
+    const pageStart = workspacePageStart();
+    state.activeCell = index >= pageStart && index < pageStart + state.layout
+      ? index : pageStart;
     setCellControlsOpen(null);
     persistWorkspace();
+    updatePageControls();
     renderMonitorGrid(cameras);
     renderDeviceList(cameras);
     updatePreviewStats();
   }));
   bindMonitorControls(cameras);
+  bindDigitalZoom(cameras);
   grid.querySelectorAll("[data-stream-image]").forEach(image => {
     image.addEventListener("load", () => { image.closest(".stream-cell").classList.remove("stream-failed"); });
     image.addEventListener("error", () => { image.closest(".stream-cell").classList.add("stream-failed"); });
@@ -142,6 +159,18 @@ function bindMonitorControls(cameras) {
     const pad = button.closest(".stream-cell")?.querySelector(".ptz-pad");
     if (pad) pad.hidden = !pad.hidden;
   }));
+  grid.querySelectorAll("[data-talk-camera]").forEach(button => {
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      button.setPointerCapture?.(event.pointerId);
+      startPushToTalk(Number(button.dataset.talkCamera), button);
+    });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(name =>
+      button.addEventListener(name, stopPushToTalk));
+  });
+  grid.querySelectorAll("[data-digital-zoom]").forEach(button => button.addEventListener("click", () => {
+    changeDigitalZoom(button.closest(".stream-cell"), button.dataset.digitalZoom);
+  }));
   grid.querySelectorAll("[data-ptz]").forEach(button => {
     const cell = button.closest(".stream-cell");
     const cameraIndex = Number(cell?.dataset.cameraIndex);
@@ -153,6 +182,148 @@ function bindMonitorControls(cameras) {
       ["pointerup", "pointercancel", "pointerleave"].forEach(name => button.addEventListener(name, () => sendPtz(cameraIndex, "stop")));
     }
   });
+}
+
+function zoomKeyForCell(cell) {
+  const cameraIndex = Number(cell?.dataset.cameraIndex);
+  const camera = (state.dashboard?.cameras || []).find(item => Number(item.index) === cameraIndex);
+  return camera ? cameraKey(camera) : "";
+}
+
+function applyDigitalZoom(cell) {
+  const key = zoomKeyForCell(cell);
+  const zoom = state.digitalZoom.get(key) || { scale: 1, x: 0, y: 0 };
+  const surface = cell?.querySelector("[data-media-surface]");
+  if (!surface) return;
+  surface.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+  cell.classList.toggle("digitally-zoomed", zoom.scale > 1);
+}
+
+function changeDigitalZoom(cell, action) {
+  const key = zoomKeyForCell(cell);
+  if (!key) return;
+  const current = state.digitalZoom.get(key) || { scale: 1, x: 0, y: 0 };
+  const scale = action === "reset" ? 1 : Math.max(1, Math.min(4,
+    current.scale + (action === "in" ? 0.5 : -0.5)));
+  const next = { scale, x: scale === 1 ? 0 : current.x, y: scale === 1 ? 0 : current.y };
+  state.digitalZoom.set(key, next);
+  applyDigitalZoom(cell);
+}
+
+function bindDigitalZoom() {
+  byId("monitor-grid").querySelectorAll(".stream-cell[data-camera-index]").forEach(cell => {
+    applyDigitalZoom(cell);
+    cell.addEventListener("wheel", event => {
+      event.preventDefault();
+      changeDigitalZoom(cell, event.deltaY < 0 ? "in" : "out");
+    }, { passive: false });
+    const surface = cell.querySelector("[data-media-surface]");
+    if (!surface) return;
+    let drag = null;
+    surface.addEventListener("pointerdown", event => {
+      const key = zoomKeyForCell(cell);
+      const zoom = state.digitalZoom.get(key);
+      if (!zoom || zoom.scale <= 1) return;
+      drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+        originX: zoom.x, originY: zoom.y };
+      surface.setPointerCapture?.(event.pointerId);
+      cell.classList.add("zoom-panning");
+    });
+    surface.addEventListener("pointermove", event => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const key = zoomKeyForCell(cell);
+      const zoom = state.digitalZoom.get(key);
+      if (!zoom) return;
+      const maxX = cell.clientWidth * (zoom.scale - 1) / 2;
+      const maxY = cell.clientHeight * (zoom.scale - 1) / 2;
+      zoom.x = Math.max(-maxX, Math.min(maxX, drag.originX + event.clientX - drag.x));
+      zoom.y = Math.max(-maxY, Math.min(maxY, drag.originY + event.clientY - drag.y));
+      applyDigitalZoom(cell);
+    });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(name =>
+      surface.addEventListener(name, () => { drag = null; cell.classList.remove("zoom-panning"); }));
+  });
+}
+
+function downsamplePcm(input, inputRate) {
+  const ratio = Math.max(1, inputRate / 8000);
+  const length = Math.floor(input.length / ratio);
+  const pcm = new Int16Array(length);
+  for (let index = 0; index < length; ++index) {
+    const start = Math.floor(index * ratio);
+    const end = Math.min(input.length, Math.floor((index + 1) * ratio));
+    let sum = 0;
+    for (let source = start; source < end; ++source) sum += input[source];
+    const sample = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)));
+    pcm[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return pcm;
+}
+
+async function startPushToTalk(cameraIndex, button) {
+  if (state.talk) stopPushToTalk();
+  if (!navigator.mediaDevices?.getUserMedia || state.socket?.readyState !== WebSocket.OPEN) {
+    showToast(text("microphoneDenied"), true);
+    return;
+  }
+  const request = { cameraIndex, button, pending: true };
+  state.talk = request;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true
+    } });
+    if (state.talk !== request) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    if (!sendSocketMessage({ type: "talk-start", cameraIndex })) {
+      state.talk = null;
+      stream.getTracks().forEach(track => track.stop());
+      showToast(text("operationFailed"), true);
+      return;
+    }
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const context = new AudioContextClass();
+    const source = context.createMediaStreamSource(stream);
+    const processor = context.createScriptProcessor(4096, 1, 1);
+    const talk = { cameraIndex, button, stream, context, source, processor, chunks: [], bytes: 0 };
+    state.talk = talk;
+    button.classList.add("talk-active");
+    processor.onaudioprocess = event => {
+      if (state.talk !== talk || state.socket?.readyState !== WebSocket.OPEN) return;
+      const pcm = downsamplePcm(event.inputBuffer.getChannelData(0), context.sampleRate);
+      talk.chunks.push(pcm); talk.bytes += pcm.byteLength;
+      if (talk.bytes < 8000) return;
+      const merged = new Int16Array(talk.bytes / 2);
+      let offset = 0;
+      talk.chunks.forEach(chunk => { merged.set(chunk, offset); offset += chunk.length; });
+      talk.chunks = []; talk.bytes = 0;
+      state.socket.send(merged.buffer);
+    };
+    source.connect(processor);
+    processor.connect(context.destination);
+  } catch (_) {
+    if (state.talk === request) state.talk = null;
+    showToast(text("microphoneDenied"), true);
+  }
+}
+
+function stopPushToTalk() {
+  const talk = state.talk;
+  if (!talk) return;
+  state.talk = null;
+  if (talk.bytes > 0 && state.socket?.readyState === WebSocket.OPEN) {
+    const merged = new Int16Array(talk.bytes / 2);
+    let offset = 0;
+    talk.chunks.forEach(chunk => { merged.set(chunk, offset); offset += chunk.length; });
+    state.socket.send(merged.buffer);
+  }
+  sendSocketMessage({ type: "talk-stop", cameraIndex: talk.cameraIndex });
+  talk.button?.classList.remove("talk-active");
+  talk.processor?.disconnect();
+  talk.source?.disconnect();
+  talk.stream?.getTracks().forEach(track => track.stop());
+  talk.context?.close().catch(() => {});
 }
 
 async function toggleRecording(cameraIndex) {
@@ -331,6 +502,10 @@ async function handleSocketMessage(message) {
       state.logs = [...incoming.filter(item => !ids.has(item.id)), ...state.logs].slice(0, 500);
       renderLogs();
     }
+    return;
+  }
+  if (message.type === "talk-state") {
+    if (message.error) { stopPushToTalk(); showToast(message.error, true); }
     return;
   }
   const peer = state.webrtcPeers.get(message.peerId);

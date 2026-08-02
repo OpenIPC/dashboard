@@ -40,6 +40,13 @@
 #include <keychain.h>
 #include <QTextStream>
 #include <QRegularExpression>
+#include <QAudioSource>
+#include <QAudioDevice>
+#include <QMediaDevices>
+#include <QIODevice>
+#include <QtEndian>
+#include <cmath>
+#include <cstring>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <psapi.h>
@@ -228,16 +235,28 @@ SystemController::SystemController(QObject *parent)
     , m_networkDiscovery(new NetworkDiscoveryService(this))
     , m_appUpdateChecker(new AppUpdateChecker(this))
     , m_cameraHealthController(new CameraHealthController(m_cameraModel, m_gridModel, this))
+    , m_fleetManager(new FleetManager(m_cameraModel, m_cameraHealthController,
+                                      m_firmwareClient, m_majesticClient,
+                                      m_userManager, m_logModel, this))
     , m_presentation(new DashboardPresentation(this))
     , m_statusChecker(new StatusChecker(m_cameraModel, this))
     , m_webServer(new DashboardWebServer(this, this))
     , m_networkManager(new QNetworkAccessManager(this))
 {
+    m_userManager->setCameraScopeResolver(
+        [this](const QString &cameraId, const QString &cameraIp, int cameraIndex) {
+            return m_fleetManager->scopeAliases(cameraId, cameraIp, cameraIndex);
+        });
     m_saveTimer->setSingleShot(true);
     m_saveTimer->setInterval(1000); // 1 second debounce
     connect(m_saveTimer, &QTimer::timeout, this, &SystemController::performSave);
     
     connect(m_networkManager, &QNetworkAccessManager::authenticationRequired, this, &SystemController::onAuthenticationRequired);
+    connect(m_userManager, &UserManager::permissionsVersionChanged, this, [this]() {
+        if (m_pushToTalkActive && !m_userManager->canTalk()) {
+            stopPushToTalk();
+        }
+    });
     connect(this, &SystemController::cameraEndpointProbeFinished, this,
             [this](const QString &requestId, const QString &, const QString &, int,
                    bool success, const QString &message, int httpStatus, int elapsedMs) {
@@ -414,6 +433,8 @@ SystemController::SystemController(QObject *parent)
     connect(m_gridModel, &QAbstractListModel::rowsRemoved, this, &SystemController::saveState);
     connect(m_gridModel, &QAbstractListModel::dataChanged, this, [this](){ saveState(); });
     connect(m_cameraHealthController, &CameraHealthController::historyChanged,
+            this, &SystemController::saveState);
+    connect(m_fleetManager, &FleetManager::stateChanged,
             this, &SystemController::saveState);
 }
 
@@ -1634,10 +1655,17 @@ void SystemController::addCameraToGrid(int index, int slot)
                     return;
                 }
             }
-            // If all slots filled, overwrite the first slot as a fallback
-            preserveSpan(0, cam);
-            m_gridModel->setCamera(0, cam);
-            saveState();
+            // A full page must never destroy an existing assignment. Grow by one
+            // page; DashboardView will navigate to the newly allocated page.
+            const int previousCapacity = m_gridModel->rowCount();
+            const int fallbackPageSize = std::max(1, m_gridRows * m_gridCols);
+            if (ensureGridPageCapacity(fallbackPageSize, true) > previousCapacity) {
+                preserveSpan(previousCapacity, cam);
+                m_gridModel->setCamera(previousCapacity, cam);
+                saveState();
+            } else {
+                qWarning() << "Grid capacity limit reached; camera was not assigned:" << cam.ip;
+            }
         }
     }
 }
@@ -1694,6 +1722,236 @@ void SystemController::updateGridSize(int size)
 int SystemController::gridCapacity() const
 {
     return m_gridModel->rowCount();
+}
+
+int SystemController::ensureGridPageCapacity(int pageSize, bool appendPage)
+{
+    pageSize = std::clamp(pageSize, 1, 256);
+    const int current = m_gridModel->rowCount();
+    const int currentPages = std::max(1, (current + pageSize - 1) / pageSize);
+    const int requestedPages = currentPages + (appendPage ? 1 : 0);
+    const int maxPages = std::max(1, 256 / pageSize);
+    const int target = pageSize * std::min(requestedPages, maxPages);
+
+    QVector<QPair<int, int>> spanPattern;
+    spanPattern.reserve(pageSize);
+    const int defaultRows = std::max(1, 1200 / std::max(1, m_gridRows));
+    const int defaultCols = std::max(1, 1200 / std::max(1, m_gridCols));
+    for (int index = 0; index < pageSize; ++index) {
+        const Camera existing = m_gridModel->getCamera(index);
+        spanPattern.append({existing.spanRows > 1 ? existing.spanRows : defaultRows,
+                            existing.spanCols > 1 ? existing.spanCols : defaultCols});
+    }
+
+    if (target > current) {
+        updateGridSize(target);
+        for (int index = current; index < target; ++index) {
+            const auto span = spanPattern.at(index % pageSize);
+            m_gridModel->setSpan(index, span.first, span.second);
+        }
+        saveState();
+    }
+    return m_gridModel->rowCount();
+}
+
+int SystemController::compactGridPages(int pageSize)
+{
+    pageSize = std::clamp(pageSize, 1, 256);
+    int lastAssigned = -1;
+    for (int index = m_gridModel->rowCount() - 1; index >= 0; --index) {
+        const Camera camera = m_gridModel->getCamera(index);
+        if (!camera.id.isEmpty() || !camera.ip.isEmpty() || !camera.name.isEmpty()
+            || !camera.streamUrl.isEmpty() || !camera.sdStreamUrl.isEmpty()
+            || !camera.hdStreamUrl.isEmpty()) {
+            lastAssigned = index;
+            break;
+        }
+    }
+    const int pages = std::max(1, (lastAssigned + 1 + pageSize - 1) / pageSize);
+    const int target = std::min(256, pages * pageSize);
+    if (m_gridModel->rowCount() > target) {
+        updateGridSize(target);
+    }
+    return m_gridModel->rowCount();
+}
+
+bool SystemController::startPushToTalk(int gridIndex)
+{
+    stopPushToTalk();
+    m_pushToTalkError.clear();
+
+    const Camera camera = m_gridModel->getCamera(gridIndex);
+    const int cameraIndex = m_cameraModel->findIndexByIp(camera.ip);
+    if (!m_userManager->canTalk()) {
+        m_pushToTalkError = tr("Push-to-talk permission is required");
+    } else if (gridIndex < 0 || camera.ip.isEmpty() || cameraIndex < 0) {
+        m_pushToTalkError = tr("Camera is not available for push-to-talk");
+    } else if (!m_userManager->canAccessCamera(camera.id, camera.ip, cameraIndex)) {
+        m_pushToTalkError = tr("Camera access is not allowed");
+    }
+
+    const QAudioDevice input = QMediaDevices::defaultAudioInput();
+    if (m_pushToTalkError.isEmpty() && input.isNull()) {
+        m_pushToTalkError = tr("No microphone is available");
+    }
+    if (!m_pushToTalkError.isEmpty()) {
+        emit pushToTalkStateChanged();
+        return false;
+    }
+
+    m_pushToTalkFormat = input.preferredFormat();
+    const QAudioFormat::SampleFormat sampleFormat = m_pushToTalkFormat.sampleFormat();
+    const bool supportedSampleFormat = sampleFormat == QAudioFormat::UInt8
+        || sampleFormat == QAudioFormat::Int16
+        || sampleFormat == QAudioFormat::Int32
+        || sampleFormat == QAudioFormat::Float;
+    if (!supportedSampleFormat || m_pushToTalkFormat.sampleRate() < 8000
+        || m_pushToTalkFormat.channelCount() < 1) {
+        m_pushToTalkError = tr("The microphone format is not supported");
+        emit pushToTalkStateChanged();
+        return false;
+    }
+
+    m_pushToTalkInputBuffer.clear();
+    m_pushToTalkOutputBuffer.clear();
+    m_pushToTalkResampleAccumulator = 0;
+    m_pushToTalkGridIndex = gridIndex;
+    m_pushToTalkSource = new QAudioSource(input, m_pushToTalkFormat, this);
+    m_pushToTalkSource->setBufferSize(std::max(
+        16384, static_cast<int>(m_pushToTalkFormat.bytesForDuration(500000))));
+    connect(m_pushToTalkSource, &QAudioSource::stateChanged, this,
+            [this](QAudio::State state) {
+        if (state != QAudio::StoppedState || !m_pushToTalkActive
+            || !m_pushToTalkSource || m_pushToTalkSource->error() == QAudio::NoError) {
+            return;
+        }
+        m_pushToTalkError = tr("Microphone capture stopped unexpectedly");
+        QTimer::singleShot(0, this, &SystemController::stopPushToTalk);
+        emit pushToTalkStateChanged();
+    });
+    m_pushToTalkDevice = m_pushToTalkSource->start();
+    if (!m_pushToTalkDevice || m_pushToTalkSource->error() != QAudio::NoError) {
+        m_pushToTalkError = tr("Microphone capture could not be started");
+        m_pushToTalkSource->deleteLater();
+        m_pushToTalkSource = nullptr;
+        m_pushToTalkGridIndex = -1;
+        emit pushToTalkStateChanged();
+        return false;
+    }
+
+    m_pushToTalkActive = true;
+    connect(m_pushToTalkDevice, &QIODevice::readyRead,
+            this, &SystemController::readPushToTalkAudio);
+    emit pushToTalkStateChanged();
+    return true;
+}
+
+void SystemController::stopPushToTalk()
+{
+    if (m_pushToTalkDevice && m_pushToTalkActive) {
+        readPushToTalkAudio();
+    }
+    if (m_pushToTalkSource) {
+        m_pushToTalkSource->stop();
+    }
+    sendPushToTalkChunk(true);
+    if (m_pushToTalkSource) {
+        m_pushToTalkSource->deleteLater();
+    }
+    m_pushToTalkSource = nullptr;
+    m_pushToTalkDevice = nullptr;
+    m_pushToTalkInputBuffer.clear();
+    m_pushToTalkOutputBuffer.clear();
+    m_pushToTalkResampleAccumulator = 0;
+    const bool changed = m_pushToTalkActive || m_pushToTalkGridIndex >= 0;
+    m_pushToTalkActive = false;
+    m_pushToTalkGridIndex = -1;
+    if (changed) emit pushToTalkStateChanged();
+}
+
+void SystemController::readPushToTalkAudio()
+{
+    if (!m_pushToTalkActive || !m_pushToTalkDevice) return;
+    const QByteArray captured = m_pushToTalkDevice->readAll();
+    if (captured.isEmpty()) return;
+    m_pushToTalkOutputBuffer.append(convertPushToTalkAudio(captured));
+    sendPushToTalkChunk(false);
+}
+
+QByteArray SystemController::convertPushToTalkAudio(const QByteArray &data)
+{
+    m_pushToTalkInputBuffer.append(data);
+    const int channels = m_pushToTalkFormat.channelCount();
+    const int bytesPerSample = m_pushToTalkFormat.bytesPerSample();
+    const int frameBytes = channels * bytesPerSample;
+    const int inputRate = m_pushToTalkFormat.sampleRate();
+    if (frameBytes <= 0 || inputRate <= 0) return {};
+
+    const int frameCount = m_pushToTalkInputBuffer.size() / frameBytes;
+    QByteArray result;
+    result.reserve((frameCount * 8000 / inputRate + 2) * 2);
+    const char *bytes = m_pushToTalkInputBuffer.constData();
+    for (int frame = 0; frame < frameCount; ++frame) {
+        double mono = 0.0;
+        for (int channel = 0; channel < channels; ++channel) {
+            const char *sample = bytes + frame * frameBytes + channel * bytesPerSample;
+            switch (m_pushToTalkFormat.sampleFormat()) {
+            case QAudioFormat::UInt8:
+                mono += (static_cast<unsigned char>(*sample) - 128.0) / 128.0;
+                break;
+            case QAudioFormat::Int16: {
+                qint16 value = 0;
+                std::memcpy(&value, sample, sizeof(value));
+                mono += static_cast<double>(value) / 32768.0;
+                break;
+            }
+            case QAudioFormat::Int32: {
+                qint32 value = 0;
+                std::memcpy(&value, sample, sizeof(value));
+                mono += static_cast<double>(value) / 2147483648.0;
+                break;
+            }
+            case QAudioFormat::Float: {
+                float value = 0.0f;
+                std::memcpy(&value, sample, sizeof(value));
+                mono += value;
+                break;
+            }
+            default:
+                break;
+            }
+        }
+        mono = std::clamp(mono / channels, -1.0, 1.0);
+        m_pushToTalkResampleAccumulator += 8000;
+        if (m_pushToTalkResampleAccumulator >= inputRate) {
+            m_pushToTalkResampleAccumulator -= inputRate;
+            const qint16 pcm = static_cast<qint16>(std::lround(
+                mono < 0.0 ? mono * 32768.0 : mono * 32767.0));
+            const qint16 littleEndian = qToLittleEndian(pcm);
+            result.append(reinterpret_cast<const char *>(&littleEndian), sizeof(littleEndian));
+        }
+    }
+    m_pushToTalkInputBuffer.remove(0, frameCount * frameBytes);
+    return result;
+}
+
+void SystemController::sendPushToTalkChunk(bool flush)
+{
+    constexpr int chunkBytes = 8000;
+    while (m_pushToTalkOutputBuffer.size() >= chunkBytes
+           || (flush && !m_pushToTalkOutputBuffer.isEmpty())) {
+        int size = std::min(chunkBytes, static_cast<int>(m_pushToTalkOutputBuffer.size()));
+        if ((size % 2) != 0) --size;
+        if (size <= 0) break;
+        const QByteArray pcm = m_pushToTalkOutputBuffer.left(size);
+        m_pushToTalkOutputBuffer.remove(0, size);
+        const Camera camera = m_gridModel->getCamera(m_pushToTalkGridIndex);
+        if (!camera.ip.isEmpty()) {
+            m_majesticClient->playPcmData(camera.ip, camera.onvifPort,
+                                          camera.login, camera.password, pcm);
+        }
+        if (!flush) break;
+    }
 }
 
 #ifdef Q_OS_WIN
@@ -1864,10 +2122,12 @@ void SystemController::setGridCols(int cols)
 
 void SystemController::applyLayoutPreset(int rows, int cols)
 {
-    // Ensure grid has correct number of slots FIRST
-    // This prevents "porridge" where new cells (if growing) would be missed by the loop below
-    // and also ensures we shrink if switching to a smaller grid.
-    updateGridSize(rows * cols);
+    rows = std::max(1, rows);
+    cols = std::max(1, cols);
+    const int pageSize = rows * cols;
+    // A layout describes one page. Existing camera assignments remain intact
+    // and capacity is padded to a whole number of pages.
+    ensureGridPageCapacity(pageSize);
 
     // Base grid is 1200x1200 for smooth resizing
     int spanRows = std::max(1, 1200 / rows);
@@ -1892,7 +2152,7 @@ void SystemController::applyLayoutTemplate(const QVariantMap &layout)
     int cols = layout.value("cols", 1).toInt();
 
     // If no specific cells defined, use uniform preset
-    if (!layout.contains("cells")) {
+    if (!layout.contains("cells") || layout.value("cells").toList().isEmpty()) {
         applyLayoutPreset(rows, cols);
         return;
     }
@@ -1904,16 +2164,12 @@ void SystemController::applyLayoutTemplate(const QVariantMap &layout)
     double rowScale = 1200.0 / (double)rows;
     double colScale = 1200.0 / (double)cols;
     
-    // Resize grid capacity to match template exactly
-    // This ensures we remove extra cells if switching from a larger layout
-    int needed = cells.size();
-    updateGridSize(needed);
+    const int pageSize = std::max(1, static_cast<int>(cells.size()));
+    ensureGridPageCapacity(pageSize);
     
     // Apply spans
-    for (int i = 0; i < cells.size(); ++i) {
-        if (i >= m_gridModel->rowCount()) break;
-        
-        QVariantMap cellDef = cells[i].toMap();
+    for (int i = 0; i < m_gridModel->rowCount(); ++i) {
+        QVariantMap cellDef = cells[i % pageSize].toMap();
         int rSpan = cellDef.value("rowSpan", 1).toInt();
         int cSpan = cellDef.value("colSpan", 1).toInt();
         

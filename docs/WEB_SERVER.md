@@ -46,11 +46,21 @@ The web server uses the desktop user database and the same permission mask:
 | Archive/snapshot download | Export |
 | Analytics modules and events | Analytics |
 | PTZ commands | PTZ |
+| Desktop/Web push-to-talk | Talk (separate `0x80` permission) |
 | Recording and monitor controls | Live View |
 | Settings, logs, diagnostics and device administration | Settings |
 | User and active-session administration | User Manage |
 
 Session tokens contain 256 random bits. Only their SHA-256 digests are held in memory. Browser cookies are `HttpOnly`, `SameSite=Strict` and use a bounded, sliding expiration with a 24-hour absolute lifetime. Password, permission and user changes invalidate the affected user's web sessions without interrupting unrelated operators. Administrators can inspect opaque session IDs, origin/peer, idle/absolute expiry and revoke reason; raw tokens are never listed.
+
+An operator may additionally have a camera scope containing stable camera IDs. An empty scope is
+the backward-compatible **all cameras** value. A non-empty scope is enforced in the Qt monitor,
+archive and operational views and on HTTP/WebSocket camera paths, including direct preview URLs,
+WebRTC, recording, PTZ, health, analytics, archive and device operations. Hiding a camera in a
+client is never treated as authorization for server requests. The scope representation is
+intentionally ready for future `site:` and `area:` resolution in P12.
+Global logs and diagnostic bundles are hidden and rejected for camera-scoped sessions because
+their free-form content can reference cameras outside that scope.
 
 Five failed logins from one address within a minute block that address for five minutes. Authenticated mutations are limited to 60 requests per session/address per minute. State-changing cookie requests require `X-OpenIPC-CSRF: 1`; requests with an `Origin` header must match the server host. Confirmed device mutations and Majestic apply requests additionally require an `Idempotency-Key`.
 
@@ -126,6 +136,12 @@ WebRTC signaling messages use the existing WebSocket connection:
 - browser to server: `webrtc-start`, `webrtc-answer`, `webrtc-ice`, `webrtc-stop`;
 - server to browser: `webrtc-offer`, `webrtc-ice`, `webrtc-status`, `webrtc-error`.
 
+Push-to-talk uses `talk-start`/`talk-stop` control messages and bounded binary PCM S16LE/8 kHz
+chunks on the same authenticated socket. The server checks the separate Talk permission and camera
+scope, permits one speaker owner per camera, rate-bounds PCM and forwards it to Majestic
+`/play_audio`. Browser microphone capture requires a secure context: use localhost or an HTTPS
+reverse proxy; plain `http://<LAN-IP>` cannot request a microphone in modern browsers.
+
 Signaling is authenticated with the same session and Live View permission as the HTTP API. Dashboard currently exchanges host ICE candidates and is intended for localhost, LAN or VPN use. Internet traversal through arbitrary NAT requires a future STUN/TURN configuration layer.
 
 Local archive files are the exception: they are served through the authenticated Dashboard HTTP endpoint because the browser cannot access the desktop filesystem directly.
@@ -134,13 +150,15 @@ Local archive files are the exception: they are served through the authenticated
 
 The browser UI follows the desktop operator workflow instead of presenting a separate card dashboard:
 
-- persistent 1, 4 and 9 camera layouts with an explicit active cell;
+- persistent paged 1, 4 and 9 camera layouts with assignments beyond the visible grid;
+- manual page navigation, kiosk/fullscreen wall and optional ten-second page cycling;
+- local per-cell digital zoom/pan that does not issue camera PTZ commands;
 - camera assignment from the device list and a clear action on every occupied cell;
 - a collapsible actions area while the device list remains available;
 - camera cards with status, IP address, RTSP port and temperature;
 - permission-gated camera discovery, manual onboarding, editing and deletion;
 - Health, Analytics and Archive workspaces displayed over the live layout;
-- recording, snapshot, audio, fullscreen and continuous PTZ controls in every monitor cell;
+- recording, snapshot, audio, push-to-talk, fullscreen and continuous PTZ controls in every monitor cell;
 - archive playback and permission-gated download;
 - schema-driven Settings, Users/session administration and live log/diagnostics workspaces;
 - Camex preview, Majestic read/diff/apply and OpenIPC device status, metrics, network, time and logs;

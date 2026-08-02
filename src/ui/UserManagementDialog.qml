@@ -83,7 +83,7 @@ Dialog {
                     }
                     
                     Button {
-                        text: I18n.t("Права")
+                        text: I18n.t("Права и камеры")
                         visible: modelData.role !== "admin" // Admins have all rights
                         hoverEnabled: true
                         background: Rectangle {
@@ -100,6 +100,7 @@ Dialog {
                         onClicked: {
                             permDialog.username = modelData.username
                             permDialog.currentPerms = modelData.permissions
+                            permDialog.currentScopes = modelData.cameraScopes || []
                             permDialog.open()
                         }
                     }
@@ -183,13 +184,39 @@ Dialog {
         id: permDialog
         title: I18n.t("Настройка прав доступа")
         modal: true
-        width: 350
-        height: 400
+        width: 520
+        height: Math.min(680, root.parent ? root.parent.height - 32 : 680)
         x: (parent.width - width) / 2
         y: (parent.height - height) / 2
         
         property string username: ""
         property int currentPerms: 0
+        property var currentScopes: []
+
+        function scopeSelected(scopeKey) {
+            for (var i = 0; i < currentScopes.length; ++i) {
+                if (String(currentScopes[i]) === scopeKey) return true
+            }
+            return false
+        }
+
+        function selectedCameraScopes() {
+            if (allCamerasScope.checked) return []
+            var scopes = []
+            for (var s = 0; s < siteScopeRepeater.count; ++s) {
+                var siteItem = siteScopeRepeater.itemAt(s)
+                if (siteItem && siteItem.checked) scopes.push(siteItem.scopeKey)
+            }
+            for (var a = 0; a < areaScopeRepeater.count; ++a) {
+                var areaItem = areaScopeRepeater.itemAt(a)
+                if (areaItem && areaItem.checked) scopes.push(areaItem.scopeKey)
+            }
+            for (var i = 0; i < scopeRepeater.count; ++i) {
+                var item = scopeRepeater.itemAt(i)
+                if (item && item.checked) scopes.push(item.scopeKey)
+            }
+            return scopes
+        }
         
         background: Rectangle {
             color: Theme.metroSidebarBackground
@@ -228,6 +255,20 @@ Dialog {
             cbSettings.checked = (currentPerms & 0x10)
             cbUsers.checked = (currentPerms & 0x20)
             cbAnalytics.checked = (currentPerms & 0x40)
+            cbTalk.checked = (currentPerms & 0x80)
+            allCamerasScope.checked = currentScopes.length === 0
+            for (var s = 0; s < siteScopeRepeater.count; ++s) {
+                var siteItem = siteScopeRepeater.itemAt(s)
+                if (siteItem) siteItem.checked = scopeSelected(siteItem.scopeKey)
+            }
+            for (var a = 0; a < areaScopeRepeater.count; ++a) {
+                var areaItem = areaScopeRepeater.itemAt(a)
+                if (areaItem) areaItem.checked = scopeSelected(areaItem.scopeKey)
+            }
+            for (var i = 0; i < scopeRepeater.count; ++i) {
+                var item = scopeRepeater.itemAt(i)
+                if (item) item.checked = scopeSelected(item.scopeKey)
+            }
         }
         
         contentItem: ColumnLayout {
@@ -248,8 +289,94 @@ Dialog {
             StyledCheckBox { id: cbPtz; text: I18n.t("Управление PTZ") }
             StyledCheckBox { id: cbExport; text: I18n.t("Экспорт") }
             StyledCheckBox { id: cbAnalytics; text: I18n.t("Аналитика") }
+            StyledCheckBox { id: cbTalk; text: I18n.t("Разговор (Push-to-talk)") }
             StyledCheckBox { id: cbSettings; text: I18n.t("Настройки системы") }
             StyledCheckBox { id: cbUsers; text: I18n.t("Управление пользователями") }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Theme.metroStroke
+            }
+
+            Text {
+                text: I18n.t("Доступ к камерам")
+                color: Theme.textPrimary
+                font.bold: true
+            }
+
+            StyledCheckBox {
+                id: allCamerasScope
+                text: I18n.t("Все камеры")
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 130
+                visible: !allCamerasScope.checked
+                clip: true
+
+                Column {
+                    width: parent.width
+                    spacing: 3
+
+                    Text {
+                        text: I18n.t("Сайты")
+                        color: Theme.textMuted
+                        font.bold: true
+                    }
+                    Repeater {
+                        id: siteScopeRepeater
+                        model: SystemController.fleetManager.sites
+                        delegate: StyledCheckBox {
+                            required property var modelData
+                            property string scopeKey: "site:" + modelData.id
+                            width: parent ? parent.width : 0
+                            text: modelData.name
+                            checked: permDialog.scopeSelected(scopeKey)
+                        }
+                    }
+
+                    Text {
+                        text: I18n.t("Зоны")
+                        color: Theme.textMuted
+                        font.bold: true
+                    }
+                    Repeater {
+                        id: areaScopeRepeater
+                        model: SystemController.fleetManager.areas
+                        delegate: StyledCheckBox {
+                            required property var modelData
+                            property string scopeKey: "area:" + modelData.id
+                            width: parent ? parent.width : 0
+                            text: modelData.name
+                            checked: permDialog.scopeSelected(scopeKey)
+                        }
+                    }
+
+                    Text {
+                        text: I18n.t("Отдельные камеры")
+                        color: Theme.textMuted
+                        font.bold: true
+                    }
+
+                    Repeater {
+                        id: scopeRepeater
+                        model: SystemController.cameraModel
+
+                        delegate: StyledCheckBox {
+                            required property int index
+                            required property string cameraId
+                            required property string cameraName
+                            required property string cameraIp
+                            property string scopeKey: cameraId !== "" ? cameraId : "index:" + index
+                            width: parent ? parent.width : 0
+                            text: (cameraName || cameraIp) + "  ·  " + cameraIp
+                            checked: permDialog.scopeSelected(scopeKey)
+                        }
+                    }
+                }
+            }
             
             Item { Layout.fillHeight: true }
             
@@ -275,8 +402,11 @@ Dialog {
                         if (cbSettings.checked) p |= 0x10
                         if (cbUsers.checked) p |= 0x20
                         if (cbAnalytics.checked) p |= 0x40
+                        if (cbTalk.checked) p |= 0x80
                         
                         SystemController.userManager.updateUserPermissions(permDialog.username, p)
+                        SystemController.userManager.updateUserCameraScopes(
+                                    permDialog.username, permDialog.selectedCameraScopes())
                         permDialog.close()
                     }
                 }

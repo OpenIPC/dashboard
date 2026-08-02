@@ -110,10 +110,26 @@ Item {
         return false
     }
 
+    function cameraAccessAllowed(camera, cameraIndex) {
+        var token = SystemController.userManager.permissionsVersion
+        return camera && SystemController.userManager.canAccessCamera(
+                    camera.cameraId || "", camera.cameraIp || "", cameraIndex)
+    }
+
+    function accessibleCameraCount() {
+        var token = refreshToken
+        var total = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (cameraAccessAllowed(SystemController.cameraModel.getCamera(i), i)) total++
+        }
+        return total
+    }
+
     function camerasWithAiCount() {
         var total = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
+            if (!cameraAccessAllowed(camera, i)) continue
             if (cameraHasAi(camera.cameraIp))
                 total += 1
         }
@@ -125,6 +141,7 @@ Item {
         var token = refreshToken
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
+            if (!cameraAccessAllowed(camera, i)) continue
             for (var type = 0; type < 3; ++type) {
                 if (SystemController.analyticsEngine.isCameraModuleEnabled(camera.cameraIp, type))
                     total += 1
@@ -138,6 +155,7 @@ Item {
         var token = refreshToken
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
+            if (!cameraAccessAllowed(camera, i)) continue
             if (SystemController.analyticsEngine.isCameraModuleEnabled(camera.cameraIp, type))
                 total += 1
         }
@@ -217,6 +235,11 @@ Item {
         function onRowsRemoved(parent, first, last) { root.refresh(false) }
         function onModelReset() { root.refresh(false) }
         function onDataChanged(topLeft, bottomRight, roles) { root.refresh(false) }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onPermissionsVersionChanged() { root.refresh(false) }
     }
 
     component StatCard: Rectangle {
@@ -405,7 +428,7 @@ Item {
 
                 StatCard {
                     title: I18n.t("Камеры")
-                    value: String(SystemController.cameraModel.rowCount())
+                    value: String(root.accessibleCameraCount())
                     hint: I18n.t("В списке устройств")
                     accent: Theme.textPrimary
                 }

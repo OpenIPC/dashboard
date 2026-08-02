@@ -137,8 +137,27 @@ const translations = {
   }
 };
 
+Object.assign(translations.en, {
+  previousPage: "Previous page", nextPage: "Next page", page: "Page",
+  pageCycling: "Page cycling", kioskMode: "Kiosk mode", exitKiosk: "Exit kiosk",
+  digitalZoomIn: "Digital zoom in", digitalZoomOut: "Digital zoom out",
+  digitalZoomReset: "Reset digital zoom", pushToTalk: "Hold to talk",
+  microphoneDenied: "Microphone access was denied", cameraScope: "Camera scope",
+  allCamerasScope: "All cameras", selectedCamerasScope: "Selected cameras"
+});
+Object.assign(translations.ru, {
+  previousPage: "\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430",
+  nextPage: "\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430", page: "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430",
+  pageCycling: "\u0410\u0432\u0442\u043e\u0441\u043c\u0435\u043d\u0430 \u0441\u0442\u0440\u0430\u043d\u0438\u0446", kioskMode: "\u0420\u0435\u0436\u0438\u043c \u043a\u0438\u043e\u0441\u043a\u0430",
+  exitKiosk: "\u0412\u044b\u0439\u0442\u0438 \u0438\u0437 \u0440\u0435\u0436\u0438\u043c\u0430 \u043a\u0438\u043e\u0441\u043a\u0430", digitalZoomIn: "\u0426\u0438\u0444\u0440\u043e\u0432\u043e\u0435 \u0443\u0432\u0435\u043b\u0438\u0447\u0435\u043d\u0438\u0435",
+  digitalZoomOut: "\u0426\u0438\u0444\u0440\u043e\u0432\u043e\u0435 \u0443\u043c\u0435\u043d\u044c\u0448\u0435\u043d\u0438\u0435", digitalZoomReset: "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0446\u0438\u0444\u0440\u043e\u0432\u043e\u0439 \u0437\u0443\u043c",
+  pushToTalk: "\u0423\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0439\u0442\u0435 \u0434\u043b\u044f \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u0430", microphoneDenied: "\u0414\u043e\u0441\u0442\u0443\u043f \u043a \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0443 \u0437\u0430\u043f\u0440\u0435\u0449\u0451\u043d",
+  cameraScope: "\u0414\u043e\u0441\u0442\u0443\u043f \u043a \u043a\u0430\u043c\u0435\u0440\u0430\u043c", allCamerasScope: "\u0412\u0441\u0435 \u043a\u0430\u043c\u0435\u0440\u044b", selectedCamerasScope: "\u0412\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0435 \u043a\u0430\u043c\u0435\u0440\u044b"
+});
+
 const validLayouts = [1, 4, 9];
 const savedLayout = Number(localStorage.getItem("openipc-web-layout") || 4);
+const savedPage = Number(localStorage.getItem("openipc-web-page") || 0);
 let savedAssignments = [];
 try { savedAssignments = JSON.parse(localStorage.getItem("openipc-web-assignments") || "[]"); } catch (_) {}
 
@@ -169,8 +188,14 @@ const state = {
   discovery: null,
   cameraDialogPage: "manual",
   webrtcPeers: new Map(),
+  digitalZoom: new Map(),
+  talk: null,
   monitorSignature: "",
   layout: validLayouts.includes(savedLayout) ? savedLayout : 4,
+  page: Number.isInteger(savedPage) && savedPage >= 0 ? savedPage : 0,
+  pageCycling: localStorage.getItem("openipc-web-page-cycling") === "1",
+  pageCycleTimer: null,
+  kiosk: false,
   activeCell: 0,
   openControlsCell: null,
   assignments: Array.isArray(savedAssignments) ? savedAssignments : [],
@@ -186,7 +211,9 @@ const canManageCameras = () => Boolean(state.session && (((Number(state.session.
 
 function persistWorkspace() {
   localStorage.setItem("openipc-web-layout", String(state.layout));
-  localStorage.setItem("openipc-web-assignments", JSON.stringify(state.assignments.slice(0, state.layout)));
+  localStorage.setItem("openipc-web-page", String(state.page));
+  localStorage.setItem("openipc-web-page-cycling", state.pageCycling ? "1" : "0");
+  localStorage.setItem("openipc-web-assignments", JSON.stringify(state.assignments));
 }
 
 function applyLanguage() {

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import OpenIPC
 
 Item {
@@ -10,6 +11,15 @@ Item {
     property int gridCols: SystemController.gridCols
     property int currentLayoutIndex: 0
     property int selectedPresetCells: 4
+    property int currentPage: 0
+    readonly property int pageSize: Math.max(1, selectedPresetCells)
+    readonly property int pageCount: {
+        var version = cameraDataVersion
+        return Math.max(1, Math.ceil(SystemController.gridCapacity() / pageSize))
+    }
+    property bool pageCycling: false
+    property bool kioskMode: false
+    property int previousWindowVisibility: Window.Maximized
     property bool editingLayout: false
     property string layoutDialogTitle: I18n.t("Редактор шаблонов")
     property int cameraDataVersion: 0
@@ -17,7 +27,7 @@ Item {
     property bool isSidebarVisible: SystemController.appSettings.sidebarVisible !== false
     property bool sidebarToolsExpanded: SystemController.appSettings.sidebarToolsExpanded !== false
     readonly property real sidebarExpandedWidth: Math.max(264, Math.min(320, width * 0.25))
-    property real sidebarWidth: isSidebarVisible ? sidebarExpandedWidth : 0
+    property real sidebarWidth: !kioskMode && isSidebarVisible ? sidebarExpandedWidth : 0
     property real sidebarOpenProgress: sidebarExpandedWidth > 0 ? (sidebarWidth / sidebarExpandedWidth) : 0
     readonly property bool layoutReady: width > 0
                                         && height > 0
@@ -46,10 +56,87 @@ Item {
     property bool canSettings: (permToken >= 0) && SystemController.userManager.canSettings()
     property bool canUserManage: (permToken >= 0) && SystemController.userManager.canUserManage()
     property bool canAnalytics: (permToken >= 0) && SystemController.userManager.canAnalytics()
+    property bool canTalk: (permToken >= 0) && SystemController.userManager.canTalk()
+    readonly property bool restrictedCameraScope: {
+        var token = permToken
+        var user = SystemController.userManager.currentUser
+        return user && user.cameraScopes && user.cameraScopes.length > 0
+    }
+    readonly property bool canGlobalSettings: canSettings && !restrictedCameraScope
+    readonly property bool canManageUsers: canUserManage && !restrictedCameraScope
+
+    focus: true
+    Keys.onEscapePressed: {
+        if (root.kioskMode) {
+            root.setKioskMode(false)
+            event.accepted = true
+        }
+    }
+
+    function cameraAccessAllowed(cameraId, cameraIp, cameraIndex) {
+        var token = permToken
+        return SystemController.userManager.canAccessCamera(cameraId || "", cameraIp || "",
+                                                            cameraIndex === undefined ? -1 : cameraIndex)
+    }
+
+    function cameraAccessAllowedByIndex(cameraIndex) {
+        if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) return false
+        var camera = SystemController.cameraModel.getCamera(cameraIndex)
+        return cameraAccessAllowed(camera.cameraId || "", camera.cameraIp || "", cameraIndex)
+    }
+
+    function setCurrentPage(page, persist) {
+        var next = Math.max(0, Math.min(Math.max(0, pageCount - 1), page))
+        if (SystemController.pushToTalkActive) SystemController.stopPushToTalk()
+        currentPage = next
+        activeGridIndex = next * pageSize
+        cameraDataVersion++
+        if (persist !== false) {
+            var settings = SystemController.getAppSettings()
+            settings.dashboardPage = currentPage
+            SystemController.saveAppSettings(settings)
+        }
+    }
+
+    function setPageCycling(enabled) {
+        pageCycling = enabled && pageCount > 1
+        var settings = SystemController.getAppSettings()
+        settings.dashboardPageCycling = pageCycling
+        SystemController.saveAppSettings(settings)
+    }
+
+    function setKioskMode(enabled) {
+        if (kioskMode === enabled) return
+        if (!Window.window) {
+            kioskMode = enabled
+            return
+        }
+        if (enabled) {
+            previousWindowVisibility = Window.window.visibility
+            kioskMode = true
+            Window.window.showFullScreen()
+        } else {
+            kioskMode = false
+            if (previousWindowVisibility === Window.Maximized)
+                Window.window.showMaximized()
+            else
+                Window.window.showNormal()
+        }
+        root.forceActiveFocus()
+    }
+
+    Timer {
+        interval: 10000
+        repeat: true
+        running: root.pageCycling && root.pageCount > 1 && root.visible
+        onTriggered: root.setCurrentPage((root.currentPage + 1) % root.pageCount, false)
+    }
 
     function actionAllowed(action) {
-        if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings" || action === "camex") return canSettings
-        if (action === "user") return canUserManage
+        if (action === "fleet") return canLive || canGlobalSettings
+        if (action === "search" || action === "add_folder" || action === "add_camera" || action === "settings") return canGlobalSettings
+        if (action === "camex") return canGlobalSettings
+        if (action === "user") return canManageUsers
         if (action === "analytics") return canAnalytics
         return true
     }
@@ -75,7 +162,7 @@ Item {
     property bool emptyHintDismissed: SystemController.appSettings.hideEmptyDashboardHint === true
 
     function openAddCameraDialog() {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
@@ -92,7 +179,7 @@ Item {
     }
 
     function openSearchDialog() {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
@@ -112,7 +199,7 @@ Item {
     }
 
     function openSettingsDialog() {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
@@ -120,7 +207,7 @@ Item {
     }
 
     function openCamexDialog() {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
@@ -131,11 +218,15 @@ Item {
     }
 
     function editCameraByIndex(cameraIndex) {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
             return
         }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
@@ -160,6 +251,10 @@ Item {
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
             return
         }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
+            return
+        }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
         openMajesticForCamera(cam.cameraName || cam.cameraIp, cam.cameraIp, cam.cameraOnvifPort || 80, cam.cameraLogin || "root")
     }
@@ -178,7 +273,11 @@ Item {
     }
 
     function confirmDeleteCamera(cameraIndex) {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
+            showNoAccess()
+            return
+        }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
             showNoAccess()
             return
         }
@@ -188,6 +287,11 @@ Item {
 
     function openArchiveForIp(cameraIp) {
         if (!canPlayback) {
+            showNoAccess()
+            return
+        }
+        var cameraIndex = SystemController.cameraModel.findIndexByIp(cameraIp)
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
             showNoAccess()
             return
         }
@@ -203,6 +307,10 @@ Item {
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
             return
         }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
+            return
+        }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
         openArchiveForIp(cam.cameraIp)
     }
@@ -213,6 +321,10 @@ Item {
             return
         }
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
             return
         }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
@@ -229,6 +341,10 @@ Item {
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
             return
         }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
+            return
+        }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
         fileManagerDialog.cameraIp = cam.cameraIp
         fileManagerDialog.cameraUser = cam.cameraLogin || "root"
@@ -243,17 +359,25 @@ Item {
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
             return
         }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
+            return
+        }
         var cam = SystemController.cameraModel.getCamera(cameraIndex)
         SystemController.refreshCameraHealth(cam.cameraIp)
         openHealthDialog()
     }
 
     function addCameraIndexToFirstFreeGrid(cameraIndex) {
-        if (!canSettings) {
+        if (!canGlobalSettings) {
             showNoAccess()
             return
         }
         if (cameraIndex < 0 || cameraIndex >= SystemController.cameraModel.rowCount()) {
+            return
+        }
+        if (!cameraAccessAllowedByIndex(cameraIndex)) {
+            showNoAccess()
             return
         }
         var slots = SystemController.gridCapacity()
@@ -266,9 +390,15 @@ Item {
             }
         }
         if (target === -1) {
-            target = 0
+            var previousCapacity = slots
+            SystemController.ensureGridPageCapacity(pageSize, true)
+            if (SystemController.gridCapacity() <= previousCapacity) {
+                return
+            }
+            target = previousCapacity
         }
         SystemController.addCameraToGrid(cameraIndex, target)
+        setCurrentPage(Math.floor(target / pageSize))
     }
 
     function setSidebarVisible(visible) {
@@ -302,7 +432,11 @@ Item {
 
     function cameraCount() {
         var version = cameraDataVersion
-        return SystemController.cameraModel.rowCount()
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (cameraAccessAllowedByIndex(i)) count++
+        }
+        return count
     }
 
     function isOnlineStatus(statusText) {
@@ -313,15 +447,20 @@ Item {
 
     function onlineCameraCount() {
         var version = cameraDataVersion
-        if (typeof SystemController.onlineCameraCount === "function")
-            return SystemController.onlineCameraCount()
-        return 0
+        var count = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (!cameraAccessAllowedByIndex(i)) continue
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (isOnlineStatus(camera.status)) count++
+        }
+        return count
     }
 
     function filteredCameraCount() {
         var version = cameraDataVersion
         var count = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (!cameraAccessAllowedByIndex(i)) continue
             var cam = SystemController.cameraModel.getCamera(i)
             if (cameraMatchesDeviceFilter(cam.cameraName, cam.cameraIp,
                                           cameraStatusSearchText(cam.cameraIp, cam.status),
@@ -408,12 +547,14 @@ Item {
         if (version < 0 || active < -2) return 999999
         var target = SystemController.gridModel.getCamera(slotIndex)
         if (!gridSlotHasCamera(target)) return 999999
+        if (slotIndex < currentPage * pageSize || slotIndex >= (currentPage + 1) * pageSize) return 999999
         if (!gridSlotConsumesPreviewBudget(target)) return 0
 
         var targetScore = previewPriorityScoreForSlot(target, slotIndex)
         var rank = 0
-        var count = SystemController.gridModel.rowCount()
-        for (var i = 0; i < count; ++i) {
+        var first = currentPage * pageSize
+        var count = Math.min(SystemController.gridModel.rowCount(), first + pageSize)
+        for (var i = first; i < count; ++i) {
             if (i === slotIndex) continue
             var other = SystemController.gridModel.getCamera(i)
             if (!gridSlotConsumesPreviewBudget(other)) continue
@@ -441,6 +582,8 @@ Item {
     }
 
     function previewPauseReasonForSlot(slotIndex) {
+        if (slotIndex < currentPage * pageSize || slotIndex >= (currentPage + 1) * pageSize)
+            return "page"
         var slot = SystemController.gridModel.getCamera(slotIndex)
         return SystemController.previewPauseReasonCode(
                     smartStreamBudgetEnabled(),
@@ -459,7 +602,9 @@ Item {
         var active = activeGridIndex
         if (version < 0 || active < -2) return 0
         var count = 0
-        for (var i = 0; i < SystemController.gridModel.rowCount(); ++i) {
+        var first = currentPage * pageSize
+        var last = Math.min(SystemController.gridModel.rowCount(), first + pageSize)
+        for (var i = first; i < last; ++i) {
             var slot = SystemController.gridModel.getCamera(i)
             if (!gridSlotHasCamera(slot)) continue
             var reason = previewPauseReasonForSlot(i)
@@ -473,7 +618,9 @@ Item {
         var active = activeGridIndex
         if (version < 0 || active < -2) return 0
         var count = 0
-        for (var i = 0; i < SystemController.gridModel.rowCount(); ++i) {
+        var first = currentPage * pageSize
+        var last = Math.min(SystemController.gridModel.rowCount(), first + pageSize)
+        for (var i = first; i < last; ++i) {
             if (previewPauseReasonForSlot(i) === "budget") count++
         }
         return count
@@ -485,8 +632,8 @@ Item {
     Connections {
         target: SystemController.cameraModel
         ignoreUnknownSignals: true
-        function onRowsInserted(parent, first, last) { root.cameraDataVersion++ }
-        function onRowsRemoved(parent, first, last) { root.cameraDataVersion++ }
+        function onRowsInserted(parent, first, last) { root.cameraDataVersion++; Qt.callLater(function() { root.setCurrentPage(root.currentPage, false) }) }
+        function onRowsRemoved(parent, first, last) { root.cameraDataVersion++; Qt.callLater(function() { root.setCurrentPage(root.currentPage, false) }) }
         function onModelReset() { root.cameraDataVersion++ }
         function onDataChanged(topLeft, bottomRight, roles) { root.cameraDataVersion++ }
     }
@@ -606,8 +753,9 @@ Item {
             template["cells"] = layoutCells[index]
         }
         
-        SystemController.applyLayoutTemplate(template)
         selectedPresetCells = (layoutCells[index] && layoutCells[index].length > 0) ? layoutCells[index].length : (item.rows * item.cols)
+        SystemController.applyLayoutTemplate(template)
+        setCurrentPage(currentPage, false)
     }
 
     function closeLayout(index) {
@@ -771,9 +919,11 @@ Item {
         if (currentLayoutIndex >= 0 && layoutCells[currentLayoutIndex] && layoutCells[currentLayoutIndex].length > 0) {
             need = layoutCells[currentLayoutIndex].length
         }
-        if (SystemController.updateGridSize) {
-            SystemController.updateGridSize(need)
-        }
+        selectedPresetCells = need
+        SystemController.ensureGridPageCapacity(need)
+        var savedPage = Number(SystemController.appSettings.dashboardPage || 0)
+        pageCycling = SystemController.appSettings.dashboardPageCycling === true
+        setCurrentPage(savedPage, false)
     }
 
     ListModel {
@@ -805,14 +955,23 @@ Item {
         spacing: 0
 
         DashboardTopBar {
+            id: dashboardTopBar
             Layout.fillWidth: true
-            Layout.preferredHeight: 64
+            Layout.preferredHeight: visible ? 64 : 0
+            visible: !root.kioskMode
             layoutsModel: layoutModel
             currentLayoutIndex: root.currentLayoutIndex
+            currentPage: root.currentPage
+            pageCount: root.pageCount
+            pageCycling: root.pageCycling
             onApplyLayoutRequested: (index) => root.applyLayout(index)
             onCloseLayoutRequested: (index) => root.closeLayout(index)
             onAddLayoutRequested: root.openLayoutEditor(false)
             onEditLayoutRequested: root.openLayoutEditor(true)
+            onPreviousPageRequested: root.setCurrentPage((root.currentPage - 1 + root.pageCount) % root.pageCount)
+            onNextPageRequested: root.setCurrentPage((root.currentPage + 1) % root.pageCount)
+            onPageCyclingToggleRequested: root.setPageCycling(!root.pageCycling)
+            onKioskToggleRequested: root.setKioskMode(true)
         }
 
         RowLayout {
@@ -820,10 +979,10 @@ Item {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 8
-            Layout.rightMargin: 8
-            Layout.topMargin: 8
-            Layout.bottomMargin: 8
+            Layout.leftMargin: root.kioskMode ? 0 : 8
+            Layout.rightMargin: root.kioskMode ? 0 : 8
+            Layout.topMargin: root.kioskMode ? 0 : 8
+            Layout.bottomMargin: root.kioskMode ? 0 : 8
             spacing: Math.max(0, 8 * root.sidebarOpenProgress)
 
             DashboardGridPanel {
@@ -836,15 +995,23 @@ Item {
                 gridRows: root.gridRows
                 gridCols: root.gridCols
                 activeGridIndex: root.activeGridIndex
+                pageStart: root.currentPage * root.pageSize
+                pageSize: root.pageSize
+                kioskMode: root.kioskMode
                 canLive: root.canLive
                 canPlayback: root.canPlayback
                 canPtz: root.canPtz
+                canTalk: root.canTalk
                 canExport: root.canExport
-                canSettings: root.canSettings
+                canSettings: root.canGlobalSettings
                 canAnalytics: root.canAnalytics
                 emptyHintDismissed: root.emptyHintDismissed
                 sidebarOpenProgress: root.sidebarOpenProgress
                 previewBudgetRankProvider: root.previewBudgetRankFor
+                cameraAccessProvider: function(cameraId, cameraIp) {
+                    var index = SystemController.cameraModel.findIndexByIp(cameraIp)
+                    return root.cameraAccessAllowed(cameraId, cameraIp, index)
+                }
 
                 onSelectedByUser: (index) => {
                     root.activeGridIndex = index
@@ -863,6 +1030,11 @@ Item {
                 onSettingsRequested: root.openSettingsDialog()
                 onSidebarOpenRequested: root.setSidebarVisible(true)
                 onEmptyHintClosed: (dontShowAgain) => root.closeEmptyHint(dontShowAgain)
+                onGridCameraRemoved: {
+                    SystemController.compactGridPages(root.pageSize)
+                    root.setCurrentPage(root.currentPage, false)
+                }
+                onMessageRequested: (message) => root.showNoAccess(message)
             }
 
             DashboardSidebar {
@@ -873,10 +1045,10 @@ Item {
                 systemController: SystemController
                 dragProxyItem: dragProxy
                 sidebarWidth: root.sidebarWidth
-                sidebarOpenProgress: root.sidebarOpenProgress
+                sidebarOpenProgress: root.kioskMode ? 0 : root.sidebarOpenProgress
                 cameraDataVersion: root.cameraDataVersion
                 deviceFilterText: root.deviceFilterText
-                canSettings: root.canSettings
+                canSettings: root.canGlobalSettings
                 toolsExpanded: root.sidebarToolsExpanded
 
                 onCloseSidebarRequested: root.setSidebarVisible(false)
@@ -884,6 +1056,7 @@ Item {
                 onNoAccessRequested: root.showNoAccess()
                 onSearchRequested: root.openSearchDialog()
                 onHealthRequested: root.openHealthDialog()
+                onFleetRequested: fleetDialog.open()
                 onAddGroupRequested: addGroupDialog.open()
                 onAddCameraRequested: root.openAddCameraDialog()
                 onAnalyticsRequested: root.openAnalyticsDialog()
@@ -910,9 +1083,26 @@ Item {
 
         DashboardStatusBar {
             Layout.fillWidth: true
-            Layout.preferredHeight: 25
+            Layout.preferredHeight: visible ? 25 : 0
+            visible: !root.kioskMode
             systemController: SystemController
         }
+    }
+
+    DashboardPageControls {
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: 12
+        z: 100
+        visible: root.kioskMode
+        currentPage: root.currentPage
+        pageCount: root.pageCount
+        cycling: root.pageCycling
+        kioskActive: true
+        onPreviousRequested: root.setCurrentPage((root.currentPage - 1 + root.pageCount) % root.pageCount)
+        onNextRequested: root.setCurrentPage((root.currentPage + 1) % root.pageCount)
+        onCyclingToggleRequested: root.setPageCycling(!root.pageCycling)
+        onKioskToggleRequested: root.setKioskMode(false)
     }
 
     LayoutEditorDialog {
@@ -987,6 +1177,10 @@ Item {
         logModel: SystemController.logModel
     }
 
+    FleetManagementDialog {
+        id: fleetDialog
+    }
+
     NoAccessDialog {
         id: noAccessDialog
     }
@@ -1014,7 +1208,7 @@ Item {
         id: deviceContextMenu
         canLive: root.canLive
         canPlayback: root.canPlayback
-        canSettings: root.canSettings
+        canSettings: root.canGlobalSettings
         canExport: root.canExport
         onDeleteRequested: root.confirmDeleteCamera(cameraIndex)
         onEditRequested: root.editCameraByIndex(cameraIndex)
@@ -1029,7 +1223,7 @@ Item {
 
     GroupContextMenu {
         id: groupContextMenu
-        canSettings: root.canSettings
+        canSettings: root.canGlobalSettings
         onRenameRequested: (groupName) => {
             renameGroupDialog.oldName = groupName
             renameGroupDialog.newName = groupName
@@ -1046,7 +1240,7 @@ Item {
     ConfirmDeleteCameraDialog {
         id: confirmDeleteDialog
         onDeleteAccepted: (cameraIndex) => {
-            if (!root.canSettings) {
+            if (!root.canGlobalSettings) {
                 root.showNoAccess()
                 return
             }

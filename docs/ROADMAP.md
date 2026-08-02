@@ -1,10 +1,10 @@
 # OpenIPC Dashboard Roadmap
 
-Последнее обновление: 2026-07-23.
+Последнее обновление: 2026-07-29.
 
 Текущий стабильный релиз: `v0.2.8`.
 
-Текущий фокус разработки: 🟡 `P12 Sites / Fleet Management / safe group operations`.
+Текущий фокус разработки: ✅ `P12 Sites / Fleet Management`, затем 🔜 `P13 Incident Center`.
 
 ## Обозначения
 
@@ -52,10 +52,11 @@ OpenIPC Dashboard после `v0.2.7` объединяет desktop VMS, OpenIPC/
 Порядок новых продуктовых волн:
 
 1. ✅ P11 — production hardening, release engineering, Web deployment и UI/runtime debt.
-2. 🟡 P12 — Sites / Fleet Management и безопасные групповые операции.
-3. 🔜 P13 — Incident Center, уведомления и операторские workflows.
-4. 🧊 P14 — media scale, adaptive quality и multi-monitor.
-5. 🧊 P15 — versioned integration ecosystem и внешние automation adapters.
+2. ✅ P12.0 — paged layouts, kiosk/cycling, digital zoom, camera scope и push-to-talk в Qt и Web.
+3. ✅ P12 — Sites / Fleet Management и безопасные групповые операции.
+4. 🔜 P13 — Incident Center, уведомления и операторские workflows.
+5. 🧊 P14 — media scale, adaptive quality и multi-monitor.
+6. 🧊 P15 — versioned integration ecosystem и внешние automation adapters.
 
 ## Актуализация 2026-07-04
 
@@ -1046,12 +1047,45 @@ Windows installer и Linux AppImage публикуются только посл
 - release assets, SHA-256 checksums, SBOM/manifest и актуальные release notes;
 - отсутствие открытых Critical/High security defects и blocker regressions.
 
-## 🟡 P12 — Sites / Fleet Management
+## ✅ P12.0 — Competitive parity foundation
+
+Цель: закрыть практические операторские сценарии в основном Qt-приложении и сохранить
+эквивалентные возможности Web-компаньона до перехода к модели Sites/Fleet, не увеличивая
+преждевременно media-серверную сложность.
+
+Реализовано:
+
+- paged layouts в Qt и Web: число назначенных камер больше размера текущей сетки,
+  назначения сохраняются целиком, доступны ручное переключение и индикатор страницы;
+- kiosk mode с полноэкранной стеной и автоматической сменой страниц в Qt и Web;
+- digital zoom `1x–4x` в Qt/Web-ячейке с кнопками, колесом мыши и pan-жестом;
+- camera scope в пользователях и Web-сессиях: backend фильтрует список, live preview,
+  WebRTC, snapshot, recording, PTZ, health, analytics и archive; модель scope допускает
+  последующее расширение ключами `site:` и `area:` в P12;
+- отдельное разрешение `Talk (0x80)` и push-to-talk в Qt/Web через PCM S16LE/8 kHz в
+  OpenIPC Majestic `/play_audio`; browser microphone capture требует secure context;
+- архитектурный контракт shared ingest/fan-out зафиксирован в
+  `docs/WEB_MEDIA_FANOUT_DESIGN.md`, но реализация намеренно перенесена в P14 до
+  benchmark matrix.
+
+Исключено по продуктовому решению: **Stills wall** (периодические JPEG вместо live stream)
+не входит в P12.0 и не реализуется.
+
+Definition of Done:
+
+- смена layout/page не теряет назначения камер;
+- kiosk можно безопасно завершить, page cycling не создаёт лишние media peers;
+- цифровой zoom не изменяет PTZ камеры и полностью локален клиентской ячейке;
+- camera scope проверяется сервером, а не только скрывает элементы интерфейса;
+- право Talk не следует автоматически из Live View/PTZ и отзывается вместе с сессией;
+- shared ingest/fan-out не включается без измеренного P14 capacity gate.
+
+## ✅ P12 — Sites / Fleet Management
 
 Цель: управлять десятками камер и несколькими площадками без опасных неявных массовых
 операций и без обязательного внешнего cloud service.
 
-Работы:
+Реализовано:
 
 - модель `Site / Area / Group / Tag` поверх существующих камер и групп;
 - fleet inventory с firmware/Majestic versions, capabilities, health и last-seen;
@@ -1063,6 +1097,26 @@ Windows installer и Linux AppImage публикуются только посл
 - maintenance windows, concurrency limits, progress, cancellation и per-device result;
 - backup-before-change и recovery guidance для firmware/configuration waves;
 - offline-friendly import/export site definitions без credentials.
+
+Архитектура и UI:
+
+- отдельный C++ `FleetManager` подключён к `SystemController`, общему SQLite state и audit log;
+- основное административное рабочее пространство находится в Qt-приложении: плитка `Парк`
+  открывает inventory, Sites/Areas, baselines, operations и import/export;
+- существующий Web-клиент не урезан, но fleet administration намеренно не дублируется в браузер;
+- site/area scopes расширяют прежний camera scope без изменения прямых camera/IP/index ключей;
+- saved views принадлежат создавшему пользователю, а администратор может управлять всеми;
+- configuration read и mutation требуют `Settings` и повторной проверки camera scope;
+- любой apply baseline проходит compatibility/maintenance/backup gates; результат и partial
+  failure остаются видимыми по каждой камере;
+- импорт с credential-like полями отклоняется, экспорт повторно очищает sensitive keys;
+- массовое firmware update по-прежнему не включено до real-camera qualification matrix.
+
+Проверки:
+
+- unit-тесты topology/scope/persistence, redacted drift, safety preflight и credential-free export;
+- Release build с warnings-as-errors;
+- targeted QML lint и smoke создания основного Dashboard.
 
 Definition of Done:
 
@@ -1109,6 +1163,8 @@ CPU/GPU/network budgets и предсказуемой деградацией.
 - per-camera/per-cell codec, FPS, bitrate, latency, drops и reconnect telemetry;
 - hardware decode/encode capability matrix Windows/Linux/GPU vendors;
 - bounded WebRTC peer/transcode pools и fair resource scheduling;
+- shared ingest/fan-out по контракту `WEB_MEDIA_FANOUT_DESIGN.md` только после сравнения
+  current per-viewer path и candidate fan-out в benchmark matrix;
 - background-tab, hidden-window и multi-monitor lifecycle;
 - optional low-bandwidth/site profile и operator-controlled quality caps;
 - benchmark fixtures H.264/H.265, offline/reconnect storm и mixed-resolution walls.
@@ -1165,9 +1221,9 @@ Definition of Done:
 
 ## Ближайший практический порядок работ
 
-1. Утвердить data model P12 Sites/Fleet до реализации массовых операций.
-2. Начать read-only inventory и фильтры site/area/tag без массовых mutations.
-3. Спроектировать configuration drift report и dry-run contract до batch apply.
+1. Спроектировать normalized event schema P13 поверх Health/Analytics/Archive/Audit.
+2. Определить incident lifecycle, immutable timeline и deduplication/cooldown contract.
+3. Начать Incident Center с read-only correlation и saved searches до notification delivery.
 4. Вести QML/Web debt малыми пакетами без смешивания с firmware/device changes.
 5. Держать release workflow главным production gate: Windows installer, Linux AppImage,
    package smoke, release notes и проверяемые assets.

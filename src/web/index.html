@@ -43,6 +43,13 @@
             <button type="button" data-layout="9"><span class="layout-swatch nine"></span><span data-i18n="layoutNine">9 cameras</span></button>
           </div>
         </div>
+        <div class="page-controls" aria-label="Layout pages">
+          <button class="toolbar-icon" type="button" data-page-nav="-1" data-i18n-title="previousPage" title="Previous page">&#x2039;</button>
+          <span data-page-indicator>1 / 1</span>
+          <button class="toolbar-icon" type="button" data-page-nav="1" data-i18n-title="nextPage" title="Next page">&#x203A;</button>
+          <button class="toolbar-icon" type="button" data-cycle-toggle data-i18n-title="pageCycling" title="Page cycling">&#x21BB;</button>
+          <button class="toolbar-icon" type="button" data-kiosk-toggle data-i18n-title="kioskMode" title="Kiosk mode">&#x26F6;</button>
+        </div>
       </div>
       <div class="topbar-identity">
         <span class="brand-mark tiny">O</span>
@@ -58,6 +65,13 @@
     <main class="dashboard-workspace">
       <section class="monitor-stage" aria-label="Camera layout">
         <div id="monitor-grid" class="monitor-grid" data-layout="4"></div>
+        <div class="kiosk-controls">
+          <button type="button" data-page-nav="-1" data-i18n-title="previousPage">&#x2039;</button>
+          <span data-page-indicator>1 / 1</span>
+          <button type="button" data-page-nav="1" data-i18n-title="nextPage">&#x203A;</button>
+          <button type="button" data-cycle-toggle data-i18n-title="pageCycling">&#x21BB;</button>
+          <button type="button" data-kiosk-toggle data-i18n-title="exitKiosk">&#x00D7;</button>
+        </div>
       </section>
 
       <aside id="dashboard-sidebar" class="dashboard-sidebar">
@@ -176,8 +190,10 @@
                   <input id="new-user-name" maxlength="64" required data-i18n-placeholder="username" placeholder="Username">
                   <input id="new-user-password" type="password" minlength="8" maxlength="256" required autocomplete="new-password" data-i18n-placeholder="password" placeholder="Password">
                   <select id="new-user-role"><option value="operator" data-i18n="operator">Operator</option><option value="admin" data-i18n="administrator">Administrator</option></select>
+                  <label class="scope-field"><span data-i18n="cameraScope">Camera scope</span><select id="new-user-camera-scopes" multiple size="4" aria-describedby="camera-scope-hint"></select></label>
                   <button class="primary" type="submit" data-i18n="addUser">Add user</button>
                 </form>
+                <p id="camera-scope-hint" class="form-note" data-i18n="allCamerasScope">All cameras</p>
                 <div id="permission-editor" class="permission-editor"></div>
                 <div class="table-wrap"><table><thead><tr><th data-i18n="username">Username</th><th data-i18n="role">Role</th><th data-i18n="permissions">Permissions</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="users-body"></tbody></table></div>
               </div>
@@ -278,10 +294,10 @@
 
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
-    <script src="/core.js?v=028-p11" defer></script>
-    <script src="/monitor.js?v=028-p11" defer></script>
-    <script src="/devices.js?v=028-p11" defer></script>
-    <script src="/admin.js?v=028-p11" defer></script>
-    <script src="/app.js?v=028-p11" defer></script>
+    <script src="/core.js?v=028-p120" defer></script>
+    <script src="/monitor.js?v=028-p120" defer></script>
+    <script src="/devices.js?v=028-p120" defer></script>
+    <script src="/admin.js?v=028-p120" defer></script>
+    <script src="/app.js?v=028-p120" defer></script>
 </body>
 </html>

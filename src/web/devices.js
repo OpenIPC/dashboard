@@ -255,24 +255,28 @@ function assignCamera(camera) {
   renderMonitorGrid(state.dashboard?.cameras || []);
   renderDeviceList(state.dashboard?.cameras || []);
   updatePreviewStats();
-  const nextEmpty = state.assignments.findIndex((value, index) => index > state.activeCell && !value);
+  const start = workspacePageStart();
+  const nextEmpty = state.assignments.findIndex((value, index) => index > state.activeCell
+    && index < start + state.layout && !value);
   if (nextEmpty >= 0) state.activeCell = nextEmpty;
 }
 
 function updatePreviewStats() {
-  const active = state.assignments.slice(0, state.layout).filter(Boolean).length;
+  const active = state.assignments.slice(workspacePageStart(), workspacePageStart() + state.layout)
+    .filter(Boolean).length;
   byId("preview-state").textContent = `${active}/${state.layout}`;
-  byId("preview-detail").textContent = text("previewReady");
+  byId("preview-detail").textContent = `${text("page")} ${state.page + 1}/${workspacePageCount()}`;
 }
 
 function setLayout(layout, rerender = true) {
   if (!validLayouts.includes(Number(layout))) return;
   setCellControlsOpen(null);
   state.layout = Number(layout);
-  while (state.assignments.length < state.layout) state.assignments.push(null);
-  state.assignments = state.assignments.slice(0, state.layout);
-  state.activeCell = Math.min(state.activeCell, state.layout - 1);
+  compactAssignmentPages();
+  state.page = Math.min(state.page, workspacePageCount() - 1);
+  state.activeCell = workspacePageStart();
   persistWorkspace();
+  updatePageControls();
   document.querySelectorAll("[data-layout]").forEach(button => button.classList.toggle("active", Number(button.dataset.layout) === state.layout));
   if (rerender && state.dashboard) {
     renderMonitorGrid(state.dashboard.cameras || []);

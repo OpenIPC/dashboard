@@ -116,10 +116,26 @@ Item {
         return [name || "", ip || "", status || ""].join(" ").toLowerCase().indexOf(q) !== -1
     }
 
+    function cameraAccessAllowed(camera, cameraIndex) {
+        var token = SystemController.userManager.permissionsVersion
+        return camera && SystemController.userManager.canAccessCamera(
+                    camera.cameraId || "", camera.cameraIp || "", cameraIndex)
+    }
+
+    function accessibleCameraCount() {
+        var token = refreshToken
+        var total = 0
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            if (cameraAccessAllowed(SystemController.cameraModel.getCamera(i), i)) total++
+        }
+        return total
+    }
+
     function camerasWithAiCount() {
         var total = 0
         for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
             var camera = SystemController.cameraModel.getCamera(i)
+            if (!cameraAccessAllowed(camera, i)) continue
             if (cameraHasAnyAi(camera.cameraIp))
                 total += 1
         }
@@ -127,7 +143,14 @@ Item {
     }
 
     function telemetryCamerasCount() {
-        return diagnostics && diagnostics.cameraStats ? diagnostics.cameraStats.length : 0
+        var stats = diagnostics && diagnostics.cameraStats ? diagnostics.cameraStats : []
+        var total = 0
+        for (var i = 0; i < stats.length; ++i) {
+            var sourceIndex = SystemController.cameraModel.findIndexByIp(stats[i].cameraId || "")
+            if (sourceIndex >= 0 && cameraAccessAllowed(
+                        SystemController.cameraModel.getCamera(sourceIndex), sourceIndex)) total++
+        }
+        return total
     }
 
     function toggleCameraModule(cameraId, type) {
@@ -156,6 +179,11 @@ Item {
         function onRowsRemoved(parent, first, last) { root.refresh() }
         function onModelReset() { root.refresh() }
         function onDataChanged(topLeft, bottomRight, roles) { root.refresh() }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onPermissionsVersionChanged() { root.refresh() }
     }
 
     component SmallStat: Rectangle {
@@ -298,7 +326,7 @@ Item {
 
                     SmallStat {
                         title: I18n.t("Всего камер")
-                        value: String(SystemController.cameraModel.rowCount())
+                        value: String(root.accessibleCameraCount())
                     }
                     SmallStat {
                         title: I18n.t("Камер с AI")
@@ -331,7 +359,12 @@ Item {
             delegate: Rectangle {
                 id: cameraRow
 
-                property bool rowVisible: root.cameraMatches(cameraName, cameraIp, status)
+                required property int index
+                required property string cameraId
+                property bool rowVisible: root.refreshToken >= 0
+                                          && SystemController.userManager.canAccessCamera(
+                                              cameraId, cameraIp, index)
+                                          && root.cameraMatches(cameraName, cameraIp, status)
                 property var telemetry: root.cameraTelemetry(cameraIp)
                 property bool hasAi: root.cameraHasAnyAi(cameraIp)
                 property bool online: String(status || "").toLowerCase() === "online"
@@ -448,7 +481,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                visible: SystemController.cameraModel.rowCount() === 0
+                visible: root.accessibleCameraCount() === 0
                 text: I18n.t("Добавьте камеру, чтобы назначить ей AI-модули.")
                 color: Theme.textMuted
                 font.pixelSize: 14

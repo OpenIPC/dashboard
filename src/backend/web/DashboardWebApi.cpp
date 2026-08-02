@@ -277,7 +277,7 @@ void DashboardWebServer::addSecurityHeaders(DashboardHttpProtocol::Response *res
     response->headers.insert("X-Content-Type-Options", "nosniff");
     response->headers.insert("X-Frame-Options", "DENY");
     response->headers.insert("Referrer-Policy", "no-referrer");
-    response->headers.insert("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    response->headers.insert("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
     response->headers.insert("Cross-Origin-Resource-Policy", "same-origin");
     if (api) {
         response->headers.insert("Cache-Control", "no-store");
@@ -497,7 +497,8 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
                            m_systemController->presentation()->capabilityManifest(
                                user.value(QStringLiteral("permissions")).toInt(),
                                m_webRtcManager && m_webRtcManager->available(),
-                               m_webRtcManager && m_webRtcManager->audioAvailable()));
+                               m_webRtcManager && m_webRtcManager->audioAvailable(),
+                               !user.value(QStringLiteral("cameraScopes")).toStringList().isEmpty()));
         if (bearerSession) sessionData.insert(QStringLiteral("token"), QString::fromLatin1(token));
         DashboardHttpProtocol::Response response = jsonResponse(200, sessionData);
         if (!bearerSession) {
@@ -525,7 +526,8 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         sessionData.insert(QStringLiteral("capabilities"),
                            m_systemController->presentation()->capabilityManifest(
                                session.permissions, m_webRtcManager && m_webRtcManager->available(),
-                               m_webRtcManager && m_webRtcManager->audioAvailable()));
+                               m_webRtcManager && m_webRtcManager->audioAvailable(),
+                               !session.cameraScopes.isEmpty()));
         return jsonResponse(200, sessionData);
     }
     if (request.path == QStringLiteral("/api/v1/auth/logout") && request.method == "POST") {
@@ -545,7 +547,8 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
             {QStringLiteral("capabilities"),
              m_systemController->presentation()->capabilityManifest(
                  session.permissions, m_webRtcManager && m_webRtcManager->available(),
-                 m_webRtcManager && m_webRtcManager->audioAvailable())},
+                 m_webRtcManager && m_webRtcManager->audioAvailable(),
+                 !session.cameraScopes.isEmpty())},
             {QStringLiteral("permissions"),
              m_systemController->presentation()->permissionCatalog()},
             {QStringLiteral("designTokens"),
@@ -582,6 +585,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/users") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_UserManage, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         return jsonResponse(200, QVariantMap{
             {QStringLiteral("users"), m_systemController->userManager()->users()},
             {QStringLiteral("permissions"), m_systemController->presentation()->permissionCatalog()},
@@ -590,6 +594,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/users/create") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_UserManage, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString username = input.value(QStringLiteral("username")).toString().trimmed();
@@ -599,15 +604,17 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         int permissions = input.value(QStringLiteral("permissions"),
                                       UserManager::Perm_LiveView | UserManager::Perm_Playback
                                           | UserManager::Perm_PTZ | UserManager::Perm_Analytics).toInt();
+        const QStringList cameraScopes = input.value(QStringLiteral("cameraScopes")).toStringList();
         static const QRegularExpression usernamePattern(QStringLiteral("^[A-Za-z0-9_.@-]{1,64}$"));
         if (!jsonOk || !usernamePattern.match(username).hasMatch()
             || password.size() < 8 || password.size() > 256
             || (role != QStringLiteral("admin") && role != QStringLiteral("operator"))
-            || permissions < 0 || permissions > 0x7f) {
+            || permissions < 0 || permissions > 0xff || cameraScopes.size() > 512) {
             return jsonResponse(400, {}, tr("Invalid user data"));
         }
         if (role == QStringLiteral("admin")) permissions = UserManager::Perm_All;
-        if (!m_systemController->userManager()->addUser(username, password, role, permissions)) {
+        if (!m_systemController->userManager()->addUser(
+                username, password, role, permissions, cameraScopes)) {
             return jsonResponse(409, {}, tr("The user already exists or could not be created"));
         }
         audit(session, QStringLiteral("user.create"), username);
@@ -615,6 +622,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/users/permissions") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_UserManage, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString username = input.value(QStringLiteral("username")).toString().trimmed();
@@ -623,17 +631,24 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         const auto found = std::find_if(users.cbegin(), users.cend(), [&username](const QVariant &value) {
             return value.toMap().value(QStringLiteral("username")).toString() == username;
         });
-        if (!jsonOk || found == users.cend() || permissions < 0 || permissions > 0x7f
+        const QStringList cameraScopes = input.value(QStringLiteral("cameraScopes"),
+            found == users.cend() ? QVariant() : found->toMap().value(QStringLiteral("cameraScopes")))
+            .toStringList();
+        if (!jsonOk || found == users.cend() || permissions < 0 || permissions > 0xff
+            || cameraScopes.size() > 512
             || found->toMap().value(QStringLiteral("role")).toString() == QStringLiteral("admin")) {
             return jsonResponse(400, {}, tr("Invalid permission update"));
         }
         m_systemController->userManager()->updateUserPermissions(username, permissions);
+        m_systemController->userManager()->updateUserCameraScopes(username, cameraScopes);
         audit(session, QStringLiteral("user.permissions"), username);
         return jsonResponse(200, QVariantMap{{QStringLiteral("username"), username},
-                                             {QStringLiteral("permissions"), permissions}});
+                                             {QStringLiteral("permissions"), permissions},
+                                             {QStringLiteral("cameraScopes"), cameraScopes}});
     }
     if (request.path == QStringLiteral("/api/v1/users/delete") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_UserManage, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString username = input.value(QStringLiteral("username")).toString().trimmed();
@@ -666,6 +681,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/sessions/revoke") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_UserManage, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString sessionId = input.value(QStringLiteral("id")).toString().trimmed().toLower();
@@ -681,6 +697,9 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/logs") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!session.cameraScopes.isEmpty()) {
+            return jsonResponse(403, {}, tr("Global diagnostics are unavailable to a camera-scoped session"));
+        }
         bool cursorOk = false;
         bool limitOk = false;
         const int cursor = request.query.queryItemValue(QStringLiteral("cursor")).toInt(&cursorOk);
@@ -710,16 +729,25 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/logs/clear") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!session.cameraScopes.isEmpty()) {
+            return jsonResponse(403, {}, tr("Global diagnostics are unavailable to a camera-scoped session"));
+        }
         m_systemController->logModel()->clear();
         audit(session, QStringLiteral("logs.clear"), QStringLiteral("dashboard"));
         return jsonResponse(200, QVariantMap{});
     }
     if (request.path == QStringLiteral("/api/v1/diagnostics") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!session.cameraScopes.isEmpty()) {
+            return jsonResponse(403, {}, tr("Global diagnostics are unavailable to a camera-scoped session"));
+        }
         return jsonResponse(200, diagnosticsData());
     }
     if (request.path == QStringLiteral("/api/v1/diagnostics/bundle") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!session.cameraScopes.isEmpty()) {
+            return jsonResponse(403, {}, tr("Global diagnostics are unavailable to a camera-scoped session"));
+        }
         DashboardHttpProtocol::Response response;
         response.contentType = "application/json; charset=utf-8";
         response.body = QJsonDocument::fromVariant(QVariantMap{
@@ -735,6 +763,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (request.path == QStringLiteral("/api/v1/configuration/export")
         && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         QVariantList cameras;
         CameraModel *model = m_systemController->cameraModel();
         for (int i = 0; i < model->rowCount(); ++i) {
@@ -782,6 +811,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (request.path == QStringLiteral("/api/v1/configuration/import")
         && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         QVariantMap configuration = parseJsonObject(request.body, &jsonOk);
         if (configuration.contains(QStringLiteral("configuration"))) {
@@ -887,6 +917,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const int cameraIndex = input.value(QStringLiteral("cameraIndex"), -1).toInt();
         const QString operation = input.value(QStringLiteral("operation")).toString().trimmed().toLower();
+        if (jsonOk && !requireCameraAccess(session, cameraIndex, &denied)) return denied;
         static const QSet<QString> allowed{
             QStringLiteral("status"), QStringLiteral("majestic"), QStringLiteral("metrics"),
             QStringLiteral("network"), QStringLiteral("time"), QStringLiteral("logs"),
@@ -939,6 +970,9 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (deviceOperationMatch.hasMatch() && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
         const QVariantMap operation = deviceOperation(deviceOperationMatch.captured(1));
+        if (!operation.isEmpty()
+            && !requireCameraAccess(session,
+                operation.value(QStringLiteral("cameraIndex"), -1).toInt(), &denied)) return denied;
         return operation.isEmpty() ? jsonResponse(404, {}, tr("Device operation not found"))
                                    : jsonResponse(200, operation);
     }
@@ -957,6 +991,8 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
             || privateData.isEmpty()) {
             return jsonResponse(400, {}, tr("Load Majestic configuration before editing it"));
         }
+        if (!requireCameraAccess(session,
+                source.value(QStringLiteral("cameraIndex"), -1).toInt(), &denied)) return denied;
         const QVariantMap original = privateData.value(QStringLiteral("config")).toMap();
         const QVariantMap patch = m_systemController->majesticClient()->buildPatch(original, edited);
         if (patch.isEmpty()) return jsonResponse(409, {}, tr("There are no configuration changes"));
@@ -1009,6 +1045,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         if (cameraIndex < 0 || cameraIndex >= model->rowCount()) {
             return jsonResponse(404, {}, tr("Camera not found"));
         }
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const Camera camera = model->getCamera(cameraIndex);
         const QString requestId = m_systemController->majesticClient()->applyConfiguration(
             camera.ip, camera.onvifPort > 0 ? camera.onvifPort : 80,
@@ -1058,10 +1095,12 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/discovery") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         return jsonResponse(200, discoveryData());
     }
     if (request.path == QStringLiteral("/api/v1/discovery/start") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         if (m_systemController->networkDiscovery()->running()) {
             return jsonResponse(409, {}, tr("Camera discovery is already running"));
         }
@@ -1075,11 +1114,13 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/discovery/stop") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         m_systemController->stopNetworkScan();
         return jsonResponse(200, discoveryData());
     }
     if (request.path == QStringLiteral("/api/v1/discovery/clear") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         if (m_systemController->networkDiscovery()->running()) {
             return jsonResponse(409, {}, tr("Stop camera discovery before clearing results"));
         }
@@ -1088,6 +1129,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/discovery/add") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         QVariantList indexes = input.value(QStringLiteral("indexes")).toList();
@@ -1116,14 +1158,15 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/dashboard") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
-        return jsonResponse(200, dashboardData());
+        return jsonResponse(200, dashboardData(&session));
     }
     if (request.path == QStringLiteral("/api/v1/cameras") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
-        return jsonResponse(200, cameraData());
+        return jsonResponse(200, cameraData(&session));
     }
     if (request.path == QStringLiteral("/api/v1/cameras") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         WebCameraInput camera;
@@ -1148,6 +1191,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (updateCameraMatch.hasMatch() && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
         const int cameraIndex = updateCameraMatch.captured(1).toInt();
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         CameraModel *model = m_systemController->cameraModel();
         if (cameraIndex < 0 || cameraIndex >= model->rowCount()) {
             return jsonResponse(404, {}, tr("Camera not found"));
@@ -1178,6 +1222,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (deleteCameraMatch.hasMatch() && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
         const int cameraIndex = deleteCameraMatch.captured(1).toInt();
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         CameraModel *model = m_systemController->cameraModel();
         if (cameraIndex < 0 || cameraIndex >= model->rowCount()) {
             return jsonResponse(404, {}, tr("Camera not found"));
@@ -1197,6 +1242,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (previewMatch.hasMatch() && (request.method == "GET" || request.method == "HEAD")) {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
         const int cameraIndex = previewMatch.captured(1).toInt();
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const QString quality = request.query.queryItemValue(QStringLiteral("quality"));
         const auto result = m_previewManager->frame(cameraIndex, quality);
         if (result.status == DashboardWebPreviewManager::FrameStatus::Ready) {
@@ -1226,6 +1272,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (previewStreamMatch.hasMatch() && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
         const int cameraIndex = previewStreamMatch.captured(1).toInt();
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const QString quality = request.query.queryItemValue(QStringLiteral("quality"));
         DashboardHttpProtocol::Response streamError;
         if (sendPreviewStream(socket, cameraIndex, quality, &streamError)) {
@@ -1239,6 +1286,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (snapshotMatch.hasMatch() && (request.method == "GET" || request.method == "HEAD")) {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
         const int cameraIndex = snapshotMatch.captured(1).toInt();
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const auto result = m_previewManager->frame(cameraIndex, QStringLiteral("hd"));
         if (result.status != DashboardWebPreviewManager::FrameStatus::Ready
             || result.jpeg.isEmpty()) {
@@ -1263,7 +1311,15 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     if (request.path == QStringLiteral("/api/v1/recordings/active")
         && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
-        return jsonResponse(200, m_recordingManager ? m_recordingManager->status() : QVariantList{});
+        QVariantList recordings = m_recordingManager ? m_recordingManager->status() : QVariantList{};
+        if (!session.cameraScopes.isEmpty()) {
+            recordings.erase(std::remove_if(recordings.begin(), recordings.end(),
+                [this, &session](const QVariant &value) {
+                    return !sessionCanAccessCamera(session,
+                        value.toMap().value(QStringLiteral("cameraIndex"), -1).toInt());
+                }), recordings.end());
+        }
+        return jsonResponse(200, recordings);
     }
     if (request.path == QStringLiteral("/api/v1/recording") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
@@ -1277,6 +1333,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
                 && action != QStringLiteral("toggle"))) {
             return jsonResponse(400, {}, tr("Invalid recording request"));
         }
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const bool shouldStart = action == QStringLiteral("start")
             || (action == QStringLiteral("toggle") && !m_recordingManager->isRecording(cameraIndex));
         QString operationError;
@@ -1290,10 +1347,11 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/health") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_LiveView, &denied)) return denied;
-        return jsonResponse(200, healthData());
+        return jsonResponse(200, healthData(&session));
     }
     if (request.path == QStringLiteral("/api/v1/health/run") && request.method == "POST") {
         if (!requirePermission(session, UserManager::Perm_Settings, &denied)) return denied;
+        if (!requireUnrestrictedCameraAccess(session, &denied)) return denied;
         bool jsonOk = false;
         const QVariantMap input = parseJsonObject(request.body, &jsonOk);
         const QString profile = jsonOk ? input.value(QStringLiteral("profile"), QStringLiteral("quick")).toString()
@@ -1305,14 +1363,37 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     }
     if (request.path == QStringLiteral("/api/v1/analytics") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Analytics, &denied)) return denied;
-        return jsonResponse(200, analyticsData());
+        return jsonResponse(200, analyticsData(&session));
     }
     if (request.path == QStringLiteral("/api/v1/archive") && request.method == "GET") {
         if (!requirePermission(session, UserManager::Perm_Playback, &denied)) return denied;
         const QString cameraId = request.query.queryItemValue(QStringLiteral("camera"));
+        if (!cameraId.isEmpty()) {
+            const CameraModel *model = m_systemController->cameraModel();
+            int scopedIndex = -1;
+            for (int index = 0; index < model->rowCount(); ++index) {
+                if (model->getCamera(index).id == cameraId) { scopedIndex = index; break; }
+            }
+            if (scopedIndex < 0 || !requireCameraAccess(session, scopedIndex, &denied)) return denied;
+        }
         bool limitOk = false;
         const int requestedLimit = request.query.queryItemValue(QStringLiteral("limit")).toInt(&limitOk);
         const int limit = limitOk ? qBound(1, requestedLimit, kArchiveMaxItems) : 200;
+        if (cameraId.isEmpty() && !session.cameraScopes.isEmpty()) {
+            QVariantList scopedItems;
+            const CameraModel *model = m_systemController->cameraModel();
+            for (int index = 0; index < model->rowCount(); ++index) {
+                if (!sessionCanAccessCamera(session, index)) continue;
+                scopedItems.append(archiveItems(model->getCamera(index).id, limit));
+            }
+            std::sort(scopedItems.begin(), scopedItems.end(), [](const QVariant &left,
+                                                                  const QVariant &right) {
+                return left.toMap().value(QStringLiteral("startTime")).toDateTime()
+                    > right.toMap().value(QStringLiteral("startTime")).toDateTime();
+            });
+            while (scopedItems.size() > limit) scopedItems.removeLast();
+            return jsonResponse(200, scopedItems);
+        }
         return jsonResponse(200, archiveItems(cameraId, limit));
     }
     if (request.path.startsWith(QStringLiteral("/api/v1/archive/file/"))
@@ -1321,6 +1402,17 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         if (request.query.queryItemValue(QStringLiteral("download")) == QStringLiteral("1")
             && !requirePermission(session, UserManager::Perm_Export, &denied)) return denied;
         const QString fileId = request.path.mid(QStringLiteral("/api/v1/archive/file/").size());
+        if (!session.cameraScopes.isEmpty()) {
+            const QFileInfo archiveInfo(archiveFileForId(fileId));
+            bool archiveAllowed = false;
+            const CameraModel *model = m_systemController->cameraModel();
+            for (int index = 0; index < model->rowCount() && !archiveAllowed; ++index) {
+                const Camera camera = model->getCamera(index);
+                archiveAllowed = sessionCanAccessCamera(session, index)
+                    && RecordingFileCatalog::belongsToCamera(archiveInfo, camera.id);
+            }
+            if (!archiveAllowed) return jsonResponse(403, {}, tr("Camera access is not allowed"));
+        }
         DashboardHttpProtocol::Response fileError;
         if (sendArchiveFile(socket, request, fileId, &fileError)) {
             *streamingResponse = true;
@@ -1336,6 +1428,7 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
         if (!jsonOk || cameraIndex < 0 || cameraIndex >= m_systemController->cameraModel()->rowCount()) {
             return jsonResponse(400, {}, tr("Invalid camera"));
         }
+        if (!requireCameraAccess(session, cameraIndex, &denied)) return denied;
         const Camera camera = m_systemController->cameraModel()->getCamera(cameraIndex);
         const QString action = input.value(QStringLiteral("action")).toString();
         if (action == QStringLiteral("stop")) {
@@ -1356,11 +1449,13 @@ DashboardHttpProtocol::Response DashboardWebServer::routeApi(
     return jsonResponse(404, {}, tr("API endpoint not found"));
 }
 
-QVariantList DashboardWebServer::cameraData() const
+QVariantList DashboardWebServer::cameraData(
+    const DashboardWebSessionStore::Session *session) const
 {
     QVariantList cameras;
     const CameraModel *model = m_systemController->cameraModel();
     for (int index = 0; index < model->rowCount(); ++index) {
+        if (session && !sessionCanAccessCamera(*session, index)) continue;
         const Camera camera = model->getCamera(index);
         const QVariantMap health = m_systemController->cameraHealthController()->resultForCamera(camera.ip);
         QVariantMap item = m_systemController->presentation()->cameraView(
@@ -1406,9 +1501,10 @@ QVariantMap DashboardWebServer::discoveryData() const
     };
 }
 
-QVariantMap DashboardWebServer::dashboardData() const
+QVariantMap DashboardWebServer::dashboardData(
+    const DashboardWebSessionStore::Session *session) const
 {
-    const QVariantList cameras = cameraData();
+    const QVariantList cameras = cameraData(session);
     int online = 0;
     int recording = 0;
     for (const QVariant &value : cameras) {
@@ -1424,32 +1520,99 @@ QVariantMap DashboardWebServer::dashboardData() const
              {QStringLiteral("offline"), cameras.size() - online},
              {QStringLiteral("recording"), recording}}},
         {QStringLiteral("cameras"), cameras},
-        {QStringLiteral("health"), healthData()},
+        {QStringLiteral("health"), healthData(session)},
         {QStringLiteral("server"), status()}
     };
 }
 
-QVariantMap DashboardWebServer::healthData() const
+bool DashboardWebServer::sessionCanAccessCamera(
+    const DashboardWebSessionStore::Session &session, int cameraIndex) const
+{
+    const CameraModel *model = m_systemController->cameraModel();
+    if (!session.isValid() || cameraIndex < 0 || cameraIndex >= model->rowCount()) return false;
+    if (session.role == QStringLiteral("admin") || session.cameraScopes.isEmpty()) return true;
+    const Camera camera = model->getCamera(cameraIndex);
+    const QString id = camera.id.trimmed();
+    return (!id.isEmpty() && (session.cameraScopes.contains(id)
+                             || session.cameraScopes.contains(QStringLiteral("camera:") + id)))
+        || session.cameraScopes.contains(QStringLiteral("index:%1").arg(cameraIndex));
+}
+
+bool DashboardWebServer::requireCameraAccess(
+    const DashboardWebSessionStore::Session &session, int cameraIndex,
+    DashboardHttpProtocol::Response *response) const
+{
+    const CameraModel *model = m_systemController->cameraModel();
+    if (cameraIndex < 0 || cameraIndex >= model->rowCount()) {
+        if (response) *response = jsonResponse(404, {}, tr("Camera not found"));
+        return false;
+    }
+    if (sessionCanAccessCamera(session, cameraIndex)) return true;
+    if (response) *response = jsonResponse(403, {}, tr("Camera access is not allowed"));
+    return false;
+}
+
+bool DashboardWebServer::requireUnrestrictedCameraAccess(
+    const DashboardWebSessionStore::Session &session,
+    DashboardHttpProtocol::Response *response) const
+{
+    if (session.role == QStringLiteral("admin") || session.cameraScopes.isEmpty()) return true;
+    if (response) {
+        *response = jsonResponse(403, {},
+            tr("This operation requires access to all cameras"));
+    }
+    return false;
+}
+
+QVariantMap DashboardWebServer::healthData(
+    const DashboardWebSessionStore::Session *session) const
 {
     CameraHealthController *health = m_systemController->cameraHealthController();
+    QVariantList results = scrubSensitive(health->currentResults()).toList();
+    if (session && !session->cameraScopes.isEmpty()) {
+        QSet<QString> allowedIps;
+        const CameraModel *model = m_systemController->cameraModel();
+        for (int index = 0; index < model->rowCount(); ++index) {
+            if (sessionCanAccessCamera(*session, index)) allowedIps.insert(model->getCamera(index).ip);
+        }
+        results.erase(std::remove_if(results.begin(), results.end(), [&allowedIps](const QVariant &value) {
+            return !allowedIps.contains(value.toMap().value(QStringLiteral("ip")).toString());
+        }), results.end());
+    }
     return {
         {QStringLiteral("running"), health->running()},
         {QStringLiteral("activeProfile"), health->activeProfile()},
         {QStringLiteral("completedProbes"), health->completedProbes()},
         {QStringLiteral("totalProbes"), health->totalProbes()},
-        {QStringLiteral("latestRun"), scrubSensitive(health->latestRun())},
-        {QStringLiteral("results"), scrubSensitive(health->currentResults())}
+        {QStringLiteral("latestRun"), session && !session->cameraScopes.isEmpty()
+             ? QVariantMap{} : scrubSensitive(health->latestRun())},
+        {QStringLiteral("results"), results}
     };
 }
 
-QVariantMap DashboardWebServer::analyticsData() const
+QVariantMap DashboardWebServer::analyticsData(
+    const DashboardWebSessionStore::Session *session) const
 {
     AnalyticsEngine *analytics = m_systemController->analyticsEngine();
+    const bool restricted = session && !session->cameraScopes.isEmpty();
+    QVariantList events = scrubSensitive(analytics->queryAnalyticsEvents(-1, {}, {}, 100)).toList();
+    if (session && !session->cameraScopes.isEmpty()) {
+        QSet<QString> allowedIds;
+        const CameraModel *model = m_systemController->cameraModel();
+        for (int index = 0; index < model->rowCount(); ++index) {
+            if (sessionCanAccessCamera(*session, index)) allowedIds.insert(model->getCamera(index).id);
+        }
+        events.erase(std::remove_if(events.begin(), events.end(), [&allowedIds](const QVariant &value) {
+            return !allowedIds.contains(value.toMap().value(QStringLiteral("cameraId")).toString());
+        }), events.end());
+    }
     return {
-        {QStringLiteral("diagnostics"), scrubSensitive(analytics->analyticsDiagnostics())},
-        {QStringLiteral("evidence"), scrubSensitive(analytics->analyticsEvidenceSummary())},
+        {QStringLiteral("diagnostics"), restricted
+             ? QVariantMap{} : scrubSensitive(analytics->analyticsDiagnostics())},
+        {QStringLiteral("evidence"), restricted
+             ? QVariantMap{} : scrubSensitive(analytics->analyticsEvidenceSummary())},
         {QStringLiteral("modules"), scrubSensitive(analytics->moduleInventory())},
-        {QStringLiteral("events"), scrubSensitive(analytics->queryAnalyticsEvents(-1, {}, {}, 100))}
+        {QStringLiteral("events"), events}
     };
 }
 

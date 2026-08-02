@@ -191,6 +191,15 @@ Item {
             },
             { name: "Camera Search", component: cameraSearchComponent, parentObject: host },
             {
+                name: "Fleet Management",
+                component: fleetManagementComponent,
+                parentObject: host,
+                showForLayout: true,
+                validate: function(object) {
+                    return object.contentLayoutReady ? "" : "fleet dialog exceeds its host"
+                }
+            },
+            {
                 name: "Health Center",
                 component: healthCenterComponent,
                 parentObject: host,
@@ -502,6 +511,13 @@ Item {
 
                 autoRefreshOnOpen: false
             }
+        }
+    }
+
+    Component {
+        id: fleetManagementComponent
+
+        FleetManagementDialog {
         }
     }
 

@@ -285,6 +285,8 @@ set(SOURCES
     src/backend/CameraHealthPolicy.h
     src/backend/CameraHealthController.cpp
     src/backend/CameraHealthController.h
+    src/backend/FleetManager.cpp
+    src/backend/FleetManager.h
     src/backend/CamexController.cpp
     src/backend/CamexController.h
     src/backend/SystemController.cpp
@@ -393,6 +395,8 @@ set(QML_FILES
     src/ui/DashboardEmptyHint.qml
     src/ui/DashboardGridPanel.qml
     src/ui/DashboardLayoutToolbar.qml
+    src/ui/DashboardPageControls.qml
+    src/ui/FleetManagementDialog.qml
     src/ui/DashboardSidebar.qml
     src/ui/DashboardStatusBar.qml
     src/ui/DashboardToast.qml
@@ -558,7 +562,7 @@ qt_add_qml_module(appOpenIPC-Dashboard
 )
 
 target_link_libraries(appOpenIPC-Dashboard
-    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent Qt6::Sql onnxruntime dhnetsdk ${GST_LIBRARIES} ssh qt6keychain
+    PRIVATE Qt6::Quick Qt6::Core Qt6::Network Qt6::Concurrent Qt6::Multimedia Qt6::Sql onnxruntime dhnetsdk ${GST_LIBRARIES} ssh qt6keychain
 )
 
 if(TARGET Qt6::WebSockets)
@@ -808,6 +812,39 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME user_manager_tests COMMAND user_manager_tests)
+
+    add_executable(fleet_manager_tests
+        tests/FleetManagerTests.cpp
+        src/backend/FleetManager.cpp
+        src/backend/FleetManager.h
+        src/backend/CameraModel.cpp
+        src/backend/CameraModel.h
+        src/backend/CameraHealthController.cpp
+        src/backend/CameraHealthController.h
+        src/backend/CameraHealthPolicy.cpp
+        src/backend/CameraHealthPolicy.h
+        src/backend/MajesticClient.cpp
+        src/backend/MajesticClient.h
+        src/backend/OpenIpcFirmwareClient.cpp
+        src/backend/OpenIpcFirmwareClient.h
+        src/backend/PathUtils.cpp
+        src/backend/PathUtils.h
+        src/backend/UserManager.cpp
+        src/backend/UserManager.h
+        src/backend/LogModel.cpp
+        src/backend/LogModel.h
+    )
+    target_include_directories(fleet_manager_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/backend
+        ${qtkeychain_SOURCE_DIR}
+        ${qtkeychain_BINARY_DIR}
+    )
+    openipc_enable_project_warnings(fleet_manager_tests)
+    target_link_libraries(fleet_manager_tests
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test qt6keychain
+    )
+    add_test(NAME fleet_manager_tests COMMAND fleet_manager_tests)
+    set_tests_properties(fleet_manager_tests PROPERTIES LABELS "unit;fleet")
 
     add_executable(path_utils_tests
         tests/PathUtilsTests.cpp
@@ -1246,6 +1283,13 @@ if(BUILD_TESTING)
             TIMEOUT 20
             LABELS "static;web")
 
+        add_test(NAME desktop_competitive_parity_contract
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/desktop_competitive_parity_contract.py")
+        set_tests_properties(desktop_competitive_parity_contract PROPERTIES
+            TIMEOUT 20
+            LABELS "static;desktop")
+
         add_test(NAME release_metadata_tests
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/release_metadata_tests.py")
         set_tests_properties(release_metadata_tests PROPERTIES
@@ -1287,6 +1331,7 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/SettingsWebServerPage.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/AppUpdateContent.qml
                 ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CameraSearchDialog.qml
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/FleetManagementDialog.qml
         )
         set_tests_properties(qml_lint_targeted PROPERTIES
             TIMEOUT 30
@@ -1294,7 +1339,7 @@ if(BUILD_TESTING)
         )
     endif()
 
-    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+    set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
         TIMEOUT 30
         LABELS "unit"
     )
@@ -1311,7 +1356,7 @@ if(BUILD_TESTING)
     )
 
     if(WIN32)
-        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
+        set_tests_properties(dashboard_presentation_tests dashboard_http_protocol_tests dashboard_web_deployment_policy_tests dashboard_web_session_store_tests user_manager_tests fleet_manager_tests path_utils_tests log_model_tests i18n_catalog_tests reconnect_policy_tests stream_quality_policy_tests stream_health_policy_tests camera_status_policy_tests camera_health_policy_tests camera_health_controller_tests camera_model_tests stream_session_policy_tests state_store_tests model_artifact_verifier_tests analytics_evidence_image_processor_tests analytics_rule_zone_matcher_tests analytics_upload_retry_policy_tests camera_onboarding_parser_tests app_update_checker_tests majestic_client_tests openipc_firmware_client_tests network_discovery_service_tests PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>;$ENV{PATH}"
         )
         set_tests_properties(recording_file_catalog_tests archive_controller_tests PROPERTIES

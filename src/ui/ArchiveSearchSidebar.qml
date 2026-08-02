@@ -15,6 +15,7 @@ Rectangle {
     property string sourceFilter: "all"
     property string sortMode: "newest"
     property var visibleResults: []
+    property var accessibleCameras: []
 
     readonly property int totalCount: {
         var results = SystemController.archiveController.searchResults
@@ -28,10 +29,29 @@ Rectangle {
 
     onCurrentCameraIpChanged: selectCameraIp(currentCameraIp)
 
+    function rebuildAccessibleCameras() {
+        var entries = []
+        for (var i = 0; i < SystemController.cameraModel.rowCount(); ++i) {
+            var camera = SystemController.cameraModel.getCamera(i)
+            if (!camera || !SystemController.userManager.canAccessCamera(
+                        camera.cameraId || "", camera.cameraIp || "", i)) continue
+            entries.push({
+                sourceIndex: i,
+                cameraId: camera.cameraId || "",
+                cameraName: camera.cameraName || camera.cameraIp,
+                cameraIp: camera.cameraIp || "",
+                cameraPort: camera.cameraPort || 554,
+                cameraLogin: camera.cameraLogin || "root"
+            })
+        }
+        accessibleCameras = entries
+        selectCameraIp(currentCameraIp)
+    }
+
     function selectCameraIp(cameraIp) {
         if (cameraIp === "") return
-        for (var i = 0; i < cameraSelector.count; i++) {
-            var cam = SystemController.cameraModel.getCamera(i)
+        for (var i = 0; i < accessibleCameras.length; i++) {
+            var cam = accessibleCameras[i]
             if (cam && cam.cameraIp === cameraIp) {
                 cameraSelector.currentIndex = i
                 break
@@ -88,7 +108,7 @@ Rectangle {
         var camIndex = cameraSelector.currentIndex
         if (camIndex < 0) return
 
-        var cam = SystemController.cameraModel.getCamera(camIndex)
+        var cam = accessibleCameras[camIndex]
         if (!cam) return
 
         SystemController.archiveController.login(cam.cameraIp, cam.cameraPort, cam.cameraLogin, "")
@@ -115,7 +135,24 @@ Rectangle {
         }
     }
 
-    Component.onCompleted: refreshVisibleResults(false)
+    Connections {
+        target: SystemController.cameraModel
+        ignoreUnknownSignals: true
+        function onRowsInserted(parent, first, last) { root.rebuildAccessibleCameras() }
+        function onRowsRemoved(parent, first, last) { root.rebuildAccessibleCameras() }
+        function onModelReset() { root.rebuildAccessibleCameras() }
+        function onDataChanged(topLeft, bottomRight, roles) { root.rebuildAccessibleCameras() }
+    }
+
+    Connections {
+        target: SystemController.userManager
+        function onCurrentUserChanged() { root.rebuildAccessibleCameras() }
+    }
+
+    Component.onCompleted: {
+        rebuildAccessibleCameras()
+        refreshVisibleResults(false)
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -137,7 +174,7 @@ Rectangle {
                 id: cameraSelector
                 Layout.fillWidth: true
                 textRole: "cameraName"
-                model: SystemController.cameraModel
+                model: root.accessibleCameras
             }
         }
 

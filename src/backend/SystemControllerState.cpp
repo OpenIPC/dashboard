@@ -282,6 +282,7 @@ void SystemController::performSave()
     root["cameraGroups"] = groups;
     root["layoutTemplates"] = QJsonArray::fromVariantList(m_layoutTemplates);
     root["cameraHealthHistory"] = m_cameraHealthController->historyJson();
+    root["fleet"] = m_fleetManager->toJson();
 
     QString errorMessage;
     StateStore store(stateDatabasePath());
@@ -513,6 +514,10 @@ void SystemController::loadState()
         if (!groupName.isEmpty() && !m_cameraGroups.contains(groupName, Qt::CaseInsensitive)) {
             m_cameraGroups.append(groupName);
         }
+    }
+
+    if (root.contains(QStringLiteral("fleet"))) {
+        m_fleetManager->restoreJson(root.value(QStringLiteral("fleet")).toObject());
     }
 
     const QJsonObject discovery = root.value(QStringLiteral("lastDiscovery")).toObject();

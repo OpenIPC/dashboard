@@ -11,6 +11,9 @@
 | Login/logout/session expiry | `LoginView.qml` | `UserManager`, `DashboardWebSessionStore` | Login view | Done | P6.2 |
 | RBAC Live/Playback/PTZ/Export/Settings/Users/Analytics | `Main.qml`, dialogs | `UserManager` | Все workspace | Done | P6.9, P6.11 |
 | Monitor layout 1/4/9 | `DashboardGridPanel.qml`, `DashboardLayoutToolbar.qml` | Camera/grid state | Monitor grid | Done | P6.5 |
+| Paged assignments beyond grid size | `DashboardView.qml`, persistent grid state | Qt grid pages + browser workspace persistence | Page controls and cycling | Done in Desktop/Web | P12.0 |
+| Kiosk wall and page cycling | `DashboardPageControls.qml`, fullscreen monitor | Qt window + Browser Fullscreen lifecycle | Kiosk wall controls | Done in Desktop/Web | P12.0 |
+| Per-cell digital zoom/pan | `GridCell.qml`, controls overlay | Client-local transform | Monitor controls, wheel and drag | Done in Desktop/Web | P12.0 |
 | Device sidebar/search/assignment | `DashboardSidebar.qml`, `DeviceListItem.qml` | `CameraModel` | Device sidebar | Done | P6.5 |
 | Camera discovery | `CameraSearchDialog.qml` | `NetworkDiscoveryService` | Discovery dialog | Done | P6.7 |
 | Add/edit/delete camera | `AddCameraDialog.qml`, context dialogs | `SystemController`, `CameraModel` | Camera dialog | Done | P6.7 |
@@ -20,6 +23,7 @@
 | Audio mute/volume | `GridCellControlsOverlay.qml` | WebRTC audio track | Monitor controls | Done | P6.10 |
 | Fullscreen | `GridCell.qml` | Browser Fullscreen API | Monitor cell | Done | P6.10 |
 | PTZ feedback | `PtzControlPanel.qml` | `PtzController` | Monitor overlay | Done | P6.10 |
+| Push-to-talk | `GridCellControlsOverlay.qml`, Qt microphone capture | Separate Talk permission + Majestic PCM; scoped WebSocket PCM | Hold-to-talk cell control | Done in Desktop/Web (browser secure context required) | P12.0 |
 | Health overview/run/details | `CameraHealthDialog.qml`, `HealthDetailsDialog.qml` | `CameraHealthController` | Health workspace | Partial | P6.9, P6.15 |
 | Analytics modules/events/evidence | `AnalyticsView.qml`, `analytics/*` | `AnalyticsEngine` | Analytics workspace | Partial | P6.9, P6.15 |
 | Archive inventory/playback | `ArchiveView.qml`, `Archive*` | `RecordingFileCatalog` | Archive workspace | Done | P6.10 |
@@ -27,6 +31,7 @@
 | Application/player/recording settings | `SettingsDialog.qml`, `SettingsStreamingPage.qml` | `DashboardPresentation` allowlist | Admin workspace | Done | P6.11 |
 | Web server settings | `SettingsWebServerPage.qml` | `DashboardWebServer` | Read-only browser state; endpoint changes desktop-only | Web N/A | P6.11, P6.14 |
 | Users/permissions/password | `UserManagementDialog.qml`, `AddUserDialog.qml` | `UserManager` | Admin workspace | Done | P6.11 |
+| Per-user camera scope | `UserManagementDialog.qml`, `AddUserDialog.qml` | `UserManager` + desktop/session/API/WS enforcement | Multi-select camera scope | Done in Desktop/Web; Site/Area expansion in P12 | P12.0 |
 | Logs/filter/export/live tail | `LogView.qml` | `LogModel` | Diagnostics workspace | Done | P6.12 |
 | Diagnostics/metrics | Settings/Health panels | controllers | Diagnostics workspace | Done | P6.12 |
 | Camex command/config generation | `CamexView.qml` | `CamexController` | Device workspace | Done | P6.13 |

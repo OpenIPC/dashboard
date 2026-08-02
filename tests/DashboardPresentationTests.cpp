@@ -1,6 +1,9 @@
 #include <QtTest>
 
+#include <algorithm>
+
 #include "CameraModel.h"
+#include "UserManager.h"
 #include "presentation/DashboardPresentation.h"
 
 class DashboardPresentationTests : public QObject
@@ -60,7 +63,25 @@ void DashboardPresentationTests::capabilitiesFollowPermissions()
     QVERIFY(monitor.value(QStringLiteral("live")).toBool());
     QVERIFY(monitor.value(QStringLiteral("audio")).toBool());
     QVERIFY(!monitor.value(QStringLiteral("ptz")).toBool());
+    QVERIFY(!monitor.value(QStringLiteral("talk")).toBool());
     QVERIFY(!administration.value(QStringLiteral("settings")).toBool());
+
+    const QVariantMap talkView = presentation.capabilityManifest(
+        UserManager::Perm_LiveView | UserManager::Perm_Talk, true, true);
+    QVERIFY(talkView.value(QStringLiteral("monitor")).toMap()
+                .value(QStringLiteral("talk")).toBool());
+    const QVariantList catalog = presentation.permissionCatalog();
+    QVERIFY(std::any_of(catalog.cbegin(), catalog.cend(), [](const QVariant &value) {
+        const QVariantMap item = value.toMap();
+        return item.value(QStringLiteral("id")).toString() == QStringLiteral("talk")
+            && item.value(QStringLiteral("value")).toInt() == UserManager::Perm_Talk;
+    }));
+    const QVariantMap scopedView = presentation.capabilityManifest(
+        UserManager::Perm_LiveView | UserManager::Perm_Settings, true, true, true);
+    QVERIFY(!scopedView.value(QStringLiteral("administration")).toMap()
+                 .value(QStringLiteral("logs")).toBool());
+    QVERIFY(scopedView.value(QStringLiteral("administration")).toMap()
+                .value(QStringLiteral("devices")).toBool());
 }
 
 void DashboardPresentationTests::settingsContractRejectsUnknownAndReadOnlyValues()

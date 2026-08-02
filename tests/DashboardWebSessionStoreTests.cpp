@@ -19,7 +19,9 @@ void DashboardWebSessionStoreTests::createsFindsAndRemovesOpaqueSessions()
     QSignalSpy countSpy(&store, &DashboardWebSessionStore::countChanged);
     const QVariantMap user{{QStringLiteral("username"), QStringLiteral("viewer")},
                            {QStringLiteral("role"), QStringLiteral("operator")},
-                           {QStringLiteral("permissions"), 3}};
+                           {QStringLiteral("permissions"), 3},
+                           {QStringLiteral("cameraScopes"),
+                            QStringList{QStringLiteral("front-gate")}}};
     const QByteArray first = store.create(user);
     const QByteArray second = store.create(user);
 
@@ -30,6 +32,9 @@ void DashboardWebSessionStoreTests::createsFindsAndRemovesOpaqueSessions()
     QVERIFY(session.isValid());
     QCOMPARE(session.username, QStringLiteral("viewer"));
     QCOMPARE(session.permissions, 3);
+    QCOMPARE(session.cameraScopes, QStringList{QStringLiteral("front-gate")});
+    QCOMPARE(session.toVariantMap().value(QStringLiteral("cameraScopes")).toStringList(),
+             QStringList{QStringLiteral("front-gate")});
     QVERIFY(store.remove(first));
     QVERIFY(!store.find(first).isValid());
     QCOMPARE(store.count(), 1);

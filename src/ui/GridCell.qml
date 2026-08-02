@@ -42,8 +42,13 @@ Item {
     property bool canLive: true
     property bool canPlayback: true
     property bool canPtz: true
+    property bool canTalk: false
     property bool canExport: true
     property bool canSettings: true
+    property bool pageActive: true
+    property real digitalZoomScale: 1.0
+    property real digitalZoomOffsetX: 0.0
+    property real digitalZoomOffsetY: 0.0
     property bool effectiveCanLive: canLive || SystemController.userManager.isAdmin() || (SystemController.userManager.currentUser && SystemController.userManager.currentUser.username === "admin")
     readonly property bool hasCamera: root.cameraIp !== "" || root.cameraName !== "" || root.streamUrl !== ""
     readonly property bool statusOnline: String(root.status || "").toLowerCase() === "online"
@@ -55,7 +60,10 @@ Item {
     readonly property string streamStallMessage: I18n.t("Нет кадров от камеры")
     readonly property bool smartStreamBudget: (SystemController.appSettings.smartStreamBudget !== undefined) ? SystemController.appSettings.smartStreamBudget : true
     readonly property int maxPreviewStreams: (SystemController.appSettings.maxPreviewStreams !== undefined) ? SystemController.appSettings.maxPreviewStreams : 16
-    readonly property bool previewSessionAllowed: SystemController.shouldRunPreviewStream(
+    // Hidden pages do not keep extra preview peers alive. Dedicated recorders
+    // continue independently; analytics is the only off-page preview exception.
+    readonly property bool previewPageAllowed: root.pageActive || root.analyticsActive
+    readonly property bool previewSessionAllowed: root.previewPageAllowed && SystemController.shouldRunPreviewStream(
                                                       root.smartStreamBudget,
                                                       root.maxPreviewStreams,
                                                       root.previewBudgetRank,
@@ -119,6 +127,8 @@ Item {
     }
 
     Component.onDestruction: {
+        if (SystemController.pushToTalkActive && SystemController.pushToTalkGridIndex === root.gridIndex)
+            SystemController.stopPushToTalk()
         if (root.cameraIp !== "" && SystemController.updateCameraStatusDetail) {
             SystemController.updateCameraStatusDetail(root.cameraIp, "")
         }
@@ -394,7 +404,39 @@ Item {
     signal recordClicked()
     signal audioClicked()
     signal permissionDenied()
+    signal errorMessage(string message)
     signal selectedByUser()
+
+    function clampDigitalZoomPan() {
+        if (digitalZoomScale <= 1.0) {
+            digitalZoomOffsetX = 0
+            digitalZoomOffsetY = 0
+            return
+        }
+        var maxX = root.width * (digitalZoomScale - 1.0) / 2.0
+        var maxY = root.height * (digitalZoomScale - 1.0) / 2.0
+        digitalZoomOffsetX = Math.max(-maxX, Math.min(maxX, digitalZoomOffsetX))
+        digitalZoomOffsetY = Math.max(-maxY, Math.min(maxY, digitalZoomOffsetY))
+    }
+
+    function changeDigitalZoom(delta) {
+        digitalZoomScale = Math.max(1.0, Math.min(4.0, digitalZoomScale + delta))
+        clampDigitalZoomPan()
+    }
+
+    function resetDigitalZoom() {
+        digitalZoomScale = 1.0
+        digitalZoomOffsetX = 0
+        digitalZoomOffsetY = 0
+    }
+
+    onCameraIpChanged: {
+        if (SystemController.pushToTalkActive && SystemController.pushToTalkGridIndex === root.gridIndex)
+            SystemController.stopPushToTalk()
+        resetDigitalZoom()
+    }
+    onWidthChanged: clampDigitalZoomPan()
+    onHeightChanged: clampDigitalZoomPan()
     
     // Shared detection model for both preview and fullscreen
     ListModel { id: detectionModel }
@@ -488,6 +530,15 @@ Item {
             id: player
             anchors.fill: parent
             visible: root.streamUrl !== "" && !hdWindow.visible && root.previewSessionAllowed
+            transform: [
+                Scale {
+                    origin.x: player.width / 2
+                    origin.y: player.height / 2
+                    xScale: root.digitalZoomScale
+                    yScale: root.digitalZoomScale
+                },
+                Translate { x: root.digitalZoomOffsetX; y: root.digitalZoomOffsetY }
+            ]
 
             // Respect app setting (Crop/Fit/Stretch)
             fillMode: (SystemController.appSettings.playerFillMode !== undefined) ? SystemController.appSettings.playerFillMode : 0
@@ -666,6 +717,15 @@ Item {
             id: detectionOverlay
             anchors.fill: parent
             visible: analyticsActive
+            transform: [
+                Scale {
+                    origin.x: detectionOverlay.width / 2
+                    origin.y: detectionOverlay.height / 2
+                    xScale: root.digitalZoomScale
+                    yScale: root.digitalZoomScale
+                },
+                Translate { x: root.digitalZoomOffsetX; y: root.digitalZoomOffsetY }
+            ]
             
             Repeater {
                 model: detectionModel
@@ -925,6 +985,10 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton
+        property real panPressX: 0
+        property real panPressY: 0
+        property real panOriginX: 0
+        property real panOriginY: 0
         onDoubleClicked: {
             if (hdWindow.visible) {
                 hdWindow.close()
@@ -933,10 +997,17 @@ Item {
             }
         }
         
-        drag.target: root.canSettings ? dragItem : null
+        drag.target: root.canSettings && root.digitalZoomScale <= 1.0 ? dragItem : null
         
         onPressed: {
             root.selectedByUser()
+            if (root.digitalZoomScale > 1.0) {
+                panPressX = mouse.x
+                panPressY = mouse.y
+                panOriginX = root.digitalZoomOffsetX
+                panOriginY = root.digitalZoomOffsetY
+                return
+            }
             if (!root.canSettings) {
                 return
             }
@@ -948,8 +1019,25 @@ Item {
             dragItem.x = root.x
             dragItem.y = root.y
         }
+
+        onPositionChanged: {
+            if (!pressed || root.digitalZoomScale <= 1.0) return
+            root.digitalZoomOffsetX = panOriginX + mouse.x - panPressX
+            root.digitalZoomOffsetY = panOriginY + mouse.y - panPressY
+            root.clampDigitalZoomPan()
+        }
+
+        onWheel: function(wheel) {
+            if (!root.hasCamera) return
+            root.changeDigitalZoom(wheel.angleDelta.y > 0 ? 0.5 : -0.5)
+            wheel.accepted = true
+        }
         
         onReleased: {
+            if (root.digitalZoomScale > 1.0) {
+                root.clampDigitalZoomPan()
+                return
+            }
             if (!root.canSettings) {
                 return
             }
@@ -1378,12 +1466,18 @@ Item {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 8
+        scale: root.uiScale
+        transformOrigin: Item.TopRight
 
         effectiveCanLive: root.effectiveCanLive
         hoverActive: hoverArea.containsMouse
         fullscreenVisible: hdWindow.visible
         ptzVisible: ptzOverlay.visible
         canPtz: root.canPtz
+        canTalk: root.canTalk
+        talkActive: SystemController.pushToTalkActive
+                    && SystemController.pushToTalkGridIndex === root.gridIndex
+        digitalZoomScale: root.digitalZoomScale
         iconFontFamily: root.iconFontFamily
         previewQualityText: root.previewQualityLabel(player.fallbackToSd).toLowerCase()
         muted: root.isMuted
@@ -1402,6 +1496,17 @@ Item {
         onPtzToggleRequested: {
             ptzOverlay.ptzVisible = !ptzOverlay.ptzVisible
         }
+        onTalkStartRequested: {
+            if (!SystemController.startPushToTalk(root.gridIndex)) {
+                var message = SystemController.pushToTalkError
+                root.errorMessage(message !== "" ? I18n.t(message)
+                                                  : I18n.t("Не удалось запустить Push-to-talk"))
+            }
+        }
+        onTalkStopRequested: SystemController.stopPushToTalk()
+        onDigitalZoomOutRequested: root.changeDigitalZoom(-0.5)
+        onDigitalZoomResetRequested: root.resetDigitalZoom()
+        onDigitalZoomInRequested: root.changeDigitalZoom(0.5)
         onPreviewQualityToggleRequested: {
             root.restartPreviewStream()
             if (root.previewQualityOverride === "hd") {

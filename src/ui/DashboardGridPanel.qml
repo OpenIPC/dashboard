@@ -11,15 +11,20 @@ Rectangle {
     property int gridRows: 1
     property int gridCols: 1
     property int activeGridIndex: -1
+    property int pageStart: 0
+    property int pageSize: 1
+    property bool kioskMode: false
     property bool canLive: false
     property bool canPlayback: false
     property bool canPtz: false
+    property bool canTalk: false
     property bool canExport: false
     property bool canSettings: false
     property bool canAnalytics: false
     property bool emptyHintDismissed: false
     property real sidebarOpenProgress: 1.0
     property var previewBudgetRankProvider: null
+    property var cameraAccessProvider: null
     property var systemController: null
 
     signal selectedByUser(int index)
@@ -34,6 +39,8 @@ Rectangle {
     signal settingsRequested()
     signal sidebarOpenRequested()
     signal emptyHintClosed(bool dontShowAgain)
+    signal gridCameraRemoved()
+    signal messageRequested(string message)
 
     color: Theme.panelBackground
     radius: Theme.radiusLg
@@ -44,6 +51,12 @@ Rectangle {
         if (!previewBudgetRankProvider)
             return -1
         return previewBudgetRankProvider(index)
+    }
+
+    function cameraAccessAllowed(cameraId, cameraIp) {
+        if (!cameraAccessProvider)
+            return true
+        return cameraAccessProvider(cameraId, cameraIp)
     }
 
     GridLayout {
@@ -66,6 +79,7 @@ Rectangle {
                 id: gridCellDelegate
 
                 required property int index
+                required property string cameraId
                 required property string cameraIp
                 required property string cameraLogin
                 required property string cameraName
@@ -79,8 +93,13 @@ Rectangle {
                 required property string status
                 required property string streamUrl
 
-                Layout.preferredWidth: Math.floor(Math.max(1, gridCellDelegate.spanCols) * cameraGrid.unitWidth)
-                Layout.preferredHeight: Math.floor(Math.max(1, gridCellDelegate.spanRows) * cameraGrid.unitHeight)
+                readonly property bool inCurrentPage: gridCellDelegate.index >= gridPanel.pageStart
+                                                      && gridCellDelegate.index < gridPanel.pageStart + gridPanel.pageSize
+                readonly property bool accessAllowed: gridPanel.cameraAccessAllowed(gridCellDelegate.cameraId,
+                                                                                     gridCellDelegate.cameraIp)
+                visible: inCurrentPage
+                Layout.preferredWidth: inCurrentPage ? Math.floor(Math.max(1, gridCellDelegate.spanCols) * cameraGrid.unitWidth) : 0
+                Layout.preferredHeight: inCurrentPage ? Math.floor(Math.max(1, gridCellDelegate.spanRows) * cameraGrid.unitHeight) : 0
                 Layout.rowSpan: Math.max(1, Math.round((gridCellDelegate.spanRows || 1) / (1200 / Math.max(1, gridPanel.gridRows || 2))))
                 Layout.columnSpan: Math.max(1, gridCellDelegate.spanCols || 1)
 
@@ -96,30 +115,33 @@ Rectangle {
                     spanCols: gridCellDelegate.spanCols || 1
                     gridIndex: gridCellDelegate.index
                     previewBudgetRank: gridPanel.previewBudgetRank(gridCellDelegate.index)
+                    pageActive: gridCellDelegate.inCurrentPage
                     isSelected: gridPanel.activeGridIndex === gridCellDelegate.index
 
                     unitWidth: cameraGrid.unitWidth
                     unitHeight: cameraGrid.unitHeight
 
-                    cameraName: gridCellDelegate.cameraName
-                    cameraIp: gridCellDelegate.cameraIp
+                    cameraName: gridCellDelegate.accessAllowed ? gridCellDelegate.cameraName : ""
+                    cameraIp: gridCellDelegate.accessAllowed ? gridCellDelegate.cameraIp : ""
                     cameraPort: gridCellDelegate.cameraPort
                     cameraOnvifPort: gridCellDelegate.cameraOnvifPort
                     cameraLogin: gridCellDelegate.cameraLogin
-                    streamUrl: gridCellDelegate.streamUrl
-                    sdStreamUrl: gridCellDelegate.sdStreamUrl || gridCellDelegate.streamUrl
-                    hdStreamUrl: gridCellDelegate.hdStreamUrl || gridCellDelegate.streamUrl
+                    streamUrl: gridCellDelegate.accessAllowed ? gridCellDelegate.streamUrl : ""
+                    sdStreamUrl: gridCellDelegate.accessAllowed ? (gridCellDelegate.sdStreamUrl || gridCellDelegate.streamUrl) : ""
+                    hdStreamUrl: gridCellDelegate.accessAllowed ? (gridCellDelegate.hdStreamUrl || gridCellDelegate.streamUrl) : ""
                     status: gridCellDelegate.status
                     manufacturer: gridCellDelegate.manufacturer || ""
 
                     canLive: gridPanel.canLive
                     canPlayback: gridPanel.canPlayback
                     canPtz: gridPanel.canPtz
+                    canTalk: gridPanel.canTalk
                     canExport: gridPanel.canExport
                     canSettings: gridPanel.canSettings
 
                     onSelectedByUser: gridPanel.selectedByUser(gridCellDelegate.index)
                     onPermissionDenied: gridPanel.permissionDenied()
+                    onErrorMessage: (message) => gridPanel.messageRequested(message)
 
                     onCloseClicked: {
                         if (!gridPanel.canSettings) {
@@ -127,6 +149,7 @@ Rectangle {
                             return
                         }
                         gridPanel.systemController.removeCameraFromGrid(gridCellDelegate.index)
+                        gridPanel.gridCameraRemoved()
                     }
 
                     onEditRequested: {
@@ -190,7 +213,7 @@ Rectangle {
     Button {
         id: revealSidebarButton
 
-        visible: gridPanel.sidebarOpenProgress < 0.01
+        visible: !gridPanel.kioskMode && gridPanel.sidebarOpenProgress < 0.01
         width: 18
         height: 84
         anchors.right: parent.right
